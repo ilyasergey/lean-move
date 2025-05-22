@@ -1,7 +1,7 @@
 ## Lean-Move
 
-An experimental formalisation of Move bytecode interpreter in Lean proof assistant
+An experimental formalisation of Move borrow checker in Lean
 
 ## Dependencies
 
-* `mathliv4-v4.7.0-rc2`
+* `mathliv4-v4.17.0`

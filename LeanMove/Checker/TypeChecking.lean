@@ -18,14 +18,27 @@ import Batteries.Data.HashMap
 import Ssreflect.Lang
 
 import LeanMove.Lang
+import LeanMove.Structures.PathMap
+import LeanMove.Structures.AssocMap
 
 namespace LeanMove.Checker
 
 open Lang
-open MoveLight
+open Lang.MoveLight
+open AssocMap
+open Regex
 
-abbrev SiteEnv := Batteries.HashMap Site MoveType
+-- Environment mapping sites to their types
+abbrev SiteEnv := AssocMap Site MoveType
 
+-- Environment mapping variables to their types
+abbrev VarEnv := AssocMap Var MoveType
+
+-- Environment mapping pairs of sites to sets regular expressions
+abbrev PathSet := Regex Field → Prop
+abbrev PathEnv := Site × Site → PathSet
+
+-- TODO define typing relation
 
 
 

@@ -28,6 +28,7 @@ abbrev Id := String
 -- Abstract locations aka Sites
 structure Site where
   id: Id
+  isvar : Bool -- Is variable site
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 namespace MoveLight
