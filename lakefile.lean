@@ -8,9 +8,13 @@ package «lean-move» where
   ]
   -- add any additional package configuration options here
 
-require mathlib from git "https://github.com/leanprover-community/mathlib4.git" @ "v4.7.0-rc2"
-
-require ssreflect from git "https://github.com/verse-lab/lean-ssr" @ "master"
+require batteries from
+    git "https://github.com/leanprover-community/batteries" @ "v4.17.0"
+require mathlib from
+    git "https://github.com/leanprover-community/mathlib4.git" @ "v4.17.0"
+-- require loogle from git "https://github.com/nomeata/loogle.git" @ "master"
+require ssreflect from
+    git "https://github.com/verse-lab/lean-ssr.git" @ "v4.17.0"
 
 @[default_target]
 lean_lib «LeanMove» where

@@ -14,8 +14,30 @@
  limitations under the License.
 -/
 
--- This module serves as the root of the `LeanMove` library.
--- Import modules here that should be built as part of the library.
+import Batteries.Data.HashMap
+import Ssreflect.Lang
 
-import LeanMove.Lang
-import LeanMove.Checker
+/- -----------------------------------------------------/
+/- -       Definition of the Move Light language      --/
+/- -----------------------------------------------------/
+
+namespace LeanMove.Lang
+
+abbrev Id := String
+
+-- Abstract locations aka Sites
+structure Site where
+  id: Id
+deriving Repr, DecidableEq, Inhabited, Hashable
+
+namespace MoveLight
+
+-- Types
+inductive MoveType where
+  | TInt
+  | TUnit
+deriving Repr, DecidableEq, Inhabited, Hashable
+
+end MoveLight
+
+end LeanMove.Lang

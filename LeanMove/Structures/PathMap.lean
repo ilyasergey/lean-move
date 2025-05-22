@@ -14,8 +14,7 @@
  limitations under the License.
 -/
 
--- This module serves as the root of the `LeanMove` library.
--- Import modules here that should be built as part of the library.
+import Batteries.Data.HashMap
+import Ssreflect.Lang
 
-import LeanMove.Lang
-import LeanMove.Checker
+/- A data structure for mapping pairs of identifiers to regular expressions -/

@@ -14,8 +14,19 @@
  limitations under the License.
 -/
 
--- This module serves as the root of the `LeanMove` library.
--- Import modules here that should be built as part of the library.
+import Batteries.Data.HashMap
+import Ssreflect.Lang
 
 import LeanMove.Lang
-import LeanMove.Checker
+
+namespace LeanMove.Checker
+
+open Lang
+open MoveLight
+
+abbrev SiteEnv := Batteries.HashMap Site MoveType
+
+
+
+
+end LeanMove.Checker
