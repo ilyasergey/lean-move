@@ -38,6 +38,11 @@ def delete {K V : Type} [BEq K] (self : AssocMap K V) (key : K) : AssocMap K V :
   entries := (self.entries.filter (fun (k, _) => k != key))
 }
 
+/-- Update a key-value pair in the map -/
+def update {K V : Type} [BEq K] (self : AssocMap K V) (key : K) (value : V) : AssocMap K V := {
+  entries := (key, value) :: (self.entries.filter (fun (k, _) => k != key))
+}
+
 /-- Search for a value by key -/
 def lookup {K V : Type} [BEq K] (self : AssocMap K V) (key : K) : Option V :=
   match self.entries.find? (fun (k, _) => k == key) with

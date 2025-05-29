@@ -72,7 +72,7 @@ deriving Repr, DecidableEq, Inhabited, Hashable
 inductive Usage where
   | copy : Var → Usage
   | move : Var → Usage
-  | borrow : Var → Usage
+  | borrowImm : Var → Usage
   | borrowMut : Var → Usage
 deriving Repr, DecidableEq, Inhabited, Hashable
 
