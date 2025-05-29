@@ -17,27 +17,46 @@
 import Batteries.Data.HashMap
 import Ssreflect.Lang
 
+import LeanMove.Structures.AssocMap
+
+
 /- -----------------------------------------------------/
 /- -       Definition of the Move Light language      --/
 /- -----------------------------------------------------/
 
 namespace LeanMove.Lang
 
+open AssocMap
+
 abbrev Id := String
+
+-- Kinds of abstract locations: for variables, parameters, and temporaries
+inductive SiteKind where
+  | svar : Id → SiteKind
+  | stmp: SiteKind
+deriving Repr, DecidableEq, Inhabited, Hashable
 
 -- Abstract locations aka Sites
 structure Site where
-  id: Id
-  isvar : Bool -- Is variable site
+  kind: SiteKind
+  num : Nat -- Is variable site if some i
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 namespace MoveLight
 
+inductive BasicMoveType where
+  | tint
+  | tbool
+  | tunit
+  | trecord : AssocMap Id BasicMoveType → BasicMoveType
+deriving Repr, Inhabited, Hashable
+
+
 -- Types
 inductive MoveType where
-  | TInt
-  | TUnit
-deriving Repr, DecidableEq, Inhabited, Hashable
+  | basic: BasicMoveType → MoveType
+  | ref : MoveType → MoveType
+deriving Repr, Inhabited, Hashable
 
 -- Variables are just identifiers
 structure Var where
@@ -72,6 +91,7 @@ deriving Repr, DecidableEq, Inhabited, Hashable
 
 -- Statements
 inductive Stmt where
+  | skip : Stmt
   | letBind : Site → Expr → Stmt  -- let a = e
   | unpack : Id → List (Field × Site) → Site → Stmt  -- T { fi: ai, ...} = b
   | call : List Site → Id → List Site → Stmt  -- let (a1, ..., an) = f(b1, ..., bm)
@@ -89,7 +109,7 @@ deriving Repr, Inhabited
 structure LocalVar where
   name : Var
   type : MoveType
-deriving Repr, DecidableEq, Inhabited, Hashable
+deriving Repr, Inhabited, Hashable
 
 -- Function definition
 structure FunDef where

@@ -53,4 +53,16 @@ def isEmpty {K V : Type} (self : AssocMap K V) : Bool :=
 def size {K V : Type} (self : AssocMap K V) : Nat :=
   self.entries.length
 
+instance {K V : Type} [Repr K] [Repr V] : Repr (AssocMap K V) where
+  reprPrec m _ := "{" ++ (String.intercalate ", " (m.entries.map (fun (k, v) => reprStr k ++ " ↦ " ++ reprStr v))) ++ "}"
+
+instance {K V : Type} [Hashable K] [Hashable V] : Hashable (AssocMap K V) where
+  hash m := m.entries.foldl (fun acc (k, v) => mixHash acc (mixHash (hash k) (hash v))) 0
+
+instance {K V : Type} [DecidableEq K] [DecidableEq V] : DecidableEq (AssocMap K V) :=
+  fun m1 m2 =>
+    match decEq m1.entries m2.entries with
+    | isTrue h => isTrue (by sby move: m1 m2 h=>[e1][e2])
+    | isFalse h => isFalse (fun h' => h (by cases h'; rfl))
+
 end AssocMap
