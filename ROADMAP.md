@@ -2,21 +2,35 @@
 
 ## Completed ✅
 
+### Auxiliary Data Structures
+
+- [x] Associative maps
+
+### Syntax
+
 - [x] Basic data types for regular expressions
 - [x] Language syntax (variables, types, expressions, statements, function definitions)
 - [x] Elements of the typing relation for tracking path conditions
-- [x] Associative maps
+
+### Type Checker
+
+- [x] Type checking for usages
 
 ## To Be Implemented 🚧
 
+### Auxiliary Data Structures and Relations
+
+- [ ] Transitive closure for path maps
+
 ### Initial Type Checker Tasks
 
-- [ ] Macro for type checking relation
 - [ ] Type checking relation for expressions
 - [ ] Type checking relation for statements
 
 ### Meta-Theory
 
-- [ ] Site-well formedness: well-typed Move Light programs only contain variable sites at the end
+- [ ] State well-formedness for type environemnts
+- [ ] Prove that typing for usages preserves it
+
 
 

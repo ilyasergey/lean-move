@@ -31,15 +31,9 @@ open AssocMap
 abbrev Id := String
 
 -- Kinds of abstract locations: for variables, parameters, and temporaries
-inductive SiteKind where
-  | svar : Id → SiteKind
-  | stmp: SiteKind
-deriving Repr, DecidableEq, Inhabited, Hashable
-
--- Abstract locations aka Sites
-structure Site where
-  kind: SiteKind
-  num : Nat -- Is variable site if some i
+inductive Site where
+  | svar : Id → Site
+  | stmp : Nat → Site
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 namespace MoveLight

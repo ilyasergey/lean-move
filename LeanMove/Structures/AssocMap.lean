@@ -49,6 +49,10 @@ def lookup {K V : Type} [BEq K] (self : AssocMap K V) (key : K) : Option V :=
   | some (_, v) => some v
   | none => none
 
+def notIn {K V : Type} [BEq K] (self : AssocMap K V) (key : K) : Bool :=
+  match self.entries.find? (fun (k, _) => k == key) with
+  | some _ => false
+  | none => true
 
 /-- Check if the map is empty -/
 def isEmpty {K V : Type} (self : AssocMap K V) : Bool :=
@@ -69,5 +73,10 @@ instance {K V : Type} [DecidableEq K] [DecidableEq V] : DecidableEq (AssocMap K 
     match decEq m1.entries m2.entries with
     | isTrue h => isTrue (by sby move: m1 m2 h=>[e1][e2])
     | isFalse h => isFalse (fun h' => h (by cases h'; rfl))
+
+-- function to check that all keys are unique
+def uniqueKeys {K V : Type} [BEq K] (self : AssocMap K V) : Bool :=
+  let keys := self.entries.map (fun (k, _) => k)
+  keys.all (fun k => keys.countP (fun k' => k' == k) = 1)
 
 end AssocMap
