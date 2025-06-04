@@ -141,11 +141,11 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Site -> MoveType �
   /- Borrowing the reference to a variable's payload -/
   | t_uborrowImm : ∀ env x τ ms bs newSite,
      AssocMap.lookup env.varEnv x = some (s, τ, ms, bs) →
-     LE.le bs varBorrowedImm → -- Borrow status: either unborrowed or immutable borrowed
+     LE.le bs .varBorrowedImm → -- Borrow status: either unborrowed or immutable borrowed
      -- newSite is fresh
      AssocMap.notIn env.siteEnv newSite →
      -- The variable site s is now reachable from newSite via epsilon-transition
-     env' = { env with varEnv :=  update env.varEnv x (s, τ, ms, varBorrowedImm),
+     env' = { env with varEnv :=  update env.varEnv x (s, τ, ms, .varBorrowedImm),
                        siteEnv := AssocMap.insert env.siteEnv newSite (.ref τ, .siteBorrowImm x),
                        pathEnv := update_path_env env.pathEnv newSite s Regex.epsilon } → -- TODO: is this correct?
      typecheck_usage env (.borrowImm x) env newSite (.ref τ)
@@ -153,13 +153,13 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Site -> MoveType �
   /- Mutably borrowing the reference to a variable's payload -/
   | t_uborrowMut : ∀ env x s τ ms bs newSite,
      AssocMap.lookup env.varEnv x = some (s, τ, ms, bs) →
-     LE.le bs varNotBorrowed   → -- Borrow status: must be unborrowed
+     LE.le bs .varNotBorrowed   → -- Borrow status: must be unborrowed
      LE.le .mutable ms  →     -- Can only mutably borrow if the variable is mutable
      -- newSite is fresh
      AssocMap.notIn env.siteEnv newSite →
      -- Change the status of the variable and add new reachability
      -- The variable site s is now reachable from newSite via epsilon-transition
-     env' = { env with varEnv :=  update env.varEnv x (s, τ, ms, varBorrowedMut)
+     env' = { env with varEnv :=  update env.varEnv x (s, τ, ms, .varBorrowedMut)
                        siteEnv := AssocMap.insert env.siteEnv newSite (.ref τ, .siteBorrowMut x)
                        pathEnv := update_path_env env.pathEnv newSite s Regex.epsilon } → -- TODO: is this correct?
      typecheck_usage env (.borrowMut x) env newSite τ
