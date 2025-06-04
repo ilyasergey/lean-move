@@ -122,7 +122,7 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Site -> MoveType �
   /- Moving the contents of the variable to a new site, purge it from varEnv -/
   | t_umove : ∀ env env' x s τ ms,
      -- Can only move from non-borrowed variables
-     AssocMap.lookup env.varEnv x = some (s, τ, ms, varNotBorrowed ) →
+     AssocMap.lookup env.varEnv x = some (s, τ, ms, varNotBorrowed) →
      env' = { env with varEnv  := delete env.varEnv x
                        siteEnv := insert env.siteEnv s (τ, .siteNotBorrowed) } →
      -- Note: R is not affected by this, as no new sites created
@@ -144,7 +144,7 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Site -> MoveType �
      LE.le bs varBorrowedImm → -- Borrow status: either unborrowed or immutable borrowed
      -- newSite is fresh
      AssocMap.notIn env.siteEnv newSite →
-     -- varSite is now reachable from newSite via epsilon-transition
+     -- The variable site s is now reachable from newSite via epsilon-transition
      env' = { env with varEnv :=  update env.varEnv x (s, τ, ms, varBorrowedImm),
                        siteEnv := AssocMap.insert env.siteEnv newSite (.ref τ, .siteBorrowImm x),
                        pathEnv := update_path_env env.pathEnv newSite s Regex.epsilon } → -- TODO: is this correct?
@@ -158,10 +158,10 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Site -> MoveType �
      -- newSite is fresh
      AssocMap.notIn env.siteEnv newSite →
      -- Change the status of the variable and add new reachability
-     -- varSite is now reachable from newSite via epsilon-transition
+     -- The variable site s is now reachable from newSite via epsilon-transition
      env' = { env with varEnv :=  update env.varEnv x (s, τ, ms, varBorrowedMut)
                        siteEnv := AssocMap.insert env.siteEnv newSite (.ref τ, .siteBorrowMut x)
-                       pathEnv := update_path_env env.pathEnv newSite varSite Regex.epsilon } → -- TODO: is this correct?
+                       pathEnv := update_path_env env.pathEnv newSite s Regex.epsilon } → -- TODO: is this correct?
      typecheck_usage env (.borrowMut x) env newSite τ
 
 /-
