@@ -222,7 +222,10 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType �
   | usage : ∀ env env' u s τ,
      typecheck_usage env u env' s τ ->
      typecheck_expr env (Expr.usage u) env s τ
+
+  ----------------------------------------------------
   -- Done above this line
+  ----------------------------------------------------
   | borrowField : ∀ env env' a f s' τ τ' isBor fentries,
      -- Site type is τ basic type
      AssocMap.lookup env.siteEnv s = some (.ref (.basic τ), isBor) →
@@ -237,6 +240,10 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType �
      env' = {env with siteEnv := insert (delete env.siteEnv a) s' (.ref (.basic τ'), isBor)
      } →
      typecheck_expr env (Expr.borrowField a τ f) env s' (.ref (.basic τ'))
+
+  ----------------------------------------------------
+  -- Not touched recently below this line
+  ----------------------------------------------------
   | borrowMutField : ∀ env s a f s',
      typecheck_expr env (Expr.borrowMutField s a f) env s' TInt
   | binop : ∀ env s1 s2 s',
