@@ -32,8 +32,8 @@ abbrev Id := String
 
 -- Kinds of abstract locations: for variables, parameters, and temporaries
 inductive Site where
-  | svar : Id → Site
-  | stmp : Nat → Site
+  | svar : Id → Site  -- Variable site
+  | stmp : Nat → Site -- Temp site
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 namespace MoveLight

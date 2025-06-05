@@ -168,10 +168,75 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Site -> MoveType �
 -- #check typecheck_usage.t_uborrowMut
 
 /-
-Questions (29 May 2025):
+Questions (29 May and 5 Jun, 2025):
 * [Q] Should we update the R as a result of the last two clauses (borrowImm and borrowMut)?
 * [Q] What is the difference between two sites beling aliases and one being reachable from the other via dereference?
+* [Q] Type checking expressions: when handling exceptions, what exactly is updated in the path map if we delete the old site?
+      Should we keep the provenance from the variable sites and update it?
  -/
+
+
+/- ---------------------------------------------------- -/
+/- Typing relations for expressions -/
+/- ---------------------------------------------------- -/
+
+-- ⟨L; E; R⟩ ⊢ (e : expr) ⤳ ⟨L'; E'; R'⟩
+inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType → Prop where
+  -- Expression is a usage
+  | usage : ∀ env env' u s τ,
+     typecheck_usage env u env' s τ ->
+     typecheck_expr env (Expr.usage u) env s τ
+
+  ----------------------------------------------------
+  -- Done above this line
+  ----------------------------------------------------
+  | borrowField : ∀ env env' a f newSite τ τ' isBor fentries,
+     -- Site type is τ basic type
+     AssocMap.lookup env.siteEnv s = some (.ref (.basic τ), isBor) →
+     -- This is a record type, here are its entries
+     τ = .trecord fentries →
+     -- Get the field type via the name f
+     lookup fentries f = some τ' →
+     -- Can  salways be borrowed?
+
+     -- TODO: add path tracking: what exactly is updated if we delete the old site?
+
+
+     -- Update site environment with the new reference
+     env' = {env with siteEnv := insert (delete env.siteEnv a) newSite (.ref (.basic τ'), isBor)
+     } →
+     typecheck_expr env (Expr.borrowField a τ f) env newSite (.ref (.basic τ'))
+
+  ----------------------------------------------------
+  -- Not touched recently below this line
+  ----------------------------------------------------
+  | borrowMutField : ∀ env s a f s',
+     typecheck_expr env (Expr.borrowMutField s a f) env s' TInt
+  | binop : ∀ env s1 s2 s',
+     typecheck_expr env (Expr.binop s1 s2) env s' TInt
+  | readRef : ∀ env s s',
+     typecheck_expr env (Expr.readRef s) env s' TInt
+  | pack : ∀ env t fs s,
+     typecheck_expr env (Expr.pack t fs) env s TInt
+
+inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
+  -- Add your constructors here, for example:
+  | skip : ∀ env, typecheck_stmt env Stmt.skip env
+  -- | assign : ∀ env x e, typecheck_expr env e τ → typecheck_stmt env (MoveLight.Stmt.assign x e) env
+  -- ... other constructors ...
+
+-- Macro to mimic the notation ⟨L; E; R⟩  ⊢ s ⤳ ⟨L'; E'; R'⟩
+macro "typecheck_stmt_macro" env:term "⊢" s:term "⤳" env':term : term =>
+  `(typecheck_stmt $env $s $env')
+
+/- ---------------------------------------------------- -/
+/-    Simple theorems about the typing relations        -/
+/- ---------------------------------------------------- -/
+
+/-
+A well-typed statement in an empty site and path environments,
+   produces a path environment that only has sites for variables, but not temporaries
+-/
 
 -- TODO: theorem stating that typecheck_usage does no introduce duplicate sites
 -- and that it only increases the domain of the path environment
@@ -209,67 +274,5 @@ theorem typecheck_usage_unique_sites : ∀ env env' u s τ,
   }
 
 
-
-----------------------------------------------------------
-
-/- ---------------------------------------------------- -/
-/- Typing relations for expressions -/
-/- ---------------------------------------------------- -/
-
--- ⟨L; E; R⟩ ⊢ (e : expr) ⤳ ⟨L'; E'; R'⟩
-inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType → Prop where
-  -- Expression is a usage
-  | usage : ∀ env env' u s τ,
-     typecheck_usage env u env' s τ ->
-     typecheck_expr env (Expr.usage u) env s τ
-
-  ----------------------------------------------------
-  -- Done above this line
-  ----------------------------------------------------
-  | borrowField : ∀ env env' a f s' τ τ' isBor fentries,
-     -- Site type is τ basic type
-     AssocMap.lookup env.siteEnv s = some (.ref (.basic τ), isBor) →
-     -- This is a record type
-     τ = .trecord fentries →
-     --
-     lookup fentries f = some τ' →
-     -- Can  salways be borrowed?
-
-     -- TODO: add path tracking
-     -- Update site environment with the new reference
-     env' = {env with siteEnv := insert (delete env.siteEnv a) s' (.ref (.basic τ'), isBor)
-     } →
-     typecheck_expr env (Expr.borrowField a τ f) env s' (.ref (.basic τ'))
-
-  ----------------------------------------------------
-  -- Not touched recently below this line
-  ----------------------------------------------------
-  | borrowMutField : ∀ env s a f s',
-     typecheck_expr env (Expr.borrowMutField s a f) env s' TInt
-  | binop : ∀ env s1 s2 s',
-     typecheck_expr env (Expr.binop s1 s2) env s' TInt
-  | readRef : ∀ env s s',
-     typecheck_expr env (Expr.readRef s) env s' TInt
-  | pack : ∀ env t fs s,
-     typecheck_expr env (Expr.pack t fs) env s TInt
-
-inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
-  -- Add your constructors here, for example:
-  | skip : ∀ env, typecheck_stmt env Stmt.skip env
-  -- | assign : ∀ env x e, typecheck_expr env e τ → typecheck_stmt env (MoveLight.Stmt.assign x e) env
-  -- ... other constructors ...
-
--- Macro to mimic the notation ⟨L; E; R⟩  ⊢ s ⤳ ⟨L'; E'; R'⟩
-macro "typecheck_stmt_macro" env:term "⊢" s:term "⤳" env':term : term =>
-  `(typecheck_stmt $env $s $env')
-
-/- ---------------------------------------------------- -/
-/-    Simple theorems about the typing relations        -/
-/- ---------------------------------------------------- -/
-
-/-
-A well-typed statement in an empty site and path environments,
-   produces a path environment that only has sites for variables, but not temporaries
--/
 
 end LeanMove.Checker
