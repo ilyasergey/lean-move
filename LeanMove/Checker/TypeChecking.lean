@@ -16,6 +16,7 @@
 
 import Batteries.Data.HashMap
 import Ssreflect.Lang
+import Aesop
 
 import LeanMove.Lang
 import LeanMove.Structures.PathMap
@@ -132,7 +133,7 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Site -> MoveType �
   | t_ucopy : ∀ env env' x s τ ms newSite,
      AssocMap.lookup env.varEnv x = some (s, τ, ms, bs) →
      -- newSite is fresh
-     AssocMap.notIn env.siteEnv newSite →
+     notIn env.siteEnv newSite →
      -- VarEnv is not affected by this
      env' = { env with siteEnv := insert env.siteEnv newSite (τ, .siteNotBorrowed)} →
      -- Note: R is not affected by this, as no new sharing introduced
@@ -146,9 +147,9 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Site -> MoveType �
      AssocMap.notIn env.siteEnv newSite →
      -- The variable site s is now reachable from newSite via epsilon-transition
      env' = { env with varEnv :=  update env.varEnv x (s, τ, ms, .varBorrowedImm),
-                       siteEnv := AssocMap.insert env.siteEnv newSite (.ref τ, .siteBorrowImm x),
+                       siteEnv := insert env.siteEnv newSite (.ref τ, .siteBorrowImm x),
                        pathEnv := update_path_env env.pathEnv newSite s Regex.epsilon } → -- TODO: is this correct?
-     typecheck_usage env (.borrowImm x) env newSite (.ref τ)
+     typecheck_usage env (.borrowImm x) env' newSite (.ref τ)
 
   /- Mutably borrowing the reference to a variable's payload -/
   | t_uborrowMut : ∀ env x s τ ms bs newSite,
@@ -162,7 +163,9 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Site -> MoveType �
      env' = { env with varEnv :=  update env.varEnv x (s, τ, ms, .varBorrowedMut)
                        siteEnv := AssocMap.insert env.siteEnv newSite (.ref τ, .siteBorrowMut x)
                        pathEnv := update_path_env env.pathEnv newSite s Regex.epsilon } → -- TODO: is this correct?
-     typecheck_usage env (.borrowMut x) env newSite τ
+     typecheck_usage env (.borrowMut x) env' newSite τ
+
+-- #check typecheck_usage.t_uborrowMut
 
 /-
 Questions (29 May 2025):
@@ -170,12 +173,44 @@ Questions (29 May 2025):
 * [Q] What is the difference between two sites beling aliases and one being reachable from the other via dereference?
  -/
 
-
-
 -- TODO: theorem stating that typecheck_usage does no introduce duplicate sites
 -- and that it only increases the domain of the path environment
 
+def varEnv_unique_sites (env : TypeEnv) : Prop :=
+  let sites := env.varEnv.entries.map (fun (_, v) => v.1)
+  forall s, s ∈ sites -> notIn env.siteEnv s
 
+/- typecheck_usage preserves  the uniqueness of
+   sites in the site environment -/
+theorem typecheck_usage_unique_sites : ∀ env env' u s τ,
+  typecheck_usage env u env' s τ →
+  varEnv_unique_sites env →
+  uniqueKeys env.siteEnv →
+  uniqueKeys env'.siteEnv := by
+  move=> env env' u s τ; scase
+  { -- case t_umove
+    move=>v x ms H1 -> H2 H3 //=
+    apply notIn_uniqueKeys_insert=>//
+    apply H2=>//==
+    exists x, τ, ms, v
+    sby apply AssocMap.lookup_some
+  }
+  { -- case t_ucopy
+    move=>v x s ms H1 H2 -> H3 H4 //=
+    apply notIn_uniqueKeys_insert=>//
+  }
+  { -- case t_uborrowImm
+    move=>s x τ ms bs _ H1 H2 -> H3 H4 /=
+    sby apply notIn_uniqueKeys_insert
+  }
+  { --case t_uborrowMut
+    move=>s x τ ms bs _ H1 H2 -> H3 H4 /=
+    sby apply notIn_uniqueKeys_insert
+  }
+
+
+
+----------------------------------------------------------
 
 /- ---------------------------------------------------- -/
 /- Typing relations for expressions -/
@@ -183,11 +218,25 @@ Questions (29 May 2025):
 
 -- ⟨L; E; R⟩ ⊢ (e : expr) ⤳ ⟨L'; E'; R'⟩
 inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType → Prop where
+  -- Expression is a usage
   | usage : ∀ env env' u s τ,
      typecheck_usage env u env' s τ ->
      typecheck_expr env (Expr.usage u) env s τ
-  | borrowField : ∀ env s a f s',
-     typecheck_expr env (Expr.borrowField s a f) env s' TInt
+  -- Done above this line
+  | borrowField : ∀ env env' a f s' τ τ' isBor fentries,
+     -- Site type is τ basic type
+     AssocMap.lookup env.siteEnv s = some (.ref (.basic τ), isBor) →
+     -- This is a record type
+     τ = .trecord fentries →
+     --
+     lookup fentries f = some τ' →
+     -- Can  salways be borrowed?
+
+     -- TODO: add path tracking
+     -- Update site environment with the new reference
+     env' = {env with siteEnv := insert (delete env.siteEnv a) s' (.ref (.basic τ'), isBor)
+     } →
+     typecheck_expr env (Expr.borrowField a τ f) env s' (.ref (.basic τ'))
   | borrowMutField : ∀ env s a f s',
      typecheck_expr env (Expr.borrowMutField s a f) env s' TInt
   | binop : ∀ env s1 s2 s',

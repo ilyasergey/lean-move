@@ -38,11 +38,16 @@ deriving Repr, DecidableEq, Inhabited, Hashable
 
 namespace MoveLight
 
+-- Field names for structs
+structure Field where
+  id: Id
+deriving Repr, DecidableEq, Inhabited, Hashable
+
 inductive BasicMoveType where
   | tint
   | tbool
   | tunit
-  | trecord : AssocMap Id BasicMoveType → BasicMoveType
+  | trecord : AssocMap Field BasicMoveType → BasicMoveType
 deriving Repr, Inhabited, Hashable
 
 -- Defining DecidableEq instance
@@ -106,10 +111,6 @@ structure Var where
   id: Id
 deriving Repr, DecidableEq, Inhabited, Hashable
 
--- Field names for structs
-structure Field where
-  id: Id
-deriving Repr, DecidableEq, Inhabited, Hashable
 
 -- Variable Usage
 inductive Usage where
@@ -125,12 +126,12 @@ abbrev ALoc := Site
 -- Expressions
 inductive Expr where
   | usage : Usage → Expr
-  | borrowField : Site → Id → Field → Expr  -- &a.T::f
+  | borrowField : Site → BasicMoveType → Field → Expr  -- &a.T::f
   | borrowMutField : Site → Id → Field → Expr  -- &mut a.T::f
   | binop : Site → Site → Expr  -- a + b
   | readRef : Site → Expr  -- *a
   | pack : Id → List (Field × Site) → Expr  -- T { f: a1, ..., f: an }
-deriving Repr, DecidableEq, Inhabited, Hashable
+deriving Repr, Inhabited, Hashable
 
 -- Statements
 inductive Stmt where

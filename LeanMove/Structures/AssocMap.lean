@@ -16,6 +16,7 @@
 
 import Batteries.Data.HashMap
 import Ssreflect.Lang
+import Aesop
 
 namespace AssocMap
 
@@ -29,27 +30,25 @@ def empty {K V : Type} : AssocMap K V := {
 }
 
 /-- Insert a key-value pair into the map -/
-def insert {K V : Type} [BEq K] (self : AssocMap K V) (key : K) (value : V) : AssocMap K V := {
+def insert {K V : Type} [DecidableEq K] (self : AssocMap K V) (key : K) (value : V) : AssocMap K V := {
   entries := (key, value) :: (self.entries.filter (fun (k, _) => k != key))
 }
 
 /-- Remove a key from the map -/
-def delete {K V : Type} [BEq K] (self : AssocMap K V) (key : K) : AssocMap K V := {
+def delete {K V : Type} [DecidableEq K] (self : AssocMap K V) (key : K) : AssocMap K V := {
   entries := (self.entries.filter (fun (k, _) => k != key))
 }
 
 /-- Update a key-value pair in the map -/
-def update {K V : Type} [BEq K] (self : AssocMap K V) (key : K) (value : V) : AssocMap K V := {
+def update {K V : Type} [DecidableEq K] (self : AssocMap K V) (key : K) (value : V) : AssocMap K V := {
   entries := (key, value) :: (self.entries.filter (fun (k, _) => k != key))
 }
 
 /-- Search for a value by key -/
-def lookup {K V : Type} [BEq K] (self : AssocMap K V) (key : K) : Option V :=
-  match self.entries.find? (fun (k, _) => k == key) with
-  | some (_, v) => some v
-  | none => none
+def lookup {K V : Type} [DecidableEq K] (self : AssocMap K V) (key : K) : Option V :=
+  List.lookup key self.entries
 
-def notIn {K V : Type} [BEq K] (self : AssocMap K V) (key : K) : Bool :=
+def notIn {K V : Type} [DecidableEq K] (self : AssocMap K V) (key : K) : Bool :=
   match self.entries.find? (fun (k, _) => k == key) with
   | some _ => false
   | none => true
@@ -75,8 +74,31 @@ instance {K V : Type} [DecidableEq K] [DecidableEq V] : DecidableEq (AssocMap K 
     | isFalse h => isFalse (fun h' => h (by cases h'; rfl))
 
 -- function to check that all keys are unique
-def uniqueKeys {K V : Type} [BEq K] (self : AssocMap K V) : Bool :=
+def uniqueKeys {K V : Type} [DecidableEq K] (self : AssocMap K V) : Bool :=
   let keys := self.entries.map (fun (k, _) => k)
   keys.all (fun k => keys.countP (fun k' => k' == k) = 1)
+
+
+theorem lookup_some {K V : Type} [DecidableEq K] (m : AssocMap K V) (k : K) (v : V) :
+  lookup m k = some v → (k, v) ∈ m.entries := by
+  move=>H1
+  scase: m H1; elim=>//==; unfold lookup =>[|a b//== es Hi H1]
+  { sdone }
+  move: H1
+  unfold lookup=>//==; simp [List.lookup]
+  aesop
+
+
+theorem notIn_uniqueKeys_insert {K V : Type} [DecidableEq K] (m : AssocMap K V) (k : K) (v : V) :
+  uniqueKeys m → notIn m k → uniqueKeys (insert m k v) := by
+  move: m=>[es] H1 H2
+  simp only [AssocMap.insert]
+  elim: es H1 H2=>//=
+  { sby dsimp [uniqueKeys] }
+  scase=>a b es Hi H1 H2
+  -- Well, this is trivial but annoying
+  unfold uniqueKeys=>//==
+  sorry
+
 
 end AssocMap
