@@ -80,17 +80,11 @@ inductive IsValid where
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 
--- Abstract references
-structure Aref where
-  refid : Nat
-deriving Repr, DecidableEq, Inhabited, Hashable
-
 -- Environment mapping abstract locations to their types, abstract references, and borrow marker
-abbrev AlocEnv := AssocMap Aloc (MoveType × (Option Aref) × SiteIsBorrowing)
+abbrev AlocEnv := AssocMap Aloc (MoveType × SiteIsBorrowing)
 
 -- Environment mapping variables to their site, types, mutability, abstract references, and borrow status
-abbrev VarEnv := AssocMap Var (IsValid × MoveType × (Option Aref) × Mut)
-
+abbrev VarEnv := AssocMap Var (IsValid × MoveType × Mut)
 
 
 -- Environment mapping pairs of sites to sets regular expressions
@@ -131,65 +125,76 @@ structure WellFormedEnv (typeEnv : TypeEnv) where
 open AssocMap
 
 -- Only adopt a reference in the graph if the type is a reference
-def pick_ref (τ : MoveType) (r : Aref) := match τ with
-  | MoveType.ref _ => some r
-  | MoveType.basic _ => none
+def with_new_ref (τ : MoveType) (r : Aref) := match τ with
+  | MoveType.ref τ' _ => MoveType.ref τ' r
+  | MoveType.basic _ => τ
 
--- relation L; E; G ⊢ u ⤳ L'; E'; G'; Site; τ for the type Usage
+-- relation ⟨L; E; G⟩ ⊢ u ⤳ ⟨L'; E'; G'; Aloc; τ⟩ for the type Usage
+
+/-
+[Notes on typecheck_usage]
+
+* Most of the constructors require fresh reference and fresh abstract location
+  and  fresh reference. To simplify things those are provided externally and
+  checked for being fresh within the respective rule.
+
+  TODO: Check the freshness of references
+
+* The association between a variable/aloc and the respective abstract reference
+  is now packaged into the type to avoid clutter. This might bite us in the butt
+  later. In any event, one needs to be careful when comparing MoveType instances
+  for equality, as they might be the same "type-wise", but differ in the
+  abstract references they carry. There is no such problem for basic types,
+  which can be compared for equality freely.
+
+* The logic for updating the graph are still missing, and need to be clarified
+  with Todd before incorporated into the type checking rules.
+
+ -/
+
 inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType → Prop where
 
   | t_umove : ∀ env env' x τ ms a,
      -- Can only move from non-borrowed variables
-     AssocMap.lookup env.varEnv x = some (.validVar, τ, refopt, ms) →
+     AssocMap.lookup env.varEnv x = some (.validVar, τ, ms) →
      notIn env.alocEnv a →
-     env' = { env with varEnv  := update varEnv x (.invalidVar, τ, refopt, ms)
-                       alocEnv := insert env.alocEnv a (τ, refopt, .siteNotBorrowed) } →
+     env' = { env with varEnv  := update varEnv x (.invalidVar, τ, ms)
+                       alocEnv := insert env.alocEnv a (τ, .siteNotBorrowed) } →
      -- TODO: handle G
      typecheck_usage env (.move x) env' a τ
 
   -- Copying a variable value, r is an abstract reference, optional
   -- TODO: Handle r for the case when τ is a reference type
-  | t_ucopy : ∀ env env' x τ ms s (r: Aref),
+  | t_ucopy : ∀ env env' x τ ms a (r: Aref),
      AssocMap.lookup env.varEnv x = some (.validVar, τ, ms) →
      -- newSite is fresh
-     notIn env.alocEnv s →
+     notIn env.alocEnv a →
      -- VarEnv is not affected by this
-     env' = { env with alocEnv := insert env.alocEnv s (τ, pick_ref τ r, .siteNotBorrowed)} →
+     env' = { env with alocEnv := insert env.alocEnv a (with_new_ref τ r, .siteNotBorrowed)} →
      -- TODO: handle G
-     typecheck_usage env (.copy x) env' s τ
+     typecheck_usage env (.copy x) env' a τ
 
   -- Borrowing the reference to a variable's content, makes a new reference r
-  | t_uborrowImm : ∀ env x τ ms s (r : Aref),
+  | t_uborrowImm : ∀ env x τ ms a (r : Aref),
      AssocMap.lookup env.varEnv x = some (.validVar, τ, ms) →
      -- newSite is fresh
-     AssocMap.notIn env.alocEnv s →
+     AssocMap.notIn env.alocEnv a →
      -- The variable site s is now reachable from newSite via epsilon-transition
      -- TODO: handle G
-     env' = { env with alocEnv := insert env.alocEnv s (.ref τ, some r, .siteBorrowImm x) } →
-     typecheck_usage env (.borrowImm x) env' s (.ref τ)
+     env' = { env with alocEnv := insert env.alocEnv a (.ref τ r, .siteBorrowImm x) } →
+     typecheck_usage env (.borrowImm x) env' a (.ref τ r)
 
   /- Mutably borrowing the reference to a variable's payload -/
-  | t_uborrowMut : ∀ env x s τ ms r,
-     AssocMap.lookup env.varEnv x = some (.validVar, τ, refopt, ms) →
+  | t_uborrowMut : ∀ env x τ ms a r,
+     AssocMap.lookup env.varEnv x = some (.validVar, τ, ms) →
      LE.le .mutable ms  →     -- Can only mutably borrow if the variable is mutable
      -- newSite is fresh
-     AssocMap.notIn env.alocEnv s →
+     AssocMap.notIn env.alocEnv a →
      -- Change the status of the variable and add new reachability
      -- The variable site s is now reachable from newSite via epsilon-transition
      -- TODO: handle G
-     env' = { env with alocEnv := AssocMap.insert env.alocEnv s (.ref τ, some r, .siteBorrowMut x) } →
-     typecheck_usage env (.borrowMut x) env' s τ
-
--- #check typecheck_usage.t_uborrowMut
-
-/-
-Questions (29 May and 5 Jun, 2025):
-* [Q] Should we update the G as a result of the last two clauses (borrowImm and borrowMut)?
-* [Q] What is the difference between two sites beling aliases and one being reachable from the other via dereference?
-* [Q] Type checking expressions: when handling exceptions, what exactly is updated in the path map if we delete the old site?
-      Should we keep the provenance from the variable sites and update it?
- -/
-
+     env' = { env with alocEnv := AssocMap.insert env.alocEnv a (.ref τ r, .siteBorrowMut x) } →
+     typecheck_usage env (.borrowMut x) env' a τ
 
 /- ---------------------------------------------------- -/
 /- Typing relations for expressions -/
@@ -205,21 +210,20 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Aloc → MoveType �
   ----------------------------------------------------
   -- Done above this line
   ----------------------------------------------------
-  | borrowField : ∀ env env' a f af τ τ' isBor fentries r rf,
+  | borrowField : ∀ env env' a f af bt bt' isBor fentries r rf,
      -- Site type is τ basic type
-     AssocMap.lookup env.alocEnv a = some (.ref (.basic τ), some r, isBor) →
+     AssocMap.lookup env.alocEnv a = some (.ref (.basic bt) r, isBor) →
      -- This is a record type, here are its entries
-     τ = .trecord fentries →
+     bt = .trecord fentries →
      -- Get the field type via the name f
-     lookup fentries f = some τ' →
-     -- Can  salways be borrowed?
+     lookup fentries f = some bt' →
 
      -- TODO: add path tracking: what exactly is updated if we delete the old site?
 
 
      -- Update site environment with the new reference
-     env' = {env with alocEnv := insert (delete env.alocEnv a) af (.ref (.basic τ'), some rf, isBor)} →
-     typecheck_expr env (Expr.borrowField a τ f) env' af (.ref (.basic τ'))
+     env' = {env with alocEnv := insert (delete env.alocEnv a) af (.ref (.basic bt') rf, isBor)} →
+     typecheck_expr env (Expr.borrowField a bt f) env' af (.ref (.basic bt') rf)
 
   ----------------------------------------------------
   -- Not touched recently below this line
@@ -264,7 +268,7 @@ theorem typecheck_usage_unique_sites : ∀ env env' u s τ,
   uniqueKeys env'.alocEnv := by
   move=> env env' u s τ; scase
   { -- case t_umove
-    move=>env x ms r H1 H2 -> H3 //==
+    move=>env x ms r H1 -> H3 //==
     sby apply notIn_uniqueKeys_insert
   }
   { -- case t_ucopy
@@ -276,7 +280,7 @@ theorem typecheck_usage_unique_sites : ∀ env env' u s τ,
     sby apply notIn_uniqueKeys_insert
   }
   { --case t_uborrowMut
-    move=>s x τ r  H1 H2 H3 -> H4 /=
+    move=>s x τ r  H1 H2 -> H4 /=
     sby apply notIn_uniqueKeys_insert
   }
 
