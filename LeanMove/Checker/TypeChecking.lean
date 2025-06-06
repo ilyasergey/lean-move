@@ -18,9 +18,9 @@ import Batteries.Data.HashMap
 import Ssreflect.Lang
 import Aesop
 
-import LeanMove.Lang
 import LeanMove.Structures.PathMap
 import LeanMove.Structures.AssocMap
+import LeanMove.Lang
 
 namespace LeanMove.Checker
 
