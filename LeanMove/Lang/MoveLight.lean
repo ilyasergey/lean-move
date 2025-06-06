@@ -30,10 +30,9 @@ open AssocMap
 
 abbrev Id := String
 
--- Kinds of abstract locations: for variables, parameters, and temporaries
-inductive Site where
-  | svar : Id → Site  -- Variable site
-  | stmp : Nat → Site -- Temp site
+-- Abstract locations: model linear stack slots in A-Normal form
+inductive Aloc where
+  | aloc : Nat → Aloc -- Temp site
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 namespace MoveLight
@@ -111,7 +110,6 @@ structure Var where
   id: Id
 deriving Repr, DecidableEq, Inhabited, Hashable
 
-
 -- Variable Usage
 inductive Usage where
   | copy : Var → Usage
@@ -121,32 +119,32 @@ inductive Usage where
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 -- Abstract locations (single-assign variables)
-abbrev ALoc := Site
+abbrev ALoc := Aloc
 
 -- Expressions
 inductive Expr where
   | usage : Usage → Expr
-  | borrowField : Site → BasicMoveType → Field → Expr  -- &a.T::f
-  | borrowMutField : Site → Id → Field → Expr  -- &mut a.T::f
-  | binop : Site → Site → Expr  -- a + b
-  | readRef : Site → Expr  -- *a
-  | pack : Id → List (Field × Site) → Expr  -- T { f: a1, ..., f: an }
+  | borrowField : Aloc → BasicMoveType → Field → Expr  -- &a.T::f
+  | borrowMutField : Aloc → Id → Field → Expr  -- &mut a.T::f
+  | binop : Aloc → Aloc → Expr  -- a + b
+  | readRef : Aloc → Expr  -- *a
+  | pack : Id → List (Field × Aloc) → Expr  -- T { f: a1, ..., f: an }
 deriving Repr, Inhabited, Hashable
 
--- Statements
+-- Statements in a-normal form
 inductive Stmt where
   | skip : Stmt
-  | letBind : Site → Expr → Stmt  -- let a = e
-  | unpack : Id → List (Field × Site) → Site → Stmt  -- T { fi: ai, ...} = b
-  | call : List Site → Id → List Site → Stmt  -- let (a1, ..., an) = f(b1, ..., bm)
-  | assign : Var → Site → Stmt  -- x = a
-  | writeRef : Site → Site → Stmt  -- *a = b
-  | abort : Site → Stmt  -- abort a
-  | release : Site → Stmt  -- release(a)
+  | letBind : Aloc → Expr → Stmt  -- let a = e
+  | unpack : Id → List (Field × Aloc) → Aloc → Stmt  -- T { fi: ai, ...} = b
+  | call : List Aloc → Id → List Aloc → Stmt  -- let (a1, ..., an) = f(b1, ..., bm)
+  | assign : Var → Aloc → Stmt  -- x = a
+  | writeRef : Aloc → Aloc → Stmt  -- *a = b
+  | abort : Aloc → Stmt  -- abort a
+  | release : Aloc → Stmt  -- release(a)
   | block : List Stmt → Stmt  -- { s;+ }
-  | ifThenElse : Site → Stmt → Stmt → Stmt  -- if (a) s else s
+  | ifThenElse : Aloc → Stmt → Stmt → Stmt  -- if (a) s else s
   | while : Var → Stmt → Stmt  -- while (x) s
-  | return : List Site → Stmt  -- return (a1, ..., an)
+  | return : List Aloc → Stmt  -- return (a1, ..., an)
 deriving Repr, Inhabited
 
 -- Local variable declaration
