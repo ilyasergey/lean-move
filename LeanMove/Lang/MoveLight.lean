@@ -19,7 +19,6 @@ import Ssreflect.Lang
 
 import LeanMove.Structures.AssocMap
 
-
 /- -----------------------------------------------------/
 /- -       Definition of the Move Light language      --/
 /- -----------------------------------------------------/
