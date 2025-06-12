@@ -18,6 +18,6 @@
 -- Import modules here that should be built as part of the library.
 
 import LeanMove.Structures.AssocMap
-import LeanMove.Structures.PathMap
+import LeanMove.Structures.Regex
 import LeanMove.Lang
 import LeanMove.Checker

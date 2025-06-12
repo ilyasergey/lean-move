@@ -98,11 +98,18 @@ def decEqBasicMoveType (x y : BasicMoveType) : Decidable (x = y) :=
 instance : DecidableEq BasicMoveType := fun x y => decEqBasicMoveType x y
 -/
 
--- Abstract references
-structure Aref where
-  refid : Nat
+
+-- Variables are just identifiers
+structure Var where
+  id: Id
 deriving Repr, DecidableEq, Inhabited, Hashable
 
+-- Abstract references
+inductive Aref where
+  | root : Aref
+  | refid : Nat -> Aref
+  | varRef : Var → Aref
+deriving Repr, DecidableEq, Inhabited, Hashable
 
 -- Types
 inductive MoveType where
@@ -110,10 +117,6 @@ inductive MoveType where
   | ref : MoveType → Aref → MoveType
 deriving Repr, Inhabited, Hashable
 
--- Variables are just identifiers
-structure Var where
-  id: Id
-deriving Repr, DecidableEq, Inhabited, Hashable
 
 -- Variable Usage
 inductive Usage where

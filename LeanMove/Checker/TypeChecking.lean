@@ -18,8 +18,9 @@ import Batteries.Data.HashMap
 import Ssreflect.Lang
 import Aesop
 
-import LeanMove.Structures.PathMap
 import LeanMove.Structures.AssocMap
+import LeanMove.Structures.Regex
+
 import LeanMove.Lang
 
 namespace LeanMove.Checker
@@ -86,25 +87,47 @@ abbrev AlocEnv := AssocMap Aloc (MoveType × SiteIsBorrowing)
 -- Environment mapping variables to their site, types, mutability, abstract references, and borrow status
 abbrev VarEnv := AssocMap Var (IsValid × MoveType × Mut)
 
+-- Either a root or a field access
+inductive PathElement where
+  | field : Field → PathElement
+deriving Repr, DecidableEq, Inhabited, Hashable
 
 -- Environment mapping pairs of sites to sets regular expressions
-abbrev PathSet := Regex Field → Prop
-structure GraphEnv where
+structure PathEnv where
   refs : List Aref
-  paths: (Aref × Aref) → PathSet
+  -- Initially empty for each pair
+  paths: (Aref × Aref) → Regex PathElement
 
--- Update an instance of PathEnv with a new pair of sites and a regex
--- def update_path_env (env : GraphEnv) (s1 s2 : Aref) (re : Regex Field) : GraphEnv :=
---   fun (s1', s2') re' => if s1' = s1 && s2' = s2
---       -- TODO: revise this to use transitive closure of the regex
---       then re' = re ∨ env (s1, s2) re'
---       else env (s1', s2') re'
+-- z = &x.p
+def update_with_extension (pe: PathEnv) (z x : Aref) (p: PathElement) : PathEnv :=
+  let G := pe.paths
+  let paths' := fun (u, v) =>
+    if u = z ∧ v = z then Regex.ε  else
+    if v = z then G (u, x) ∘ p else
+    if u = z then der (G (x, v)) p
+    else G (u, v)
+  let refs' := if z ∉ pe.refs then z :: pe.refs else pe.refs
+  { pe with paths := paths', refs := refs' }
+
+-- z = &x
+def update_with_epsilon (pe: PathEnv) (z x : Aref) : PathEnv :=
+  let G := pe.paths
+  let paths' := fun (u, v) =>
+    if u = z ∧ v = z then Regex.ε  else
+    if v = z then G (u, x) else
+    if u = z then G (x, v)
+    else G (u, v)
+  let refs' := if z ∉ pe.refs then z :: pe.refs else pe.refs
+  { pe with paths := paths', refs := refs' }
+
+
+def freshRef (r: Aref) (pe: PathEnv) := r ∉ pe.refs
 
 -- New structure packaging all environments
 structure TypeEnv where
   alocEnv : AlocEnv
   varEnv  : VarEnv
-  graphEnv : GraphEnv
+  pathEnv : PathEnv
 
 /- ---------------------------------------------------- -/
 /-       Well-formedness of the environments            -/
@@ -153,48 +176,71 @@ def with_new_ref (τ : MoveType) (r : Aref) := match τ with
  -/
 
 inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType → Prop where
-
   | t_umove : ∀ env env' x τ ms a,
      -- Can only move from non-borrowed variables
      AssocMap.lookup env.varEnv x = some (.validVar, τ, ms) →
      notIn env.alocEnv a →
-     env' = { env with varEnv  := update varEnv x (.invalidVar, τ, ms)
+     -- No need to handle PathEnv here
+     env' = { env with varEnv  := update env.varEnv x (.invalidVar, τ, ms)
                        alocEnv := insert env.alocEnv a (τ, .siteNotBorrowed) } →
-     -- TODO: handle G
      typecheck_usage env (.move x) env' a τ
 
-  -- Copying a variable value, r is an abstract reference, optional
-  -- TODO: Handle r for the case when τ is a reference type
-  | t_ucopy : ∀ env env' x τ ms a (r: Aref),
-     AssocMap.lookup env.varEnv x = some (.validVar, τ, ms) →
-     -- newSite is fresh
+  -- Copying a variable value, not a reference
+  | t_ucopy_val : ∀ env env' x bt ms a,
+     AssocMap.lookup env.varEnv x = some (.validVar, MoveType.basic bt, ms) →
      notIn env.alocEnv a →
-     -- VarEnv is not affected by this
-     env' = { env with alocEnv := insert env.alocEnv a (with_new_ref τ r, .siteNotBorrowed)} →
-     -- TODO: handle G
-     typecheck_usage env (.copy x) env' a τ
+     env' = { env with alocEnv := insert env.alocEnv a (.basic bt, .siteNotBorrowed)} →
+     typecheck_usage env (.copy x) env' a (.basic bt)
+
+  -- Copying a reference value
+  | t_ucopy_ref : ∀ env env' x τ ms a (s t: Aref),
+     AssocMap.lookup env.varEnv x = some (.validVar, .ref τ s, ms) →
+     notIn env.alocEnv a →
+     freshRef t env.pathEnv →
+     env' = { env with alocEnv := insert env.alocEnv a (MoveType.ref τ t, .siteNotBorrowed)
+                       pathEnv := update_with_epsilon env.pathEnv s t } →
+     -- TODO: update G with s and r
+     typecheck_usage env (.copy x) env' a (.ref τ t)
 
   -- Borrowing the reference to a variable's content, makes a new reference r
-  | t_uborrowImm : ∀ env x τ ms a (r : Aref),
-     AssocMap.lookup env.varEnv x = some (.validVar, τ, ms) →
-     -- newSite is fresh
+  | t_uborrowImm_val : ∀ env env' x τ ms a (r: Aref),
+     AssocMap.lookup env.varEnv x = some (.validVar, .basic τ, ms) →
      AssocMap.notIn env.alocEnv a →
-     -- The variable site s is now reachable from newSite via epsilon-transition
-     -- TODO: handle G
-     env' = { env with alocEnv := insert env.alocEnv a (.ref τ r, .siteBorrowImm x) } →
-     typecheck_usage env (.borrowImm x) env' a (.ref τ r)
+     -- r is a fresh reference to the value, only trivial paths
+     env' = { env with alocEnv := insert env.alocEnv a (.ref (.basic τ) r, .siteBorrowImm x)
+     -- [Q] Checking: only allocating an epsilon transition from r to r
+                       pathEnv := update_with_epsilon env.pathEnv r r } →
+     typecheck_usage env (.borrowImm x) env' a (.ref (.basic τ) r)
 
-  /- Mutably borrowing the reference to a variable's payload -/
-  | t_uborrowMut : ∀ env x τ ms a r,
-     AssocMap.lookup env.varEnv x = some (.validVar, τ, ms) →
-     LE.le .mutable ms  →     -- Can only mutably borrow if the variable is mutable
-     -- newSite is fresh
+  -- Borrowing the reference to a variable reference
+  | t_uborrowImm_ref : ∀ env env' x τ ms a (s t: Aref),
+     AssocMap.lookup env.varEnv x = some (.validVar, .ref τ s, ms) →
      AssocMap.notIn env.alocEnv a →
-     -- Change the status of the variable and add new reachability
-     -- The variable site s is now reachable from newSite via epsilon-transition
-     -- TODO: handle G
-     env' = { env with alocEnv := AssocMap.insert env.alocEnv a (.ref τ r, .siteBorrowMut x) } →
-     typecheck_usage env (.borrowMut x) env' a τ
+     -- [Q] Is this really correct? The languages of s and r are the same?
+     env' = { env with alocEnv := insert env.alocEnv a (.ref (.ref τ s) t, .siteBorrowImm x)
+                       pathEnv := update_with_epsilon env.pathEnv s t } →
+     typecheck_usage env (.borrowImm x) env' a (.ref (.ref τ s) t)
+
+  -- Mutable borrow to a value
+  | t_uborrowMut_val : ∀ env env' x τ ms a (r: Aref),
+     LE.le .mutable ms  →
+     AssocMap.lookup env.varEnv x = some (.validVar, .basic τ, ms) →
+     AssocMap.notIn env.alocEnv a →
+     -- TODO: update G for the new reference r
+     env' = { env with alocEnv := insert env.alocEnv a (.ref (.basic τ) r, .siteBorrowMut x)
+                       pathEnv := update_with_epsilon env.pathEnv r r } →
+     typecheck_usage env (.borrowMut x) env' a (.ref (.basic τ) r)
+
+  -- Borrowing the reference to a variable reference
+  | t_uborrowMut_ref : ∀ env env' x τ ms a (s t: Aref),
+     LE.le .mutable ms  →
+     AssocMap.lookup env.varEnv x = some (.validVar, .ref τ s, ms) →
+     AssocMap.notIn env.alocEnv a →
+     -- TODO: update G with s and r
+     env' = { env with alocEnv := insert env.alocEnv a (.ref (.ref τ s) t, .siteBorrowMut x)
+                       pathEnv := update_with_epsilon env.pathEnv s t } →
+     typecheck_usage env (.borrowMut x) env' a (.ref (.ref τ s) t)
+
 
 /- ---------------------------------------------------- -/
 /- Typing relations for expressions -/
@@ -262,13 +308,14 @@ A well-typed statement in an empty site and path environments,
 
 /- typecheck_usage preserves  the uniqueness of
    sites in the site environment -/
-theorem typecheck_usage_unique_sites : ∀ env env' u s τ,
+
+/- theorem typecheck_usage_unique_sites : ∀ env env' u s τ,
   typecheck_usage env u env' s τ →
   uniqueKeys env.alocEnv →
   uniqueKeys env'.alocEnv := by
   move=> env env' u s τ; scase
   { -- case t_umove
-    move=>env x ms r H1 -> H3 //==
+    move=>env x r H1 -> H3 //==
     sby apply notIn_uniqueKeys_insert
   }
   { -- case t_ucopy
@@ -283,7 +330,7 @@ theorem typecheck_usage_unique_sites : ∀ env env' u s τ,
     move=>s x τ r  H1 H2 -> H4 /=
     sby apply notIn_uniqueKeys_insert
   }
-
+ -/
 
 
 end LeanMove.Checker
