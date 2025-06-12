@@ -206,6 +206,7 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType �
   | t_uborrowImm_val : ∀ env env' x τ ms a (r: Aref),
      AssocMap.lookup env.varEnv x = some (.validVar, .basic τ, ms) →
      AssocMap.notIn env.alocEnv a →
+     freshRef r env.pathEnv →
      -- r is a fresh reference to the value, only trivial paths
      env' = { env with alocEnv := insert env.alocEnv a (.ref (.basic τ) r, .siteBorrowImm x)
      -- [Q] Checking: only allocating an epsilon transition from r to r
@@ -216,6 +217,7 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType �
   | t_uborrowImm_ref : ∀ env env' x τ ms a (s t: Aref),
      AssocMap.lookup env.varEnv x = some (.validVar, .ref τ s, ms) →
      AssocMap.notIn env.alocEnv a →
+     freshRef t env.pathEnv →
      -- [Q] Is this really correct? The languages of s and r are the same?
      env' = { env with alocEnv := insert env.alocEnv a (.ref (.ref τ s) t, .siteBorrowImm x)
                        pathEnv := update_with_epsilon env.pathEnv s t } →
@@ -226,6 +228,7 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType �
      LE.le .mutable ms  →
      AssocMap.lookup env.varEnv x = some (.validVar, .basic τ, ms) →
      AssocMap.notIn env.alocEnv a →
+     freshRef r env.pathEnv →
      -- TODO: update G for the new reference r
      env' = { env with alocEnv := insert env.alocEnv a (.ref (.basic τ) r, .siteBorrowMut x)
                        pathEnv := update_with_epsilon env.pathEnv r r } →
@@ -236,6 +239,7 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType �
      LE.le .mutable ms  →
      AssocMap.lookup env.varEnv x = some (.validVar, .ref τ s, ms) →
      AssocMap.notIn env.alocEnv a →
+     freshRef t env.pathEnv →
      -- TODO: update G with s and r
      env' = { env with alocEnv := insert env.alocEnv a (.ref (.ref τ s) t, .siteBorrowMut x)
                        pathEnv := update_with_epsilon env.pathEnv s t } →
@@ -248,36 +252,48 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType �
 
 -- ⟨L; E; G⟩ ⊢ (e : expr) ⤳ ⟨L'; E'; G'⟩
 inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Aloc → MoveType → Prop where
-  -- Expression is a usage
+
+  -- u (see above)
   | usage : ∀ env env' u s τ,
      typecheck_usage env u env' s τ ->
-     typecheck_expr env (Expr.usage u) env s τ
+     typecheck_expr env (Expr.usage u) env' s τ
 
-  ----------------------------------------------------
-  -- Done above this line
-  ----------------------------------------------------
-  | borrowField : ∀ env env' a f af bt bt' isBor fentries r rf,
+  -- &a.T::f
+  -- [Q] Does a have to have a reference type? Can it be a value?
+  | borrowField : ∀ env env' a f af bt bt' isBor fentries s rf,
      -- Site type is τ basic type
-     AssocMap.lookup env.alocEnv a = some (.ref (.basic bt) r, isBor) →
+     AssocMap.lookup env.alocEnv a = some (.ref (.basic bt) s, isBor) →
      -- This is a record type, here are its entries
      bt = .trecord fentries →
      -- Get the field type via the name f
      lookup fentries f = some bt' →
-
-     -- TODO: add path tracking: what exactly is updated if we delete the old site?
-
-
+     AssocMap.notIn env.alocEnv af →
+     freshRef rf env.pathEnv →
      -- Update site environment with the new reference
-     env' = {env with alocEnv := insert (delete env.alocEnv a) af (.ref (.basic bt') rf, isBor)} →
+     env' = {env with alocEnv := insert (delete env.alocEnv a) af (.ref (.basic bt') rf, isBor)
+                      pathEnv := update_with_extension env.pathEnv s rf (.field f) } →
      typecheck_expr env (Expr.borrowField a bt f) env' af (.ref (.basic bt') rf)
 
-  ----------------------------------------------------
-  -- Not touched recently below this line
-  ----------------------------------------------------
-  | borrowMutField : ∀ env s a f s',
-     typecheck_expr env (Expr.borrowMutField s a f) env s' TInt
-  | binop : ∀ env s1 s2 s',
-     typecheck_expr env (Expr.binop s1 s2) env s' TInt
+  -- &mut a.T::f
+  | borrowMutField : ∀ env env' a f x af bt btf fentries s rf,
+     -- Site type is τ basic type
+     AssocMap.lookup env.alocEnv a = some (.ref (.basic bt) s, .siteBorrowMut x) →
+     -- This is a record type, here are its entries
+     bt = .trecord fentries →
+     -- Get the field type via the name f
+     lookup fentries f = some btf →
+     AssocMap.notIn env.alocEnv af →
+     freshRef rf env.pathEnv →
+     -- Update site environment with the new reference
+     env' = {env with alocEnv := insert (delete env.alocEnv a) af (.ref (.basic btf) rf, .siteBorrowMut x)
+                      pathEnv := update_with_extension env.pathEnv s rf (.field f) } →
+     typecheck_expr env (Expr.borrowField a bt f) env' af (.ref (.basic btf) rf)
+
+  /- Done above this line -/
+
+  | binop : ∀ env env' op s1 s2 s',
+     -- TODO: check the type of binop
+     typecheck_expr env (Expr.binop bop s1 s2) env' s' TInt
   | readRef : ∀ env s s',
      typecheck_expr env (Expr.readRef s) env s' TInt
   | pack : ∀ env t fs s,

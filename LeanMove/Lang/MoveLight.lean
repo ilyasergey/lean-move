@@ -129,12 +129,21 @@ deriving Repr, DecidableEq, Inhabited, Hashable
 -- Abstract locations (single-assign variables)
 abbrev ALoc := Aloc
 
+inductive Binop where
+  | add
+  | sub
+  | mul
+  | div
+  | mod
+  | eq
+deriving Repr, DecidableEq, Inhabited, Hashable
+
 -- Expressions
 inductive Expr where
   | usage : Usage → Expr
   | borrowField : Aloc → BasicMoveType → Field → Expr  -- &a.T::f
   | borrowMutField : Aloc → Id → Field → Expr  -- &mut a.T::f
-  | binop : Aloc → Aloc → Expr  -- a + b
+  | binop : Binop → Aloc → Aloc → Expr  -- a + b
   | readRef : Aloc → Expr  -- *a
   | pack : Id → List (Field × Aloc) → Expr  -- T { f: a1, ..., f: an }
 deriving Repr, Inhabited, Hashable
