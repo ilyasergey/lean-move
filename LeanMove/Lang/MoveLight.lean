@@ -136,6 +136,8 @@ inductive Binop where
   | div
   | mod
   | eq
+  | lt
+  | nand
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 -- Expressions
@@ -152,7 +154,7 @@ deriving Repr, Inhabited, Hashable
 inductive Stmt where
   | skip : Stmt
   | letBind : Aloc → Expr → Stmt  -- let a = e
-  | unpack : Id → List (Field × Aloc) → Aloc → Stmt  -- T { fi: ai, ...} = b
+  | unpack : List (Field × Aloc) → Aloc → Stmt  -- T { fi: ai, ...} = b
   | call : List Aloc → Id → List Aloc → Stmt  -- let (a1, ..., an) = f(b1, ..., bm)
   | assign : Var → Aloc → Stmt  -- x = a
   | writeRef : Aloc → Aloc → Stmt  -- *a = b

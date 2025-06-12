@@ -120,6 +120,12 @@ def update_with_epsilon (pe: PathEnv) (z x : Aref) : PathEnv :=
   let refs' := if z ∉ pe.refs then z :: pe.refs else pe.refs
   { pe with paths := paths', refs := refs' }
 
+def delete_ref_node (pe: PathEnv) (r : Aref) : PathEnv :=
+  let G := pe.paths
+  let paths' := fun (u, v) => if u = r ∨ v = r then Regex.empty else G (u, v)
+  { pe with refs  := List.filter (fun r' => r' ≠ r) pe.refs,
+            paths := paths' }
+
 
 def freshRef (r: Aref) (pe: PathEnv) := r ∉ pe.refs
 
@@ -250,15 +256,29 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType �
 /- Typing relations for expressions -/
 /- ---------------------------------------------------- -/
 
--- ⟨L; E; G⟩ ⊢ (e : expr) ⤳ ⟨L'; E'; G'⟩
+-- function to take a binop and types of its arguments and return the type of the result
+def binop_type (bop : Binop) (τ1 τ2 : MoveType) : Option MoveType :=
+  match (bop, τ1, τ2) with
+  | (.add, .basic .tint, .basic .tint) => some (.basic .tint)
+  | (.sub, .basic .tint, .basic .tint) => some (.basic .tint)
+  | (.mul, .basic .tint, .basic .tint) => some (.basic .tint)
+  | (.div, .basic .tint, .basic .tint) => some (.basic .tint)
+  | (.mod, .basic .tint, .basic .tint) => some (.basic .tint)
+  | (.lt, .basic .tint, .basic .tint) => some (.basic .tbool)
+  | (.eq, .basic .tint, .basic .tint) => some (.basic .tbool)
+  | (.eq, .basic .tbool, .basic .tbool) => some (.basic .tbool)
+  | (.nand, .basic .tbool, .basic .tbool) => some (.basic .tbool)
+  | _ => none
+
+-- ⟨L; E; G⟩ ⊢ (e : expr) ⤳ ⟨L'; E'; G'⟩; a; τ
 inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Aloc → MoveType → Prop where
 
-  -- u (see above)
-  | usage : ∀ env env' u s τ,
-     typecheck_usage env u env' s τ ->
-     typecheck_expr env (Expr.usage u) env' s τ
+  -- a <- u (see above)
+  | usage : ∀ env env' u (a : Aloc) (τ : MoveType),
+     typecheck_usage env u env' a τ ->
+     typecheck_expr env (Expr.usage u) env' a τ
 
-  -- &a.T::f
+  -- af <- &a.T::f
   -- [Q] Does a have to have a reference type? Can it be a value?
   | borrowField : ∀ env env' a f af bt bt' isBor fentries s rf,
      -- Site type is τ basic type
@@ -274,8 +294,8 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Aloc → MoveType �
                       pathEnv := update_with_extension env.pathEnv s rf (.field f) } →
      typecheck_expr env (Expr.borrowField a bt f) env' af (.ref (.basic bt') rf)
 
-  -- &mut a.T::f
-  | borrowMutField : ∀ env env' a f x af bt btf fentries s rf,
+  -- &mut af <- a.T::f
+  | borrowMutField : ∀ env env' a f x af bt btf fentries (s rf : Aref),
      -- Site type is τ basic type
      AssocMap.lookup env.alocEnv a = some (.ref (.basic bt) s, .siteBorrowMut x) →
      -- This is a record type, here are its entries
@@ -289,19 +309,43 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Aloc → MoveType �
                       pathEnv := update_with_extension env.pathEnv s rf (.field f) } →
      typecheck_expr env (Expr.borrowField a bt f) env' af (.ref (.basic btf) rf)
 
-  /- Done above this line -/
+  -- c <- a ⊕ b
+  | binop : ∀ env env' bop (bt1 bt2 bt3 : MoveType) (a b c : Aloc),
+     AssocMap.lookup env.alocEnv a = some (bt1, .siteNotBorrowed) →
+     AssocMap.lookup env.alocEnv b = some (bt2, .siteNotBorrowed) →
+     binop_type bop bt1 bt2 = some bt3 →
+     AssocMap.notIn env.alocEnv c →
+     env' = {env with alocEnv := insert (delete (delete env.alocEnv a) b) c (bt3, .siteNotBorrowed)} ->
+     typecheck_expr env (Expr.binop bop a b) env' c bt3
 
-  | binop : ∀ env env' op s1 s2 s',
-     -- TODO: check the type of binop
-     typecheck_expr env (Expr.binop bop s1 s2) env' s' TInt
-  | readRef : ∀ env s s',
-     typecheck_expr env (Expr.readRef s) env s' TInt
-  | pack : ∀ env t fs s,
-     typecheck_expr env (Expr.pack t fs) env s TInt
+  -- b <- *a
+  | readRef : ∀ env env' (a c : Aloc) r τ isBor,
+     AssocMap.lookup env.alocEnv a = some (.ref τ r, isBor) →
+     AssocMap.notIn env.alocEnv c →
+     env' = {env with alocEnv := insert (delete env.alocEnv a) c (τ, isBor)
+                      pathEnv := delete_ref_node env.pathEnv r } →
+     typecheck_expr env (Expr.readRef a) env' c τ
+
+  -- b <-- T { f: a1, ...,  f: an }
+  | pack : ∀ env fs as ts bs b τ,
+     -- retrieve types for all as from env.alocEnv
+     -- [TODO]: Okay, this is straight forward, but requires a few auxiliary functions
+     -- Will do so later
+     -- Remove all as from env.alocEnv
+     typecheck_expr env (Expr.pack fs as) env' b τ
 
 inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
   -- Add your constructors here, for example:
-  | skip : ∀ env, typecheck_stmt env Stmt.skip env
+  | skip : ∀ env, typecheck_stmt env .skip env
+  | let_assign : ∀ env env' a e τ,
+     typecheck_expr env e env' a τ →
+     typecheck_stmt env (.letBind a e) env'
+
+  /- Done above this line -/
+  | let_unpack : ∀ env env' fs_as ts bs b τ,
+     typecheck_expr env (Expr.pack fs as) env' b τ →
+     typecheck_stmt env (Stmt.unpack fs_as b) env'
+
   -- | assign : ∀ env x e, typecheck_expr env e τ → typecheck_stmt env (MoveLight.Stmt.assign x e) env
   -- ... other constructors ...
 
