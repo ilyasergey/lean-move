@@ -19,8 +19,8 @@ import Ssreflect.Lang
 namespace Regex
 
 inductive Regex (α : Type) where
-  | ε : Regex α
   | empty : Regex α
+  | ε : Regex α
   | char : α → Regex α
   | union : Regex α → Regex α → Regex α
   | concat : Regex α → Regex α → Regex α
