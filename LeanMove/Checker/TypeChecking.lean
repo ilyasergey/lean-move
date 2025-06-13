@@ -99,6 +99,7 @@ structure PathEnv where
   paths: (Aref × Aref) → Regex PathElement
 
 -- z = &x.p
+-- TODO: refactor for uniformity to take a Regex instead of p
 def update_with_extension (pe: PathEnv) (z x : Aref) (p: PathElement) : PathEnv :=
   let G := pe.paths
   let paths' := fun (u, v) =>
@@ -184,6 +185,7 @@ def with_new_ref (τ : MoveType) (r : Aref) := match τ with
 inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType → Prop where
   | t_umove : ∀ env env' x τ ms a,
      -- Can only move from non-borrowed variables
+     -- Make sure it's not borrowed
      AssocMap.lookup env.varEnv x = some (.validVar, τ, ms) →
      notIn env.alocEnv a →
      -- No need to handle PathEnv here
@@ -203,9 +205,9 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType �
      AssocMap.lookup env.varEnv x = some (.validVar, .ref τ s, ms) →
      notIn env.alocEnv a →
      freshRef t env.pathEnv →
+     -- TODO: Might fold not borrowed status to the type etc
      env' = { env with alocEnv := insert env.alocEnv a (MoveType.ref τ t, .siteNotBorrowed)
                        pathEnv := update_with_epsilon env.pathEnv s t } →
-     -- TODO: update G with s and r
      typecheck_usage env (.copy x) env' a (.ref τ t)
 
   -- Borrowing the reference to a variable's content, makes a new reference r
@@ -216,10 +218,12 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType �
      -- r is a fresh reference to the value, only trivial paths
      env' = { env with alocEnv := insert env.alocEnv a (.ref (.basic τ) r, .siteBorrowImm x)
      -- [Q] Checking: only allocating an epsilon transition from r to r
+     -- TODO: Add an extension from the root [L] -{x}-> r
                        pathEnv := update_with_epsilon env.pathEnv r r } →
      typecheck_usage env (.borrowImm x) env' a (.ref (.basic τ) r)
 
   -- Borrowing the reference to a variable reference
+  -- TODO: this should go
   | t_uborrowImm_ref : ∀ env env' x τ ms a (s t: Aref),
      AssocMap.lookup env.varEnv x = some (.validVar, .ref τ s, ms) →
      AssocMap.notIn env.alocEnv a →
@@ -235,12 +239,12 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType �
      AssocMap.lookup env.varEnv x = some (.validVar, .basic τ, ms) →
      AssocMap.notIn env.alocEnv a →
      freshRef r env.pathEnv →
-     -- TODO: update G for the new reference r
      env' = { env with alocEnv := insert env.alocEnv a (.ref (.basic τ) r, .siteBorrowMut x)
                        pathEnv := update_with_epsilon env.pathEnv r r } →
      typecheck_usage env (.borrowMut x) env' a (.ref (.basic τ) r)
 
   -- Borrowing the reference to a variable reference
+  -- TODO: this should go
   | t_uborrowMut_ref : ∀ env env' x τ ms a (s t: Aref),
      LE.le .mutable ms  →
      AssocMap.lookup env.varEnv x = some (.validVar, .ref τ s, ms) →
@@ -280,7 +284,7 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Aloc → MoveType �
 
   -- af <- &a.T::f
   -- [Q] Does a have to have a reference type? Can it be a value?
-  | borrowField : ∀ env env' a f af bt bt' isBor fentries s rf,
+  | borrowField : ∀ env env' a f af bt bt' isBor fentries s (rf : Aref),
      -- Site type is τ basic type
      AssocMap.lookup env.alocEnv a = some (.ref (.basic bt) s, isBor) →
      -- This is a record type, here are its entries
@@ -318,7 +322,7 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Aloc → MoveType �
      env' = {env with alocEnv := insert (delete (delete env.alocEnv a) b) c (bt3, .siteNotBorrowed)} ->
      typecheck_expr env (Expr.binop bop a b) env' c bt3
 
-  -- b <- *a
+  -- c <- *a
   | readRef : ∀ env env' (a c : Aloc) r τ isBor,
      AssocMap.lookup env.alocEnv a = some (.ref τ r, isBor) →
      AssocMap.notIn env.alocEnv c →
@@ -327,7 +331,7 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Aloc → MoveType �
      typecheck_expr env (Expr.readRef a) env' c τ
 
   -- b <-- T { f: a1, ...,  f: an }
-  | pack : ∀ env fs as ts bs b τ,
+  | pack : ∀ env env' fs as ts bs b τ,
      -- retrieve types for all as from env.alocEnv
      -- [TODO]: Okay, this is straight forward, but requires a few auxiliary functions
      -- Will do so later

@@ -114,6 +114,7 @@ deriving Repr, DecidableEq, Inhabited, Hashable
 -- Types
 inductive MoveType where
   | basic: BasicMoveType → MoveType
+  -- TODO: can simplify: no need to nest refs
   | ref : MoveType → Aref → MoveType
 deriving Repr, Inhabited, Hashable
 
