@@ -197,6 +197,7 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType �
      notIn env.alocEnv a →
      freshRef t env.pathEnv →
      env' = { env with alocEnv := insert env.alocEnv a (.ref τ t isBor)
+                       -- [Fun fact] since s is reachable from the root, so is t now
                        pathEnv := update_with_epsilon s t env.pathEnv } →
      typecheck_usage env (.copy x) env' a (.ref τ t isBor)
 
@@ -217,7 +218,6 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType �
      AssocMap.lookup env.varEnv x = some (.validVar, .basic τ, ms) →
      AssocMap.notIn env.alocEnv a →
      freshRef r env.pathEnv →
-     -- TODO: Add an extension from the root [L] -{x}-> r
      env' = { env with alocEnv := insert env.alocEnv a (.ref τ r (.siteBorrowMut x))
                        -- The graph is updated with a var-transition from from Root to r
                        pathEnv := update_with_epsilon r r env.pathEnv |>
@@ -308,20 +308,58 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Aloc → MoveType �
      typecheck_expr env (Expr.pack fs as) env' b τ
 
 inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
-  -- Add your constructors here, for example:
   | skip : ∀ env, typecheck_stmt env .skip env
 
-  | let_assign : ∀ env env' a e τ,
+  | let_bind : ∀ env env' a e τ,
      typecheck_expr env e env' a τ →
      typecheck_stmt env (.letBind a e) env'
 
-  /- Done above this line -/
-  | let_unpack : ∀ env env' fs_as ts bs b τ,
-     typecheck_expr env (Expr.pack fs as) env' b τ →
-     typecheck_stmt env (Stmt.unpack fs_as b) env'
 
-  -- | assign : ∀ env x e, typecheck_expr env e τ → typecheck_stmt env (MoveLight.Stmt.assign x e) env
-  -- ... other constructors ...
+/-
+TODO: discuss with Todd the semantics of the assignment
+
+What happens when we assign a site S to a variable x?
+
+Do we need two rules? for values and references?
+
+* If the site S is a value (basic type), then
+  1. Check that the types conform
+  2. Remove S from alocEnv
+  3. Can we assign to an invalid variable x (from which the value is moved)?
+  4. What happens to all references borrowed from x (I guess it's forbidden to have any)
+  5. What checks need to be made in terms of the graph?
+
+* If the site S is a reference type (its type stores an abstract reference r)
+  1. Check that type of S and of x conform to each other up to basic type
+  2. Remove S from alocEnv
+  3. Purge all traces of abstract reference associated with x from the path graph
+  4. Update the type of x with the new reference
+  5. What checks need to be made in terms of the graph? Express them via interpret_regex
+
+ -/
+  -- x = a
+  | var_assign : ∀ env x a τ,
+      AssocMap.lookup env.alocEnv a = some τ →
+      AssocMap.lookup env.varEnv x = some (.validVar, τ, .mutable) →
+      typecheck_stmt env (.assign x a) env
+
+
+  /- Done above this line -/
+/-
+TODO: add constructors for these cases:
+    [v] let a = e            // Evaluate a simple expr, assign it an abstract locations
+    [ ] T { fi: ai, ...} = b // Unpack, consuming, hence no aliasing    | let (a1, ..., an) = f(b1, ..., bm) // Call
+    [ ] x = a                // Assign a value to a variable
+    [ ] *a = b               // Write into a reference
+    [ ] abort a              // Abort the transaction, aka panic!
+    [ ] release(a)           // Invalidates a reference
+    [ ] { s;+ }              // Block
+    [ ] if (a) s else s      // If/loop condition is always a variable [?]
+    [ ] while (x) s
+    [ ] return (a1, ..., an) // Return
+
+ -/
+
 
 -- Macro to mimic the notation ⟨L; E; G⟩  ⊢ s ⤳ ⟨L'; E'; G'⟩
 macro "typecheck_stmt_macro" env:term "⊢" s:term "⤳" env':term : term =>

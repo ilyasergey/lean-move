@@ -39,9 +39,22 @@ infixl:65 " ∘ " => extend
 -- Take a derivative of a regex by a list of characters
 def der (re: Regex α) (ax: List α) := List.foldl (fun re a => Regex.deriv re a) re ax
 
--- Notation using
+-- Interpretation
 
-
-
+def interpret_regex {α} (re: Regex α) : List α → Prop :=
+  match re with
+  | .empty => fun _ ↦ False
+  | .ε => fun ax ↦ ax = []
+  | .char a => fun ax ↦ ax = [a]
+  | .union re1 re2 => fun ax ↦ interpret_regex re1 ax ∨ interpret_regex re2 ax
+  | .concat re1 re2 => fun ax ↦
+      ∃ ax1 ax2, ax = ax1 ++ ax2        ∧
+                interpret_regex re1 ax1 ∧
+                interpret_regex re2 ax2
+  | .star re => fun ax ↦
+      ∃ n, ∃ inner, interpret_regex re inner ∧
+                    ax = (List.replicate n inner |> List.flatten)
+  -- TODO: Define the language of derivatives
+  | _ => fun _ ↦ False
 
 end Regex

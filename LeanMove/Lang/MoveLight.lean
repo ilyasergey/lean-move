@@ -57,7 +57,7 @@ deriving Repr, DecidableEq, Inhabited, Hashable
 -- Abstract references
 inductive Aref where
   | root : Aref
-  | refid : Nat -> Aref
+  | refid : Nat → Aref
   | varRef : Var → Aref
 deriving Repr, DecidableEq, Inhabited, Hashable
 
