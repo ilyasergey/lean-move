@@ -212,17 +212,6 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType �
                        pathEnv := update_with_epsilon env.pathEnv r r } →
      typecheck_usage env (.borrowImm x) env' a (.ref (.basic τ) r)
 
-  -- Borrowing the reference to a variable reference
-  -- TODO: this should go
-  | t_uborrowImm_ref : ∀ env env' x τ ms a (s t: Aref),
-     AssocMap.lookup env.varEnv x = some (.validVar, .ref τ s, ms) →
-     AssocMap.notIn env.alocEnv a →
-     freshRef t env.pathEnv →
-     -- [Q] Is this really correct? The languages of s and r are the same?
-     env' = { env with alocEnv := insert env.alocEnv a (.ref (.ref τ s) t, .siteBorrowImm x)
-                       pathEnv := update_with_epsilon env.pathEnv s t } →
-     typecheck_usage env (.borrowImm x) env' a (.ref (.ref τ s) t)
-
   -- Mutable borrow to a value
   | t_uborrowMut_val : ∀ env env' x τ ms a (r: Aref),
      LE.le .mutable ms  →
@@ -232,18 +221,6 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType �
      env' = { env with alocEnv := insert env.alocEnv a (.ref (.basic τ) r, .siteBorrowMut x)
                        pathEnv := update_with_epsilon env.pathEnv r r } →
      typecheck_usage env (.borrowMut x) env' a (.ref (.basic τ) r)
-
-  -- Borrowing the reference to a variable reference
-  -- TODO: this should go
-  | t_uborrowMut_ref : ∀ env env' x τ ms a (s t: Aref),
-     LE.le .mutable ms  →
-     AssocMap.lookup env.varEnv x = some (.validVar, .ref τ s, ms) →
-     AssocMap.notIn env.alocEnv a →
-     freshRef t env.pathEnv →
-     -- TODO: update G with s and r
-     env' = { env with alocEnv := insert env.alocEnv a (.ref (.ref τ s) t, .siteBorrowMut x)
-                       pathEnv := update_with_epsilon env.pathEnv s t } →
-     typecheck_usage env (.borrowMut x) env' a (.ref (.ref τ s) t)
 
 
 /- ---------------------------------------------------- -/
