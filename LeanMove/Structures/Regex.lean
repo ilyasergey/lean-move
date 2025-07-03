@@ -31,13 +31,13 @@ inductive Regex (α : Type) where
 
 -- TODO: define interpretation of regexes
 
--- extend a regular expression with a new character
-def extend (re: Regex α) (a: α) := Regex.concat re (Regex.char a)
+-- extend a regular expression with a new sequence of characters
+def extend (re: Regex α) (ax: List α) := List.foldl (fun re a => Regex.concat re (Regex.char a)) re ax
 -- Infix syntax for extend using ∘
 infixl:65 " ∘ " => extend
 
--- Take a derivative of a regex by a character
-def der (re: Regex α) (a: α) := (Regex.deriv re a)
+-- Take a derivative of a regex by a list of characters
+def der (re: Regex α) (ax: List α) := List.foldl (fun re a => Regex.deriv re a) re ax
 
 -- Notation using
 
