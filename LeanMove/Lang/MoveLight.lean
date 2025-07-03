@@ -47,56 +47,6 @@ inductive BasicMoveType where
   | trecord : AssocMap Field BasicMoveType → BasicMoveType
 deriving Repr, Inhabited, Hashable
 
--- Defining DecidableEq instance
-/-
-def decEqBasicMoveType (x y : BasicMoveType) : Decidable (x = y) :=
-
-  let decPair (a b: Id × BasicMoveType):  Decidable (a = b) := match a, b with
-    | (i, x), (j, y) =>  match decEq i j with
-      | isFalse h => isFalse (by sby scase)
-      | isTrue h => by
-        subst j
-        exact (match decEqBasicMoveType x y with
-        | isTrue h' => by sby apply isTrue
-        | isFalse h' => by sby apply isFalse)
-
-  let rec listDec (l₁ l₂ : List (Id × BasicMoveType)) : Decidable (l₁ = l₂) := match l₁, l₂ with
-     | .nil, .nil => isTrue rfl
-     | .cons _ _, .nil => isFalse (fun h => List.noConfusion h)
-     | .nil, .cons _ _ => isFalse (fun h => List.noConfusion h)
-     | .cons x xs, .cons y ys =>
-      match decPair x y with
-      | isTrue hab  =>
-        match listDec xs ys with
-        | isTrue habs  => isTrue (hab ▸ habs ▸ rfl)
-        | isFalse nabs => isFalse (fun h => List.noConfusion h (fun _ habs => absurd habs nabs))
-      | isFalse nab => isFalse (fun h => List.noConfusion h (fun hab _ => absurd hab nab))
-
-  match x, y with
-  | .tint, .tint => isTrue rfl
-  | .tbool, .tbool => isTrue rfl
-  | .tunit, .tunit => isTrue rfl
-  | .trecord m1, .trecord m2 => by simp only [BasicMoveType.trecord.injEq]; exact (
-      match (listDec m1.entries m2.entries) with
-      | isTrue h => isTrue (by sby move: m1 m2 h=>[e1][e2])
-      | isFalse h => isFalse (fun h' => h (by cases h'; rfl))
-   )
-   | .tint, .tbool => isFalse (fun h => BasicMoveType.noConfusion h)
-   | .tint, .tunit => isFalse (fun h => BasicMoveType.noConfusion h)
-   | .tint, .trecord _ => isFalse (fun h => BasicMoveType.noConfusion h)
-   | .tbool, .tint => isFalse (fun h => BasicMoveType.noConfusion h)
-   | .tbool, .tunit => isFalse (fun h => BasicMoveType.noConfusion h)
-   | .tbool, .trecord _ => isFalse (fun h => BasicMoveType.noConfusion h)
-   | .tunit, .tint => isFalse (fun h => BasicMoveType.noConfusion h)
-   | .tunit, .tbool => isFalse (fun h => BasicMoveType.noConfusion h)
-   | .tunit, .trecord _ => isFalse (fun h => BasicMoveType.noConfusion h)
-   | .trecord _, .tint => isFalse (fun h => BasicMoveType.noConfusion h)
-   | .trecord _, .tbool => isFalse (fun h => BasicMoveType.noConfusion h)
-   | .trecord _, .tunit => isFalse (fun h => BasicMoveType.noConfusion h)
-
-instance : DecidableEq BasicMoveType := fun x y => decEqBasicMoveType x y
--/
-
 
 -- Variables are just identifiers
 structure Var where
@@ -110,11 +60,18 @@ inductive Aref where
   | varRef : Var → Aref
 deriving Repr, DecidableEq, Inhabited, Hashable
 
+
+inductive SiteIsBorrowing where
+  | siteBorrowImm : Var -> SiteIsBorrowing
+  | siteBorrowMut : Var -> SiteIsBorrowing
+  | siteNotBorrowed : SiteIsBorrowing
+deriving Repr, DecidableEq, Inhabited, Hashable
+
 -- Types
 inductive MoveType where
   | basic: BasicMoveType → MoveType
-  -- TODO: can simplify: no need to nest refs
-  | ref : BasicMoveType → Aref → MoveType
+  -- The reference type also stores abstract location and borrowing provenance
+  | ref : BasicMoveType → Aref → SiteIsBorrowing → MoveType
 deriving Repr, Inhabited, Hashable
 
 
