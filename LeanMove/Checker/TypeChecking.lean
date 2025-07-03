@@ -96,7 +96,7 @@ structure PathEnv where
   paths: (Aref × Aref) → Regex PathElement
 
 -- z = &x.p
-def update_with_extension (pe: PathEnv) (z x : Aref) (p: Path) : PathEnv :=
+def update_with_extension (z x : Aref) (p: Path) (pe: PathEnv) : PathEnv :=
   let G := pe.paths
   let paths' := fun (u, v) =>
     if u = z ∧ v = z then Regex.ε  else
@@ -107,8 +107,8 @@ def update_with_extension (pe: PathEnv) (z x : Aref) (p: Path) : PathEnv :=
   { pe with paths := paths', refs := refs' }
 
 -- z = &x
-def update_with_epsilon (pe: PathEnv) (z x : Aref) : PathEnv :=
-  update_with_extension pe z x []
+def update_with_epsilon (z x : Aref) (pe: PathEnv)  : PathEnv :=
+  update_with_extension z x [] pe
 
 
 def delete_ref_node (pe: PathEnv) (r : Aref) : PathEnv :=
@@ -197,7 +197,7 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType �
      notIn env.alocEnv a →
      freshRef t env.pathEnv →
      env' = { env with alocEnv := insert env.alocEnv a (.ref τ t isBor)
-                       pathEnv := update_with_epsilon env.pathEnv s t } →
+                       pathEnv := update_with_epsilon s t env.pathEnv } →
      typecheck_usage env (.copy x) env' a (.ref τ t isBor)
 
   -- Borrowing the reference to a variable's content, makes a new reference r
@@ -206,8 +206,9 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType �
      AssocMap.notIn env.alocEnv a →
      freshRef r env.pathEnv →
      env' = { env with alocEnv := insert env.alocEnv a (.ref τ r (.siteBorrowImm x))
-     -- TODO: Add an extension from the root [L] -{x}-> r
-                       pathEnv := update_with_epsilon env.pathEnv r r } →
+                       -- The graph is updated with a var-transition from from Root to r
+                       pathEnv := update_with_epsilon r r env.pathEnv |>
+                                  update_with_extension .root r [.root_to_var x] } →
      typecheck_usage env (.borrowImm x) env' a (.ref τ r (.siteBorrowImm x))
 
   -- Mutable borrow to a value
@@ -218,9 +219,10 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType �
      freshRef r env.pathEnv →
      -- TODO: Add an extension from the root [L] -{x}-> r
      env' = { env with alocEnv := insert env.alocEnv a (.ref τ r (.siteBorrowMut x))
-                       pathEnv := update_with_epsilon env.pathEnv r r } →
+                       -- The graph is updated with a var-transition from from Root to r
+                       pathEnv := update_with_epsilon r r env.pathEnv |>
+                                  update_with_extension .root r [.root_to_var x]  } →
      typecheck_usage env (.borrowMut x) env' a (.ref τ r (.siteBorrowMut x))
-
 
 /- ---------------------------------------------------- -/
 /- Typing relations for expressions -/
@@ -261,7 +263,7 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Aloc → MoveType �
      freshRef rf env.pathEnv →
      -- Update site environment with the new reference
      env' = {env with alocEnv := insert (delete env.alocEnv a) af (.ref bt' rf isBor)
-                      pathEnv := update_with_extension env.pathEnv s rf ([.field f]) } →
+                      pathEnv := update_with_extension s rf [.field f] env.pathEnv  } →
      typecheck_expr env (Expr.borrowField a bt f) env' af (.ref bt' rf isBor)
 
   -- &mut af <- a.T::f
@@ -276,7 +278,7 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Aloc → MoveType �
      freshRef rf env.pathEnv →
      -- Update site environment with the new reference
      env' = {env with alocEnv := insert (delete env.alocEnv a) af (.ref btf rf (.siteBorrowMut x))
-                      pathEnv := update_with_extension env.pathEnv s rf ([.field f]) } →
+                      pathEnv := update_with_extension s rf [.field f] env.pathEnv } →
      typecheck_expr env (Expr.borrowField a bt f) env' af (.ref btf rf (.siteBorrowMut x))
 
   -- c <- a ⊕ b

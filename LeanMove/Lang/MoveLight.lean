@@ -31,6 +31,7 @@ abbrev Id := String
 -- Abstract locations: model linear stack slots in A-Normal form
 inductive Aloc where
   | aloc : Nat → Aloc -- Temp site
+  | root : Aloc -- Root site
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 namespace MoveLight
