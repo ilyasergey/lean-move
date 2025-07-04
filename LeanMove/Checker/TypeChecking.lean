@@ -243,6 +243,14 @@ def binop_type (bop : Binop) (τ1 τ2 : BasicMoveType) : Option BasicMoveType :=
   | _ => none
 
 -- ⟨L; E; G⟩ ⊢ (e : expr) ⤳ ⟨L'; E'; G'⟩; a; τ
+
+/-
+-- TODO add freezing
+     [ ] freeze(a)
+        -- a should be of type reference
+        -- creates an immutable reference r and an immutable ε-extension from this refernce
+ -/
+
 inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Aloc → MoveType → Prop where
 
   -- a <- u (see above)
@@ -326,8 +334,10 @@ Do we need two rules? for values and references?
   1. Check that the types conform
   2. Remove S from alocEnv
   3. Can we assign to an invalid variable x (from which the value is moved)?
+     -- Yes, we can.
   4. What happens to all references borrowed from x (I guess it's forbidden to have any)
   5. What checks need to be made in terms of the graph?
+
 
 * If the site S is a reference type (its type stores an abstract reference r)
   1. Check that type of S and of x conform to each other up to basic type
@@ -337,26 +347,70 @@ Do we need two rules? for values and references?
   5. What checks need to be made in terms of the graph? Express them via interpret_regex
 
  -/
-  -- x = a
-  | var_assign : ∀ env x a τ,
-      AssocMap.lookup env.alocEnv a = some τ →
-      AssocMap.lookup env.varEnv x = some (.validVar, τ, .mutable) →
-      typecheck_stmt env (.assign x a) env
+  -- x = S
+  | var_assign : ∀ env x S τ,
+      AssocMap.lookup env.alocEnv S = some τ →
+      AssocMap.lookup env.varEnv x = some (_, τ, .mutable) →
+
+      typecheck_stmt env (.assign x S) env
 
 
   /- Done above this line -/
 /-
 TODO: add constructors for these cases:
     [v] let a = e            // Evaluate a simple expr, assign it an abstract locations
-    [ ] T { fi: ai, ...} = b // Unpack, consuming, hence no aliasing    | let (a1, ..., an) = f(b1, ..., bm) // Call
-    [ ] x = a                // Assign a value to a variable
+
     [ ] *a = b               // Write into a reference
+        -- a is a type of reference,
+        -- all outbound edges are ε: nothing extends this reference
+        -- aliasing is okay
+        -- We don't care about inbound edges
+        -- This should ensure no dangling references
+        -- b has basic type
+        -- we consume both a and b
+        -- the abstract reference within the type of a is released
+    [ ] x = a                // Assign a value to a variable
+        -- Invalid var is easy: we known it's not borrowed (this is an invariant)
+        -- A shortcut: make a mutable reference to x and then repeat the steps from above
+
+    [ ] let (a1, ..., an) = f(b1, ..., bm) // Call
+        -- Check the types of parameters and their mutability annotations
+        -- No subtyping
+        -- Consider 4 sets:
+           * All mutable inputs (MI)
+           * All immutable inputs (II)
+           * All mutable outputs (MO)
+           * All immutable outputs (IO)
+
+           We can disregard any inputs/outputs of basic types
+
+           For any immutable output, it will be .*-extended from any input (mutable and immutable)
+
+           For any mutable output, it will be .*-extended from any mutable input
+
+           All outputs will be .*-extended from each other, except
+              - there should be no edges between mutable outputs
+              - mutable outputs cannot reach each other or another output
+              - same from immutable to mutable
+
+           Similar property is enforced for inputs
+              - No mutable inputs allow to reach any other inputs
+                (i.e., non-reachable in the graph, ∨ia ε or by paths)
+              - All mutable inputs have outbound edges other than ε
+
+    [ ] return (a1, ..., an) // Return
+           Enforces constraints similar to what call does for its inputs
+
+           Everything except in the return is released
+
+
+
+    [ ] T { fi: ai, ...} = b // Unpack, consuming, hence no aliasing
     [ ] abort a              // Abort the transaction, aka panic!
     [ ] release(a)           // Invalidates a reference
     [ ] { s;+ }              // Block
     [ ] if (a) s else s      // If/loop condition is always a variable [?]
     [ ] while (x) s
-    [ ] return (a1, ..., an) // Return
 
  -/
 
