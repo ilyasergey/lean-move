@@ -376,21 +376,6 @@ inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
   /- Done above this line -/
 
 /-
-TODO: add constructors for these cases:
-    [v] let a = e            // Evaluate a simple expr, assign it an abstract locations
-
-    [v] *a = b               // Write into a reference
-        -- a is a type of reference,
-        -- all outbound edges are ε: nothing extends this reference
-        -- aliasing is okay
-        -- We don't care about inbound edges
-        -- This should ensure no dangling references
-        -- b has basic type
-        -- we consume both a and b
-        -- the abstract reference within the type of a is released
-    [v] x = a                // Assign a value to a variable
-        -- Invalid var is easy: we known it's not borrowed (this is an invariant)
-        -- A shortcut: make a mutable reference to x and then repeat the steps from above
 
     [ ] let (a1, ..., an) = f(b1, ..., bm) // Call
         -- Check the types of parameters and their mutability annotations
@@ -421,7 +406,6 @@ TODO: add constructors for these cases:
            Enforces constraints similar to what call does for its inputs
 
            Everything except in the return is released
-
 
 
     [ ] T { fi: ai, ...} = b // Unpack, consuming, hence no aliasing
