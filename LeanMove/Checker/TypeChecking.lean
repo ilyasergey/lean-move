@@ -95,6 +95,18 @@ structure PathEnv where
   -- Initially empty for each pair
   paths: (Aref × Aref) → Regex PathElement
 
+
+-- Check that the property p holds for all paths from s in penv
+def check_outbound (penv: PathEnv) (s: Aref) (p: Regex PathElement → Prop) :=
+  forall s', p (penv.paths  (s, s'))
+
+-- Garbage collect the reference from penv
+def garbage_collect (penv: PathEnv) (r: Aref) : PathEnv :=
+  let G := penv.paths
+  let paths' := fun (u, v) => if u = r ∨ v = r then Regex.empty else G (u, v)
+  let refs' := List.filter (fun r' => r' ≠ r) penv.refs
+  { penv with paths := paths', refs := refs' }
+
 -- z = &x.p
 def update_with_extension (z x : Aref) (p: Path) (pe: PathEnv) : PathEnv :=
   let G := pe.paths
@@ -165,6 +177,8 @@ open AssocMap
 
  -- Check that the variable x is not borrowed by browsing through all sites
  def not_borrowed (x: Var) (env: TypeEnv) : Prop :=
+  -- For x not to be borrowed, all abstract location of the reference type that
+  -- are borrowed should not  coincide with x
   ∀ a b τ isBor, AssocMap.lookup env.alocEnv a = some (.ref τ b isBor) →
     match isBor with
     | .siteBorrowImm x' => x' ≠ x
@@ -323,44 +337,49 @@ inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
      typecheck_stmt env (.letBind a e) env'
 
 
-/-
-TODO: discuss with Todd the semantics of the assignment
+  -- *a = b
+  | write_ref : ∀ env env' a b τ (r: Aref),
+      -- a is of type reference to a basic typ τ, its aref is s
+      AssocMap.lookup env.alocEnv a = some (.ref τ r (.siteBorrowMut _)) →
+      -- b has the same basic type
+      AssocMap.lookup env.alocEnv b = some (.basic τ) →
+      -- [Path Checking] This is an important check to ensure the absence of
+      -- dangling pointers. All outbound edges from a.s are ε: nothing extends
+      -- this reference. This ensures no dangling references.  We don't care
+      -- about inbound edges: they won't cause dangling references
+      check_outbound env.pathEnv r (λ r ↦ r = .ε ∨ r = .empty) →
+      -- remove all involved sites a and b from the environment
+      -- retire the abstract reference s
+      env' = {env with alocEnv := delete (delete env.alocEnv b) a
+                       pathEnv := garbage_collect env.pathEnv r } →
+      typecheck_stmt env (.writeRef a b) env'
 
-What happens when we assign a site S to a variable x?
+  -- x = a // x is a valid var
+  | var_assign_valid : ∀ env env' env'' x a ax rtype,
+      -- Take a mutable borrow to a variable, so that `ax` is an "intermediate"
+      -- site holding its reference location. The usage check below will also nicely
+      typecheck_usage env (.borrowMut x) env' ax rtype →
+      -- So we reduce it  to the previous case of writing to a reference.
+      -- Another nice touch is that the intermediate `ax` will be removed from
+      -- `env''` at the end.
+      typecheck_stmt env' (.writeRef ax a) env'' →
+      typecheck_stmt env (.assign x a) env''
 
-Do we need two rules? for values and references?
+  -- x = a // x is an invalid variable
+  | var_assign_invalid : ∀ env env' x a τ,
+    AssocMap.lookup env.varEnv x = some (.invalidVar, τ, .mutable) →
+    AssocMap.lookup env.alocEnv a = some τ →
+    typecheck_stmt env (.assign x a) env'
 
-* If the site S is a value (basic type), then
-  1. Check that the types conform
-  2. Remove S from alocEnv
-  3. Can we assign to an invalid variable x (from which the value is moved)?
-     -- Yes, we can.
-  4. What happens to all references borrowed from x (I guess it's forbidden to have any)
-  5. What checks need to be made in terms of the graph?
-
-
-* If the site S is a reference type (its type stores an abstract reference r)
-  1. Check that type of S and of x conform to each other up to basic type
-  2. Remove S from alocEnv
-  3. Purge all traces of abstract reference associated with x from the path graph
-  4. Update the type of x with the new reference
-  5. What checks need to be made in terms of the graph? Express them via interpret_regex
-
- -/
-  -- x = S
-  | var_assign : ∀ env x S τ,
-      AssocMap.lookup env.alocEnv S = some τ →
-      AssocMap.lookup env.varEnv x = some (_, τ, .mutable) →
-
-      typecheck_stmt env (.assign x S) env
 
 
   /- Done above this line -/
+
 /-
 TODO: add constructors for these cases:
     [v] let a = e            // Evaluate a simple expr, assign it an abstract locations
 
-    [ ] *a = b               // Write into a reference
+    [v] *a = b               // Write into a reference
         -- a is a type of reference,
         -- all outbound edges are ε: nothing extends this reference
         -- aliasing is okay
@@ -369,7 +388,7 @@ TODO: add constructors for these cases:
         -- b has basic type
         -- we consume both a and b
         -- the abstract reference within the type of a is released
-    [ ] x = a                // Assign a value to a variable
+    [v] x = a                // Assign a value to a variable
         -- Invalid var is easy: we known it's not borrowed (this is an invariant)
         -- A shortcut: make a mutable reference to x and then repeat the steps from above
 
