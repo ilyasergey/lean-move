@@ -22,6 +22,7 @@ inductive Regex (α : Type) where
   | empty : Regex α
   | ε : Regex α
   | char : α → Regex α
+  | dot : Regex α
   | union : Regex α → Regex α → Regex α
   | concat : Regex α → Regex α → Regex α
   | star : Regex α → Regex α

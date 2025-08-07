@@ -118,6 +118,17 @@ def update_with_extension (z x : Aref) (p: Path) (pe: PathEnv) : PathEnv :=
   let refs' := if z ∉ pe.refs then z :: pe.refs else pe.refs
   { pe with paths := paths', refs := refs' }
 
+def extend_with_star (target source : Aref) (pe: PathEnv) : PathEnv :=
+  let G := pe.paths
+  let paths' := fun (u, v) =>
+    if u = target ∧ v = target then Regex.ε  else
+    if v = target then Regex.concat (G (u, source)) (Regex.star (Regex.dot)) else
+    -- [Q2] Discuss what is going on here compared ot the previous case.
+    -- if u = target then der (G (source, v)) p else
+    G (u, v)
+  let refs' := if target ∉ pe.refs then target :: pe.refs else pe.refs
+  { pe with paths := paths', refs := refs' }
+
 -- z = &x
 def update_with_epsilon (z x : Aref) (pe: PathEnv)  : PathEnv :=
   update_with_extension z x [] pe
@@ -311,7 +322,6 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType �
      typecheck_expr env (Expr.usage u) env' c τ
 
   -- af <- &a.T::f
-  -- [Q] Does a have to have a reference type? Can it be a value?
   | borrowField : ∀ env env' a f af bt bt' isBor fentries s (rf : Aref),
      -- Site type is τ basic type
      AssocMap.lookup env.siteEnv a = some (.ref bt s isBor) →
@@ -380,27 +390,38 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType �
      typecheck_expr env (Expr.pack fs as) env' b τ
 
 -- let (a1, ..., an) = f(b1, ..., bm) // Call
--- [Q] is it okay that we exclude this signature, as it over-approximates what is actually passed
+-- [Q2] is it okay that we exclude this signature, as it over-approximates what is actually passed
 -- as actuals and we have already ensured confromance?
 
--- [Q] Okay, we have a problem. The SiteIsBorrowing is to precise, as it tracks the
--- exact variable from which it borrows. This cannot be preserved in the sites that
--- are created for the call result.
+-- [Q2] Okay, we have a problem. The SiteIsBorrowing is to precise, as it tracks
+-- the exact variable from which it borrows. This cannot be preserved in the
+-- sites that are created for the call result. We can, of course remove this
+-- tracking, but what to do with `not_borrowed` and its applications?
 
 def call_connect_inputs_outputs (env: TypeEnv) (as bs: List Site) : TypeEnv :=
+  let inputs := List.filterMap (fun a ↦ match AssocMap.lookup env.siteEnv a with
+    | some (.ref _ r _) => some r
+    | _ => none) bs
   let mi := List.filterMap (fun a ↦ match AssocMap.lookup env.siteEnv a with
     | some (.ref _ r (.siteBorrowMut _)) => some r
     | _ => none) bs
   let ii := List.filterMap (fun a ↦ match AssocMap.lookup env.siteEnv a with
     | some (.ref _ r (.siteBorrowImm _)) => some r
     | _ => none) bs
+  -- The following two are problematic: what exactly are the `_x` in the references?
   let mo := List.filterMap (fun a ↦ match AssocMap.lookup env.siteEnv a with
-    | some (.ref _ r (.siteBorrowMut _)) => some r
+    | some (.ref _ r (.siteBorrowMut _x)) => some r
     | _ => none) as
   let io := List.filterMap (fun a ↦ match AssocMap.lookup env.siteEnv a with
-    | some (.ref _ r (.siteBorrowImm _)) => some r
+    | some (.ref _ r (.siteBorrowImm _x)) => some r
     | _ => none) as
 
+  -- For any immutable output, it will be .*-extended from any input (mutable and immutable)
+  let with_io_from_inputs : PathEnv := List.foldl (fun env iout ↦
+    let res := List.foldl (fun env' input ↦ extend_with_star input iout env') env inputs
+    res) env.pathEnv io
+
+  -- TODO: finish the others
 
 /-
         -- Consider 4 sets:
