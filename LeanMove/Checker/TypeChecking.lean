@@ -76,7 +76,7 @@ deriving Repr, DecidableEq, Inhabited, Hashable
 
 
 -- Environment mapping abstract locations to their types, abstract references, and borrow marker
-abbrev AlocEnv := AssocMap Aloc MoveType
+abbrev SiteEnv := AssocMap Site MoveType
 
 -- Environment mapping variables to their site, types, mutability, abstract references, and borrow status
 abbrev VarEnv := AssocMap Var (IsValid × MoveType × Mut)
@@ -132,11 +132,29 @@ def delete_ref_node (pe: PathEnv) (r : Aref) : PathEnv :=
 
 def freshRef (r: Aref) (pe: PathEnv) := r ∉ pe.refs
 
+structure ParamType where
+  -- inner type
+  basicType : BasicMoveType
+  -- mutable    = some true
+  -- immmutable = some false
+  -- not a reference = none
+  isRefMut : Option Bool
+deriving Repr, Inhabited, Hashable
+
+-- Function table
+structure FunSig where
+  params : List ParamType
+  returnType : List ParamType
+deriving Repr, Inhabited, Hashable
+
+abbrev FunEnv := AssocMap Id FunSig
+
 -- New structure packaging all environments
 structure TypeEnv where
-  alocEnv : AlocEnv
+  siteEnv : SiteEnv
   varEnv  : VarEnv
   pathEnv : PathEnv
+  funEnv  : FunEnv
 
 /- ---------------------------------------------------- -/
 /-       Well-formedness of the environments            -/
@@ -144,7 +162,7 @@ structure TypeEnv where
 
 structure WellFormedEnv (typeEnv : TypeEnv) where
   -- All abstract locations
-  uniqueAlocs : uniqueKeys typeEnv.alocEnv
+  uniqueSites : uniqueKeys typeEnv.siteEnv
   -- TODO: say that for all pairs in pathEnv there is either
   -- a variable in varEnv or a site in siteEnv
 
@@ -179,38 +197,40 @@ open AssocMap
  def not_borrowed (x: Var) (env: TypeEnv) : Prop :=
   -- For x not to be borrowed, all abstract location of the reference type that
   -- are borrowed should not  coincide with x
-  ∀ a b τ isBor, AssocMap.lookup env.alocEnv a = some (.ref τ b isBor) →
+  ∀ a b τ isBor, AssocMap.lookup env.siteEnv a = some (.ref τ b isBor) →
     match isBor with
     | .siteBorrowImm x' => x' ≠ x
     | .siteBorrowMut x' => x' ≠ x
-    | .siteNotBorrowed => true
+
+def all_fresh_sites (env: TypeEnv) (as: List Site) : Prop :=
+  List.all as (fun a ↦ notIn env.siteEnv a)
 
 /--
 Invariants:
 ⋆ Every sites that belongs to a variable (e.g., x) is reachable from the root via path "x"
  -/
-inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType → Prop where
+inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Site -> MoveType → Prop where
   | t_umove : ∀ env env' x τ ms a,
      AssocMap.lookup env.varEnv x = some (.validVar, τ, ms) →
      not_borrowed x env →
-     notIn env.alocEnv a →
+     notIn env.siteEnv a →
      env' = { env with varEnv  := update env.varEnv x (.invalidVar, τ, ms)
-                       alocEnv := insert env.alocEnv a τ } →
+                       siteEnv := insert env.siteEnv a τ } →
      typecheck_usage env (.move x) env' a τ
 
   -- Copying a variable value, not a reference
   | t_ucopy_val : ∀ env env' x bt ms a,
      AssocMap.lookup env.varEnv x = some (.validVar, .basic bt, ms) →
-     notIn env.alocEnv a →
-     env' = { env with alocEnv := insert env.alocEnv a (.basic bt)} →
+     notIn env.siteEnv a →
+     env' = { env with siteEnv := insert env.siteEnv a (.basic bt)} →
      typecheck_usage env (.copy x) env' a (.basic bt)
 
   -- Copying a reference value
   | t_ucopy_ref : ∀ env env' x τ ms a (s t: Aref) isBor,
      AssocMap.lookup env.varEnv x = some (.validVar, .ref τ s isBor, ms) →
-     notIn env.alocEnv a →
+     notIn env.siteEnv a →
      freshRef t env.pathEnv →
-     env' = { env with alocEnv := insert env.alocEnv a (.ref τ t isBor)
+     env' = { env with siteEnv := insert env.siteEnv a (.ref τ t isBor)
                        -- [Fun fact] since s is reachable from the root, so is t now
                        pathEnv := update_with_epsilon s t env.pathEnv } →
      typecheck_usage env (.copy x) env' a (.ref τ t isBor)
@@ -218,9 +238,9 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType �
   -- Borrowing the reference to a variable's content, makes a new reference r
   | t_uborrowImm_val : ∀ env env' x τ ms a (r: Aref),
      AssocMap.lookup env.varEnv x = some (.validVar, .basic τ, ms) →
-     AssocMap.notIn env.alocEnv a →
+     AssocMap.notIn env.siteEnv a →
      freshRef r env.pathEnv →
-     env' = { env with alocEnv := insert env.alocEnv a (.ref τ r (.siteBorrowImm x))
+     env' = { env with siteEnv := insert env.siteEnv a (.ref τ r (.siteBorrowImm x))
                        -- The graph is updated with a var-transition from from Root to r
                        pathEnv := update_with_epsilon r r env.pathEnv |>
                                   update_with_extension .root r [.root_to_var x] } →
@@ -230,9 +250,9 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Aloc -> MoveType �
   | t_uborrowMut_val : ∀ env env' x τ ms a (r: Aref),
      LE.le .mutable ms  →
      AssocMap.lookup env.varEnv x = some (.validVar, .basic τ, ms) →
-     AssocMap.notIn env.alocEnv a →
+     AssocMap.notIn env.siteEnv a →
      freshRef r env.pathEnv →
-     env' = { env with alocEnv := insert env.alocEnv a (.ref τ r (.siteBorrowMut x))
+     env' = { env with siteEnv := insert env.siteEnv a (.ref τ r (.siteBorrowMut x))
                        -- The graph is updated with a var-transition from from Root to r
                        pathEnv := update_with_epsilon r r env.pathEnv |>
                                   update_with_extension .root r [.root_to_var x]  } →
@@ -256,69 +276,99 @@ def binop_type (bop : Binop) (τ1 τ2 : BasicMoveType) : Option BasicMoveType :=
   | (.nand, .tbool, .tbool) => some .tbool
   | _ => none
 
+-- Check that a list of sites conforms to a list of parameter types
+-- No submtyping,
+def types_confrom (alocEnv : SiteEnv) (sites : List Site) (paramTypes : List ParamType) : Prop :=
+  match sites, paramTypes with
+  | [], [] => True
+  | site :: sites', paramType :: paramTypes' =>
+    match AssocMap.lookup alocEnv site with
+    | some τ =>
+      -- the formal is on the left, the actual is on the right
+      match paramType, τ with
+      | ⟨bt, none⟩, .basic bt' => bt = bt' ∧ types_confrom alocEnv sites' paramTypes'
+      | ⟨bt, some isRefMut⟩, .ref τ _ isBor =>
+        bt = τ ∧
+        (match isRefMut, isBor with
+         | true, _ => True -- for mutable parameter referense, the actual can be anything
+         | false, .siteBorrowImm _ => True -- only immutables here
+         | _, _ => False) ∧
+        types_confrom alocEnv sites' paramTypes'
+      | _, _ => False
+    -- Type is not found for the site
+    | none => False
+  -- Mismatch in sizes
+  | _, _ => False
+
 -- ⟨L; E; G⟩ ⊢ (e : expr) ⤳ ⟨L'; E'; G'⟩; a; τ
 
-/-
--- TODO add freezing
-     [ ] freeze(a)
-        -- a should be of type reference
-        -- creates an immutable reference r and an immutable ε-extension from this refernce
- -/
 
-inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Aloc → MoveType → Prop where
+inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType → Prop where
 
-  -- a <- u (see above)
-  | usage : ∀ env env' u (a : Aloc) (τ : MoveType),
-     typecheck_usage env u env' a τ ->
-     typecheck_expr env (Expr.usage u) env' a τ
+  -- c <- u (see above)
+  | usage : ∀ env env' u (c : Site) (τ : MoveType),
+     typecheck_usage env u env' c τ ->
+     typecheck_expr env (Expr.usage u) env' c τ
 
   -- af <- &a.T::f
   -- [Q] Does a have to have a reference type? Can it be a value?
   | borrowField : ∀ env env' a f af bt bt' isBor fentries s (rf : Aref),
      -- Site type is τ basic type
-     AssocMap.lookup env.alocEnv a = some (.ref bt s isBor) →
+     AssocMap.lookup env.siteEnv a = some (.ref bt s isBor) →
      -- This is a record type, here are its entries
      bt = .trecord fentries →
      -- Get the field type via the name f
      lookup fentries f = some bt' →
-     AssocMap.notIn env.alocEnv af →
+     AssocMap.notIn env.siteEnv af →
      freshRef rf env.pathEnv →
      -- Update site environment with the new reference
-     env' = {env with alocEnv := insert (delete env.alocEnv a) af (.ref bt' rf isBor)
+     env' = {env with siteEnv := insert (delete env.siteEnv a) af (.ref bt' rf isBor)
                       pathEnv := update_with_extension s rf [.field f] env.pathEnv  } →
      typecheck_expr env (Expr.borrowField a bt f) env' af (.ref bt' rf isBor)
 
   -- &mut af <- a.T::f
   | borrowMutField : ∀ env env' a f x af bt btf fentries (s rf : Aref),
      -- Site type is τ basic type
-     AssocMap.lookup env.alocEnv a = some (.ref bt s (.siteBorrowMut x)) →
+     AssocMap.lookup env.siteEnv a = some (.ref bt s (.siteBorrowMut x)) →
      -- This is a record type, here are its entries
      bt = .trecord fentries →
      -- Get the field type via the name f
      lookup fentries f = some btf →
-     AssocMap.notIn env.alocEnv af →
+     AssocMap.notIn env.siteEnv af →
      freshRef rf env.pathEnv →
      -- Update site environment with the new reference
-     env' = {env with alocEnv := insert (delete env.alocEnv a) af (.ref btf rf (.siteBorrowMut x))
+     env' = {env with siteEnv := insert (delete env.siteEnv a) af (.ref btf rf (.siteBorrowMut x))
                       pathEnv := update_with_extension s rf [.field f] env.pathEnv } →
      typecheck_expr env (Expr.borrowField a bt f) env' af (.ref btf rf (.siteBorrowMut x))
 
   -- c <- a ⊕ b
-  | binop : ∀ env env' bop bt1 bt2 bt3 (a b c : Aloc),
-     AssocMap.lookup env.alocEnv a = some (.basic bt1) →
-     AssocMap.lookup env.alocEnv b = some (.basic bt2) →
+  | binop : ∀ env env' bop bt1 bt2 bt3 (a b c : Site),
+     AssocMap.lookup env.siteEnv a = some (.basic bt1) →
+     AssocMap.lookup env.siteEnv b = some (.basic bt2) →
      binop_type bop bt1 bt2 = some bt3 →
-     AssocMap.notIn env.alocEnv c →
-     env' = {env with alocEnv := insert (delete (delete env.alocEnv a) b) c (.basic bt3)} ->
+     AssocMap.notIn env.siteEnv c →
+     env' = {env with siteEnv := insert (delete (delete env.siteEnv a) b) c (.basic bt3)} ->
      typecheck_expr env (Expr.binop bop a b) env' c (.basic bt3)
 
   -- c <- *a
-  | readRef : ∀ env env' (a c : Aloc) r (τ : BasicMoveType) isBor,
-     AssocMap.lookup env.alocEnv a = some (.ref τ r isBor) →
-     AssocMap.notIn env.alocEnv c →
-     env' = {env with alocEnv := insert (delete env.alocEnv a) c (.basic τ)
+  | readRef : ∀ env env' (a c : Site) r (τ : BasicMoveType) isBor,
+     AssocMap.lookup env.siteEnv a = some (.ref τ r isBor) →
+     AssocMap.notIn env.siteEnv c →
+     env' = {env with siteEnv := insert (delete env.siteEnv a) c (.basic τ)
                       pathEnv := delete_ref_node env.pathEnv r } →
      typecheck_expr env (Expr.readRef a) env' c (.basic τ)
+
+  | freeze : ∀ env env' a c (τ : BasicMoveType) (r r': Aref) isBor x,
+    -- [Q] Are there any constraints on a? Does it make a difference whether a
+    -- is a reference borrowed mutably or immutably?
+    AssocMap.lookup env.siteEnv a = some (.ref τ r isBor) →
+    site_is_borrowing isBor = some x →
+    -- creates an immutable reference r' and an immutable ε-extension from this refernce
+    AssocMap.notIn env.siteEnv c →
+    freshRef r' env.pathEnv →
+    env' = {env with siteEnv := insert (delete env.siteEnv a) c (.ref τ r' (.siteBorrowImm x))
+                     pathEnv := update_with_epsilon r r' env.pathEnv } →
+    typecheck_expr env (Expr.freeze a) env' c (.ref τ r' (.siteBorrowImm x))
 
   -- TODO: implement me!
   -- b <-- T { f: a1, ...,  f: an }
@@ -329,6 +379,7 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Aloc → MoveType �
      -- Remove all as from env.alocEnv
      typecheck_expr env (Expr.pack fs as) env' b τ
 
+
 inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
   | skip : ∀ env, typecheck_stmt env .skip env
 
@@ -336,13 +387,12 @@ inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
      typecheck_expr env e env' a τ →
      typecheck_stmt env (.letBind a e) env'
 
-
   -- *a = b
   | write_ref : ∀ env env' a b τ (r: Aref),
       -- a is of type reference to a basic typ τ, its aref is s
-      AssocMap.lookup env.alocEnv a = some (.ref τ r (.siteBorrowMut _)) →
+      AssocMap.lookup env.siteEnv a = some (.ref τ r (.siteBorrowMut _)) →
       -- b has the same basic type
-      AssocMap.lookup env.alocEnv b = some (.basic τ) →
+      AssocMap.lookup env.siteEnv b = some (.basic τ) →
       -- [Path Checking] This is an important check to ensure the absence of
       -- dangling pointers. All outbound edges from a.s are ε: nothing extends
       -- this reference. This ensures no dangling references.  We don't care
@@ -350,7 +400,7 @@ inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
       check_outbound env.pathEnv r (λ r ↦ r = .ε ∨ r = .empty) →
       -- remove all involved sites a and b from the environment
       -- retire the abstract reference s
-      env' = {env with alocEnv := delete (delete env.alocEnv b) a
+      env' = {env with siteEnv := delete (delete env.siteEnv b) a
                        pathEnv := garbage_collect env.pathEnv r } →
       typecheck_stmt env (.writeRef a b) env'
 
@@ -358,6 +408,7 @@ inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
   | var_assign_valid : ∀ env env' env'' x a ax rtype,
       -- Take a mutable borrow to a variable, so that `ax` is an "intermediate"
       -- site holding its reference location. The usage check below will also nicely
+      -- ensure that the variable `x` is actually valid.
       typecheck_usage env (.borrowMut x) env' ax rtype →
       -- So we reduce it  to the previous case of writing to a reference.
       -- Another nice touch is that the intermediate `ax` will be removed from
@@ -367,11 +418,26 @@ inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
 
   -- x = a // x is an invalid variable
   | var_assign_invalid : ∀ env env' x a τ,
+    -- Only works if x invalid
     AssocMap.lookup env.varEnv x = some (.invalidVar, τ, .mutable) →
-    AssocMap.lookup env.alocEnv a = some τ →
+    -- Checking the type confromance
+    AssocMap.lookup env.siteEnv a = some τ →
     typecheck_stmt env (.assign x a) env'
 
+  -- let (a1, ..., an) = f(b1, ..., bm) // Call
+  | call : ∀ env env' fnName (as bs: List Site) (params rets : List ParamType),
+    -- Check that as are all fresh
+    all_fresh_sites env as →
+    -- Check type conformance for parameters and return types
+    types_confrom env.siteEnv bs params →
+    types_confrom env.siteEnv as rets →
+    -- Check that the function exists
+    AssocMap.lookup env.funEnv fnName = some ⟨params, rets⟩  →
+    -- Check that the arguments are of the correct type
 
+
+    -- Check that the return type is of the correct type
+    typecheck_stmt env (.call as fnName bs) env'
 
   /- Done above this line -/
 

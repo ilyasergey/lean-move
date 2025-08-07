@@ -28,10 +28,10 @@ open AssocMap
 
 abbrev Id := String
 
--- Abstract locations: model linear stack slots in A-Normal form
-inductive Aloc where
-  | aloc : Nat → Aloc -- Temp site
-  | root : Aloc -- Root site
+-- Sites: model linear stack slots in A-Normal form
+inductive Site where
+  | site : Nat → Site -- Temp site
+  | root : Site -- Root site
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 namespace MoveLight
@@ -65,8 +65,12 @@ deriving Repr, DecidableEq, Inhabited, Hashable
 inductive SiteIsBorrowing where
   | siteBorrowImm : Var -> SiteIsBorrowing
   | siteBorrowMut : Var -> SiteIsBorrowing
-  | siteNotBorrowed : SiteIsBorrowing
 deriving Repr, DecidableEq, Inhabited, Hashable
+
+def site_is_borrowing: SiteIsBorrowing → Option Var :=
+  fun s => match s with
+    | .siteBorrowImm x => some x
+    | .siteBorrowMut x => some x
 
 -- Types
 inductive MoveType where
@@ -85,7 +89,7 @@ inductive Usage where
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 -- Abstract locations (single-assign variables)
-abbrev ALoc := Aloc
+abbrev ALoc := Site
 
 inductive Binop where
   | add
@@ -101,27 +105,28 @@ deriving Repr, DecidableEq, Inhabited, Hashable
 -- Expressions
 inductive Expr where
   | usage : Usage → Expr
-  | borrowField : Aloc → BasicMoveType → Field → Expr  -- &a.T::f
-  | borrowMutField : Aloc → Id → Field → Expr  -- &mut a.T::f
-  | binop : Binop → Aloc → Aloc → Expr  -- a + b
-  | readRef : Aloc → Expr  -- *a
-  | pack : Id → List (Field × Aloc) → Expr  -- T { f: a1, ..., f: an }
+  | borrowField : Site → BasicMoveType → Field → Expr  -- &a.T::f
+  | borrowMutField : Site → Id → Field → Expr  -- &mut a.T::f
+  | binop : Binop → Site → Site → Expr  -- a + b
+  | readRef : Site → Expr  -- *a
+  | pack : Id → List (Field × Site) → Expr  -- T { f: a1, ..., f: an }
+  | freeze : Site → Expr
 deriving Repr, Inhabited, Hashable
 
 -- Statements in a-normal form
 inductive Stmt where
   | skip : Stmt
-  | letBind : Aloc → Expr → Stmt  -- let a = e
-  | unpack : List (Field × Aloc) → Aloc → Stmt  -- T { fi: ai, ...} = b
-  | call : List Aloc → Id → List Aloc → Stmt  -- let (a1, ..., an) = f(b1, ..., bm)
-  | assign : Var → Aloc → Stmt  -- x = a
-  | writeRef : Aloc → Aloc → Stmt  -- *a = b
-  | abort : Aloc → Stmt  -- abort a
-  | release : Aloc → Stmt  -- release(a)
+  | letBind : Site → Expr → Stmt  -- let a = e
+  | unpack : List (Field × Site) → Site → Stmt  -- T { fi: ai, ...} = b
+  | call : List Site → Id → List Site → Stmt  -- let (a1, ..., an) = f(b1, ..., bm)
+  | assign : Var → Site → Stmt  -- x = a
+  | writeRef : Site → Site → Stmt  -- *a = b
+  | abort : Site → Stmt  -- abort a
+  | release : Site → Stmt  -- release(a)
   | block : List Stmt → Stmt  -- { s;+ }
-  | ifThenElse : Aloc → Stmt → Stmt → Stmt  -- if (a) s else s
+  | ifThenElse : Site → Stmt → Stmt → Stmt  -- if (a) s else s
   | while : Var → Stmt → Stmt  -- while (x) s
-  | return : List Aloc → Stmt  -- return (a1, ..., an)
+  | return : List Site → Stmt  -- return (a1, ..., an)
 deriving Repr, Inhabited
 
 -- Local variable declaration

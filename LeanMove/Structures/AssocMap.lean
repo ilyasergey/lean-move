@@ -39,6 +39,10 @@ def delete {K V : Type} [DecidableEq K] (self : AssocMap K V) (key : K) : AssocM
   entries := (self.entries.filter (fun (k, _) => k != key))
 }
 
+def deleteAll {K V : Type} [DecidableEq K] (self : AssocMap K V) (keys : List K) : AssocMap K V := {
+  entries := self.entries.filter (fun (k, _) => k ∉ keys)
+}
+
 /-- Update a key-value pair in the map -/
 def update {K V : Type} [DecidableEq K] (self : AssocMap K V) (key : K) (value : V) : AssocMap K V := {
   entries := (key, value) :: (self.entries.filter (fun (k, _) => k != key))
