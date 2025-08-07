@@ -290,8 +290,8 @@ def types_confrom (alocEnv : SiteEnv) (sites : List Site) (paramTypes : List Par
       | ⟨bt, some isRefMut⟩, .ref τ _ isBor =>
         bt = τ ∧
         (match isRefMut, isBor with
-         | true, _ => True -- for mutable parameter referense, the actual can be anything
-         | false, .siteBorrowImm _ => True -- only immutables here
+         | true, .siteBorrowMut _  => True -- only mutables here
+         | false, .siteBorrowImm _ => True -- for immutable parameter referenes, the actual can be anything (mut/imm)
          | _, _ => False) ∧
         types_confrom alocEnv sites' paramTypes'
       | _, _ => False
@@ -379,6 +379,55 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType �
      -- Remove all as from env.alocEnv
      typecheck_expr env (Expr.pack fs as) env' b τ
 
+-- let (a1, ..., an) = f(b1, ..., bm) // Call
+-- [Q] is it okay that we exclude this signature, as it over-approximates what is actually passed
+-- as actuals and we have already ensured confromance?
+
+-- [Q] Okay, we have a problem. The SiteIsBorrowing is to precise, as it tracks the
+-- exact variable from which it borrows. This cannot be preserved in the sites that
+-- are created for the call result.
+
+def call_connect_inputs_outputs (env: TypeEnv) (as bs: List Site) : TypeEnv :=
+  let mi := List.filterMap (fun a ↦ match AssocMap.lookup env.siteEnv a with
+    | some (.ref _ r (.siteBorrowMut _)) => some r
+    | _ => none) bs
+  let ii := List.filterMap (fun a ↦ match AssocMap.lookup env.siteEnv a with
+    | some (.ref _ r (.siteBorrowImm _)) => some r
+    | _ => none) bs
+  let mo := List.filterMap (fun a ↦ match AssocMap.lookup env.siteEnv a with
+    | some (.ref _ r (.siteBorrowMut _)) => some r
+    | _ => none) as
+  let io := List.filterMap (fun a ↦ match AssocMap.lookup env.siteEnv a with
+    | some (.ref _ r (.siteBorrowImm _)) => some r
+    | _ => none) as
+
+
+/-
+        -- Consider 4 sets:
+           * All mutable inputs (MI)
+           * All immutable inputs (II)
+           * All mutable outputs (MO)
+           * All immutable outputs (IO)
+
+           We can disregard any inputs/outputs of basic types
+
+           For any immutable output, it will be .*-extended from any input (mutable and immutable)
+
+           For any mutable output, it will be .*-extended from any mutable input
+
+           All outputs will be .*-extended from each other, except
+              - there should be no edges between mutable outputs
+              - mutable outputs cannot reach each other or another output
+              - same from immutable to mutable
+
+           Similar property is enforced for inputs
+              - No mutable inputs allow to reach any other inputs
+                (i.e., non-reachable in the graph, ∨ia ε or by paths)
+              - All mutable inputs have outbound edges other than ε
+-/
+
+
+  env
 
 inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
   | skip : ∀ env, typecheck_stmt env .skip env
