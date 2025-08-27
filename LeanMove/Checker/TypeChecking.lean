@@ -84,6 +84,7 @@ abbrev VarEnv := AssocMap Var (IsValid × MoveType × Mut)
 -- Either a root or a field access
 inductive PathElement where
   | field : Field → PathElement
+  -- TODO [250808]: Add an abstract reference representing the root
   | root_to_var : Var → PathElement
 deriving Repr, DecidableEq, Inhabited, Hashable
 
@@ -205,13 +206,13 @@ open AssocMap
  -/
 
  -- Check that the variable x is not borrowed by browsing through all sites
+ -- FIXME: fix using graph reachability
  def not_borrowed (x: Var) (env: TypeEnv) : Prop :=
   -- For x not to be borrowed, all abstract location of the reference type that
   -- are borrowed should not  coincide with x
   ∀ a b τ isBor, AssocMap.lookup env.siteEnv a = some (.ref τ b isBor) →
     match isBor with
-    | .siteBorrowImm x' => x' ≠ x
-    | .siteBorrowMut x' => x' ≠ x
+    | _ => false
 
 def all_fresh_sites (env: TypeEnv) (as: List Site) : Prop :=
   List.all as (fun a ↦ notIn env.siteEnv a)
@@ -223,6 +224,8 @@ Invariants:
 inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Site -> MoveType → Prop where
   | t_umove : ∀ env env' x τ ms a,
      AssocMap.lookup env.varEnv x = some (.validVar, τ, ms) →
+     -- How else we would express it?
+     -- Checking by walking the graph from the local roots L.
      not_borrowed x env →
      notIn env.siteEnv a →
      env' = { env with varEnv  := update env.varEnv x (.invalidVar, τ, ms)
@@ -251,23 +254,24 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Site -> MoveType �
      AssocMap.lookup env.varEnv x = some (.validVar, .basic τ, ms) →
      AssocMap.notIn env.siteEnv a →
      freshRef r env.pathEnv →
-     env' = { env with siteEnv := insert env.siteEnv a (.ref τ r (.siteBorrowImm x))
+     env' = { env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowImm)
                        -- The graph is updated with a var-transition from from Root to r
                        pathEnv := update_with_epsilon r r env.pathEnv |>
                                   update_with_extension .root r [.root_to_var x] } →
-     typecheck_usage env (.borrowImm x) env' a (.ref τ r (.siteBorrowImm x))
+     typecheck_usage env (.borrowImm x) env' a (.ref τ r .siteBorrowImm)
 
   -- Mutable borrow to a value
+  -- r is supposed to be the root; perhaps that needs to be made specific
   | t_uborrowMut_val : ∀ env env' x τ ms a (r: Aref),
      LE.le .mutable ms  →
      AssocMap.lookup env.varEnv x = some (.validVar, .basic τ, ms) →
      AssocMap.notIn env.siteEnv a →
      freshRef r env.pathEnv →
-     env' = { env with siteEnv := insert env.siteEnv a (.ref τ r (.siteBorrowMut x))
+     env' = { env with siteEnv := insert env.siteEnv a (.ref τ r (.siteBorrowMut))
                        -- The graph is updated with a var-transition from from Root to r
                        pathEnv := update_with_epsilon r r env.pathEnv |>
                                   update_with_extension .root r [.root_to_var x]  } →
-     typecheck_usage env (.borrowMut x) env' a (.ref τ r (.siteBorrowMut x))
+     typecheck_usage env (.borrowMut x) env' a (.ref τ r .siteBorrowMut)
 
 /- ---------------------------------------------------- -/
 /- Typing relations for expressions -/
@@ -301,8 +305,8 @@ def types_confrom (alocEnv : SiteEnv) (sites : List Site) (paramTypes : List Par
       | ⟨bt, some isRefMut⟩, .ref τ _ isBor =>
         bt = τ ∧
         (match isRefMut, isBor with
-         | true, .siteBorrowMut _  => True -- only mutables here
-         | false, .siteBorrowImm _ => True -- for immutable parameter referenes, the actual can be anything (mut/imm)
+         | true, .siteBorrowMut => True -- only mutables here
+         | false, .siteBorrowImm => True -- for immutable parameter referenes, the actual can be anything (mut/imm)
          | _, _ => False) ∧
         types_confrom alocEnv sites' paramTypes'
       | _, _ => False
@@ -337,9 +341,9 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType �
      typecheck_expr env (Expr.borrowField a bt f) env' af (.ref bt' rf isBor)
 
   -- &mut af <- a.T::f
-  | borrowMutField : ∀ env env' a f x af bt btf fentries (s rf : Aref),
+  | borrowMutField : ∀ env env' a f af bt btf fentries (s rf : Aref),
      -- Site type is τ basic type
-     AssocMap.lookup env.siteEnv a = some (.ref bt s (.siteBorrowMut x)) →
+     AssocMap.lookup env.siteEnv a = some (.ref bt s .siteBorrowMut) →
      -- This is a record type, here are its entries
      bt = .trecord fentries →
      -- Get the field type via the name f
@@ -347,9 +351,9 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType �
      AssocMap.notIn env.siteEnv af →
      freshRef rf env.pathEnv →
      -- Update site environment with the new reference
-     env' = {env with siteEnv := insert (delete env.siteEnv a) af (.ref btf rf (.siteBorrowMut x))
+     env' = {env with siteEnv := insert (delete env.siteEnv a) af (.ref btf rf .siteBorrowMut)
                       pathEnv := update_with_extension s rf [.field f] env.pathEnv } →
-     typecheck_expr env (Expr.borrowField a bt f) env' af (.ref btf rf (.siteBorrowMut x))
+     typecheck_expr env (Expr.borrowField a bt f) env' af (.ref btf rf .siteBorrowMut)
 
   -- c <- a ⊕ b
   | binop : ∀ env env' bop bt1 bt2 bt3 (a b c : Site),
@@ -372,13 +376,12 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType �
     -- [Q] Are there any constraints on a? Does it make a difference whether a
     -- is a reference borrowed mutably or immutably?
     AssocMap.lookup env.siteEnv a = some (.ref τ r isBor) →
-    site_is_borrowing isBor = some x →
     -- creates an immutable reference r' and an immutable ε-extension from this refernce
     AssocMap.notIn env.siteEnv c →
     freshRef r' env.pathEnv →
-    env' = {env with siteEnv := insert (delete env.siteEnv a) c (.ref τ r' (.siteBorrowImm x))
+    env' = {env with siteEnv := insert (delete env.siteEnv a) c (.ref τ r' .siteBorrowImm)
                      pathEnv := update_with_epsilon r r' env.pathEnv } →
-    typecheck_expr env (Expr.freeze a) env' c (.ref τ r' (.siteBorrowImm x))
+    typecheck_expr env (Expr.freeze a) env' c (.ref τ r' .siteBorrowImm)
 
   -- TODO: implement me!
   -- b <-- T { f: a1, ...,  f: an }
@@ -393,27 +396,22 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType �
 -- [Q2] is it okay that we exclude this signature, as it over-approximates what is actually passed
 -- as actuals and we have already ensured confromance?
 
--- [Q2] Okay, we have a problem. The SiteIsBorrowing is to precise, as it tracks
--- the exact variable from which it borrows. This cannot be preserved in the
--- sites that are created for the call result. We can, of course remove this
--- tracking, but what to do with `not_borrowed` and its applications?
-
 def call_connect_inputs_outputs (env: TypeEnv) (as bs: List Site) : TypeEnv :=
   let inputs := List.filterMap (fun a ↦ match AssocMap.lookup env.siteEnv a with
     | some (.ref _ r _) => some r
     | _ => none) bs
   let mi := List.filterMap (fun a ↦ match AssocMap.lookup env.siteEnv a with
-    | some (.ref _ r (.siteBorrowMut _)) => some r
+    | some (.ref _ r .siteBorrowMut) => some r
     | _ => none) bs
   let ii := List.filterMap (fun a ↦ match AssocMap.lookup env.siteEnv a with
-    | some (.ref _ r (.siteBorrowImm _)) => some r
+    | some (.ref _ r .siteBorrowImm) => some r
     | _ => none) bs
   -- The following two are problematic: what exactly are the `_x` in the references?
   let mo := List.filterMap (fun a ↦ match AssocMap.lookup env.siteEnv a with
-    | some (.ref _ r (.siteBorrowMut _x)) => some r
+    | some (.ref _ r .siteBorrowMut) => some r
     | _ => none) as
   let io := List.filterMap (fun a ↦ match AssocMap.lookup env.siteEnv a with
-    | some (.ref _ r (.siteBorrowImm _x)) => some r
+    | some (.ref _ r .siteBorrowImm) => some r
     | _ => none) as
 
   -- For any immutable output, it will be .*-extended from any input (mutable and immutable)
@@ -460,7 +458,7 @@ inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
   -- *a = b
   | write_ref : ∀ env env' a b τ (r: Aref),
       -- a is of type reference to a basic typ τ, its aref is s
-      AssocMap.lookup env.siteEnv a = some (.ref τ r (.siteBorrowMut _)) →
+      AssocMap.lookup env.siteEnv a = some (.ref τ r .siteBorrowMut) →
       -- b has the same basic type
       AssocMap.lookup env.siteEnv b = some (.basic τ) →
       -- [Path Checking] This is an important check to ensure the absence of

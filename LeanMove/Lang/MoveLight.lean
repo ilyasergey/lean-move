@@ -63,19 +63,15 @@ deriving Repr, DecidableEq, Inhabited, Hashable
 
 
 inductive BorrowingKind where
-  | siteBorrowImm : Var -> BorrowingKind
-  | siteBorrowMut : Var -> BorrowingKind
+  | siteBorrowImm : BorrowingKind
+  | siteBorrowMut : BorrowingKind
 deriving Repr, DecidableEq, Inhabited, Hashable
-
-def site_is_borrowing: BorrowingKind → Option Var :=
-  fun s => match s with
-    | .siteBorrowImm x => some x
-    | .siteBorrowMut x => some x
 
 -- Types
 inductive MoveType where
   | basic: BasicMoveType → MoveType
   -- The reference type also stores abstract location and borrowing provenance
+  -- TODO [250808]: Add the information about mutable/immutable
   | ref : BasicMoveType → Aref → BorrowingKind → MoveType
 deriving Repr, Inhabited, Hashable
 
