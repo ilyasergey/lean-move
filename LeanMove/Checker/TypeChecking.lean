@@ -84,7 +84,6 @@ abbrev VarEnv := AssocMap Var (IsValid × MoveType × Mut)
 -- Either a root or a field access
 inductive PathElement where
   | field : Field → PathElement
-  -- TODO [250808]: Add an abstract reference representing the root
   | root_to_var : Var → PathElement
 deriving Repr, DecidableEq, Inhabited, Hashable
 
@@ -206,13 +205,12 @@ open AssocMap
  -/
 
  -- Check that the variable x is not borrowed by browsing through all sites
- -- FIXME: fix using graph reachability
  def not_borrowed (x: Var) (env: TypeEnv) : Prop :=
-  -- For x not to be borrowed, all abstract location of the reference type that
-  -- are borrowed should not  coincide with x
-  ∀ a b τ isBor, AssocMap.lookup env.siteEnv a = some (.ref τ b isBor) →
-    match isBor with
-    | _ => false
+  -- For x not to be borrowed, it should have no outbound edges from the root
+  -- [Q3] Check that this is how the implementation does it? Is it that shallow?
+  ∀ (r : Aref),
+    let regex := env.pathEnv.paths (.root, r)
+    forall y, interpret_regex regex [.root_to_var y] → y ≠ x
 
 def all_fresh_sites (env: TypeEnv) (as: List Site) : Prop :=
   List.all as (fun a ↦ notIn env.siteEnv a)
