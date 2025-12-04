@@ -62,6 +62,8 @@ inductive Aref where
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 
+-- Borrowing kind: tracks only mutability, NOT provenance
+-- Provenance (which variable was borrowed) is tracked via PathEnv edges
 inductive BorrowingKind where
   | siteBorrowImm : BorrowingKind
   | siteBorrowMut : BorrowingKind
@@ -70,11 +72,11 @@ deriving Repr, DecidableEq, Inhabited, Hashable
 -- Types
 inductive MoveType where
   | basic: BasicMoveType → MoveType
-  -- The reference type also stores abstract location and borrowing provenance
-  -- TODO [250808]: Add the information about mutable/immutable
+  -- The reference type stores: basic type, abstract reference, and mutability
+  -- Note: Provenance (which variable was borrowed from) is tracked separately
+  -- via PathEnv with root_to_var edges, not in this type
   | ref : BasicMoveType → Aref → BorrowingKind → MoveType
 deriving Repr, Inhabited, Hashable
-
 
 -- Variable Usage
 inductive Usage where
@@ -119,7 +121,7 @@ inductive Stmt where
   | writeRef : Site → Site → Stmt  -- *a = b
   | abort : Site → Stmt  -- abort a
   | release : Site → Stmt  -- release(a)
-  | block : List Stmt → Stmt  -- { s;+ }
+  | seq : Stmt → Stmt → Stmt  -- s1; s2 (sequential composition)
   | ifThenElse : Site → Stmt → Stmt → Stmt  -- if (a) s else s
   | while : Var → Stmt → Stmt  -- while (x) s
   | return : List Site → Stmt  -- return (a1, ..., an)
@@ -136,7 +138,7 @@ structure FunDef where
   params : List (Var × MoveType)  -- (x : T)*
   returnType : MoveType  -- Tr
   locals : List LocalVar  -- (let v : T)*
-  body : List Stmt  -- s+
+  body : Stmt  -- Function body (use seq for multiple statements)
 deriving Repr, Inhabited
 
 end MoveLight

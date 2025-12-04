@@ -95,6 +95,10 @@ structure PathEnv where
   -- Initially empty for each pair
   paths: (Aref × Aref) → Regex PathElement
 
+/-- Initialize an empty PathEnv with root already present -/
+def PathEnv.init : PathEnv :=
+  { refs := [.root],
+    paths := fun (u, v) => if u = v then Regex.ε else Regex.empty }
 
 -- Check that the property p holds for all paths from s in penv
 def check_outbound (penv: PathEnv) (s: Aref) (p: Regex PathElement → Prop) :=
@@ -123,7 +127,7 @@ def extend_with_star (target source : Aref) (pe: PathEnv) : PathEnv :=
   let paths' := fun (u, v) =>
     if u = target ∧ v = target then Regex.ε  else
     if v = target then Regex.concat (G (u, source)) (Regex.star (Regex.dot)) else
-    -- [Q2] Discuss what is going on here compared ot the previous case.
+    -- [TODO] [Q2] Discuss what is going on here compared ot the previous case.
     -- if u = target then der (G (source, v)) p else
     G (u, v)
   let refs' := if target ∉ pe.refs then target :: pe.refs else pe.refs
@@ -172,8 +176,10 @@ structure TypeEnv where
 /- ---------------------------------------------------- -/
 
 structure WellFormedEnv (typeEnv : TypeEnv) where
-  -- All abstract locations
+  -- All abstract locations have unique keys
   uniqueSites : uniqueKeys typeEnv.siteEnv
+  -- The root is always present in the path environment
+  rootPresent : Aref.root ∈ typeEnv.pathEnv.refs
   -- TODO: say that for all pairs in pathEnv there is either
   -- a variable in varEnv or a site in siteEnv
 
@@ -183,42 +189,45 @@ structure WellFormedEnv (typeEnv : TypeEnv) where
 
 open AssocMap
 
--- relation ⟨L; E; G⟩ ⊢ u ⤳ ⟨L'; E'; G'; Aloc; τ⟩ for the type Usage
 
-/-
-[Notes on typecheck_usage]
-
-* Most of the constructors require fresh reference and fresh abstract location
-  and  fresh reference. To simplify things those are provided externally and
-  checked for being fresh within the respective rule.
-
-* The association between a variable/aloc and the respective abstract reference
-  is now packaged into the type to avoid clutter. This might bite us in the butt
-  later. In any event, one needs to be careful when comparing MoveType instances
-  for equality, as they might be the same "type-wise", but differ in the
-  abstract references they carry. There is no such problem for basic types,
-  which can be compared for equality freely.
-
-* The logic for updating the graph are still missing, and need to be clarified
-  with Todd before incorporated into the type checking rules.
-
- -/
-
- -- Check that the variable x is not borrowed by browsing through all sites
+ -- Check that the variable x is not borrowed
+ -- Implementation: walk the graph from the local root and check that no outbound edge
+ -- starts with variable x (as discussed with Todd)
  def not_borrowed (x: Var) (env: TypeEnv) : Prop :=
-  -- For x not to be borrowed, it should have no outbound edges from the root
-  -- [Q3] Check that this is how the implementation does it? Is it that shallow?
+  -- For x not to be borrowed, check all outbound edges from root
+  -- and ensure none of them start with a path to x
   ∀ (r : Aref),
     let regex := env.pathEnv.paths (.root, r)
-    forall y, interpret_regex regex [.root_to_var y] → y ≠ x
+    -- The regex should not accept a path that starts with root_to_var x
+    ¬ interpret_regex regex [.root_to_var x]
 
 def all_fresh_sites (env: TypeEnv) (as: List Site) : Prop :=
   List.all as (fun a ↦ notIn env.siteEnv a)
 
 /--
-Invariants:
-⋆ Every sites that belongs to a variable (e.g., x) is reachable from the root via path "x"
- -/
+Type checking relation for variable usages.
+
+Judgment form: `⟨env⟩ ⊢ u ⤳ ⟨env'⟩; a : τ`
+
+This relation handles four kinds of variable usages in A-Normal Form:
+- **move x**: Transfers ownership of variable x to a new site, invalidating x
+- **copy x**: Creates a copy of x's value at a new site, preserving x
+- **&x** (borrowImm): Creates an immutable reference to x
+- **&mut x** (borrowMut): Creates a mutable reference to x
+
+Components:
+- `env`: Input type environment (varEnv, siteEnv, pathEnv, funEnv)
+- `Usage`: The variable usage operation being checked
+- `env'`: Output type environment after the operation
+- `a`: The destination site where the result is stored
+- `τ`: The type of the value at site a
+
+Key invariants:
+⋆ Every site that belongs to a variable (e.g., x) is reachable from the root via path "x"
+⋆ Moving a variable requires it is not currently borrowed (checked via not_borrowed)
+⋆ Borrowing a variable creates a new abstract reference and updates PathEnv
+⋆ Copying preserves the variable's validity and creates ε-extensions for references
+-/
 inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Site -> MoveType → Prop where
   | t_umove : ∀ env env' x τ ms a,
      AssocMap.lookup env.varEnv x = some (.validVar, τ, ms) →
@@ -313,9 +322,39 @@ def types_confrom (alocEnv : SiteEnv) (sites : List Site) (paramTypes : List Par
   -- Mismatch in sizes
   | _, _ => False
 
--- ⟨L; E; G⟩ ⊢ (e : expr) ⤳ ⟨L'; E'; G'⟩; a; τ
+/--
+Type checking relation for expressions in A-Normal Form.
 
+Judgment form: `⟨env⟩ ⊢ e ⤳ ⟨env'⟩; a : τ`
 
+This relation handles all expression forms that produce values at sites:
+- **usage u**: Variable usages (move, copy, borrow) - delegates to typecheck_usage
+- **&a.T::f**: Immutable field borrow from a reference to a record
+- **&mut a.T::f**: Mutable field borrow from a mutable reference to a record
+- **a ⊕ b**: Binary operations (arithmetic, comparison, logical)
+- ***a**: Dereference - reads through a reference, consuming it
+- **freeze a**: Converts any reference to an immutable reference via ε-extension
+- **T { f1: a1, ..., fn: an }**: Pack - constructs a record from field values
+
+Components:
+- `env`: Input type environment before evaluating the expression
+- `Expr`: The expression being type checked
+- `env'`: Output type environment after evaluation (sites consumed/produced, PathEnv updated)
+- `a`: The destination site where the expression result is stored
+- `τ`: The type of the resulting value
+
+Key operations on environments:
+⋆ **Site consumption**: Input sites are removed from siteEnv (linear consumption)
+⋆ **Site production**: Output site `a` must be fresh and is added to siteEnv
+⋆ **PathEnv updates**: Field borrows extend paths with field names; freeze adds ε-extensions
+⋆ **Reference management**: Abstract references are allocated/deallocated as expressions consume/produce references
+
+Type safety properties:
+⋆ All input sites must exist in siteEnv with appropriate types
+⋆ Output site must be fresh (not in siteEnv)
+⋆ Operations respect mutability (e.g., &mut requires mutable source reference)
+⋆ PathEnv accurately tracks reachability for borrow checking
+-/
 inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType → Prop where
 
   -- c <- u (see above)
@@ -370,7 +409,7 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType �
                       pathEnv := delete_ref_node env.pathEnv r } →
      typecheck_expr env (Expr.readRef a) env' c (.basic τ)
 
-  | freeze : ∀ env env' a c (τ : BasicMoveType) (r r': Aref) isBor x,
+  | freeze : ∀ env env' a c (τ : BasicMoveType) (r r': Aref) isBor,
     -- [Q] Are there any constraints on a? Does it make a difference whether a
     -- is a reference borrowed mutably or immutably?
     AssocMap.lookup env.siteEnv a = some (.ref τ r isBor) →
@@ -381,71 +420,156 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType �
                      pathEnv := update_with_epsilon r r' env.pathEnv } →
     typecheck_expr env (Expr.freeze a) env' c (.ref τ r' .siteBorrowImm)
 
-  -- TODO: implement me!
-  -- b <-- T { f: a1, ...,  f: an }
-  | pack : ∀ env env' fs as ts bs b τ,
-     -- retrieve types for all as from env.alocEnv
-     -- [TODO]: Okay, this is straightforward, but requires a few auxiliary functions
-     -- Will do so later
-     -- Remove all as from env.alocEnv
-     typecheck_expr env (Expr.pack fs as) env' b τ
-
--- let (a1, ..., an) = f(b1, ..., bm) // Call
--- [Q2] is it okay that we exclude this signature, as it over-approximates what is actually passed
--- as actuals and we have already ensured confromance?
+  -- [Q] [2025-12-04] Pack rule implementation - needs review with Todd
+  -- b <-- T { f1: a1, ..., fn: an }
+  -- Creates a record by consuming field values from sites
+  | pack : ∀ env env' (recName : Id) (fields : List (Field × Site)) (b : Site) (fentries : AssocMap Field BasicMoveType),
+     -- b must be fresh
+     AssocMap.notIn env.siteEnv b →
+     -- Check that all field sites exist and have the correct types
+     -- For each (f, a) pair, the site a must have type matching fentries[f]
+     (∀ (f : Field) (a : Site), (f, a) ∈ fields →
+       ∃ (bt : BasicMoveType), AssocMap.lookup env.siteEnv a = some (.basic bt) ∧
+                               AssocMap.lookup fentries f = some bt) →
+     -- All field sites must be distinct (no aliasing)
+     (∀ a₁ a₂, (∃ f₁ f₂, (f₁, a₁) ∈ fields ∧ (f₂, a₂) ∈ fields ∧ f₁ ≠ f₂) → a₁ ≠ a₂) →
+     -- Environment update: remove all field sites, add b with record type
+     env' = {env with siteEnv := insert (deleteAll env.siteEnv (fields.map Prod.snd)) b (.basic (.trecord fentries))} →
+     typecheck_expr env (Expr.pack recName fields) env' b (.basic (.trecord fentries))
 
 def call_connect_inputs_outputs (env: TypeEnv) (as bs: List Site) : TypeEnv :=
+  -- Extract reference arefs from inputs (bs) and outputs (as)
+  -- We only care about reference types; basic types are disregarded
+
   let inputs := List.filterMap (fun a ↦ match AssocMap.lookup env.siteEnv a with
     | some (.ref _ r _) => some r
     | _ => none) bs
+
+  -- MI: All mutable inputs
   let mi := List.filterMap (fun a ↦ match AssocMap.lookup env.siteEnv a with
     | some (.ref _ r .siteBorrowMut) => some r
     | _ => none) bs
-  let ii := List.filterMap (fun a ↦ match AssocMap.lookup env.siteEnv a with
-    | some (.ref _ r .siteBorrowImm) => some r
-    | _ => none) bs
-  -- The following two are problematic: what exactly are the `_x` in the references?
+
+  -- MO: All mutable outputs
   let mo := List.filterMap (fun a ↦ match AssocMap.lookup env.siteEnv a with
     | some (.ref _ r .siteBorrowMut) => some r
     | _ => none) as
+
+  -- IO: All immutable outputs
   let io := List.filterMap (fun a ↦ match AssocMap.lookup env.siteEnv a with
     | some (.ref _ r .siteBorrowImm) => some r
     | _ => none) as
 
-  -- For any immutable output, it will be .*-extended from any input (mutable and immutable)
-  let with_io_from_inputs : PathEnv := List.foldl (fun env iout ↦
-    let res := List.foldl (fun env' input ↦ extend_with_star input iout env') env inputs
-    res) env.pathEnv io
+  -- Rule 1: For any immutable output, it will be .*-extended from any input (mutable and immutable)
+  let with_io_from_inputs : PathEnv := List.foldl (fun penv iout ↦
+    List.foldl (fun penv' input ↦ extend_with_star input iout penv') penv inputs
+  ) env.pathEnv io
 
-  -- TODO: finish the others
+  -- Rule 2: For any mutable output, it will be .*-extended from any mutable input only
+  let with_mo_from_mi : PathEnv := List.foldl (fun penv mout ↦
+    List.foldl (fun penv' minput ↦ extend_with_star minput mout penv') penv mi
+  ) with_io_from_inputs mo
 
-/-
-        -- Consider 4 sets:
-           * All mutable inputs (MI)
-           * All immutable inputs (II)
-           * All mutable outputs (MO)
-           * All immutable outputs (IO)
+  -- Rule 3: Immutable outputs are .*-extended from each other
+  -- For each pair (io1, io2) where io1 ≠ io2, add io1 →.* io2
+  let with_io_to_io : PathEnv := List.foldl (fun penv io1 ↦
+    List.foldl (fun penv' io2 ↦
+      if io1 ≠ io2 then extend_with_star io1 io2 penv' else penv'
+    ) penv io
+  ) with_mo_from_mi io
 
-           We can disregard any inputs/outputs of basic types
+  { env with pathEnv := with_io_to_io }
 
-           For any immutable output, it will be .*-extended from any input (mutable and immutable)
+/-- Check that no mutable input reaches any other input.
 
-           For any mutable output, it will be .*-extended from any mutable input
+    For each mutable input site mi_site with abstract reference mi_ref,
+    and for every other input site other_site with reference other_ref,
+    verify that there is no non-empty path from mi_ref to other_ref in PathEnv.
 
-           All outputs will be .*-extended from each other, except
-              - there should be no edges between mutable outputs
-              - mutable outputs cannot reach each other or another output
-              - same from immutable to mutable
-
-           Similar property is enforced for inputs
-              - No mutable inputs allow to reach any other inputs
-                (i.e., non-reachable in the graph, ∨ia ε or by paths)
-              - All mutable inputs have outbound edges other than ε
+    This ensures that mutable borrows passed to a function are properly isolated:
+    no mutable input can alias or reach any other input parameter, preventing
+    unexpected interference between function arguments.
 -/
+def check_mutable_inputs_isolated (env: TypeEnv) (bs: List Site) : Prop :=
+  ∀ (mi_site : Site), mi_site ∈ bs →
+    ∀ (mi_bt : BasicMoveType) (mi_ref : Aref),
+      AssocMap.lookup env.siteEnv mi_site = some (.ref mi_bt mi_ref .siteBorrowMut) →
+      ∀ (other_site : Site), other_site ∈ bs →
+        ∀ (other_bt : BasicMoveType) (other_ref : Aref) (bk : BorrowingKind),
+          AssocMap.lookup env.siteEnv other_site = some (.ref other_bt other_ref bk) →
+          mi_site ≠ other_site →
+            let regex := env.pathEnv.paths (mi_ref, other_ref)
+            ¬ (∃ path, interpret_regex regex path ∧ path ≠ [])
 
+/-- Check that all mutable inputs have non-trivial outbound edges.
 
-  env
+    For each mutable input site mi_site with abstract reference mi_ref,
+    verify that there exists at least one target reference that mi_ref reaches
+    via a non-empty path in PathEnv.
 
+    This ensures that mutable borrows passed to functions are "live" and have
+    meaningful connections in the path graph (beyond just the trivial ε edge to itself).
+    A mutable borrow without outbound edges would indicate it's not properly
+    connected to the ownership structure.
+-/
+def check_mutable_inputs_have_outbound (env: TypeEnv) (bs: List Site) : Prop :=
+  ∀ (mi_site : Site), mi_site ∈ bs →
+    ∀ (mi_bt : BasicMoveType) (mi_ref : Aref),
+      AssocMap.lookup env.siteEnv mi_site = some (.ref mi_bt mi_ref .siteBorrowMut) →
+      ∃ (target : Aref), target ∈ env.pathEnv.refs ∧ mi_ref ≠ target ∧
+        let regex := env.pathEnv.paths (mi_ref, target)
+        ∃ path, interpret_regex regex path ∧ path ≠ []
+
+/--
+Type checking relation for statements.
+
+Judgment form: `⟨env⟩ ⊢ s ⤳ ⟨env'⟩`
+
+This relation handles all statement forms that transform the environment:
+- **skip**: No-op, environment unchanged
+- **let a = e**: Bind expression result to site (delegates to typecheck_expr)
+- **x = a**: Assign site value to variable, invalidating previous variable binding
+- ***a = b**: Write through mutable reference, consuming both sites
+- **let (a1, ..., an) = f(b1, ..., bm)**: Function call with path updates
+- **T { f1: a1, ..., fn: an } = b**: Unpack record into field sites
+- **abort a**: Abort execution (consumes site)
+- **release(a)**: Explicitly release a reference
+- **s1; s2**: Sequential composition - threads environment from s1 to s2
+- **if (a) s1 else s2**: Conditional branching
+- **while (x) s**: Loop (requires loop invariant preservation)
+- **return (a1, ..., an)**: Return from function
+
+Components:
+- `env`: Input type environment before executing the statement
+- `Stmt`: The statement being type checked
+- `env'`: Output type environment after execution
+
+Key environment transformations:
+⋆ **varEnv updates**: Assignments update variable bindings; moves invalidate variables
+⋆ **siteEnv updates**: Sites are consumed by operations and new sites are produced
+⋆ **PathEnv updates**:
+  - Borrows add edges from root to references
+  - Field accesses extend paths with field names
+  - Function calls add conservative .*-extensions between inputs/outputs
+  - Write operations check for dangling reference prevention (no outbound edges)
+⋆ **Reference lifecycle**: Abstract references are allocated, tracked, and garbage collected
+
+Function call path update rules (via call_connect_inputs_outputs):
+  1. Immutable outputs (IO) ←.* from all inputs (MI ∪ II)
+  2. Mutable outputs (MO) ←.* from mutable inputs (MI) only
+  3. Immutable outputs ←.* from each other
+
+Validation checks:
+⋆ **Mutable input isolation**: No mutable input reaches any other input (prevents aliasing)
+⋆ **Liveness**: All mutable inputs have non-trivial outbound edges (properly connected)
+⋆ **No dangling references**: Write operations require target has no outbound edges beyond ε
+⋆ **Type conformance**: Function arguments/returns match declared types and mutability
+
+Linear resource tracking:
+⋆ Sites represent linear resources that are consumed exactly once
+⋆ Variables can be invalidated (moved) or preserved (copied/borrowed)
+⋆ PathEnv tracks which variables are borrowed (via not_borrowed check)
+-/
 inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
   | skip : ∀ env, typecheck_stmt env .skip env
 
@@ -494,58 +618,64 @@ inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
   | call : ∀ env env' fnName (as bs: List Site) (params rets : List ParamType),
     -- Check that as are all fresh
     all_fresh_sites env as →
+    -- Check that the function exists
+    AssocMap.lookup env.funEnv fnName = some ⟨params, rets⟩  →
     -- Check type conformance for parameters and return types
     types_confrom env.siteEnv bs params →
     types_confrom env.siteEnv as rets →
-    -- Check that the function exists
-    AssocMap.lookup env.funEnv fnName = some ⟨params, rets⟩  →
-    -- Check that the arguments are of the correct type
-
-
-    -- Check that the return type is of the correct type
+    -- Validation: No mutable input reaches any other input
+    check_mutable_inputs_isolated env bs →
+    -- Validation: All mutable inputs have non-trivial outbound edges
+    check_mutable_inputs_have_outbound env bs →
+    -- Update environment: remove input sites, add output sites, connect paths
+    env' = call_connect_inputs_outputs env as bs →
     typecheck_stmt env (.call as fnName bs) env'
+
+  -- return (a1, ..., an) // Return from function
+  -- This is the dual of call: validates return values and cleans up all non-returned state
+  | return : ∀ env env' fnName (as: List Site) (rets : List ParamType),
+    -- The function being returned from must exist in funEnv
+    -- (In a real implementation, this would be tracked in context; here we look it up)
+    AssocMap.lookup env.funEnv fnName = some ⟨_, rets⟩ →
+    -- Check type conformance: return sites must match declared return types
+    types_confrom env.siteEnv as rets →
+    -- Validation: No mutable return value reaches any other return value
+    -- This prevents returning aliased mutable references
+    check_mutable_inputs_isolated env as →
+    -- Validation: All mutable return values have non-trivial outbound edges
+    -- Ensures mutable returns are "live" and properly connected in the path graph
+    check_mutable_inputs_have_outbound env as →
+    -- Environment cleanup: release everything except the return values
+    -- All sites not in `as` are removed from siteEnv (garbage collected)
+    -- Build a new siteEnv containing only the return sites
+    (let newSiteEnv := List.foldl (fun senv a ↦
+      match AssocMap.lookup env.siteEnv a with
+      | some τ => insert senv a τ
+      | none => senv
+    ) AssocMap.empty as
+    env' = {env with siteEnv := newSiteEnv}) →
+    typecheck_stmt env (.return as) env'
+
+  -- s1; s2 // Sequential composition
+  -- Threads the environment through: s1 produces env', which becomes input to s2
+  | seq : ∀ env env' env'' s1 s2,
+    -- Type check first statement, transforming env to env'
+    typecheck_stmt env s1 env' →
+    -- Type check second statement, transforming env' to env''
+    typecheck_stmt env' s2 env'' →
+    -- The final environment is the result of executing both statements in sequence
+    typecheck_stmt env (.seq s1 s2) env''
 
   /- Done above this line -/
 
 /-
-
-    [ ] let (a1, ..., an) = f(b1, ..., bm) // Call
-        -- Check the types of parameters and their mutability annotations
-        -- No subtyping
-        -- Consider 4 sets:
-           * All mutable inputs (MI)
-           * All immutable inputs (II)
-           * All mutable outputs (MO)
-           * All immutable outputs (IO)
-
-           We can disregard any inputs/outputs of basic types
-
-           For any immutable output, it will be .*-extended from any input (mutable and immutable)
-
-           For any mutable output, it will be .*-extended from any mutable input
-
-           All outputs will be .*-extended from each other, except
-              - there should be no edges between mutable outputs
-              - mutable outputs cannot reach each other or another output
-              - same from immutable to mutable
-
-           Similar property is enforced for inputs
-              - No mutable inputs allow to reach any other inputs
-                (i.e., non-reachable in the graph, ∨ia ε or by paths)
-              - All mutable inputs have outbound edges other than ε
-
-    [ ] return (a1, ..., an) // Return
-           Enforces constraints similar to what call does for its inputs
-
-           Everything except in the return is released
-
+    TODO: Remaining statements.
 
     [ ] T { fi: ai, ...} = b // Unpack, consuming, hence no aliasing
     [ ] abort a              // Abort the transaction, aka panic!
     [ ] release(a)           // Invalidates a reference
-    [ ] { s;+ }              // Block
-    [ ] if (a) s else s      // If/loop condition is always a variable [?]
-    [ ] while (x) s
+    [ ] if (a) s else s      // If
+    [ ] while (x) s          // Loop condition is always a variable [?]
 
  -/
 
