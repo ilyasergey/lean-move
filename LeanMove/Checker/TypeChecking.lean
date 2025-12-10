@@ -20,7 +20,6 @@ import Aesop
 
 import LeanMove.Structures.AssocMap
 import LeanMove.Structures.Regex
-
 import LeanMove.Lang
 
 namespace LeanMove.Checker

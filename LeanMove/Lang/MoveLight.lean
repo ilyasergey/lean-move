@@ -18,9 +18,9 @@ import Batteries.Data.HashMap
 import Ssreflect.Lang
 import LeanMove.Structures.AssocMap
 
-/- -----------------------------------------------------/
-/- -       Definition of the Move Light language      --/
-/- -----------------------------------------------------/
+/- -----------------------------------------------------
+ -       Definition of the Move Light language      --
+ -----------------------------------------------------/
 
 namespace LeanMove.Lang
 
