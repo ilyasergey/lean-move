@@ -143,6 +143,24 @@ def delete_ref_node (pe: PathEnv) (r : Aref) : PathEnv :=
   { pe with refs  := List.filter (fun r' => r' ≠ r) pe.refs,
             paths := paths' }
 
+-- Consume reference r and transfer its reachability to r'
+-- Used by freeze: old mutable reference is consumed, new immutable reference inherits paths
+-- Semantics: all edges pointing TO r now point to r' instead, r is removed
+def consume_ref_transfer (pe: PathEnv) (r r' : Aref) : PathEnv :=
+  let G := pe.paths
+  -- For each edge (u, r) with label L, create edge (u, r') with label L
+  -- Remove all edges involving r
+  let paths' := fun (u, v) =>
+    if u = r ∨ v = r then
+      Regex.empty
+    else if v = r' then
+      -- r' gets edges from: original edges to r' + edges that were to r
+      Regex.union (G (u, r')) (G (u, r))
+    else
+      G (u, v)
+  let refs' := if r' ∉ pe.refs then r' :: pe.refs else pe.refs
+  { pe with refs  := List.filter (fun x => x ≠ r) refs',
+            paths := paths' }
 
 def freshRef (r: Aref) (pe: PathEnv) := r ∉ pe.refs
 
@@ -408,15 +426,15 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType �
                       pathEnv := delete_ref_node env.pathEnv r } →
      typecheck_expr env (Expr.readRef a) env' c (.basic τ)
 
+  -- c <- freeze a
   | freeze : ∀ env env' a c (τ : BasicMoveType) (r r': Aref) isBor,
-    -- [Q] Are there any constraints on a? Does it make a difference whether a
-    -- is a reference borrowed mutably or immutably?
+    -- Freeze converts a reference to immutable, consuming the old reference
     AssocMap.lookup env.siteEnv a = some (.ref τ r isBor) →
-    -- creates an immutable reference r' and an immutable ε-extension from this refernce
     AssocMap.notIn env.siteEnv c →
     freshRef r' env.pathEnv →
+    -- Old reference r is consumed; new reference r' inherits r's incoming edges
     env' = {env with siteEnv := insert (delete env.siteEnv a) c (.ref τ r' .siteBorrowImm)
-                     pathEnv := update_with_epsilon r r' env.pathEnv } →
+                     pathEnv := consume_ref_transfer env.pathEnv r r' } →
     typecheck_expr env (Expr.freeze a) env' c (.ref τ r' .siteBorrowImm)
 
   -- [Q] [2025-12-04] Pack rule implementation - needs review with Todd
