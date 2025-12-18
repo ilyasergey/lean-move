@@ -97,3 +97,13 @@ Updated macros to be consistent with the current relation signatures:
 - `⊢ᶠ f : Λ` for `typecheck_fun f Λ`
 
 Uses subscript characters (ᵤ, ₑ, ₛ, ᶠ) to distinguish different judgment forms.
+
+### 11. Translate deref_borrow_field_ok example to MoveLight AST
+**File:** `LeanMove/Examples/deref_borrow_field_ok.lean`
+
+Translated the Move IR example program to MoveLight AST:
+- Defined `M_T_basic` and `M_T` for the struct type `M.T = { f: u64 }`
+- Translated `M.new(g: u64): Self.T` - constructor that packs parameter into struct
+- Translated `M.t(this: &Self.T)` - method that borrows field, reads reference, assigns to local
+- Translated `foo()` - entry point that creates struct, borrows it, and calls method
+- All functions use A-normal form with explicit sites for temporaries

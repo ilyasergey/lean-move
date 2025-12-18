@@ -49,7 +49,6 @@ inductive BasicMoveType where
   | trecord : AssocMap Field BasicMoveType → BasicMoveType
 deriving Repr, Inhabited, Hashable
 
-
 -- Variables are just identifiers
 structure Var where
   id: Id
