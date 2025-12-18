@@ -188,6 +188,19 @@ structure TypeEnv where
   pathEnv : PathEnv
   funEnv  : FunEnv
 
+-- Label environment: maps labels to their expected entry type environments
+-- Used for type checking control flow (jumps must target labels with compatible environments)
+abbrev LabelEnv := AssocMap Label TypeEnv
+
+-- Check that two type environments are equivalent
+-- For now, we use a simple structural equality check
+-- This may need to be refined to handle environment subsumption for joins
+def TypeEnv.equiv (env1 env2 : TypeEnv) : Prop :=
+  env1.siteEnv = env2.siteEnv ∧
+  env1.varEnv = env2.varEnv ∧
+  env1.pathEnv.refs = env2.pathEnv.refs ∧
+  (∀ p, env1.pathEnv.paths p = env2.pathEnv.paths p)
+
 /- ---------------------------------------------------- -/
 /-       Well-formedness of the environments            -/
 /- ---------------------------------------------------- -/
@@ -558,9 +571,9 @@ This relation handles all statement forms that transform the environment:
 - **abort a**: Abort execution (consumes site)
 - **release(a)**: Explicitly release a reference
 - **s1; s2**: Sequential composition - threads environment from s1 to s2
-- **if (a) s1 else s2**: Conditional branching
-- **while (x) s**: Loop (requires loop invariant preservation)
-- **return (a1, ..., an)**: Return from function
+- **jump L**: Unconditional jump to label L
+- **branch a L1 L2**: Conditional branch - if (a) goto L1 else goto L2
+- **ret (a1, ..., an)**: Return from function
 
 Components:
 - `env`: Input type environment before executing the statement
@@ -593,15 +606,15 @@ Linear resource tracking:
 ⋆ Variables can be invalidated (moved) or preserved (copied/borrowed)
 ⋆ PathEnv tracks which variables are borrowed (via not_borrowed check)
 -/
-inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
-  | skip : ∀ env, typecheck_stmt env .skip env
+inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → TypeEnv → Prop where
+  | skip : ∀ (lenv : LabelEnv) (env : TypeEnv), typecheck_stmt lenv env .skip env
 
-  | let_bind : ∀ env env' a e τ,
+  | let_bind : ∀ (lenv : LabelEnv) (env env' : TypeEnv) a e τ,
      typecheck_expr env e env' a τ →
-     typecheck_stmt env (.letBind a e) env'
+     typecheck_stmt lenv env (.letBind a e) env'
 
   -- *a = b
-  | write_ref : ∀ env env' a b τ (r: Aref),
+  | write_ref : ∀ (lenv : LabelEnv) (env env' : TypeEnv) a b τ (r: Aref),
       -- a is of type reference to a basic typ τ, its aref is s
       AssocMap.lookup env.siteEnv a = some (.ref τ r .siteBorrowMut) →
       -- b has the same basic type
@@ -615,10 +628,10 @@ inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
       -- retire the abstract reference s
       env' = {env with siteEnv := delete (delete env.siteEnv b) a
                        pathEnv := garbage_collect env.pathEnv r } →
-      typecheck_stmt env (.writeRef a b) env'
+      typecheck_stmt lenv env (.writeRef a b) env'
 
   -- x = a // x is a valid var
-  | var_assign_valid : ∀ env env' env'' x a ax rtype,
+  | var_assign_valid : ∀ (lenv : LabelEnv) (env env' env'' : TypeEnv) x a ax rtype,
       -- Take a mutable borrow to a variable, so that `ax` is an "intermediate"
       -- site holding its reference location. The usage check below will also nicely
       -- ensure that the variable `x` is actually valid.
@@ -626,19 +639,19 @@ inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
       -- So we reduce it  to the previous case of writing to a reference.
       -- Another nice touch is that the intermediate `ax` will be removed from
       -- `env''` at the end.
-      typecheck_stmt env' (.writeRef ax a) env'' →
-      typecheck_stmt env (.assign x a) env''
+      typecheck_stmt lenv env' (.writeRef ax a) env'' →
+      typecheck_stmt lenv env (.assign x a) env''
 
   -- x = a // x is an invalid variable
-  | var_assign_invalid : ∀ env env' x a τ,
+  | var_assign_invalid : ∀ (lenv : LabelEnv) (env env' : TypeEnv) x a τ,
     -- Only works if x invalid
     AssocMap.lookup env.varEnv x = some (.invalidVar, τ, .mutable) →
     -- Checking the type confromance
     AssocMap.lookup env.siteEnv a = some τ →
-    typecheck_stmt env (.assign x a) env'
+    typecheck_stmt lenv env (.assign x a) env'
 
   -- let (a1, ..., an) = f(b1, ..., bm) // Call
-  | call : ∀ env env' fnName (as bs: List Site) (params rets : List ParamType),
+  | call : ∀ (lenv : LabelEnv) (env env' : TypeEnv) fnName (as bs: List Site) (params rets : List ParamType),
     -- Check that as are all fresh
     all_fresh_sites env as →
     -- Check that the function exists
@@ -652,11 +665,11 @@ inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
     check_mutable_inputs_have_outbound env bs →
     -- Update environment: remove input sites, add output sites, connect paths
     env' = call_connect_inputs_outputs env as bs →
-    typecheck_stmt env (.call as fnName bs) env'
+    typecheck_stmt lenv env (.call as fnName bs) env'
 
   -- return (a1, ..., an) // Return from function
   -- This is the dual of call: validates return values and cleans up all non-returned state
-  | return : ∀ env env' fnName (as: List Site) (rets : List ParamType),
+  | return : ∀ (lenv : LabelEnv) (env env' : TypeEnv) fnName (as: List Site) (rets : List ParamType),
     -- The function being returned from must exist in funEnv
     -- (In a real implementation, this would be tracked in context; here we look it up)
     AssocMap.lookup env.funEnv fnName = some ⟨_, rets⟩ →
@@ -677,40 +690,40 @@ inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
       | none => senv
     ) AssocMap.empty as
     env' = {env with siteEnv := newSiteEnv}) →
-    typecheck_stmt env (.return as) env'
+    typecheck_stmt lenv env (.ret as) env'
 
   -- s1; s2 // Sequential composition
   -- Threads the environment through: s1 produces env', which becomes input to s2
-  | seq : ∀ env env' env'' s1 s2,
+  | seq : ∀ (lenv : LabelEnv) (env env' env'' : TypeEnv) s1 s2,
     -- Type check first statement, transforming env to env'
-    typecheck_stmt env s1 env' →
+    typecheck_stmt lenv env s1 env' →
     -- Type check second statement, transforming env' to env''
-    typecheck_stmt env' s2 env'' →
+    typecheck_stmt lenv env' s2 env'' →
     -- The final environment is the result of executing both statements in sequence
-    typecheck_stmt env (.seq s1 s2) env''
+    typecheck_stmt lenv env (.seq s1 s2) env''
 
   -- release(a)
   -- Explicitly release a reference, consuming it without producing any value
-  | release : ∀ env env' (a : Site) (τ : BasicMoveType) (r : Aref) isBor,
+  | release : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (a : Site) (τ : BasicMoveType) (r : Aref) isBor,
     -- Site a must hold a reference
     AssocMap.lookup env.siteEnv a = some (.ref τ r isBor) →
     -- Remove site a and delete reference r from pathEnv
     env' = {env with siteEnv := delete env.siteEnv a
                      pathEnv := delete_ref_node env.pathEnv r } →
-    typecheck_stmt env (.release a) env'
+    typecheck_stmt lenv env (.release a) env'
 
   -- abort a
   -- Abort execution with a value. Control never continues past abort.
   -- The output environment can be arbitrary since it's never used.
-  | abort : ∀ env env' (a : Site) τ,
+  | abort : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (a : Site) τ,
     -- Site a must exist (consumed by abort)
     AssocMap.lookup env.siteEnv a = some τ →
     -- Output environment is arbitrary (unreachable code)
-    typecheck_stmt env (.abort a) env'
+    typecheck_stmt lenv env (.abort a) env'
 
   -- T { f1: a1, ..., fn: an } = b
   -- Unpack a record into its constituent field sites (dual of pack expression)
-  | unpack : ∀ env env' (fields : List (Field × Site)) (b : Site) (fentries : AssocMap Field BasicMoveType),
+  | unpack : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (fields : List (Field × Site)) (b : Site) (fentries : AssocMap Field BasicMoveType),
     -- b must hold a record type
     AssocMap.lookup env.siteEnv b = some (.basic (.trecord fentries)) →
     -- All output field sites must be fresh
@@ -721,7 +734,7 @@ inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
     (∀ (f : Field) (a : Site), (f, a) ∈ fields → ∃ bt, AssocMap.lookup fentries f = some bt) →
     -- Environment update: remove b, add all field sites with their types
     env' = {env with siteEnv := addFieldSites fentries (delete env.siteEnv b) fields} →
-    typecheck_stmt env (.unpack fields b) env'
+    typecheck_stmt lenv env (.unpack fields b) env'
 
   /- Done above this line -/
 
@@ -731,8 +744,8 @@ inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
     [x] T { fi: ai, ...} = b // Unpack, consuming, hence no aliasing
     [x] abort a              // Abort the transaction, aka panic!
     [x] release(a)           // Invalidates a reference
-    [ ] if (a) s else s      // If
-    [ ] while (x) s          // Loop condition is always a variable [?]
+    [ ] jump L               // Unconditional jump to label L
+    [ ] branch a L1 L2       // If (a) goto L1 else goto L2
 
  -/
 

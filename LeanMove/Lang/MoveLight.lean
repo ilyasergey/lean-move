@@ -27,6 +27,7 @@ namespace LeanMove.Lang
 open AssocMap
 
 abbrev Id := String
+abbrev Label := String
 
 -- Sites: model linear stack slots in A-Normal form
 inductive Site where
@@ -119,12 +120,13 @@ inductive Stmt where
   | call : List Site → Id → List Site → Stmt  -- let (a1, ..., an) = f(b1, ..., bm)
   | assign : Var → Site → Stmt  -- x = a
   | writeRef : Site → Site → Stmt  -- *a = b
-  | abort : Site → Stmt  -- abort a
   | release : Site → Stmt  -- release(a)
   | seq : Stmt → Stmt → Stmt  -- s1; s2 (sequential composition)
-  | ifThenElse : Site → Stmt → Stmt → Stmt  -- if (a) s else s
-  | while : Var → Stmt → Stmt  -- while (x) s
-  | return : List Site → Stmt  -- return (a1, ..., an)
+  -- Control flow
+  | jump : Label → Stmt  -- goto L
+  | branch : Site → Label → Label → Stmt  -- if (a) goto L1 else goto L2
+  | ret : List Site → Stmt  -- return (a1, ..., an)
+  | abort : Site → Stmt  -- abort a
 deriving Repr, Inhabited
 
 -- Local variable declaration
@@ -133,12 +135,18 @@ structure LocalVar where
   type : MoveType
 deriving Repr, Inhabited, Hashable
 
+-- A labeled block: label paired with a statement
+structure Block where
+  label : Label
+  body : Stmt
+deriving Repr, Inhabited
+
 -- Function definition
 structure FunDef where
   params : List (Var × MoveType)  -- (x : T)*
   returnType : MoveType  -- Tr
   locals : List LocalVar  -- (let v : T)*
-  body : Stmt  -- Function body (use seq for multiple statements)
+  blocks : List Block  -- List of labeled blocks; first block is entry point
 deriving Repr, Inhabited
 
 end MoveLight
