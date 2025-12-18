@@ -803,17 +803,26 @@ def build_labelEnv (blocks : List Block) (expectedEnvs : List TypeEnv) : LabelEn
   (blocks.zip expectedEnvs).foldl (fun lenv (block, env) => insert lenv block.label env) AssocMap.empty
 
 /--
-  Type checking relation for a single block.
-  The block's body is type checked starting from the expected environment for its label.
+  Type checking relation for a single block with output environment.
+  The block's body is type checked starting from the expected environment for its label,
+  and produces an output environment.
 -/
-def typecheck_block (lenv : LabelEnv) (block : Block) (expectedEnv : TypeEnv) : Prop :=
-  ∃ outEnv, typecheck_stmt lenv expectedEnv block.body outEnv
+def typecheck_block (lenv : LabelEnv) (block : Block) (expectedEnv : TypeEnv) (outEnv : TypeEnv) : Prop :=
+  typecheck_stmt lenv expectedEnv block.body outEnv
 
 /--
   Compute the initial VarEnv for a function from its parameters and locals.
 -/
 def init_fun_varEnv (f : FunDef) : VarEnv :=
   add_locals_to_varEnv (init_varEnv_from_params f.params) f.locals
+
+/--
+  Helper to get the next block's label given the current block index.
+-/
+def next_block_label (blocks : List Block) (idx : Nat) : Option Label :=
+  match blocks[idx + 1]? with
+  | some block => some block.label
+  | none => none
 
 /--
   Type checking relation for functions.
@@ -826,6 +835,7 @@ def init_fun_varEnv (f : FunDef) : VarEnv :=
   3. Using the provided LabelEnv (expected environments for each block)
   4. Type checking each block's body against its expected entry environment
   5. Verifying the entry block starts with the initial environment
+  6. Ensuring output of each block matches the entry environment of the next block
 
   The LabelEnv represents loop invariants / block entry conditions that would be
   computed by an abstract interpreter. Here they are provided as annotations.
@@ -843,55 +853,44 @@ inductive typecheck_fun : FunDef → LabelEnv → Prop where
       f.blocks.head? = some ⟨entryLabel, _⟩ →
       AssocMap.lookup lenv entryLabel = some entryEnv →
       TypeEnv.equiv entryEnv initEnv) →
-    -- Every block must type check against its expected environment in lenv
-    (∀ block, block ∈ f.blocks →
+    -- Every block must type check and connect properly to the next block:
+    -- 1. Each block typechecks in the environment ascribed to its label
+    -- 2. If there is a next block, the output environment must be equivalent to the next block's entry environment
+    (∀ (idx : Nat) (block : Block),
+      f.blocks[idx]? = some block →
       ∀ blockEnv, AssocMap.lookup lenv block.label = some blockEnv →
-        typecheck_block lenv block blockEnv) →
+        ∃ outEnv, typecheck_block lenv block blockEnv outEnv ∧
+          -- If there's a next block, output env must match its entry env
+          (∀ nextLabel nextEnv,
+            next_block_label f.blocks idx = some nextLabel →
+            AssocMap.lookup lenv nextLabel = some nextEnv →
+            TypeEnv.equiv outEnv nextEnv)) →
     -- The function type checks
     typecheck_fun f lenv
 
--- Macro to mimic the notation ⟨L; E; G⟩  ⊢ s ⤳ ⟨L'; E'; G'⟩
-macro "typecheck_stmt_macro" env:term "⊢" s:term "⤳" env':term : term =>
-  `(typecheck_stmt $env $s $env')
+-- Notation macros for type checking relations
+-- These provide more readable syntax for the relations
 
-/- ---------------------------------------------------- -/
-/-    Simple theorems about the typing relations        -/
-/- ---------------------------------------------------- -/
+-- Usage: ⟨Γ⟩ ⊢ u ⤳ ⟨Γ'⟩ @ a : τ
+-- Meaning: typecheck_usage Γ u Γ' a τ
+macro "⟨" env:term "⟩" " ⊢ᵤ " u:term " ⤳ " "⟨" env':term "⟩" " @ " a:term " : " τ:term : term =>
+  `(typecheck_usage $env $u $env' $a $τ)
 
-/-
-A well-typed statement in an empty site and path environments,
-   produces a path environment that only has sites for variables, but not temporaries
--/
+-- Expression: ⟨Γ⟩ ⊢ e ⤳ ⟨Γ'⟩ @ a : τ
+-- Meaning: typecheck_expr Γ e Γ' a τ
+macro "⟨" env:term "⟩" " ⊢ₑ " e:term " ⤳ " "⟨" env':term "⟩" " @ " a:term " : " τ:term : term =>
+  `(typecheck_expr $env $e $env' $a $τ)
 
--- TODO: theorem stating that typecheck_usage does no introduce duplicate sites
--- and that it only increases the domain of the path environment
+-- Statement: Λ; ⟨Γ⟩ ⊢ s ⤳ ⟨Γ'⟩
+-- Meaning: typecheck_stmt Λ Γ s Γ'
+macro lenv:term "; " "⟨" env:term "⟩" " ⊢ₛ " s:term " ⤳ " "⟨" env':term "⟩" : term =>
+  `(typecheck_stmt $lenv $env $s $env')
 
+-- Function: ⊢ f : Λ
+-- Meaning: typecheck_fun f Λ
+macro " ⊢ᶠ " f:term " : " lenv:term : term =>
+  `(typecheck_fun $f $lenv)
 
-/- typecheck_usage preserves  the uniqueness of
-   sites in the site environment -/
-
-/- theorem typecheck_usage_unique_sites : ∀ env env' u s τ,
-  typecheck_usage env u env' s τ →
-  uniqueKeys env.alocEnv →
-  uniqueKeys env'.alocEnv := by
-  move=> env env' u s τ; scase
-  { -- case t_umove
-    move=>env x r H1 -> H3 //==
-    sby apply notIn_uniqueKeys_insert
-  }
-  { -- case t_ucopy
-    move=>x ms r H1 H2 -> H3 //==
-    sby apply notIn_uniqueKeys_insert
-  }
-  { -- case t_uborrowImm
-    move=>s x τ r  H1 H2 -> H3 /=
-    sby apply notIn_uniqueKeys_insert
-  }
-  { --case t_uborrowMut
-    move=>s x τ r  H1 H2 -> H4 /=
-    sby apply notIn_uniqueKeys_insert
-  }
- -/
 
 
 end LeanMove.Checker
