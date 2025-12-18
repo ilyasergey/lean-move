@@ -777,6 +777,79 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → TypeEnv → Prop wh
     typecheck_stmt lenv env (.branch a L1 L2) env'
 
 
+/- ---------------------------------------------------- -/
+/-       Type checking relation for functions            -/
+/- ---------------------------------------------------- -/
+
+/--
+  Initialize VarEnv from function parameters.
+  Parameters are added as valid, mutable variables.
+-/
+def init_varEnv_from_params (params : List (Var × MoveType)) : VarEnv :=
+  params.foldl (fun venv (x, τ) => insert venv x (.validVar, τ, .mutable)) AssocMap.empty
+
+/--
+  Add local variable declarations to VarEnv.
+  Locals are added as invalid variables (not yet assigned).
+-/
+def add_locals_to_varEnv (venv : VarEnv) (locals : List LocalVar) : VarEnv :=
+  locals.foldl (fun venv loc => insert venv loc.name (.invalidVar, loc.type, .mutable)) venv
+
+/--
+  Build a LabelEnv from a list of blocks and their expected entry environments.
+  The expectedEnvs list should have the same length as blocks.
+-/
+def build_labelEnv (blocks : List Block) (expectedEnvs : List TypeEnv) : LabelEnv :=
+  (blocks.zip expectedEnvs).foldl (fun lenv (block, env) => insert lenv block.label env) AssocMap.empty
+
+/--
+  Type checking relation for a single block.
+  The block's body is type checked starting from the expected environment for its label.
+-/
+def typecheck_block (lenv : LabelEnv) (block : Block) (expectedEnv : TypeEnv) : Prop :=
+  ∃ outEnv, typecheck_stmt lenv expectedEnv block.body outEnv
+
+/--
+  Compute the initial VarEnv for a function from its parameters and locals.
+-/
+def init_fun_varEnv (f : FunDef) : VarEnv :=
+  add_locals_to_varEnv (init_varEnv_from_params f.params) f.locals
+
+/--
+  Type checking relation for functions.
+
+  Judgment form: `⊢ f : ok`
+
+  This relation type checks an entire function definition by:
+  1. Initializing TypeEnv from parameters (valid mutable variables)
+  2. Adding locals to TypeEnv (invalid variables, not yet assigned)
+  3. Using the provided LabelEnv (expected environments for each block)
+  4. Type checking each block's body against its expected entry environment
+  5. Verifying the entry block starts with the initial environment
+
+  The LabelEnv represents loop invariants / block entry conditions that would be
+  computed by an abstract interpreter. Here they are provided as annotations.
+-/
+inductive typecheck_fun : FunDef → LabelEnv → Prop where
+  | fun_ok : ∀ (f : FunDef) (lenv : LabelEnv) (initEnv : TypeEnv),
+    -- The initial environment has the initialized varEnv, empty siteEnv, initialized pathEnv
+    initEnv.varEnv = init_fun_varEnv f →
+    initEnv.siteEnv = AssocMap.empty →
+    initEnv.pathEnv = PathEnv.init →
+    -- The function must have at least one block (entry block)
+    f.blocks ≠ [] →
+    -- The entry block (first block) must have an environment equivalent to initEnv
+    (∀ entryLabel entryEnv,
+      f.blocks.head? = some ⟨entryLabel, _⟩ →
+      AssocMap.lookup lenv entryLabel = some entryEnv →
+      TypeEnv.equiv entryEnv initEnv) →
+    -- Every block must type check against its expected environment in lenv
+    (∀ block, block ∈ f.blocks →
+      ∀ blockEnv, AssocMap.lookup lenv block.label = some blockEnv →
+        typecheck_block lenv block blockEnv) →
+    -- The function type checks
+    typecheck_fun f lenv
+
 -- Macro to mimic the notation ⟨L; E; G⟩  ⊢ s ⤳ ⟨L'; E'; G'⟩
 macro "typecheck_stmt_macro" env:term "⊢" s:term "⤳" env':term : term =>
   `(typecheck_stmt $env $s $env')
