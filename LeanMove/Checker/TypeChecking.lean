@@ -453,6 +453,13 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType �
      env' = {env with siteEnv := insert (deleteAll env.siteEnv (fields.map Prod.snd)) b (.basic (.trecord fentries))} →
      typecheck_expr env (Expr.pack recName fields) env' b (.basic (.trecord fentries))
 
+-- Helper for unpack: adds field sites to siteEnv based on record field types
+def addFieldSites (fentries : AssocMap Field BasicMoveType) (se : AssocMap Site MoveType) (fields : List (Field × Site)) : AssocMap Site MoveType :=
+  List.foldl (fun acc (fa : Field × Site) =>
+    match AssocMap.lookup fentries fa.1 with
+    | some bt => insert acc fa.2 (.basic bt)
+    | none => acc) se fields
+
 def call_connect_inputs_outputs (env: TypeEnv) (as bs: List Site) : TypeEnv :=
   -- Extract reference arefs from inputs (bs) and outputs (as)
   -- We only care about reference types; basic types are disregarded
@@ -701,12 +708,27 @@ inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
     -- Output environment is arbitrary (unreachable code)
     typecheck_stmt env (.abort a) env'
 
+  -- T { f1: a1, ..., fn: an } = b
+  -- Unpack a record into its constituent field sites (dual of pack expression)
+  | unpack : ∀ env env' (fields : List (Field × Site)) (b : Site) (fentries : AssocMap Field BasicMoveType),
+    -- b must hold a record type
+    AssocMap.lookup env.siteEnv b = some (.basic (.trecord fentries)) →
+    -- All output field sites must be fresh
+    (∀ (f : Field) (a : Site), (f, a) ∈ fields → AssocMap.notIn env.siteEnv a) →
+    -- All output field sites must be distinct (no aliasing)
+    (∀ a₁ a₂, (∃ f₁ f₂, (f₁, a₁) ∈ fields ∧ (f₂, a₂) ∈ fields ∧ f₁ ≠ f₂) → a₁ ≠ a₂) →
+    -- Fields in unpack must match record's field entries
+    (∀ (f : Field) (a : Site), (f, a) ∈ fields → ∃ bt, AssocMap.lookup fentries f = some bt) →
+    -- Environment update: remove b, add all field sites with their types
+    env' = {env with siteEnv := addFieldSites fentries (delete env.siteEnv b) fields} →
+    typecheck_stmt env (.unpack fields b) env'
+
   /- Done above this line -/
 
 /-
     TODO: Remaining statements.
 
-    [ ] T { fi: ai, ...} = b // Unpack, consuming, hence no aliasing
+    [x] T { fi: ai, ...} = b // Unpack, consuming, hence no aliasing
     [x] abort a              // Abort the transaction, aka panic!
     [x] release(a)           // Invalidates a reference
     [ ] if (a) s else s      // If
