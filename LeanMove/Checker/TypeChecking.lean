@@ -437,7 +437,6 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType �
                      pathEnv := consume_ref_transfer env.pathEnv r r' } →
     typecheck_expr env (Expr.freeze a) env' c (.ref τ r' .siteBorrowImm)
 
-  -- [Q] [2025-12-04] Pack rule implementation - needs review with Todd
   -- b <-- T { f1: a1, ..., fn: an }
   -- Creates a record by consuming field values from sites
   | pack : ∀ env env' (recName : Id) (fields : List (Field × Site)) (b : Site) (fentries : AssocMap Field BasicMoveType),
@@ -683,6 +682,16 @@ inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
     -- The final environment is the result of executing both statements in sequence
     typecheck_stmt env (.seq s1 s2) env''
 
+  -- release(a)
+  -- Explicitly release a reference, consuming it without producing any value
+  | release : ∀ env env' (a : Site) (τ : BasicMoveType) (r : Aref) isBor,
+    -- Site a must hold a reference
+    AssocMap.lookup env.siteEnv a = some (.ref τ r isBor) →
+    -- Remove site a and delete reference r from pathEnv
+    env' = {env with siteEnv := delete env.siteEnv a
+                     pathEnv := delete_ref_node env.pathEnv r } →
+    typecheck_stmt env (.release a) env'
+
   /- Done above this line -/
 
 /-
@@ -690,7 +699,7 @@ inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
 
     [ ] T { fi: ai, ...} = b // Unpack, consuming, hence no aliasing
     [ ] abort a              // Abort the transaction, aka panic!
-    [ ] release(a)           // Invalidates a reference
+    [x] release(a)           // Invalidates a reference
     [ ] if (a) s else s      // If
     [ ] while (x) s          // Loop condition is always a variable [?]
 
