@@ -107,3 +107,11 @@ Translated the Move IR example program to MoveLight AST:
 - Translated `M.t(this: &Self.T)` - method that borrows field, reads reference, assigns to local
 - Translated `foo()` - entry point that creates struct, borrows it, and calls method
 - All functions use A-normal form with explicit sites for temporaries
+
+### 12. Add type checking verification section with M_new theorem
+**File:** `LeanMove/Examples/deref_borrow_field_ok.lean`
+
+Added infrastructure for proving functions are well-typed:
+- `M_new_initEnv`: initial TypeEnv with parameter `g` as valid mutable int
+- `M_new_lenv`: LabelEnv mapping "b0" to the initial environment
+- `M_new_welltyped`: theorem stating M_new type checks (proof in progress with sorry placeholders)

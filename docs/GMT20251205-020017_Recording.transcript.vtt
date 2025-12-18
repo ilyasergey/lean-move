@@ -1,0 +1,1270 @@
+WEBVTT
+
+1
+00:01:32.550 --> 00:01:33.530
+Ilya Sergey: You're muted.
+
+2
+00:01:35.430 --> 00:01:37.509
+Todd Nowacki: Hello there.
+
+3
+00:01:37.760 --> 00:01:39.989
+Ilya Sergey: Yeah, you're okay.
+
+4
+00:01:39.990 --> 00:01:42.490
+Todd Nowacki: Sorry about that? Yeah, yeah, doing good. How about yourself?
+
+5
+00:01:42.920 --> 00:01:55.259
+Ilya Sergey: It's been a super busy couple of, I don't know, like, weeks, months, it's just, like, every day I'm doing something, and it's still not enough, because there's even more left for the next day, but…
+
+6
+00:01:55.260 --> 00:01:56.499
+Todd Nowacki: Yeah, I hear ya, I hear ya.
+
+7
+00:01:56.860 --> 00:02:16.559
+Ilya Sergey: Anyways, so, okay, so I asked Sam for, giving us an engine on this project, and it seems like this is, difficult. So I went for, a more radical solution to speed things up. I bought myself a premium cloud subscription.
+
+8
+00:02:16.560 --> 00:02:22.120
+Todd Nowacki: Nice. So I started… I started to write formalizing this thing, and it's actually, I mean, okay, it's…
+
+9
+00:02:22.120 --> 00:02:26.649
+Ilya Sergey: Still requires a lot of attention, but it works quite well, so…
+
+10
+00:02:26.650 --> 00:02:27.310
+Todd Nowacki: Oh, cool.
+
+11
+00:02:27.310 --> 00:02:33.820
+Ilya Sergey: Yeah. Anyways, so I still have to kind of very carefully read what's going on there. So, yeah.
+
+12
+00:02:35.450 --> 00:02:42.809
+Ilya Sergey: Any logistic things that you would like to mention first, with regard to other folks involved, or anything in general?
+
+13
+00:02:42.810 --> 00:02:49.689
+Todd Nowacki: I'll just say that, you know, as I kind of imagined would have happened, is that things have gone a little quiet from…
+
+14
+00:02:50.180 --> 00:02:52.780
+Todd Nowacki: Cameron and, Mike?
+
+15
+00:02:53.420 --> 00:02:56.270
+Todd Nowacki: So…
+
+16
+00:02:57.150 --> 00:03:06.760
+Todd Nowacki: you know, they got quite excited about it. We had an off-site, and they, like, were like, -oh, we want to do all these things, and then once reality kind of came back to their working life, I think…
+
+17
+00:03:07.040 --> 00:03:08.760
+Todd Nowacki: Not so much time.
+
+18
+00:03:08.950 --> 00:03:12.010
+Ilya Sergey: So what are they, like, working on themselves?
+
+19
+00:03:12.010 --> 00:03:12.889
+Todd Nowacki: I don't know.
+
+20
+00:03:13.060 --> 00:03:15.079
+Ilya Sergey: I wish I knew.
+
+21
+00:03:15.350 --> 00:03:19.109
+Todd Nowacki: So they, they were… the most thing… the thing they were interested in the most
+
+22
+00:03:19.730 --> 00:03:21.580
+Todd Nowacki: That they had been looking into.
+
+23
+00:03:21.950 --> 00:03:28.330
+Todd Nowacki: was… The way you represent this, the representation of…
+
+24
+00:03:29.240 --> 00:03:33.950
+Todd Nowacki: The formal representation of our sort of graph as a matrix.
+
+25
+00:03:34.660 --> 00:03:42.120
+Todd Nowacki: And describing the operations… as… Matrix,
+
+26
+00:03:43.270 --> 00:03:44.270
+Todd Nowacki: Operations?
+
+27
+00:03:44.490 --> 00:03:45.000
+Ilya Sergey: Yep.
+
+28
+00:03:45.670 --> 00:03:49.080
+Todd Nowacki: And that's about as much as I think they really cared. I don't…
+
+29
+00:03:51.100 --> 00:03:55.939
+Todd Nowacki: I don't know how much else they… at least that was their initial interest.
+
+30
+00:03:57.640 --> 00:03:58.230
+Ilya Sergey: I see.
+
+31
+00:03:58.760 --> 00:04:05.910
+Todd Nowacki: I don't know what they did after that, I couldn't really get them to tell me too much, other than they're like, oh, we're doing this thing.
+
+32
+00:04:07.850 --> 00:04:13.819
+Todd Nowacki: So, we'll see. I'll also say that just in terms of logistical things,
+
+33
+00:04:15.050 --> 00:04:18.820
+Todd Nowacki: I'm available the next 2 weeks, and then I'll…
+
+34
+00:04:20.050 --> 00:04:26.430
+Todd Nowacki: be off for the, holidays the two weeks after that. As you might imagine, it's a…
+
+35
+00:04:27.400 --> 00:04:34.630
+Todd Nowacki: looking at the calendar, I guess, yeah, Thursdays, Christmas Day and New Year's Eve, so those would definitely be a… Yeah, yeah, same holidays for me.
+
+36
+00:04:35.080 --> 00:04:39.150
+Ilya Sergey: Yeah, I also take very short vacations with my wife, and…
+
+37
+00:04:39.150 --> 00:04:39.780
+Todd Nowacki: Sure, sure.
+
+38
+00:04:40.630 --> 00:04:49.009
+Ilya Sergey: On the Christmas week. Okay, so, let me, let me show you what's going on. I actually have a few follow-up questions, of course.
+
+39
+00:04:49.010 --> 00:04:49.390
+Todd Nowacki: soup.
+
+40
+00:04:49.640 --> 00:04:55.289
+Ilya Sergey: things are represented. So, my plan now that I see that things are accelerated is to finish the…
+
+41
+00:04:55.420 --> 00:05:08.869
+Ilya Sergey: goddamn formalization of the type checker, hopefully next week, and start, putting in some, examples. So, and by examples, I mean, there's just, like, taking the, like, the stuff from the test folder of your MoveAR goodies.
+
+42
+00:05:08.870 --> 00:05:21.900
+Ilya Sergey: Translating them to ASC that I have here, maybe with some, like, pretty macros, so it wouldn't look totally outlandish, and, then just make sure that, well, they type check under those rules, so that's.
+
+43
+00:05:22.430 --> 00:05:31.749
+Todd Nowacki: A thing that might also be interesting, I forgot to mention that, for this purposes, the tests won't be that exhaustive or interesting, but…
+
+44
+00:05:31.870 --> 00:05:41.680
+Todd Nowacki: One other thing that Cameron, hasn't landed yet, because I haven't reviewed it, I've been very behind on… we're pushing some things in production, or a branch cut today, but,
+
+45
+00:05:43.070 --> 00:05:50.010
+Todd Nowacki: Cameron wrote, like, a test suite for… like, unit test suite for the graph.
+
+46
+00:05:50.930 --> 00:06:02.370
+Todd Nowacki: That is independent of Move, in some sense. Just, like, in the folder with the, like, Rust implementation of this regex graph, like, writing, and he built, like, a little,
+
+47
+00:06:02.620 --> 00:06:12.220
+Todd Nowacki: a small syntax for it that's a little even, like, more lightweight than the, like, move syntax, you know, there's, like, it just takes a block of code, there's no, like…
+
+48
+00:06:12.440 --> 00:06:16.929
+Todd Nowacki: function module declarations, none of this, but there's no branching at this point.
+
+49
+00:06:18.310 --> 00:06:19.030
+Todd Nowacki: So.
+
+50
+00:06:19.030 --> 00:06:20.649
+Ilya Sergey: Where can I… where can I find it?
+
+51
+00:06:20.650 --> 00:06:22.229
+Todd Nowacki: I can send you…
+
+52
+00:06:23.510 --> 00:06:30.429
+Todd Nowacki: The, again, the PR hasn't landed, but I will, here on Slack, I will send you a link to the PR.
+
+53
+00:06:30.740 --> 00:06:35.910
+Todd Nowacki: And a… let me… I'll pull up, just so you don't.
+
+54
+00:06:37.330 --> 00:06:39.060
+Ilya Sergey: Yeah, like a very short…
+
+55
+00:06:43.380 --> 00:06:46.820
+Todd Nowacki: Example he has is something like this.
+
+56
+00:06:47.380 --> 00:06:52.439
+Todd Nowacki: Where he'll, you know, he, like, borrows some locals.
+
+57
+00:06:52.730 --> 00:07:00.140
+Todd Nowacki: puts them all into a call. The ampersand mute on the outside of the call is to annotate that the return values, like an ampersand mute.
+
+58
+00:07:00.690 --> 00:07:06.279
+Ilya Sergey: I don't think he's handled multiple return values yet. What is, what is right above 3?
+
+59
+00:07:06.280 --> 00:07:15.020
+Todd Nowacki: And then that's an assertion. So writable is, like, this, judgment or assertion that you can put in, and it… you have to exhaustively list all of the…
+
+60
+00:07:15.130 --> 00:07:18.900
+Todd Nowacki: Sort of, references that are writable.
+
+61
+00:07:20.440 --> 00:07:28.250
+Todd Nowacki: It's just a little unit test suite. Just if you're working on… Pulling in tests for,
+
+62
+00:07:30.550 --> 00:07:37.549
+Todd Nowacki: your, your own, the formalization, it could be helpful, it's worth… just because these are very, very, very lightweight.
+
+63
+00:07:37.820 --> 00:07:42.929
+Ilya Sergey: So the tests I'm taking are, like, from this external creates white code verifier transactional tests.
+
+64
+00:07:42.930 --> 00:07:43.340
+Todd Nowacki: Yeah.
+
+65
+00:07:43.340 --> 00:07:44.280
+Ilya Sergey: Yeah, yeah.
+
+66
+00:07:44.630 --> 00:07:49.599
+Todd Nowacki: Yeah, I figured those are the ones… the only reason I mention these two is that those are very,
+
+67
+00:07:49.880 --> 00:07:53.449
+Todd Nowacki: They're very old. None of them are really targeted for…
+
+68
+00:07:54.240 --> 00:07:58.220
+Todd Nowacki: Things going on specifically in the graph, but it's definitely a good starting point.
+
+69
+00:07:59.390 --> 00:08:00.010
+Ilya Sergey: Brilliant.
+
+70
+00:08:00.590 --> 00:08:08.919
+Ilya Sergey: Okay, cool. Yeah, that's, that's actually super useful. Okay, let's see. I have a few things here, let me just share one.
+
+71
+00:08:09.750 --> 00:08:18.219
+Ilya Sergey: This is the window. Okay, so this is the part that, okay, you can see now it's, like, significantly more verbose, because, well,
+
+72
+00:08:18.220 --> 00:08:19.020
+Todd Nowacki: flawed.
+
+73
+00:08:19.020 --> 00:08:20.839
+Ilya Sergey: Yeah, because Cloud, like, likes to comment.
+
+74
+00:08:20.840 --> 00:08:22.389
+Todd Nowacki: They love comments. Yeah.
+
+75
+00:08:22.390 --> 00:08:40.909
+Ilya Sergey: Anyways, no, I mean, it's amazing how these things suddenly, like, got all proficient in lean, and since, like, what I'm doing here, I mean, it, like, okay, it requires thinking in terms of how to put things, but once you give it instructions that, like, give me a relation that, like, describes
+
+76
+00:08:41.120 --> 00:08:59.599
+Ilya Sergey: this and this premises and this conclusion, it, like, works really well, so it saves a ton of time on typing. I haven't tried it with proofs, so actually, we have, so my group got a couple of licenses from, like, one of these many startups nowadays that do math in lean with AI. I don't know if.
+
+77
+00:08:59.600 --> 00:09:00.140
+Todd Nowacki: Nope.
+
+78
+00:09:00.290 --> 00:09:01.970
+Ilya Sergey: Following this news.
+
+79
+00:09:02.120 --> 00:09:04.109
+Ilya Sergey: I… So, they…
+
+80
+00:09:04.110 --> 00:09:04.660
+Todd Nowacki: I'm not.
+
+81
+00:09:04.660 --> 00:09:20.289
+Ilya Sergey: No, yeah, so it's… it feels like I… I live in this bubble, so every… every day or every couple of days when I open LinkedIn, there's, like, a bunch of announcements about another startup that, is, like, basically just constructing mathematical intelligence. They're very careful not to.
+
+82
+00:09:20.290 --> 00:09:20.740
+Todd Nowacki: Oh, wow.
+
+83
+00:09:20.740 --> 00:09:21.910
+Ilya Sergey: Genuinely, yeah.
+
+84
+00:09:22.320 --> 00:09:24.260
+Ilya Sergey: Generate intelligence with Celine.
+
+85
+00:09:24.610 --> 00:09:27.780
+Ilya Sergey: Specifically, and, yeah, and, well, I mean, I have to say, like.
+
+86
+00:09:27.900 --> 00:09:30.870
+Ilya Sergey: Like, that one that we got licensed for works…
+
+87
+00:09:31.140 --> 00:09:43.250
+Ilya Sergey: quite well. So, like, high school level or, like, undergrad level mass tasks, you can just basically send it to Ethereum, and a few minutes later, it, like, comes back, with a pro…
+
+88
+00:09:43.250 --> 00:09:44.310
+Todd Nowacki: That's quite impressive.
+
+89
+00:09:44.310 --> 00:09:50.420
+Ilya Sergey: It is quite impressive. I mean, it doesn't know much about any domain-specific things, like, it doesn't know, like, programming language theory, so…
+
+90
+00:09:50.420 --> 00:09:50.890
+Todd Nowacki: Sure, sure.
+
+91
+00:09:50.890 --> 00:09:52.880
+Ilya Sergey: Very difficult to get anything useful.
+
+92
+00:09:53.200 --> 00:09:57.000
+Ilya Sergey: For, for these things. But for general mass, it's brilliant.
+
+93
+00:09:57.160 --> 00:09:57.960
+Todd Nowacki: Interesting.
+
+94
+00:09:57.960 --> 00:10:15.030
+Ilya Sergey: Anyways, so, okay, let's see what's going on here. So, packing, just a few things to clarify. So, the syntax we have is that we have these single-use sites, as you remember, so there's a whole bunch, and this is the first one, so there's, like, all these things are checked, and, then,
+
+95
+00:10:15.230 --> 00:10:28.259
+Ilya Sergey: making sure that, we do not allow references as those. Is that… Okay, yep. Is that correct? Yeah. I mean, currently I still… I mean, it's still possible to make,
+
+96
+00:10:28.560 --> 00:10:40.520
+Ilya Sergey: Yeah, okay, so technically this is not Allison, but, this is something, I guess, it has lifted from, from the descriptions in the, in the notion, so there should be no.
+
+97
+00:10:40.630 --> 00:10:45.800
+Todd Nowacki: a repeating once, right? So you cannot… Sure. Yeah, you cannot create a record with.
+
+98
+00:10:45.800 --> 00:10:49.750
+Ilya Sergey: two repeating, To repeat values, right?
+
+99
+00:10:49.750 --> 00:10:50.669
+Todd Nowacki: Yeah, makes sense.
+
+100
+00:10:52.000 --> 00:11:01.189
+Ilya Sergey: Yeah, okay, and that's pretty much… so this is what I wanted to clarify. So there can be no references here, and there can be no repeating values.
+
+101
+00:11:01.820 --> 00:11:02.580
+Ilya Sergey: Okay.
+
+102
+00:11:04.530 --> 00:11:05.400
+Ilya Sergey: Good.
+
+103
+00:11:05.690 --> 00:11:07.250
+Ilya Sergey: So now, the freeze.
+
+104
+00:11:07.370 --> 00:11:18.840
+Ilya Sergey: So, the freeze, the only, interesting part that is happening is that, it, takes the reference that, used to be in what we are
+
+105
+00:11:19.030 --> 00:11:22.109
+Ilya Sergey: freezing, so this is… this is… this is the A.
+
+106
+00:11:22.270 --> 00:11:25.270
+Ilya Sergey: And it's a… it's a reference type.
+
+107
+00:11:25.370 --> 00:11:27.809
+Todd Nowacki: So we are updating it.
+
+108
+00:11:27.810 --> 00:11:30.859
+Ilya Sergey: And we are creating a new
+
+109
+00:11:31.080 --> 00:11:34.559
+Ilya Sergey: A new reference, and we,
+
+110
+00:11:34.890 --> 00:11:48.269
+Ilya Sergey: do not delete the old one, it still exists there, so there is no garbage collection, or I don't know if it's even safe, so… basically, like, if this, if this store is a reference, this reference is still a node in the graph.
+
+111
+00:11:48.560 --> 00:11:54.010
+Ilya Sergey: But there is also a new one, which corresponds to, to this.
+
+112
+00:11:54.130 --> 00:11:59.519
+Ilya Sergey: And, and there is an epsilon, and there is an epsilon path between them.
+
+113
+00:12:00.890 --> 00:12:07.349
+Todd Nowacki: So… I'm trying to page some of this back in for this, garbage collection.
+
+114
+00:12:07.590 --> 00:12:11.820
+Todd Nowacki: Do we have that anywhere so far, or…
+
+115
+00:12:12.380 --> 00:12:20.920
+Todd Nowacki: What I mean by this, right, is that, like, normally in Move, the,
+
+116
+00:12:23.660 --> 00:12:32.039
+Todd Nowacki: all the reference operations are… consume the reference, so if you, like, read a reference, it consumes it, and if you…
+
+117
+00:12:32.560 --> 00:12:36.900
+Todd Nowacki: Right to a reference, it consumes it. And it removes it from the graph.
+
+118
+00:12:37.260 --> 00:12:43.010
+Todd Nowacki: But part of that other mechanism is that we arbitrarily allow, right, like, copying happens all over the place.
+
+119
+00:12:43.290 --> 00:12:45.779
+Ilya Sergey: That's right. So, free, does it consume the reference?
+
+120
+00:12:45.780 --> 00:12:46.599
+Todd Nowacki: It does, yes.
+
+121
+00:12:46.600 --> 00:12:48.320
+Ilya Sergey: Okay, so…
+
+122
+00:12:49.570 --> 00:12:53.689
+Todd Nowacki: I just wasn't sure if we… I can't remember. I remember, like, having discussed that there was some…
+
+123
+00:12:53.960 --> 00:13:01.090
+Todd Nowacki: some things about, if we had handled this here or not. I just wanted to point out that, yeah, we…
+
+124
+00:13:01.980 --> 00:13:06.599
+Todd Nowacki: We will consume the reference, and free or release the previous one.
+
+125
+00:13:07.140 --> 00:13:07.700
+Ilya Sergey: Damn.
+
+126
+00:13:08.470 --> 00:13:21.120
+Ilya Sergey: Cool. Yeah, there's… there's also a typo, because, it appears like R prime is the side, but it's a reference, and since this rule is really not used to check any examples yet, that's.
+
+127
+00:13:21.120 --> 00:13:21.760
+Todd Nowacki: Gotcha.
+
+128
+00:13:21.760 --> 00:13:27.679
+Ilya Sergey: Yeah, okay, cool. Okay, wonderful. That, that clarifies that.
+
+129
+00:13:31.670 --> 00:13:40.319
+Ilya Sergey: You leave in these comments. Okay, so then the next one is the one that I know we discussed a bunch of times, but now I finally came around to…
+
+130
+00:13:40.780 --> 00:13:42.600
+Ilya Sergey: Implemented as the return rule.
+
+131
+00:13:42.780 --> 00:13:43.720
+Todd Nowacki: Mmm.
+
+132
+00:13:44.260 --> 00:13:49.680
+Ilya Sergey: Right, so return rule, actually is with regard to the function.
+
+133
+00:13:49.900 --> 00:13:55.110
+Ilya Sergey: We are… currently, currently in, so… Okay.
+
+134
+00:13:55.290 --> 00:14:01.860
+Ilya Sergey: Yeah, that's kind of… I mean, I understand that for the compiler, it's easy, just it does the lookups back and forth, but here we are…
+
+135
+00:14:02.470 --> 00:14:03.830
+Todd Nowacki: Yeah, sure, you need some hand.
+
+136
+00:14:03.830 --> 00:14:07.259
+Ilya Sergey: Yeah, it's gonna be like, yeah, so that's… Word.
+
+137
+00:14:07.550 --> 00:14:09.339
+Todd Nowacki: F is your current function, or whatever it is.
+
+138
+00:14:09.340 --> 00:14:10.590
+Ilya Sergey: Exactly, exactly.
+
+139
+00:14:10.590 --> 00:14:11.090
+Todd Nowacki: Yeah, okay.
+
+140
+00:14:11.090 --> 00:14:23.899
+Ilya Sergey: Right, okay, so it has these, two checks, that I just took from the call rule, so checking that… okay, the names are not great, but that's blameful. Yeah, but…
+
+141
+00:14:23.900 --> 00:14:24.540
+Todd Nowacki: Yep.
+
+142
+00:14:26.850 --> 00:14:33.109
+Ilya Sergey: Okay, so, yeah, it takes, like, everything, like, this, like, these things are, like, non…
+
+143
+00:14:33.700 --> 00:14:40.310
+Ilya Sergey: Non-alysis, with regard to each other, so there are, like, we don't return analysis between… mutable variables.
+
+144
+00:14:42.470 --> 00:14:48.360
+Ilya Sergey: And, there is also this check which, I actually…
+
+145
+00:14:48.480 --> 00:14:53.329
+Ilya Sergey: I'm trying to recall, like, why exactly it came to be that says, like, so this one…
+
+146
+00:14:53.570 --> 00:14:58.960
+Ilya Sergey: Say that all mutable inputs have non-trivial outbound edges, so…
+
+147
+00:14:59.070 --> 00:15:02.259
+Ilya Sergey: Is this something that we really… need to check?
+
+148
+00:15:02.620 --> 00:15:08.350
+Ilya Sergey: I'm not sure… It wasn't the transcript for the last meeting, I was trying to reconstruct what exactly…
+
+149
+00:15:08.630 --> 00:15:11.759
+Ilya Sergey: Was the intuition there, but I'm not sure, so…
+
+150
+00:15:11.760 --> 00:15:17.249
+Todd Nowacki: There's different ways… if we go back, to return, it might be helpful, because it…
+
+151
+00:15:17.560 --> 00:15:21.220
+Todd Nowacki: The… I just have to think about this, because the,
+
+152
+00:15:22.010 --> 00:15:28.190
+Todd Nowacki: There's, like, different ways to state what the rules are for return, depending on what is going on.
+
+153
+00:15:28.400 --> 00:15:29.500
+Todd Nowacki: So…
+
+154
+00:15:30.100 --> 00:15:37.450
+Todd Nowacki: There's, like, some direct and indirect ways. Let me talk first about how I normally describe it.
+
+155
+00:15:37.880 --> 00:15:46.130
+Todd Nowacki: Is… so, while we don't have to do this automatic process here, in the normal… in the bytecode verifier, we do this process of
+
+156
+00:15:46.500 --> 00:15:57.009
+Todd Nowacki: Okay, any reference that's left over, like, in some local somewhere, we release it. But here we can just say that, like, the compiler or something would have to insert those releases.
+
+157
+00:15:57.430 --> 00:16:01.949
+Todd Nowacki: So… the first thing I would say is that you would check that…
+
+158
+00:16:03.010 --> 00:16:10.950
+Todd Nowacki: No local variable, or, like, a possible formulation of this, right, is you say that no local variable is borrowed.
+
+159
+00:16:12.310 --> 00:16:18.480
+Todd Nowacki: And then you would say that the mutable, return values here are isolated.
+
+160
+00:16:19.130 --> 00:16:25.449
+Todd Nowacki: And by virtue of the fact that all locals are released, you know that
+
+161
+00:16:25.570 --> 00:16:32.260
+Todd Nowacki: The returned values have to be bound Through an input parameter.
+
+162
+00:16:33.250 --> 00:16:35.880
+Todd Nowacki: And maybe this is what was trying to go on here, is that…
+
+163
+00:16:36.330 --> 00:16:37.720
+Ilya Sergey: Yes.
+
+164
+00:16:38.200 --> 00:16:45.170
+Todd Nowacki: Basically, that the… the connection… that the… all of the return values… their… parents…
+
+165
+00:16:45.360 --> 00:16:49.219
+Todd Nowacki: So to speak, are only in the,
+
+166
+00:16:50.260 --> 00:16:53.810
+Todd Nowacki: Return value, or they're the inputs?
+
+167
+00:16:54.090 --> 00:16:55.890
+Todd Nowacki: Parameters of the function.
+
+168
+00:16:56.260 --> 00:17:00.559
+Todd Nowacki: So that's why I'm saying there's, like, a few different ways of kind of slicing that…
+
+169
+00:17:01.120 --> 00:17:03.670
+Todd Nowacki: Mechanism? Like, of phrasing it?
+
+170
+00:17:04.109 --> 00:17:06.319
+Todd Nowacki: The reason I tend to prefer…
+
+171
+00:17:07.240 --> 00:17:14.300
+Todd Nowacki: at least for Move, we take the phrasing, or the kind of view, That you say…
+
+172
+00:17:14.900 --> 00:17:24.529
+Todd Nowacki: no locals are borrowed. It's because, technically speaking, the borrow checker does handle These sort of vacuous references?
+
+173
+00:17:25.560 --> 00:17:31.519
+Todd Nowacki: So if you have, like, a function that takes no parameters, And returns a reference.
+
+174
+00:17:33.500 --> 00:17:40.420
+Todd Nowacki: If you were writing core move, like, just normal move, you know that that function would have to abort.
+
+175
+00:17:40.630 --> 00:17:42.290
+Todd Nowacki: Because the only way you'd be able to…
+
+176
+00:17:42.520 --> 00:17:47.760
+Todd Nowacki: Generate a value of that type is if you say, like, right, like an abort.
+
+177
+00:17:48.400 --> 00:17:57.829
+Todd Nowacki: However, we do use this for native functions, where we have… Sort of references that are…
+
+178
+00:17:58.740 --> 00:18:05.310
+Todd Nowacki: For a lack of a better word, you could think about it as, like, sort of being, like, static, or they're, like, otherwise managed by the runtime.
+
+179
+00:18:05.870 --> 00:18:09.890
+Todd Nowacki: But we can still sort of track these with the types of summon move.
+
+180
+00:18:10.380 --> 00:18:26.799
+Todd Nowacki: And, like, the functions that invoke them, like, so we'll have, like, some wrapper around a native function that returns this reference. And as such, it's sort of important that we view the rule this way. Instead of saying that, like, all the returned references are bound to an input.
+
+181
+00:18:27.000 --> 00:18:38.619
+Todd Nowacki: We say that none of the locals are borrowed, because it allows for these vacuous, sort of, like, vacuous references that otherwise have no root in the parameter space.
+
+182
+00:18:40.760 --> 00:18:41.960
+Ilya Sergey: Okay, I see.
+
+183
+00:18:42.100 --> 00:18:52.170
+Todd Nowacki: So, but again, it depends on what we're doing here, and how much we care about that sort of case, because it's not super important for the correctness, it's more of a practical concern.
+
+184
+00:18:55.180 --> 00:18:56.120
+Ilya Sergey: key.
+
+185
+00:18:56.300 --> 00:18:57.780
+Ilya Sergey: Well, I guess that would become…
+
+186
+00:18:58.580 --> 00:19:01.469
+Ilya Sergey: more clear when I try to do examples. So, I mean.
+
+187
+00:19:01.720 --> 00:19:06.349
+Ilya Sergey: Okay, so now, when you said that, I'm actually curious, so,
+
+188
+00:19:06.490 --> 00:19:10.480
+Ilya Sergey: since there was this pack thingy here. So, like.
+
+189
+00:19:10.610 --> 00:19:15.760
+Ilya Sergey: The result of this, of an expression like this, like, can it be…
+
+190
+00:19:16.130 --> 00:19:22.830
+Ilya Sergey: Returned from a function, or it's kind of bound to have its lifetime.
+
+191
+00:19:23.240 --> 00:19:28.570
+Ilya Sergey: Within, within the function itself, or any of its colleagues, if we decide to…
+
+192
+00:19:28.860 --> 00:19:31.019
+Ilya Sergey: You can return… I mean, this is a…
+
+193
+00:19:31.020 --> 00:19:32.879
+Todd Nowacki: The pack here, right, creates a…
+
+194
+00:19:33.630 --> 00:19:35.420
+Ilya Sergey: A, a struct…
+
+195
+00:19:35.420 --> 00:19:37.780
+Todd Nowacki: Value, so it can be returned.
+
+196
+00:19:38.940 --> 00:19:44.430
+Todd Nowacki: And that's part of the reason why we don't allow References as a field.
+
+197
+00:19:44.630 --> 00:19:45.159
+Ilya Sergey: I see.
+
+198
+00:19:45.160 --> 00:19:50.410
+Todd Nowacki: Because we know that… It's all… they're all owned values in the memory, and we can transfer it.
+
+199
+00:19:50.710 --> 00:19:51.610
+Todd Nowacki: Safely.
+
+200
+00:19:52.100 --> 00:19:52.900
+Ilya Sergey: Mmm.
+
+201
+00:19:53.630 --> 00:19:56.739
+Ilya Sergey: Okay, is it memory allocated, or is it stack allocated?
+
+202
+00:19:59.530 --> 00:20:04.740
+Todd Nowacki: Technically speaking, it's, like, in the heap, or memory allocated. We don't…
+
+203
+00:20:05.570 --> 00:20:12.250
+Todd Nowacki: quite expose these concepts so much in Move. I don't really think… outside of vectors.
+
+204
+00:20:12.390 --> 00:20:15.749
+Todd Nowacki: It's not really observable, because we don't have, like, a lot of…
+
+205
+00:20:16.250 --> 00:20:20.660
+Todd Nowacki: pointer, or even that complicated reference semantics, you can't borrow the stack.
+
+206
+00:20:21.060 --> 00:20:26.079
+Todd Nowacki: And as a result, these sort of behaviors are a little opaque.
+
+207
+00:20:27.380 --> 00:20:29.179
+Todd Nowacki: But we, we do,
+
+208
+00:20:29.650 --> 00:20:34.259
+Todd Nowacki: We've been kind of leaning a little bit… we do sort of expose it in the gas charging mechanisms.
+
+209
+00:20:34.410 --> 00:20:36.189
+Todd Nowacki: Where when we move.
+
+210
+00:20:36.330 --> 00:20:41.879
+Todd Nowacki: If you were to call, like, move local, or you were to call, like, store local.
+
+211
+00:20:42.640 --> 00:21:00.829
+Todd Nowacki: with a large value that, you know, you might be like, oh, is this heap or stack allocated? We only charge a constant, where if you were… if it was actually stack allocated, and you have to pop that whole value, or slice that whole value off the stack, you might charge, based on the size of the value.
+
+212
+00:21:01.370 --> 00:21:01.890
+Todd Nowacki: But…
+
+213
+00:21:01.890 --> 00:21:02.450
+Ilya Sergey: Got it.
+
+214
+00:21:02.710 --> 00:21:04.480
+Ilya Sergey: Okay, that makes sense.
+
+215
+00:21:05.630 --> 00:21:21.379
+Ilya Sergey: Okay, that's good, that's good. Okay, I'll, I'll think more about, what you've said about, returning values, and I'll try to put the constraints and enforce it appropriately. Okay, so let's see, just, I still have a few statements to…
+
+216
+00:21:21.380 --> 00:21:31.670
+Ilya Sergey: Add… okay, so unpack should be easy. Anything about abort and release that, I should know about, like, if this is a… this is a reference?
+
+217
+00:21:32.410 --> 00:21:40.929
+Todd Nowacki: I mean, release should be relatively straightforward, as long as we have this mechanism for use, you know, using and consuming and releasing references elsewhere.
+
+218
+00:21:41.320 --> 00:21:42.770
+Todd Nowacki: Abort…
+
+219
+00:21:42.770 --> 00:21:46.539
+Ilya Sergey: is released, like, the same as Freeze, except it doesn't produce anything?
+
+220
+00:21:46.540 --> 00:21:52.110
+Todd Nowacki: Yeah, exactly, exactly. Or it's the same as read ref, except it doesn't produce anything, or the same as…
+
+221
+00:21:53.720 --> 00:22:04.909
+Todd Nowacki: a little bit more of a stretch, but similar to write ref, except it doesn't produce any… actually, actually, maybe that's a bad one. Read ref is a much better example. So, more like read, ref, and freeze. Or… yeah.
+
+222
+00:22:06.690 --> 00:22:07.200
+Todd Nowacki: So…
+
+223
+00:22:07.200 --> 00:22:09.550
+Ilya Sergey: Okay, okay, cool, and .
+
+224
+00:22:09.550 --> 00:22:15.080
+Todd Nowacki: And abort, I will just say that there's nothing really special there. Sometimes…
+
+225
+00:22:17.410 --> 00:22:21.109
+Todd Nowacki: Depending on what you need, you might need to, like.
+
+226
+00:22:21.290 --> 00:22:26.070
+Todd Nowacki: Do additional invariants or something, depending on the formalism.
+
+227
+00:22:26.260 --> 00:22:33.060
+Todd Nowacki: Like, today, we do nothing. We just say… I think, like, in the abstract interpretation mechanisms.
+
+228
+00:22:33.370 --> 00:22:39.320
+Todd Nowacki: The value we produce will never be joined anywhere, so we can put whatever garbage there we want, it really doesn't matter.
+
+229
+00:22:39.650 --> 00:22:49.079
+Todd Nowacki: If you need to be making some assertions about program paths, like, maybe you'll need some massaging there, or at least we have done things like this in the past, so…
+
+230
+00:22:50.890 --> 00:22:51.560
+Ilya Sergey: I see.
+
+231
+00:22:51.990 --> 00:23:00.380
+Ilya Sergey: Okay, makes sense. So, yeah, then, I'm not sure, like, if this is going to be the design. I mean, it's nice to have a language which resembles the high level, so we're, like.
+
+232
+00:23:00.380 --> 00:23:00.900
+Todd Nowacki: Yeah, sure.
+
+233
+00:23:00.900 --> 00:23:06.449
+Ilya Sergey: signals and loops. What do you have in MoveIR? Are those just conditional breaks there?
+
+234
+00:23:06.780 --> 00:23:11.710
+Todd Nowacki: Yeah, we only have… we have just jumps to labels and conditional jumps to labels.
+
+235
+00:23:12.270 --> 00:23:13.389
+Todd Nowacki: with fall-throughs.
+
+236
+00:23:13.800 --> 00:23:16.499
+Todd Nowacki: I think… I think we have fall-throughs, pretty sure.
+
+237
+00:23:18.600 --> 00:23:19.210
+Ilya Sergey: I see.
+
+238
+00:23:19.580 --> 00:23:25.520
+Todd Nowacki: So, there's no, no structured control flow. We used to have it, but we took it out.
+
+239
+00:23:26.330 --> 00:23:26.870
+Ilya Sergey: Why?
+
+240
+00:23:28.050 --> 00:23:31.159
+Todd Nowacki: Because we just didn't need to support it anymore.
+
+241
+00:23:31.420 --> 00:23:40.810
+Todd Nowacki: So, it was there originally because the language was really, like, the fir- like, the IR was the first version of Move. We removed it when the IR more became, like, a test suite.
+
+242
+00:23:41.260 --> 00:23:46.520
+Todd Nowacki: It really just simplified this, like, compiler pipeline from, like.
+
+243
+00:23:46.720 --> 00:23:50.560
+Todd Nowacki: IR into bytecode, because you don't have to, like, manage
+
+244
+00:23:51.750 --> 00:23:59.509
+Todd Nowacki: like, information about the… the, like, struct… the, like, code structure that you're generating into, or the blocks, you just…
+
+245
+00:23:59.690 --> 00:24:01.450
+Todd Nowacki: Pipe it straight into bytecode.
+
+246
+00:24:02.830 --> 00:24:04.220
+Ilya Sergey: So…
+
+247
+00:24:04.690 --> 00:24:07.709
+Todd Nowacki: As far as the layout you have here, this seems…
+
+248
+00:24:08.190 --> 00:24:16.989
+Todd Nowacki: fine. I think that, yeah, if you want to simplify it so, like, the condition's always a variable and it has to be assigned to, that seems reasonable to me.
+
+249
+00:24:17.390 --> 00:24:17.960
+Ilya Sergey: Yeah.
+
+250
+00:24:18.340 --> 00:24:23.049
+Ilya Sergey: Right, I mean, I'll think about this, so maybe, like, now I understand this whole thing better, maybe I'll come up.
+
+251
+00:24:23.180 --> 00:24:25.660
+Ilya Sergey: We'll step in rules for,
+
+252
+00:24:26.260 --> 00:24:34.110
+Ilya Sergey: For jumps as well. I mean, usually they're, like, quite… quite annoying, because they require you to check that the invariant
+
+253
+00:24:34.270 --> 00:24:41.569
+Ilya Sergey: So, like, the environment that you pass around, it doesn't change too much, so basically, like, it's analogous to loop invariant.
+
+254
+00:24:41.730 --> 00:24:47.530
+Ilya Sergey: So, like, it will not be growing as you, like, keep, jumping more and more, so…
+
+255
+00:24:47.530 --> 00:24:48.130
+Todd Nowacki: Oh, yeah.
+
+256
+00:24:49.050 --> 00:24:51.979
+Todd Nowacki: Well, yeah, that'll be tricky for…
+
+257
+00:24:52.420 --> 00:25:01.740
+Todd Nowacki: Depending on how we do things here, because, like, I mean, there is an invariant… there's an invariant, because of the way we restructure things, it will not keep growing.
+
+258
+00:25:02.090 --> 00:25:02.440
+Ilya Sergey: Yeah.
+
+259
+00:25:02.440 --> 00:25:06.420
+Todd Nowacki: Early, so we'll have a… has a…
+
+260
+00:25:07.190 --> 00:25:09.130
+Todd Nowacki: It will always reach a fixed point.
+
+261
+00:25:09.330 --> 00:25:14.079
+Ilya Sergey: Yeah, but, like, the borrowing checker itself is not exactly a type checker, it's an object interpreter, so it takes.
+
+262
+00:25:14.080 --> 00:25:14.420
+Todd Nowacki: Yeah.
+
+263
+00:25:14.420 --> 00:25:16.090
+Ilya Sergey: point, right? So… Yeah, yeah.
+
+264
+00:25:16.360 --> 00:25:22.559
+Todd Nowacki: So, I think the thing that you might do, you know, from a type-checking point of view is, yeah, you…
+
+265
+00:25:23.120 --> 00:25:32.019
+Todd Nowacki: Require annotations at the start of blocks, and then you just… when you jump, you just say that you have some way of saying that what you have there is at least,
+
+266
+00:25:32.930 --> 00:25:34.579
+Todd Nowacki: Whatever you're joining into.
+
+267
+00:25:35.090 --> 00:25:42.129
+Ilya Sergey: Exactly, yeah. So it's like, I think we discussed before, so it's like, we've already ran the analyzer, so it.
+
+268
+00:25:42.130 --> 00:25:42.959
+Todd Nowacki: One of the fixed points.
+
+269
+00:25:42.960 --> 00:25:47.839
+Ilya Sergey: So I just annotate with them, and the type checker checks that this is indeed a fixed point, so…
+
+270
+00:25:47.840 --> 00:25:54.820
+Todd Nowacki: Yeah, it seems fine. And I'm… yeah, if you want to do jump, that's fine. If you want to do these instructions, that's fine too. I don't… I don't really mind.
+
+271
+00:25:54.980 --> 00:25:55.960
+Ilya Sergey: Either way.
+
+272
+00:25:57.140 --> 00:26:04.159
+Ilya Sergey: All right, okay, so let's hope that, next week we will get to, like, discuss some examples that I will
+
+273
+00:26:04.440 --> 00:26:12.820
+Ilya Sergey: Okay. Only from this PR, and I mean, so the PR, it does have more stuff than just, like, the code that you have.
+
+274
+00:26:12.820 --> 00:26:20.300
+Todd Nowacki: Well, the… the one that he wrote is… it's all just a test suite for the graph. He hasn't really changed anything else.
+
+275
+00:26:20.960 --> 00:26:23.090
+Todd Nowacki: I think he…
+
+276
+00:26:23.090 --> 00:26:27.570
+Ilya Sergey: move regexboro graph tests, that's where I should take this.
+
+277
+00:26:27.570 --> 00:26:36.109
+Todd Nowacki: those… these are just new tests that he's written. The one thing that I will… that I thought about when you're talking about your AI usage, right?
+
+278
+00:26:36.370 --> 00:26:38.299
+Todd Nowacki: When you think about,
+
+279
+00:26:40.320 --> 00:26:50.999
+Todd Nowacki: I'm just gonna send the… so the… if you… the new borrow checker, I don't think I mentioned… maybe I did the last time… we are sort of soft-running it in production right now.
+
+280
+00:26:53.070 --> 00:26:59.079
+Todd Nowacki: It's being run… so in SWE, right, we have the process of, like, signing versus execution?
+
+281
+00:26:59.590 --> 00:27:06.320
+Todd Nowacki: And we run it only at signing, and check that the result is consistent with
+
+282
+00:27:07.160 --> 00:27:14.149
+Todd Nowacki: Or at least as restrictive as the existing borrow checker. So if the current borrow checker says.
+
+283
+00:27:14.350 --> 00:27:16.009
+Todd Nowacki: Yes to something.
+
+284
+00:27:16.260 --> 00:27:21.909
+Todd Nowacki: And the new one says, no, we figure we've found a bug in the old borrow checker.
+
+285
+00:27:21.910 --> 00:27:22.600
+Ilya Sergey: Okay, different.
+
+286
+00:27:22.600 --> 00:27:23.070
+Todd Nowacki: Absolutely.
+
+287
+00:27:23.880 --> 00:27:29.350
+Todd Nowacki: Yeah, but it's… so there's a little bit of, like, testing here, and signing. As a result, it is…
+
+288
+00:27:29.470 --> 00:27:31.380
+Todd Nowacki: Checked into Maine.
+
+289
+00:27:31.920 --> 00:27:37.990
+Todd Nowacki: I was just gonna grab the path…
+
+290
+00:27:39.810 --> 00:27:43.690
+Todd Nowacki: Just to… because I wanted to mention that one thing that could be interesting…
+
+291
+00:27:43.840 --> 00:27:44.779
+Ilya Sergey: Yeah, go ahead.
+
+292
+00:27:44.780 --> 00:27:52.559
+Todd Nowacki: If you're using AI, I don't know, I've had mixed experiences with Claude, but I do know it's getting better all the time.
+
+293
+00:27:52.730 --> 00:27:56.990
+Ilya Sergey: It could be interesting, once we're kind of farther along with the formalism, to kind of, like.
+
+294
+00:27:57.410 --> 00:28:00.409
+Todd Nowacki: Point it at both of them, and just say, like.
+
+295
+00:28:00.750 --> 00:28:12.819
+Todd Nowacki: is this an ac… like, just let it… maybe give it some stipulations on what, like, an accurate representation is of the code, or, like, if there's any sort of mismatch between them. It might be a bit hard, given the…
+
+296
+00:28:12.820 --> 00:28:15.929
+Ilya Sergey: I'm not… I'm not sure I'm following. What exactly is your suggestion? So…
+
+297
+00:28:16.380 --> 00:28:25.250
+Todd Nowacki: So, like, just asking Claude if it thinks that there's any bugs in the formalism, or if there's any bugs in the implementation, given the formalism.
+
+298
+00:28:26.560 --> 00:28:28.349
+Ilya Sergey: Yeah, that sounds great.
+
+299
+00:28:28.350 --> 00:28:28.790
+Todd Nowacki: I don't know.
+
+300
+00:28:28.790 --> 00:28:37.630
+Ilya Sergey: Yeah, no, sounds like a separate startup idea, right? So, like, like, hiring to develop a formal model and then use AI to…
+
+301
+00:28:37.630 --> 00:28:49.210
+Todd Nowacki: I would just be really interested if you just pass it to Claude, just to ask it, like, what it thinks. I imagine it's just gonna be like, wow, it looks great, amazing, fantastic, or whatever it does, but…
+
+302
+00:28:49.570 --> 00:29:02.259
+Ilya Sergey: Yeah, that's the problem, I mean, like, oftentimes it gives you something that is… you see, that's the issue, because, like, until you reach the proofs, you still need to, like, double-check and triple check everything, because it gives you a bunch.
+
+303
+00:29:02.260 --> 00:29:02.700
+Todd Nowacki: Yeah, yeah.
+
+304
+00:29:02.700 --> 00:29:06.399
+Ilya Sergey: Like, oh, that looks, like, fine, but, like, there's, like, always some slope.
+
+305
+00:29:06.400 --> 00:29:12.889
+Todd Nowacki: Yeah, it's always a little off. I was using it to write some math code, or, like, arithmetic,
+
+306
+00:29:13.120 --> 00:29:18.970
+Todd Nowacki: like, converting math into Rust things, and it was just not doing a good time, earlier today, so…
+
+307
+00:29:20.380 --> 00:29:27.450
+Ilya Sergey: Yeah, kind of the golden, the holy grail of, all this, field, is,
+
+308
+00:29:27.540 --> 00:29:46.320
+Ilya Sergey: basically how to make it produce the code that you can trust, and that's why all these startups are now investing in, well, for the lack of a better alternative, lean as a proof checker. I mean, like, there's still a long way to go. I don't think AI people realize that, or maybe I'm missing something crucial, is that
+
+309
+00:29:46.330 --> 00:29:50.159
+Ilya Sergey: It's difficult to get a real-world programming language into a proof of system.
+
+310
+00:29:50.220 --> 00:29:59.369
+Ilya Sergey: Because, like, any statement that concerns a program, like this program starts an array, it's actually a very complex statement. It assumes, like, the whole, like, semantics underneath, which is…
+
+311
+00:29:59.370 --> 00:30:00.040
+Todd Nowacki: Yeah, yeah, yeah.
+
+312
+00:30:00.530 --> 00:30:03.530
+Todd Nowacki: I, I, I hear you, I think a lot of AI space said…
+
+313
+00:30:03.840 --> 00:30:08.719
+Todd Nowacki: That included is a little underestimating the complexity of the space, but who knows?
+
+314
+00:30:09.430 --> 00:30:10.330
+Todd Nowacki: Who knows?
+
+315
+00:30:10.330 --> 00:30:16.509
+Ilya Sergey: Very well. Okay, so I think I got plenty to work with, and then we can reconvene next week, same time.
+
+316
+00:30:16.740 --> 00:30:18.200
+Todd Nowacki: Alright, sounds great. I'll see you then.
+
+317
+00:30:18.200 --> 00:30:20.030
+Ilya Sergey: Yeah, cheers. Okay. Bye.
+

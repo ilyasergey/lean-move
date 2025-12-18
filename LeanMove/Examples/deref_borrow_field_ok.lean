@@ -191,4 +191,37 @@ def foo : FunDef := {
   ]
 }
 
+/- -----------------------------------------------------/
+/- -           Type Checking Verification             --/
+/- -----------------------------------------------------/
+
+/-
+  To prove a function is well-typed, we need to:
+  1. Construct the initial TypeEnv from the function's parameters and locals
+  2. Construct a suitable LabelEnv mapping each block label to its expected entry environment
+  3. Show that typecheck_fun holds for the function and LabelEnv
+-/
+
+-- Initial environment for M.new: parameter g is a valid mutable int variable
+def M_new_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := init_varEnv_from_params [(var_g, .basic .tint)]
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+-- LabelEnv for M.new: maps "b0" to the initial environment
+def M_new_lenv : LabelEnv :=
+  AssocMap.insert AssocMap.empty "b0" M_new_initEnv
+
+-- Theorem: M.new is well-typed
+theorem M_new_welltyped : ∃ lenv, typecheck_fun M_new lenv := by
+  exists M_new_lenv
+  apply typecheck_fun.fun_ok (initEnv := M_new_initEnv)
+  all_goals try aesop
+  {sorry}
+  {sorry}
+  {sorry}
+  {sorry}
+
 end LeanMove.Examples
