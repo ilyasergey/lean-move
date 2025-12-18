@@ -557,6 +557,19 @@ def check_mutable_inputs_have_outbound (env: TypeEnv) (bs: List Site) : Prop :=
         ∃ path, interpret_regex regex path ∧ path ≠ []
 
 /--
+  Check that no local variables are currently borrowed.
+
+  This is used in the return rule to ensure that:
+  - No references to local variables escape the function
+  - Return values must be bound through input parameters (or be vacuous for natives)
+  - Handles the case of vacuous references from native functions
+
+  Implementation: for each variable in varEnv, check that not_borrowed holds.
+-/
+def no_locals_borrowed (env: TypeEnv) : Prop :=
+  ∀ (x : Var) (v : IsValid × MoveType × Mut), (x, v) ∈ env.varEnv.entries → not_borrowed x env
+
+/--
 Type checking relation for statements.
 
 Judgment form: `⟨env⟩ ⊢ s ⤳ ⟨env'⟩`
@@ -678,9 +691,10 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → TypeEnv → Prop wh
     -- Validation: No mutable return value reaches any other return value
     -- This prevents returning aliased mutable references
     check_mutable_inputs_isolated env as →
-    -- Validation: All mutable return values have non-trivial outbound edges
-    -- Ensures mutable returns are "live" and properly connected in the path graph
-    check_mutable_inputs_have_outbound env as →
+    -- Validation: No local variables are currently borrowed
+    -- This ensures no references to locals escape the function.
+    -- Return values must be bound through input parameters (or be vacuous for natives).
+    no_locals_borrowed env →
     -- Environment cleanup: release everything except the return values
     -- All sites not in `as` are removed from siteEnv (garbage collected)
     -- Build a new siteEnv containing only the return sites
