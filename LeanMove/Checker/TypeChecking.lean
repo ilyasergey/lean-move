@@ -736,18 +736,31 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → TypeEnv → Prop wh
     env' = {env with siteEnv := addFieldSites fentries (delete env.siteEnv b) fields} →
     typecheck_stmt lenv env (.unpack fields b) env'
 
-  /- Done above this line -/
+  -- jump L // Unconditional jump to label L
+  -- The current environment must be equivalent to the environment expected at label L
+  | jump : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (L : Label) (envL : TypeEnv),
+    -- Look up the expected environment for label L
+    AssocMap.lookup lenv L = some envL →
+    -- Current environment must be equivalent to the target label's environment
+    TypeEnv.equiv env envL →
+    -- Output environment is arbitrary (control transfers to L, never continues)
+    typecheck_stmt lenv env (.jump L) env'
 
-/-
-    TODO: Remaining statements.
-
-    [x] T { fi: ai, ...} = b // Unpack, consuming, hence no aliasing
-    [x] abort a              // Abort the transaction, aka panic!
-    [x] release(a)           // Invalidates a reference
-    [ ] jump L               // Unconditional jump to label L
-    [ ] branch a L1 L2       // If (a) goto L1 else goto L2
-
- -/
+  -- branch a L1 L2 // If (a) goto L1 else goto L2
+  -- The site a must hold a boolean, and the environment must match both targets
+  | branch : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (a : Site) (L1 L2 : Label) (envL1 envL2 : TypeEnv),
+    -- Site a must hold a boolean value
+    AssocMap.lookup env.siteEnv a = some (.basic .tbool) →
+    -- Look up the expected environment for label L1
+    AssocMap.lookup lenv L1 = some envL1 →
+    -- Look up the expected environment for label L2
+    AssocMap.lookup lenv L2 = some envL2 →
+    -- Current environment (minus the condition site) must be equivalent to L1's environment
+    TypeEnv.equiv {env with siteEnv := delete env.siteEnv a} envL1 →
+    -- Current environment (minus the condition site) must be equivalent to L2's environment
+    TypeEnv.equiv {env with siteEnv := delete env.siteEnv a} envL2 →
+    -- Output environment is arbitrary (control transfers, never continues)
+    typecheck_stmt lenv env (.branch a L1 L2) env'
 
 
 -- Macro to mimic the notation ⟨L; E; G⟩  ⊢ s ⤳ ⟨L'; E'; G'⟩
