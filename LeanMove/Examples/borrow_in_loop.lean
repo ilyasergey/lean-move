@@ -14,6 +14,8 @@
  limitations under the License.
 -/
 
+import Ssreflect.Lang
+
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
 
@@ -100,9 +102,27 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
   exists foo_lenv
   apply typecheck_fun.fun_ok (initEnv := foo_initEnv)
   all_goals try aesop
-  {sorry}
-  {sorry}
-  {sorry}
-  {sorry}
+  { unfold foo at a; aesop }
+  {
+    move: a=>//=
+    scase: (foo.blocks.head?) =>//=[] l b
+    scase
+    srw foo_lenv at a_1
+    move: (lookup_some _ _ _ a_1)=>//=
+    srw foo_initEnv=>//=
+    simp [AssocMap.insert]; scase=>//
+    scase
+    sby simp [empty]
+  }
+  {
+    -- The actual type-checking
+    scase: idx a a_1=>//=
+    dsimp [foo] at * =>//==<- {block}=>//=
+    srw foo_lenv foo_initEnv=>//= /lookup_some=>//=
+    simp [AssocMap.insert]=>->
+    -- now the fun begins: need to come up with the outEnv manually
+    sorry
+  }
+  { sdone }
 
 end LeanMove.Examples.BorrowInLoop
