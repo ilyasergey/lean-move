@@ -121,6 +121,7 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
     srw foo_lenv foo_initEnv=>//= /lookup_some=>//=
     simp [AssocMap.insert]=>->
     -- now the fun begins: need to come up with the outEnv manually
+    -- [TODO: write a symbolic execution to infer these environments]
     sorry
   }
   { sdone }
