@@ -17,6 +17,7 @@
 import Batteries.Data.HashMap
 import Ssreflect.Lang
 import Aesop
+import Mathlib.Tactic.Convert
 
 namespace AssocMap
 
@@ -95,14 +96,13 @@ theorem lookup_some {K V : Type} [DecidableEq K] (m : AssocMap K V) (k : K) (v :
 
 theorem notIn_uniqueKeys_insert {K V : Type} [DecidableEq K] (m : AssocMap K V) (k : K) (v : V) :
   uniqueKeys m → notIn m k → uniqueKeys (insert m k v) := by
-  move: m=>[es] H1 H2
-  simp only [AssocMap.insert]
-  elim: es H1 H2=>//=
-  { sby dsimp [uniqueKeys] }
-  scase=>a b es Hi H1 H2
-  -- Well, this is trivial but annoying
-  unfold uniqueKeys=>//==
-  sorry
+  unfold AssocMap.uniqueKeys;
+  unfold AssocMap.notIn at * ; aesop;
+  unfold AssocMap.insert at * ; aesop;
+  rw [ List.countP_cons ] ; aesop;
+  rw [ List.countP_filter ] ; aesop;
+  convert a a_2 b left using 1;
+  exact List.countP_congr fun x hx => by aesop;
 
 
 end AssocMap
