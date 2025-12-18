@@ -692,13 +692,22 @@ inductive typecheck_stmt : TypeEnv → Stmt → TypeEnv → Prop where
                      pathEnv := delete_ref_node env.pathEnv r } →
     typecheck_stmt env (.release a) env'
 
+  -- abort a
+  -- Abort execution with a value. Control never continues past abort.
+  -- The output environment can be arbitrary since it's never used.
+  | abort : ∀ env env' (a : Site) τ,
+    -- Site a must exist (consumed by abort)
+    AssocMap.lookup env.siteEnv a = some τ →
+    -- Output environment is arbitrary (unreachable code)
+    typecheck_stmt env (.abort a) env'
+
   /- Done above this line -/
 
 /-
     TODO: Remaining statements.
 
     [ ] T { fi: ai, ...} = b // Unpack, consuming, hence no aliasing
-    [ ] abort a              // Abort the transaction, aka panic!
+    [x] abort a              // Abort the transaction, aka panic!
     [x] release(a)           // Invalidates a reference
     [ ] if (a) s else s      // If
     [ ] while (x) s          // Loop condition is always a variable [?]
