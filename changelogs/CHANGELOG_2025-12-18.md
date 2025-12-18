@@ -115,3 +115,13 @@ Added infrastructure for proving functions are well-typed:
 - `M_new_initEnv`: initial TypeEnv with parameter `g` as valid mutable int
 - `M_new_lenv`: LabelEnv mapping "b0" to the initial environment
 - `M_new_welltyped`: theorem stating M_new type checks (proof in progress with sorry placeholders)
+
+### 13. Translate borrow_in_loop example to MoveLight AST
+**File:** `LeanMove/Examples/borrow_in_loop.lean`
+
+Translated a loop example with borrowing:
+- Function `foo` with locals `x: u64` and `r: &u64`
+- Single block `l0` with: assign x, borrow x into r, jump back to l0
+- `foo_initEnv`: initial TypeEnv with locals as invalid variables
+- `foo_lenv`: LabelEnv mapping "l0" to the initial environment
+- `foo_welltyped`: theorem stating foo type checks (proof in progress with sorry placeholders)
