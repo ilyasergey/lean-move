@@ -840,6 +840,9 @@ def next_block_label (blocks : List Block) (idx : Nat) : Option Label :=
   The LabelEnv represents loop invariants / block entry conditions that would be
   computed by an abstract interpreter. Here they are provided as annotations.
 -/
+
+-- [TODO](25-12-19): Get rid of fall-through; every block should end with a jump
+-- There are no other jumps in the block, except the end
 inductive typecheck_fun : FunDef → LabelEnv → Prop where
   | fun_ok : ∀ (f : FunDef) (lenv : LabelEnv) (initEnv : TypeEnv),
     -- The initial environment has the initialized varEnv, empty siteEnv, initialized pathEnv

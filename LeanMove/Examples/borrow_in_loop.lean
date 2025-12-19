@@ -97,6 +97,9 @@ def foo_initEnv : TypeEnv := {
 def foo_lenv : LabelEnv :=
   AssocMap.insert AssocMap.empty "l0" foo_initEnv
 
+open Stmt
+
+--[TODO] Check with Todd what would be interesting/characteristic tiny programs to type-check
 -- Theorem: foo is well-typed
 theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
   exists foo_lenv
@@ -122,6 +125,7 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
     simp [AssocMap.insert]=>->
     -- now the fun begins: need to come up with the outEnv manually
     -- [TODO: write a symbolic execution to infer these environments]
+
     sorry
   }
   { sdone }
