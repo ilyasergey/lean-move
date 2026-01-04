@@ -13,7 +13,6 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 -/
-
 import Batteries.Data.HashMap
 import Ssreflect.Lang
 import Aesop
@@ -21,6 +20,14 @@ import Aesop
 import LeanMove.Structures.AssocMap
 import LeanMove.Structures.Regex
 import LeanMove.Lang
+import LeanMove.Checker.Types
+
+/-!
+# Type Checking Rules for MoveLight
+
+This file contains the typing relations for the MoveLight language.
+Type environment definitions and auxiliary lemmas are in `Types.lean`.
+-/
 
 namespace LeanMove.Checker
 
@@ -28,190 +35,6 @@ open Lang
 open Lang.MoveLight
 open AssocMap
 open Regex
-
-
--- Whether the variable is mutable or immutable
-inductive Mut where
-  | immut
-  | mutable
-deriving Repr, DecidableEq, Inhabited, Hashable
-
--- Instace of order on borrow kinds
-instance : Ord Mut where
-  compare a b := match a, b with
-    | .immut, .mutable => .lt
-    | .mutable, .immut => .gt
-    | .immut, .immut => .eq
-    | .mutable, .mutable => .eq
-
-instance : LE Mut where
-  le a b := match a, b with
-    | _, .mutable => true
-    | .mutable, .immut => false
-    | .immut, .immut => true
-
--- Whether the variable is borrowed or not
-inductive VarBorrowStatus where
-  | varBorrowedImm
-  | varBorrowedMut
-  | varNotBorrowed
-deriving Repr, DecidableEq, Inhabited, Hashable
-
-instance : LE VarBorrowStatus where
-  le a b := match a, b with
-    | .varNotBorrowed, _ => true
-    | _, .varNotBorrowed => false
-    | .varBorrowedImm, .varBorrowedMut => true
-    | .varBorrowedMut, .varBorrowedImm => false
-    | .varBorrowedImm, .varBorrowedImm => true
-    | .varBorrowedMut, .varBorrowedMut => true
-
--- Whether the variable is valid to move/copy from
--- Better than Boolean
-inductive IsValid where
-  | validVar
-  | invalidVar
-deriving Repr, DecidableEq, Inhabited, Hashable
-
-
--- Environment mapping abstract locations to their types, abstract references, and borrow marker
-abbrev SiteEnv := AssocMap Site MoveType
-
--- Environment mapping variables to their site, types, mutability, abstract references, and borrow status
-abbrev VarEnv := AssocMap Var (IsValid × MoveType × Mut)
-
--- Either a root or a field access
-inductive PathElement where
-  | field : Field → PathElement
-  | root_to_var : Var → PathElement
-deriving Repr, DecidableEq, Inhabited, Hashable
-
-abbrev Path := List PathElement
-
--- Environment mapping pairs of sites to sets regular expressions
-structure PathEnv where
-  refs : List Aref
-  -- Initially empty for each pair
-  paths: (Aref × Aref) → Regex PathElement
-
-/-- Initialize an empty PathEnv with root already present -/
-def PathEnv.init : PathEnv :=
-  { refs := [.root],
-    paths := fun (u, v) => if u = v then Regex.ε else Regex.empty }
-
--- Check that the property p holds for all paths from s in penv
-def check_outbound (penv: PathEnv) (s: Aref) (p: Regex PathElement → Prop) :=
-  forall s', p (penv.paths  (s, s'))
-
--- Garbage collect the reference from penv
-def garbage_collect (penv: PathEnv) (r: Aref) : PathEnv :=
-  let G := penv.paths
-  let paths' := fun (u, v) => if u = r ∨ v = r then Regex.empty else G (u, v)
-  let refs' := List.filter (fun r' => r' ≠ r) penv.refs
-  { penv with paths := paths', refs := refs' }
-
--- z = &x.p
-def update_with_extension (z x : Aref) (p: Path) (pe: PathEnv) : PathEnv :=
-  let G := pe.paths
-  let paths' := fun (u, v) =>
-    if u = z ∧ v = z then Regex.ε  else
-    if v = z then G (u, x) ∘ p else
-    if u = z then der (G (x, v)) p
-    else G (u, v)
-  let refs' := if z ∉ pe.refs then z :: pe.refs else pe.refs
-  { pe with paths := paths', refs := refs' }
-
-def extend_with_star (target source : Aref) (pe: PathEnv) : PathEnv :=
-  let G := pe.paths
-  let paths' := fun (u, v) =>
-    if u = target ∧ v = target then Regex.ε  else
-    if v = target then Regex.concat (G (u, source)) (Regex.star (Regex.dot)) else
-    -- [TODO] [Q2] Discuss what is going on here compared ot the previous case.
-    -- if u = target then der (G (source, v)) p else
-    G (u, v)
-  let refs' := if target ∉ pe.refs then target :: pe.refs else pe.refs
-  { pe with paths := paths', refs := refs' }
-
--- z = &x
-def update_with_epsilon (z x : Aref) (pe: PathEnv)  : PathEnv :=
-  update_with_extension z x [] pe
-
-
-def delete_ref_node (pe: PathEnv) (r : Aref) : PathEnv :=
-  let G := pe.paths
-  let paths' := fun (u, v) => if u = r ∨ v = r then Regex.empty else G (u, v)
-  { pe with refs  := List.filter (fun r' => r' ≠ r) pe.refs,
-            paths := paths' }
-
--- Consume reference r and transfer its reachability to r'
--- Used by freeze: old mutable reference is consumed, new immutable reference inherits paths
--- Semantics: all edges pointing TO r now point to r' instead, r is removed
-def consume_ref_transfer (pe: PathEnv) (r r' : Aref) : PathEnv :=
-  let G := pe.paths
-  -- For each edge (u, r) with label L, create edge (u, r') with label L
-  -- Remove all edges involving r
-  let paths' := fun (u, v) =>
-    if u = r ∨ v = r then
-      Regex.empty
-    else if v = r' then
-      -- r' gets edges from: original edges to r' + edges that were to r
-      Regex.union (G (u, r')) (G (u, r))
-    else
-      G (u, v)
-  let refs' := if r' ∉ pe.refs then r' :: pe.refs else pe.refs
-  { pe with refs  := List.filter (fun x => x ≠ r) refs',
-            paths := paths' }
-
-def freshRef (r: Aref) (pe: PathEnv) := r ∉ pe.refs
-
-structure ParamType where
-  -- inner type
-  basicType : BasicMoveType
-  -- mutable    = some true
-  -- immmutable = some false
-  -- not a reference = none
-  isRefMut : Option Bool
-deriving Repr, Inhabited, Hashable
-
--- Function table
-structure FunSig where
-  params : List ParamType
-  returnType : List ParamType
-deriving Repr, Inhabited, Hashable
-
-abbrev FunEnv := AssocMap Id FunSig
-
--- New structure packaging all environments
-structure TypeEnv where
-  siteEnv : SiteEnv
-  varEnv  : VarEnv
-  pathEnv : PathEnv
-  funEnv  : FunEnv
-
--- Label environment: maps labels to their expected entry type environments
--- Used for type checking control flow (jumps must target labels with compatible environments)
-abbrev LabelEnv := AssocMap Label TypeEnv
-
--- Check that two type environments are equivalent
--- For now, we use a simple structural equality check
--- This may need to be refined to handle environment subsumption for joins
-def TypeEnv.equiv (env1 env2 : TypeEnv) : Prop :=
-  env1.siteEnv = env2.siteEnv ∧
-  env1.varEnv = env2.varEnv ∧
-  env1.pathEnv.refs = env2.pathEnv.refs ∧
-  (∀ p, env1.pathEnv.paths p = env2.pathEnv.paths p)
-
-/- ---------------------------------------------------- -/
-/-       Well-formedness of the environments            -/
-/- ---------------------------------------------------- -/
-
-structure WellFormedEnv (typeEnv : TypeEnv) where
-  -- All abstract locations have unique keys
-  uniqueSites : uniqueKeys typeEnv.siteEnv
-  -- The root is always present in the path environment
-  rootPresent : Aref.root ∈ typeEnv.pathEnv.refs
-  -- TODO: say that for all pairs in pathEnv there is either
-  -- a variable in varEnv or a site in siteEnv
 
 /- ---------------------------------------------------- -/
 /- Typing relations for usages, expressions, statements -/
