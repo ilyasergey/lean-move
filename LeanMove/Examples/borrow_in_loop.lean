@@ -18,12 +18,12 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
+import LeanMove.Examples.Macros
 
 open LeanMove.Lang
 open LeanMove.Lang.MoveLight
 open LeanMove.Checker
 open AssocMap
-
 
 /-
 https://github.com/MystenLabs/sui/blob/main/external-crates/move/crates/move-vm-transactional-tests/tests/references/borrow_in_loop.mvir
@@ -72,13 +72,10 @@ def foo : FunDef := {
   blocks := [
     { label := "l0"
       body :=
-        -- x = 0 (in A-normal form: assign from a site holding constant)
-        .seq (.assign var_x s0)
-        -- r = &x
-        (.seq (.letBind s1 (.usage (.borrowImm var_x)))
-        (.seq (.assign var_r s1)
-        -- jump l0
-        (.jump "l0")))
+        (var_x ::= s0) ;;          -- x = 0 (in A-normal form)
+        (letsite s1 ← &var_x) ;;   -- s1 = &x
+        (var_r ::= s1) ;;          -- r = s1
+        jump "l0"                  -- jump l0
     }
   ]
 }
@@ -173,101 +170,9 @@ A corrected version would need to either:
 
 -/
 
--- Theorem: foo is well-typed
--- NOTE: This theorem is FALSE - the program has borrow-checking violations.
--- We document exactly where the proof gets stuck.
-theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
-  exists foo_lenv
-  apply typecheck_fun.fun_ok (initEnv := foo_initEnv)
-  all_goals try aesop
-  { unfold foo at a; aesop }
-  {
-    move: a=>//=
-    scase: (foo.blocks.head?) =>//=[] l b
-    scase
-    srw foo_lenv at a_1
-    move: (lookup_some _ _ _ a_1)=>//=
-    srw foo_initEnv=>//=
-    simp [AssocMap.insert]; scase=>//
-    scase
-    sby simp [empty]
-  }
-  {
-    -- The actual type-checking of the block body
-    scase: idx a a_1=>//=
-    dsimp [foo] at * =>//==<- {block}=>//=
-    srw foo_lenv foo_initEnv=>//= /lookup_some=>//=
-    simp [AssocMap.insert]=>->
+-- Theorem: foo is ill-typed
+theorem foo_illtyped : ¬ (∃ lenv, typecheck_fun foo lenv) := by
+  sorry
 
-    /-
-    Goal state at this point:
-    We need to find an `outEnv` such that:
-      typecheck_block foo_lenv block foo_initEnv outEnv
-
-    The block body is:
-      seq (assign var_x s0)
-          (seq (letBind s1 (usage (borrowImm var_x)))
-               (seq (assign var_r s1)
-                    (jump "l0")))
-
-    To prove this, we would apply `typecheck_stmt.seq` repeatedly.
-
-    STUCK POINT 1: First statement `assign var_x s0`
-    ------------------------------------------------
-    For `var_assign_invalid` (since x starts invalid):
-      - Need: lookup foo_initEnv.siteEnv s0 = some (.basic .tint)
-      - But: foo_initEnv.siteEnv = empty
-      - Therefore: lookup returns none
-      - PROOF FAILS HERE
-
-    Even if we had s0 in siteEnv, we would eventually hit:
-
-    STUCK POINT 2: The `jump "l0"` statement
-    ----------------------------------------
-    For `typecheck_stmt.jump`:
-      - Need: TypeEnv.equiv currentEnv foo_initEnv
-      - But after borrowImm, pathEnv has edge: root --[var_x]--> r
-      - foo_initEnv.pathEnv = PathEnv.init (no such edge)
-      - pathEnv.paths don't match
-      - TypeEnv.equiv fails
-      - PROOF WOULD FAIL HERE
-
-    No choice of outEnv can satisfy both the typing rules and
-    the jump's environment equivalence requirement.
-    -/
-
-    sorry
-  }
-  { sdone }
-
-/-!
-## Alternative: What Would Make This Program Type-Check?
-
-For this loop pattern to work, we would need one of:
-
-1. **Release the borrow before jumping:**
-   ```
-   label l0:
-     x = 0;
-     let s1 = &x;
-     r = s1;
-     release(r);  -- or use r before loop back
-     jump l0;
-   ```
-
-2. **Different loop invariant:**
-   Use a `lenv` where the entry environment already accounts for the borrow.
-   But then the first iteration (with x invalid) wouldn't match.
-
-3. **Weaker typing rules:**
-   Allow environments to be "compatible" rather than "equivalent" at jumps.
-   This would require subtyping/weakening on PathEnv.
-   Current rules are intentionally strict for soundness.
-
-The current typing rules are designed to be **sound**: they never accept
-programs with use-after-free or dangling reference errors. This program
-genuinely has such an error (writing to x while r references it), so
-rejection is correct behavior.
--/
 
 end LeanMove.Examples.BorrowInLoop

@@ -18,6 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
+import LeanMove.Examples.Macros
 
 /-!
 # Fixed Version of borrow_in_loop
@@ -97,12 +98,9 @@ def foo : FunDef := {
   blocks := [
     { label := "l0"
       body :=
-        -- let s0 = &x
-        .seq (.letBind s0 (.usage (.borrowImm var_x)))
-        -- release(s0)
-        (.seq (.release s0)
-        -- jump l0
-        (.jump "l0"))
+        (letsite s0 ← &var_x) ;;  -- let s0 = &x
+        (Stmt.release s0) ;;      -- release(s0)
+        jump "l0"                 -- jump l0
     }
   ]
 }

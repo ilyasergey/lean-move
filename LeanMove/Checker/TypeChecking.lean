@@ -505,10 +505,10 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → TypeEnv → Prop wh
 
   -- return (a1, ..., an) // Return from function
   -- This is the dual of call: validates return values and cleans up all non-returned state
-  | return : ∀ (lenv : LabelEnv) (env env' : TypeEnv) fnName (as: List Site) (rets : List ParamType),
+  | return : ∀ (lenv : LabelEnv) (env env' : TypeEnv) fnName (as: List Site) (params rets : List ParamType),
     -- The function being returned from must exist in funEnv
     -- (In a real implementation, this would be tracked in context; here we look it up)
-    AssocMap.lookup env.funEnv fnName = some ⟨_, rets⟩ →
+    AssocMap.lookup env.funEnv fnName = some ⟨params, rets⟩ →
     -- Check type conformance: return sites must match declared return types
     types_confrom env.siteEnv as rets →
     -- Validation: No mutable return value reaches any other return value
