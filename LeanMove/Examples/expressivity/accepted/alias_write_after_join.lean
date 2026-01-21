@@ -18,7 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
-import LeanMove.Examples.Macros
+import LeanMove.Lang.Macros
 
 /-!
 # Alias Write After Join
@@ -106,41 +106,41 @@ def t : FunDef := {
     -- label l0: a = 0; b = 0; branch on cond
     { label := "l0"
       body :=
-        (var_a ::= s0) ;;               -- a = 0
+        ((var_a ::= s0) ;;               -- a = 0
         (var_b ::= s0) ;;               -- b = 0
-        (letsite s1 ← copy var_cond) ;; -- s1 = copy(cond)
-        Stmt.branch s1 "l2" "l1"        -- if s1 then l2 else l1
+        (letsite s1 ← copy var_cond))   -- s1 = copy(cond)
+      terminator := Terminator.branch s1 "l2" "l1"
     },
     -- label l1 (false branch): x = &mut a; y = &mut b; jump l3
     { label := "l1"
       body :=
-        (letsite s2 ← &mut var_a) ;;    -- s2 = &mut a
+        ((letsite s2 ← &mut var_a) ;;    -- s2 = &mut a
         (var_x ::= s2) ;;               -- x = s2
         (letsite s3 ← &mut var_b) ;;    -- s3 = &mut b
-        (var_y ::= s3) ;;               -- y = s3
-        jump "l3"
+        (var_y ::= s3))                 -- y = s3
+      terminator := Terminator.jump "l3"
     },
     -- label l2 (true branch): x = &mut b; y = &mut a; jump l3
     { label := "l2"
       body :=
-        (letsite s2 ← &mut var_b) ;;    -- s2 = &mut b
+        ((letsite s2 ← &mut var_b) ;;    -- s2 = &mut b
         (var_x ::= s2) ;;               -- x = s2
         (letsite s3 ← &mut var_a) ;;    -- s3 = &mut a
-        (var_y ::= s3) ;;               -- y = s3
-        jump "l3"
+        (var_y ::= s3))                 -- y = s3
+      terminator := Terminator.jump "l3"
     },
     -- label l3: z = &mut a; writes; return
     { label := "l3"
       body :=
-        (letsite s4 ← &mut var_a) ;;    -- s4 = &mut a
+        ((letsite s4 ← &mut var_a) ;;    -- s4 = &mut a
         (var_z ::= s4) ;;               -- z = s4
         (letsite s5 ← copy var_z) ;;    -- s5 = copy(z)
         Stmt.writeRef s5 s6 ;;          -- *s5 = 0
         (letsite s7 ← copy var_x) ;;    -- s7 = copy(x)
         Stmt.writeRef s7 s8 ;;          -- *s7 = 0
         (letsite s9 ← copy var_y) ;;    -- s9 = copy(y)
-        Stmt.writeRef s9 s10 ;;         -- *s9 = 0
-        Stmt.ret []                     -- return
+        Stmt.writeRef s9 s10)           -- *s9 = 0
+      terminator := Terminator.ret []   -- return
     }
   ]
 }

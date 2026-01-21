@@ -15,6 +15,20 @@ An experimental formalisation of Move borrow checker in Lean
 lake build
 ```
 
+### Build all examples
+```bash
+lake build examples
+```
+
+### Build initial examples only
+```bash
+lake build initial
+```
+
+Initial examples demonstrate basic MoveLight type checking:
+- `LeanMove/Examples/initial/accepted/` - Well-typed examples with complete proofs
+- `LeanMove/Examples/initial/rejected/` - Ill-typed examples that fail type checking
+
 ### Build expressivity examples only
 ```bash
 lake build expressivity

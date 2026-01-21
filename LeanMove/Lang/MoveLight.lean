@@ -111,7 +111,7 @@ inductive Expr where
   | freeze : Site → Expr
 deriving Repr, Inhabited, Hashable
 
--- Statements in a-normal form
+-- Statements in a-normal form (no control flow - that's in Terminator)
 inductive Stmt where
   | skip : Stmt
   | letBind : Site → Expr → Stmt  -- let a = e
@@ -121,11 +121,14 @@ inductive Stmt where
   | writeRef : Site → Site → Stmt  -- *a = b
   | release : Site → Stmt  -- release(a)
   | seq : Stmt → Stmt → Stmt  -- s1; s2 (sequential composition)
-  -- Control flow
-  | jump : Label → Stmt  -- goto L
-  | branch : Site → Label → Label → Stmt  -- if (a) goto L1 else goto L2
-  | ret : List Site → Stmt  -- return (a1, ..., an)
-  | abort : Site → Stmt  -- abort a
+deriving Repr, Inhabited
+
+-- Block terminators (control flow) - every block must end with exactly one
+inductive Terminator where
+  | jump : Label → Terminator  -- goto L
+  | branch : Site → Label → Label → Terminator  -- if (a) goto L1 else goto L2
+  | ret : List Site → Terminator  -- return (a1, ..., an)
+  | abort : Site → Terminator  -- abort a
 deriving Repr, Inhabited
 
 -- Local variable declaration
@@ -134,10 +137,11 @@ structure LocalVar where
   type : MoveType
 deriving Repr, Inhabited, Hashable
 
--- A labeled block: label paired with a statement
+-- A labeled block: label, body statements, and terminator
 structure Block where
   label : Label
   body : Stmt
+  terminator : Terminator
 deriving Repr, Inhabited
 
 -- Function definition

@@ -18,7 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
-import LeanMove.Examples.Macros
+import LeanMove.Lang.Macros
 
 /-!
 # Multiple Mutable Return Values
@@ -97,8 +97,8 @@ def borrow : FunDef := {
         Stmt.letBind s3 (Expr.borrowMutField s2 "Point" field_y) ;; -- s3 = &mut s2.y
         (var_y ::= s3) ;;                -- y = s3
         (letsite s4 ← copy var_x) ;;     -- s4 = copy(x)
-        (letsite s5 ← copy var_y) ;;     -- s5 = copy(y)
-        Stmt.ret [s4, s5]                -- return (s4, s5)
+        (letsite s5 ← copy var_y)        -- s5 = copy(y)
+      terminator := ret [s4, s5]         -- return (s4, s5)
     }
   ]
 }
@@ -141,8 +141,8 @@ def write : FunDef := {
         (letsite s6 ← copy var_x) ;;
         Stmt.writeRef s6 (.site 12) ;;   -- *x = 0 (again)
         (letsite s7 ← copy var_y) ;;
-        Stmt.writeRef s7 (.site 13) ;;   -- *y = 0 (again)
-        Stmt.ret []
+        Stmt.writeRef s7 (.site 13)      -- *y = 0 (again)
+      terminator := ret []
     }
   ]
 }

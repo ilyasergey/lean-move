@@ -18,7 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
-import LeanMove.Examples.Macros
+import LeanMove.Lang.Macros
 
 /-!
 # Mutable Borrows Are Not Unique
@@ -117,8 +117,8 @@ def fields : FunDef := {
         (var_f0 ::= s6) ;;               -- f0 = s6
         (letsite s7 ← copy var_s1) ;;    -- s7 = copy(s1_)
         Stmt.letBind s8 (Expr.borrowMutField s7 "S" field_f) ;; -- s8 = &mut s7.f
-        (var_f1 ::= s8) ;;               -- f1 = s8
-        Stmt.ret []
+        (var_f1 ::= s8)                  -- f1 = s8
+      terminator := ret []
     }
   ]
 }
@@ -160,8 +160,8 @@ def fields_write : FunDef := {
         (letsite (.site 10) ← copy var_f0) ;;
         Stmt.writeRef (.site 10) (.site 11) ;;  -- *f0 = 0
         (letsite (.site 12) ← copy var_f1) ;;
-        Stmt.writeRef (.site 12) (.site 13) ;;  -- *f1 = 0
-        Stmt.ret []
+        Stmt.writeRef (.site 12) (.site 13)     -- *f1 = 0
+      terminator := ret []
     }
   ]
 }

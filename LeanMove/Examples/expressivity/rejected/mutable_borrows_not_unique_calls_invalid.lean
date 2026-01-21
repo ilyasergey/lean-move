@@ -18,7 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
-import LeanMove.Examples.Macros
+import LeanMove.Lang.Macros
 
 /-!
 # Mutable Borrows Not Unique Calls - Invalid Module
@@ -117,8 +117,8 @@ def call_and_write_invalid : FunDef := {
         Stmt.writeRef s7 (.site 10) ;;  -- ERROR: unknown relationship with f
         -- *copy(f) = 0 -- ERROR: call might alias
         (letsite (.site 8) ← copy var_f) ;;
-        Stmt.writeRef (.site 8) (.site 11) ;; -- ERROR: unknown relationship with call
-        Stmt.ret []
+        Stmt.writeRef (.site 8) (.site 11) -- ERROR: unknown relationship with call
+      terminator := ret []
     }
   ]
 }

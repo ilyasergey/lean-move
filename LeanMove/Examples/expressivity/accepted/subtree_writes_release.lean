@@ -18,7 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
-import LeanMove.Examples.Macros
+import LeanMove.Lang.Macros
 
 /-!
 # Subtree Writes Release
@@ -108,25 +108,24 @@ def t : FunDef := {
   blocks := [
     -- l0: branch on condition
     { label := "l0"
-      body :=
-        (letsite s0 ← copy var_cond) ;;  -- s0 = copy(cond)
-        Stmt.branch s0 "l2" "l1"         -- if s0 then l2 else l1
+      body := (letsite s0 ← copy var_cond)  -- s0 = copy(cond)
+      terminator := Terminator.branch s0 "l2" "l1"  -- if s0 then l2 else l1
     },
     -- l1 (false branch): x = &mut root.l
     { label := "l1"
       body :=
         (letsite s1 ← copy var_root) ;;  -- s1 = copy(root)
         Stmt.letBind s2 (Expr.borrowMutField s1 "Tree" field_l) ;; -- s2 = &mut s1.l
-        (var_x ::= s2) ;;                -- x = s2
-        jump "l3"
+        (var_x ::= s2)                   -- x = s2
+      terminator := Terminator.jump "l3"
     },
     -- l2 (true branch): x = &mut root.r
     { label := "l2"
       body :=
         (letsite s1 ← copy var_root) ;;  -- s1 = copy(root)
         Stmt.letBind s2 (Expr.borrowMutField s1 "Tree" field_r) ;; -- s2 = &mut s1.r
-        (var_x ::= s2) ;;                -- x = s2
-        jump "l3"
+        (var_x ::= s2)                   -- x = s2
+      terminator := Terminator.jump "l3"
     },
     -- l3: navigate deeper and write
     { label := "l3"
@@ -143,9 +142,9 @@ def t : FunDef := {
         -- (Actually simplified here; real code would pack a new Sub2)
         -- Finally write through y
         (letsite s8 ← copy var_y) ;;     -- s8 = copy(y)
-        Stmt.writeRef s8 (.site 10) ;;   -- *s8 = 0
+        Stmt.writeRef s8 (.site 10)      -- *s8 = 0
         -- Return (simplified)
-        Stmt.ret []
+      terminator := Terminator.ret []
     }
   ]
 }

@@ -18,7 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
-import LeanMove.Examples.Macros
+import LeanMove.Lang.Macros
 
 -- -----------------------------------------------------
 -- -       Example: Basic Move IR Translation        --
@@ -106,8 +106,8 @@ def M_new : FunDef := {
     { label := "b0"
       body :=
         (letsite s0 ← move var_g) ;;                -- let s0 = move(g)
-        .letBind s1 (.pack "T" [(field_f, s0)]) ;; -- let s1 = T{f: s0}
-        .ret [s1]                                  -- return s1
+        Stmt.letBind s1 (Expr.pack "T" [(field_f, s0)])  -- let s1 = T{f: s0}
+      terminator := ret [s1]                        -- return s1
     }
   ]
 }
@@ -136,11 +136,11 @@ def M_t : FunDef := {
   blocks := [
     { label := "b0"
       body :=
-        (letsite s0 ← move var_this) ;;              -- let s0 = move(this)
-        .letBind s1 (.borrowField s0 M_T_basic field_f) ;; -- let s1 = &s0.T::f
-        .letBind s2 (.readRef s1) ;;                 -- let s2 = *s1
-        (var_y ::= s2) ;;                            -- y = s2
-        .ret []                                      -- return
+        (letsite s0 ← move var_this) ;;                   -- let s0 = move(this)
+        Stmt.letBind s1 (Expr.borrowField s0 M_T_basic field_f) ;; -- let s1 = &s0.T::f
+        Stmt.letBind s2 (Expr.readRef s1) ;;              -- let s2 = *s1
+        (var_y ::= s2)                                    -- y = s2
+      terminator := ret []                                -- return
     }
   ]
 }
@@ -169,16 +169,15 @@ def foo : FunDef := {
     { label := "b0"
       body :=
         -- x = M.new(2) (in A-normal form: call then assign)
-        .call [s0] "M.new" [] ;;
+        Stmt.call [s0] "M.new" [] ;;
         (var_x ::= s0) ;;
         -- x_ref = &x (in A-normal form: borrow then assign)
         (letsite s1 ← &var_x) ;;
         (var_x_ref ::= s1) ;;
         -- M.t(move(x_ref)) (in A-normal form: move then call)
         (letsite s2 ← move var_x_ref) ;;
-        .call [] "M.t" [s2] ;;
-        -- return
-        .ret []
+        Stmt.call [] "M.t" [s2]
+      terminator := ret []   -- return
     }
   ]
 }
@@ -217,30 +216,32 @@ def M_new_lenv : LabelEnv :=
 theorem M_new_welltyped : ∃ lenv, typecheck_fun M_new lenv := by
   exists M_new_lenv
   apply typecheck_fun.fun_ok (initEnv := M_new_initEnv)
-  all_goals try aesop
-  -- Goal: M_new.blocks ≠ []
-  { unfold M_new at a; aesop }
-  -- Goal: Entry block environment equivalence
-  {
-    move: a=>//=
-    scase: (M_new.blocks.head?) =>//=[] l b
-    scase
-    srw M_new_lenv at a_1
-    move: (lookup_some _ _ _ a_1)=>//=
-    srw M_new_initEnv=>//=
-    simp [AssocMap.insert]; scase=>//
-    scase
-    sby simp [empty]
-  }
-  -- Goal: Each block type-checks
-  {
-    scase: idx a a_1=>//=
-    dsimp [M_new] at * =>//==<- {block}=>//=
-    srw M_new_lenv M_new_initEnv=>//= /lookup_some=>//=
-    simp [AssocMap.insert]=>->
+  · rfl  -- initEnv.varEnv
+  · rfl  -- initEnv.siteEnv
+  · rfl  -- initEnv.pathEnv
+  · simp only [M_new]; intro h; exact List.noConfusion h  -- blocks ≠ []
+  · -- Entry block environment equivalence
+    intro entryLabel entryBody entryTerm entryEnv hhead hlookup
+    simp only [M_new, List.head?] at hhead
+    injection hhead with hblock
+    have h1 : entryLabel = "b0" := (congrArg Block.label hblock).symm
+    subst h1
+    simp only [M_new_lenv, AssocMap.insert, AssocMap.lookup] at hlookup
+    injection hlookup with heq
+    rw [← heq]
+    unfold TypeEnv.equiv
+    refine ⟨rfl, rfl, rfl, ?_⟩
+    intros; rfl
+  · -- Every block must type check
+    intro block hmem blockEnv hlookup
+    simp only [M_new, List.mem_singleton] at hmem
+    subst hmem
+    simp only [M_new_lenv, AssocMap.insert, AssocMap.lookup] at hlookup
+    injection hlookup with heq
+    subst heq
+    unfold typecheck_block
 
-    -- Build the output environment step by step, following the typing rules exactly
-
+    -- Define intermediate environments
     -- After let s0 = move(g): s0 has type .basic .tint, g is invalidated
     let env1 : TypeEnv := {
       siteEnv := AssocMap.insert M_new_initEnv.siteEnv s0 (.basic .tint)
@@ -250,129 +251,63 @@ theorem M_new_welltyped : ∃ lenv, typecheck_fun M_new lenv := by
     }
 
     -- After let s1 = pack T{f: s0}: s0 is consumed, s1 has the record type
-    let env2 : TypeEnv := {
+    let midEnv : TypeEnv := {
       siteEnv := AssocMap.insert (AssocMap.deleteAll env1.siteEnv [s0]) s1 M_T
       varEnv := env1.varEnv
       pathEnv := env1.pathEnv
       funEnv := env1.funEnv
     }
 
-    -- After ret [s1]: only s1 remains in siteEnv
-    let env_final : TypeEnv := {
-      siteEnv := AssocMap.insert AssocMap.empty s1 M_T
-      varEnv := env2.varEnv
-      pathEnv := env2.pathEnv
-      funEnv := env2.funEnv
-    }
-
-    exists env_final
+    exists midEnv
     constructor
-    · -- typecheck_block: prove the body type-checks
+    · -- typecheck_stmt for body
       apply typecheck_stmt.seq (env' := env1)
-      · -- First statement: let s0 = move(g)
+      · -- let s0 = move(g)
         apply typecheck_stmt.let_bind
         apply typecheck_expr.usage
         apply typecheck_usage.t_umove (τ := .basic .tint) (ms := .mutable)
-        · -- lookup M_new_initEnv.varEnv var_g = some (validVar, .basic .tint, mutable)
-          rfl
-        · -- not_borrowed var_g M_new_initEnv
-          -- PathEnv.init has paths (.root, r) = if .root = r then ε else empty
-          -- ε only matches [], empty matches nothing
+        · rfl  -- lookup varEnv var_g
+        · -- not_borrowed var_g
           unfold not_borrowed
           intro r
-          simp only [PathEnv.init]
-          -- Goal: ¬ interpret_regex (if .root = r then ε else empty) [.root_to_var var_g]
+          simp only [M_new_initEnv, PathEnv.init]
           split
-          · -- r = root: regex is ε, only accepts []
-            simp only [Regex.interpret_regex]
-            -- Goal: ¬ ([.root_to_var var_g] = [])
-            intro h; cases h
-          · -- r ≠ root: regex is empty, accepts nothing
-            simp only [Regex.interpret_regex]
-            -- Goal: ¬ False
-            exact id
-        · -- s0 not in siteEnv
-          rfl
-        · -- env' = env1
-          rfl
-      · -- Remaining: seq (let s1 = pack) (ret [s1])
-        apply typecheck_stmt.seq (env' := env2)
-        · -- let s1 = pack T{f: s0}
-          apply typecheck_stmt.let_bind
-          apply typecheck_expr.pack (fentries := AssocMap.insert AssocMap.empty field_f .tint)
-          · -- s1 not in env1.siteEnv
-            rfl
-          · -- All field sites exist with correct types
-            intro f a hmem
-            -- fields = [(field_f, s0)]
-            simp at hmem
-            obtain ⟨hf, ha⟩ := hmem
-            subst hf ha
-            -- Prove: ∃ bt, lookup env1.siteEnv s0 = some (.basic bt) ∧ lookup fentries field_f = some bt
-            exists .tint
-          · -- All field sites distinct (vacuously true: only one field)
-            intro a1 a2 hexists
-            -- hexists: ∃ f1 f2, (f1, a1) ∈ fields ∧ (f2, a2) ∈ fields ∧ f1 ≠ f2
-            -- But fields = [(field_f, s0)], so both f1 and f2 must equal field_f
-            obtain ⟨f1, f2, h1, h2, hne⟩ := hexists
-            simp at h1 h2
-            -- h1: f1 = field_f ∧ a1 = s0
-            -- h2: f2 = field_f ∧ a2 = s0
-            have : f1 = field_f := h1.1
-            have : f2 = field_f := h2.1
-            -- This contradicts hne: f1 ≠ f2
-            subst_vars
-            contradiction
-          · -- env' = env2
-            rfl
-        · -- ret [s1]
-          apply typecheck_stmt.return (fnName := "M.new") (params := [⟨.tint, none⟩]) (rets := [⟨M_T_basic, none⟩])
-          · -- lookup env2.funEnv "M.new" = some ⟨params, rets⟩
-            rfl
-          · -- types_confrom env2.siteEnv [s1] [⟨M_T_basic, none⟩]
-            -- types_confrom checks that each site has the matching type
-            -- s1 has type M_T = .basic M_T_basic, and the param type is ⟨M_T_basic, none⟩
-            unfold types_confrom
-            constructor
-            · rfl  -- M_T_basic = M_T_basic
-            · trivial  -- types_confrom [] [] = True
-          · -- check_mutable_inputs_isolated env2 [s1]
-            -- s1 has basic type M_T, not a ref type, so vacuously true
-            -- The hypothesis requires mi_site to have a ref type with siteBorrowMut
-            -- but env2.siteEnv only maps s1 → M_T (basic type)
-            unfold check_mutable_inputs_isolated
-            intro mi_site hmi mi_bt mi_ref hlookup other_site hother other_bt other_ref bk hlookup_other hne
-            simp only [List.mem_singleton] at hmi
-            subst hmi
-            -- hlookup: lookup env2.siteEnv s1 = some (.ref mi_bt mi_ref .siteBorrowMut)
-            -- But env2.siteEnv[s1] = M_T = .basic M_T_basic
-            have henv2_s1 : AssocMap.lookup env2.siteEnv s1 = some M_T := by rfl
-            rw [henv2_s1] at hlookup
-            -- hlookup: some M_T = some (.ref mi_bt mi_ref .siteBorrowMut)
-            -- M_T is .basic, not .ref, so this is a contradiction
-            simp only [M_T] at hlookup
-            -- Now hlookup: some (.basic M_T_basic) = some (.ref ...), which is absurd
-            cases hlookup
-          · -- no_locals_borrowed env2
-            -- M_new has no locals (only parameter var_g)
-            -- PathEnv.init has no non-trivial paths, so not_borrowed holds for all vars
-            unfold no_locals_borrowed not_borrowed
-            intro x v hmem r
-            simp only [env2, env1, M_new_initEnv, PathEnv.init]
-            -- Goal: ¬ interpret_regex (if .root = r then ε else empty) [.root_to_var x]
-            split
-            · -- r = root: regex is ε, only accepts []
-              simp only [Regex.interpret_regex]
-              intro h; cases h
-            · -- r ≠ root: regex is empty, accepts nothing
-              simp only [Regex.interpret_regex]
-              exact id
-          · -- env' = env_final (environment cleanup)
-            rfl
-    · -- next block: none exists
-      intro nextLabel nextEnv hnext _
-      simp [next_block_label] at hnext
-  }
-  { sdone }
+          · simp only [Regex.interpret_regex]; intro h; cases h
+          · simp only [Regex.interpret_regex]; exact id
+        · rfl  -- notIn siteEnv s0
+        · rfl  -- env' = env1
+      · -- let s1 = pack T{f: s0}
+        apply typecheck_stmt.let_bind
+        apply typecheck_expr.pack (fentries := AssocMap.insert AssocMap.empty field_f .tint)
+        · rfl  -- s1 not in env1.siteEnv
+        · -- All field sites exist with correct types
+          intro f a hmem
+          simp at hmem
+          obtain ⟨hf, ha⟩ := hmem
+          subst hf ha
+          exists .tint
+        · -- All field sites distinct
+          intro a1 a2 hexists
+          obtain ⟨f1, f2, h1, h2, hne⟩ := hexists
+          simp at h1 h2
+          have hf1 : f1 = field_f := h1.1
+          have hf2 : f2 = field_f := h2.1
+          rw [hf1, hf2] at hne
+          exact absurd rfl hne
+        · rfl  -- env' = midEnv
+    · -- typecheck_terminator for ret [s1]
+      apply typecheck_terminator.t_ret
+      · -- All return sites have correct type
+        intro a ha
+        simp only [List.mem_singleton] at ha
+        subst ha
+        rfl
+      · -- no_locals_borrowed
+        unfold no_locals_borrowed not_borrowed
+        intro x v hmem r
+        simp only [midEnv, env1, M_new_initEnv, PathEnv.init]
+        split
+        · simp only [Regex.interpret_regex]; intro h; cases h
+        · simp only [Regex.interpret_regex]; exact id
 
 end LeanMove.Examples

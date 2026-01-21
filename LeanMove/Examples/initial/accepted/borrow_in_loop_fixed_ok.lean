@@ -18,7 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
-import LeanMove.Examples.Macros
+import LeanMove.Lang.Macros
 
 /-!
 # Fixed Version of borrow_in_loop
@@ -99,8 +99,8 @@ def foo : FunDef := {
     { label := "l0"
       body :=
         (letsite s0 ← &var_x) ;;  -- let s0 = &x
-        (Stmt.release s0) ;;      -- release(s0)
-        jump "l0"                 -- jump l0
+        Stmt.release s0           -- release(s0)
+      terminator := jump "l0"     -- jump l0
     }
   ]
 }
@@ -199,55 +199,39 @@ r0 from the refs list. This restores the PathEnv to its initial state.
 theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
   exists foo_lenv
   apply typecheck_fun.fun_ok (initEnv := foo_initEnv)
-  all_goals try aesop
-  -- Goal: foo.blocks ≠ []
-  { unfold foo at a; aesop }
-  -- Goal: Entry block environment equivalence
-  {
-    move: a=>//=
-    scase: (foo.blocks.head?) =>//=[] l b
-    scase
-    srw foo_lenv at a_1
-    move: (lookup_some _ _ _ a_1)=>//=
-    srw foo_initEnv=>//=
-    simp [AssocMap.insert]; scase=>//
-    scase
-    sby simp [empty]
-  }
-  -- Goal: Each block type-checks
-  {
-    scase: idx a a_1=>//=
-    dsimp [foo] at * =>//==<- {block}=>//=
-    srw foo_lenv foo_initEnv=>//= /lookup_some=>//=
-    simp [AssocMap.insert]=>->
+  · -- initEnv.varEnv = init_fun_varEnv foo
+    rfl
+  · -- initEnv.siteEnv = empty
+    rfl
+  · -- initEnv.pathEnv = PathEnv.init
+    rfl
+  · -- foo.blocks ≠ []
+    simp only [foo]; intro h; exact List.noConfusion h
+  · -- Entry block environment equivalence
+    intro entryLabel entryBody entryTerm entryEnv hhead hlookup
+    simp only [foo, List.head?] at hhead
+    injection hhead with hblock
+    have h1 : entryLabel = "l0" := (congrArg Block.label hblock).symm
+    subst h1
+    simp only [foo_lenv, AssocMap.insert, AssocMap.lookup] at hlookup
+    injection hlookup with heq
+    rw [← heq]
+    -- Prove reflexivity of equiv
+    unfold TypeEnv.equiv
+    refine ⟨rfl, rfl, rfl, ?_⟩
+    intros; rfl
+  · -- Every block must type check
+    intro block hmem blockEnv hlookup
+    simp only [foo, List.mem_singleton] at hmem
+    subst hmem
+    simp only [foo_lenv, AssocMap.insert, AssocMap.lookup] at hlookup
+    injection hlookup with heq
+    subst heq
 
-    /-
-    Goal state at this point:
-    We need to find an `outEnv` such that:
-      typecheck_block foo_lenv block foo_initEnv outEnv
-
-    The block body is:
-      seq (letBind s0 (usage (borrowImm var_x)))
-          (seq (release s0)
-               (jump "l0"))
-
-    We construct the proof by applying typing rules step by step.
-
-    The key insight is that after release, the environment is equivalent to
-    foo_initEnv under the weakened TypeEnv.equiv that only compares paths
-    between refs in the refs list. Since delete_ref_node removes r0 from refs,
-    only .root remains, and paths(.root, .root) = ε in both environments.
-
-    The proof demonstrates that the type checking rules are sufficient to verify
-    that releasing a borrow before a loop back-edge restores the environment to
-    a state equivalent to the loop entry environment.
-    -/
-
-    -- Define the PathEnv after borrowImm using the exact operations from typing rules
+    -- Define intermediate environments
     let pe1 : PathEnv := update_with_extension .root r0 [.root_to_var var_x]
                            (update_with_epsilon r0 r0 PathEnv.init)
 
-    -- Environment after the borrow
     let env1 : TypeEnv := {
       siteEnv := AssocMap.insert AssocMap.empty s0 (.ref .tint r0 .siteBorrowImm)
       varEnv := init_varEnv_from_params [(var_x, .basic .tint)]
@@ -255,7 +239,6 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
       funEnv := AssocMap.empty
     }
 
-    -- Environment after the release
     let env2 : TypeEnv := {
       siteEnv := AssocMap.empty
       varEnv := init_varEnv_from_params [(var_x, .basic .tint)]
@@ -265,15 +248,10 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
 
     -- Key fact: r0 is not root
     have hr0_not_root : r0 ≠ Aref.root := by
-      simp only [r0]
-      intro h; injection h
+      simp only [r0]; intro h; injection h
 
     -- After delete_ref_node, only .root is in refs
-    have hrefs : (delete_ref_node pe1 r0).refs = [.root] := by
-      simp only [delete_ref_node]
-      -- The refs in pe1 are [r0, .root] (from update_with_extension adding r0)
-      -- Filtering out r0 leaves [.root]
-      rfl
+    have hrefs : (delete_ref_node pe1 r0).refs = [.root] := rfl
 
     -- The refs match PathEnv.init.refs
     have hrefs_eq : (delete_ref_node pe1 r0).refs = PathEnv.init.refs := by
@@ -289,8 +267,6 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
         | inl h => exact hr0_not_root h.symm
         | inr h => exact hr0_not_root h.symm
       simp only [hne, ite_false]
-      -- pe1.paths (.root, .root) = ε by construction of update_with_extension
-      -- PathEnv.init.paths (.root, .root) = ε by definition
       rfl
 
     -- TypeEnv.equiv env2 foo_initEnv
@@ -303,46 +279,30 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
       subst hu hv
       exact hpaths_root
 
-    -- Now construct the existence proof
+    -- typecheck_block requires: ∃ midEnv, typecheck_stmt ... ∧ typecheck_terminator ...
+    unfold typecheck_block
     exists env2
     constructor
-    · -- typecheck_block
+    · -- typecheck_stmt for body: (letsite s0 ← &var_x) ;; release s0
       apply typecheck_stmt.seq (env' := env1)
       · -- letBind s0 (usage (borrowImm var_x))
         apply typecheck_stmt.let_bind
         apply typecheck_expr.usage
         apply typecheck_usage.t_uborrowImm_val (τ := .tint) (ms := .mutable) (r := r0)
-        · -- lookup varEnv var_x = some (validVar, .basic .tint, mutable)
-          rfl
-        · -- notIn siteEnv s0
-          rfl
-        · -- freshRef r0: r0 ∉ PathEnv.init.refs = r0 ∉ [.root]
-          simp only [freshRef, PathEnv.init, r0, List.mem_singleton]
-          intro h; injection h
-        · -- env' = expected
-          rfl
-      · -- seq (release s0) (jump "l0")
-        apply typecheck_stmt.seq (env' := env2)
-        · -- release s0
-          apply typecheck_stmt.release (τ := .tint) (r := r0) (isBor := .siteBorrowImm)
-          · -- lookup siteEnv s0 = some (.ref .tint r0 .siteBorrowImm)
-            rfl
-          · -- env' = expected
-            rfl
-        · -- jump "l0"
-          apply typecheck_stmt.jump (envL := foo_initEnv)
-          · -- lookup lenv "l0" = some foo_initEnv
-            rfl
-          · -- TypeEnv.equiv env2 foo_initEnv
-            exact hequiv
-    · -- next block condition (vacuously true - no next block)
-      intro nextLabel nextEnv hnext _
-      -- hnext : next_block_label [single_block] 0 = some nextLabel
-      -- but next_block_label [single_block] 0 = none (since [single_block][1]? = none)
-      simp only [next_block_label] at hnext
-      -- This reduces to: none = some nextLabel, which is a contradiction
-      exact Option.noConfusion hnext
-  }
-  { sdone }
+        · rfl  -- lookup varEnv var_x
+        · rfl  -- notIn siteEnv s0
+        · -- freshRef r0: r0 ∉ PathEnv.init.refs = [.root]
+          unfold freshRef
+          simp only [foo_initEnv, PathEnv.init, r0]
+          decide
+        · rfl  -- env' = expected
+      · -- release s0
+        apply typecheck_stmt.release (τ := .tint) (r := r0) (isBor := .siteBorrowImm)
+        · rfl  -- lookup siteEnv s0
+        · rfl  -- env' = expected
+    · -- typecheck_terminator for jump "l0"
+      apply typecheck_terminator.t_jump (envL := foo_initEnv)
+      · rfl  -- lookup lenv "l0" = some foo_initEnv
+      · exact hequiv  -- TypeEnv.equiv env2 foo_initEnv
 
 end LeanMove.Examples.BorrowInLoopFixed

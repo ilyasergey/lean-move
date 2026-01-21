@@ -1,15 +1,51 @@
 # Changes Made on 2026-01-21
 
 ## Summary
-Added expressivity examples transpiled from Move bytecode verifier tests.
+Refactored control flow into Terminator type; added build targets for all examples.
 
 ## Overview
 
-This change adds 12 examples from the Move bytecode verifier transactional tests
-(reference_safety/expressivity) transpiled to MoveLight. These examples demonstrate
-various borrow checking scenarios that should either pass or fail type checking.
+This change introduces a major refactoring to separate control flow (jump, branch, ret, abort)
+from regular statements into a dedicated `Terminator` type. This ensures that control flow
+only appears at the end of blocks, matching the structure of real intermediate representations.
 
-Source: https://github.com/tnowacki/sui/tree/example-tests/external-crates/move/crates/bytecode-verifier-transactional-tests/tests/reference_safety/expressivity
+Additionally, the Macros module was moved from Examples to Lang, and build targets were added
+for all example categories.
+
+## Major Changes
+
+### Control Flow Refactoring
+
+**LeanMove/Lang/MoveLight.lean**:
+- Added new `Terminator` inductive type with constructors: `jump`, `branch`, `ret`, `abort`
+- Updated `Block` structure to have three fields: `label`, `body` (Stmt), `terminator` (Terminator)
+
+**LeanMove/Checker/TypeChecking.lean**:
+- Removed `abort`, `jump`, `branch` rules from `typecheck_stmt`
+- Added new `typecheck_terminator` inductive relation for control flow checking
+- Updated `typecheck_block` to check body via `typecheck_stmt`, then terminator via `typecheck_terminator`
+- Simplified `typecheck_fun`: removed fall-through logic between blocks
+
+### Module Reorganization
+
+**LeanMove/Lang/Macros.lean** (moved from LeanMove/Examples/Macros.lean):
+- Updated macros for new Terminator type (`jump`, `branch`, `ret`, `abort`)
+- All example files updated to import from new location
+
+### Build Targets
+
+**lakefile.lean**:
+- Added `lake build initial` for initial examples
+- Added `lake build examples` for all examples (initial + expressivity)
+
+**README.md**:
+- Updated with all build target instructions
+
+### Proof Completions
+
+**LeanMove/Examples/initial/accepted/**:
+- `borrow_in_loop_fixed_ok.lean`: Complete proof with no `sorry`
+- `deref_borrow_field_ok.lean`: Complete proof with no `sorry`
 
 ## New Files
 
@@ -35,26 +71,29 @@ Located in `LeanMove/Examples/expressivity/rejected/`:
 
 ## Changes to Existing Files
 
-### LeanMove/Examples/Macros.lean
-Added new macros for more readable MoveLight code:
-- `branch cond "l1" "l2"` - Conditional branch
+### LeanMove/Lang/Macros.lean (moved from LeanMove/Examples/Macros.lean)
+Macros for more readable MoveLight code:
+- `jump "label"` - Unconditional jump (Terminator)
+- `branch cond "l1" "l2"` - Conditional branch (Terminator)
+- `ret [sites]` - Return statement (Terminator)
+- `abort s` - Abort execution (Terminator)
 - `* a ::= b` - Write through reference
-- `ret [sites]` - Return statement
 - `release s` - Release reference
 - `letsite a ← *b` - Dereference (read reference)
 - `letsite a ← freeze b` - Freeze reference
 
 ### lakefile.lean
-Added `expressivity` build target to compile all expressivity examples:
+Build targets for examples:
 ```bash
-lake build expressivity
+lake build initial      # Initial examples only
+lake build expressivity # Expressivity examples only
+lake build examples     # All examples
 ```
 
 ### README.md
 Updated with:
-- Correct dependency versions
-- Build instructions for expressivity examples
-- Link to source examples
+- All build target instructions
+- Description of initial examples
 
 ## Theorems
 
@@ -76,4 +115,5 @@ theorem t_illtyped : ¬ (∃ lenv, typecheck_fun t lenv) := by
 - The transpilation preserves the essential borrow checking semantics
 - Some simplifications were made where MoveLight doesn't support certain features
   (e.g., vectors, tuple return types)
-- Proofs are left as `sorry` for future work
+- Initial examples in `accepted/` have complete proofs (no `sorry`)
+- Expressivity examples have `sorry` placeholders for future proof work

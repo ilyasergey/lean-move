@@ -18,7 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
-import LeanMove.Examples.Macros
+import LeanMove.Lang.Macros
 
 /-!
 # Alias Writes
@@ -95,8 +95,8 @@ def borrow_local_twice : FunDef := {
         (letsite s3 ← copy var_x) ;;    -- s3 = copy(x)
         Stmt.writeRef s3 s4 ;;          -- *s3 = 0
         (letsite s5 ← copy var_y) ;;    -- s5 = copy(y)
-        Stmt.writeRef s5 s6 ;;          -- *s5 = 0
-        Stmt.ret []
+        Stmt.writeRef s5 s6             -- *s5 = 0
+      terminator := ret []
     }
   ]
 }
@@ -124,8 +124,8 @@ def borrow_local_twice_reverse : FunDef := {
         (letsite s3 ← copy var_y) ;;    -- s3 = copy(y) -- reversed
         Stmt.writeRef s3 s4 ;;          -- *s3 = 0
         (letsite s5 ← copy var_x) ;;    -- s5 = copy(x) -- reversed
-        Stmt.writeRef s5 s6 ;;          -- *s5 = 0
-        Stmt.ret []
+        Stmt.writeRef s5 s6             -- *s5 = 0
+      terminator := ret []
     }
   ]
 }
@@ -166,8 +166,8 @@ def borrow_local_and_copy_ref : FunDef := {
         (letsite s3 ← copy var_x) ;;    -- s3 = copy(x)
         Stmt.writeRef s3 s4 ;;          -- *s3 = 0
         (letsite s5 ← copy var_y) ;;    -- s5 = copy(y)
-        Stmt.writeRef s5 s6 ;;          -- *s5 = 0
-        Stmt.ret []
+        Stmt.writeRef s5 s6             -- *s5 = 0
+      terminator := ret []
     }
   ]
 }
@@ -195,8 +195,8 @@ def borrow_local_and_copy_ref_reverse : FunDef := {
         (letsite s3 ← copy var_y) ;;    -- s3 = copy(y) -- reversed
         Stmt.writeRef s3 s4 ;;          -- *s3 = 0
         (letsite s5 ← copy var_x) ;;    -- s5 = copy(x) -- reversed
-        Stmt.writeRef s5 s6 ;;          -- *s5 = 0
-        Stmt.ret []
+        Stmt.writeRef s5 s6             -- *s5 = 0
+      terminator := ret []
     }
   ]
 }

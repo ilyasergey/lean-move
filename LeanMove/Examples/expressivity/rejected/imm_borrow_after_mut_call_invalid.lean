@@ -18,7 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
-import LeanMove.Examples.Macros
+import LeanMove.Lang.Macros
 
 /-!
 # Immutable Borrow After Mutable Call - Invalid Module
@@ -107,8 +107,8 @@ def invalid : FunDef := {
         Stmt.writeRef s5 (.site 10) ;;  -- ERROR: write with imm alias
         -- _ = *copy(imm1)
         (letsite s6 ← copy var_imm1) ;; -- s6 = copy(imm1)
-        Stmt.letBind s7 (Expr.readRef s6) ;; -- s7 = *s6 (discard)
-        Stmt.ret []
+        Stmt.letBind s7 (Expr.readRef s6) -- s7 = *s6 (discard)
+      terminator := ret []
     }
   ]
 }

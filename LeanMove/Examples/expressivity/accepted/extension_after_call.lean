@@ -18,7 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
-import LeanMove.Examples.Macros
+import LeanMove.Lang.Macros
 
 /-!
 # Extension After Call
@@ -96,8 +96,8 @@ def fn_borrow : FunDef := {
         (letsite s0 ← copy var_b) ;;     -- s0 = copy(b)
         Stmt.letBind s1 (Expr.borrowMutField s0 "Box" field_tl) ;; -- s1 = &mut s0.tl
         (var_tl ::= s1) ;;               -- tl = s1
-        (letsite s2 ← copy var_tl) ;;    -- s2 = copy(tl)
-        Stmt.ret [s2]                    -- return s2
+        (letsite s2 ← copy var_tl)       -- s2 = copy(tl)
+      terminator := ret [s2]             -- return s2
     }
   ]
 }
@@ -138,8 +138,8 @@ def fn_write : FunDef := {
         Stmt.writeRef s6 (.site 10) ;;   -- *s6 = 0
         (letsite s7 ← copy var_y) ;;     -- s7 = copy(y)
         Stmt.writeRef s7 (.site 11) ;;   -- *s7 = 0
-        (letsite s8 ← copy var_tl) ;;    -- s8 = copy(tl)
-        Stmt.ret [s8]                    -- return s8
+        (letsite s8 ← copy var_tl)       -- s8 = copy(tl)
+      terminator := ret [s8]             -- return s8
     }
   ]
 }

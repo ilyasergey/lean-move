@@ -18,7 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
-import LeanMove.Examples.Macros
+import LeanMove.Lang.Macros
 
 /-!
 # Immutable Borrow After Mutable
@@ -92,8 +92,8 @@ def direct : FunDef := {
         (letsite s3 ← copy var_rmut) ;; -- s3 = copy(rmut)
         Stmt.writeRef s3 s4 ;;          -- *s3 = 0
         (letsite s5 ← copy var_rimm) ;; -- s5 = copy(rimm)
-        Stmt.letBind s6 (Expr.readRef s5) ;; -- s6 = *s5 (discarded)
-        Stmt.ret []
+        Stmt.letBind s6 (Expr.readRef s5) -- s6 = *s5 (discarded)
+      terminator := ret []
     }
   ]
 }
@@ -135,8 +135,8 @@ def copy_and_freeze : FunDef := {
         (letsite s4 ← copy var_rmut) ;; -- s4 = copy(rmut)
         Stmt.writeRef s4 s0 ;;          -- *s4 = 0
         (letsite s5 ← copy var_rimm) ;; -- s5 = copy(rimm)
-        Stmt.letBind s6 (Expr.readRef s5) ;; -- s6 = *s5 (discarded)
-        Stmt.ret []
+        Stmt.letBind s6 (Expr.readRef s5) -- s6 = *s5 (discarded)
+      terminator := ret []
     }
   ]
 }

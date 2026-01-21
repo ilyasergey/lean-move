@@ -18,7 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
-import LeanMove.Examples.Macros
+import LeanMove.Lang.Macros
 
 open LeanMove.Lang
 open LeanMove.Lang.MoveLight
@@ -74,8 +74,8 @@ def foo : FunDef := {
       body :=
         (var_x ::= s0) ;;          -- x = 0 (in A-normal form)
         (letsite s1 ← &var_x) ;;   -- s1 = &x
-        (var_r ::= s1) ;;          -- r = s1
-        jump "l0"                  -- jump l0
+        (var_r ::= s1)             -- r = s1
+      terminator := jump "l0"      -- jump l0
     }
   ]
 }

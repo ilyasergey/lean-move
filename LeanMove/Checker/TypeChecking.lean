@@ -393,7 +393,7 @@ def no_locals_borrowed (env: TypeEnv) : Prop :=
   ∀ (x : Var) (v : IsValid × MoveType × Mut), (x, v) ∈ env.varEnv.entries → not_borrowed x env
 
 /--
-Type checking relation for statements.
+Type checking relation for statements (no control flow - that's in Terminator).
 
 Judgment form: `⟨env⟩ ⊢ s ⤳ ⟨env'⟩`
 
@@ -404,12 +404,10 @@ This relation handles all statement forms that transform the environment:
 - ***a = b**: Write through mutable reference, consuming both sites
 - **let (a1, ..., an) = f(b1, ..., bm)**: Function call with path updates
 - **T { f1: a1, ..., fn: an } = b**: Unpack record into field sites
-- **abort a**: Abort execution (consumes site)
 - **release(a)**: Explicitly release a reference
 - **s1; s2**: Sequential composition - threads environment from s1 to s2
-- **jump L**: Unconditional jump to label L
-- **branch a L1 L2**: Conditional branch - if (a) goto L1 else goto L2
-- **ret (a1, ..., an)**: Return from function
+
+Control flow (jump, branch, ret, abort) is handled separately by typecheck_terminator.
 
 Components:
 - `env`: Input type environment before executing the statement
@@ -503,32 +501,6 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → TypeEnv → Prop wh
     env' = call_connect_inputs_outputs env as bs →
     typecheck_stmt lenv env (.call as fnName bs) env'
 
-  -- return (a1, ..., an) // Return from function
-  -- This is the dual of call: validates return values and cleans up all non-returned state
-  | return : ∀ (lenv : LabelEnv) (env env' : TypeEnv) fnName (as: List Site) (params rets : List ParamType),
-    -- The function being returned from must exist in funEnv
-    -- (In a real implementation, this would be tracked in context; here we look it up)
-    AssocMap.lookup env.funEnv fnName = some ⟨params, rets⟩ →
-    -- Check type conformance: return sites must match declared return types
-    types_confrom env.siteEnv as rets →
-    -- Validation: No mutable return value reaches any other return value
-    -- This prevents returning aliased mutable references
-    check_mutable_inputs_isolated env as →
-    -- Validation: No local variables are currently borrowed
-    -- This ensures no references to locals escape the function.
-    -- Return values must be bound through input parameters (or be vacuous for natives).
-    no_locals_borrowed env →
-    -- Environment cleanup: release everything except the return values
-    -- All sites not in `as` are removed from siteEnv (garbage collected)
-    -- Build a new siteEnv containing only the return sites
-    (let newSiteEnv := List.foldl (fun senv a ↦
-      match AssocMap.lookup env.siteEnv a with
-      | some τ => insert senv a τ
-      | none => senv
-    ) AssocMap.empty as
-    env' = {env with siteEnv := newSiteEnv}) →
-    typecheck_stmt lenv env (.ret as) env'
-
   -- s1; s2 // Sequential composition
   -- Threads the environment through: s1 produces env', which becomes input to s2
   | seq : ∀ (lenv : LabelEnv) (env env' env'' : TypeEnv) s1 s2,
@@ -549,15 +521,6 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → TypeEnv → Prop wh
                      pathEnv := delete_ref_node env.pathEnv r } →
     typecheck_stmt lenv env (.release a) env'
 
-  -- abort a
-  -- Abort execution with a value. Control never continues past abort.
-  -- The output environment can be arbitrary since it's never used.
-  | abort : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (a : Site) τ,
-    -- Site a must exist (consumed by abort)
-    AssocMap.lookup env.siteEnv a = some τ →
-    -- Output environment is arbitrary (unreachable code)
-    typecheck_stmt lenv env (.abort a) env'
-
   -- T { f1: a1, ..., fn: an } = b
   -- Unpack a record into its constituent field sites (dual of pack expression)
   | unpack : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (fields : List (Field × Site)) (b : Site) (fentries : AssocMap Field BasicMoveType),
@@ -573,19 +536,47 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → TypeEnv → Prop wh
     env' = {env with siteEnv := addFieldSites fentries (delete env.siteEnv b) fields} →
     typecheck_stmt lenv env (.unpack fields b) env'
 
+
+/- ---------------------------------------------------- -/
+/-       Type checking relation for terminators          -/
+/- ---------------------------------------------------- -/
+
+/--
+Type checking relation for block terminators (control flow).
+
+Judgment form: `Λ; ⟨Γ⟩ ⊢ t`
+
+This relation handles all terminator forms that end a block:
+- **jump L**: Unconditional jump to label L
+- **branch a L1 L2**: Conditional branch based on boolean site a
+- **ret [a1, ..., an]**: Return from function with values
+- **abort a**: Abort execution (error path)
+
+Components:
+- `lenv`: Label environment mapping labels to expected entry TypeEnvs
+- `env`: Type environment at the end of the block (after executing body)
+- `Terminator`: The terminator being type checked
+- `returnType`: The function's return type (for ret checking)
+
+Key invariants:
+⋆ Jump targets must exist in lenv and environment must be equivalent to target's expected env
+⋆ Branch requires boolean condition and environment must match both targets (after consuming condition)
+⋆ Return values must match the function's declared return type
+⋆ No local variables may be borrowed at return (prevents escaping references)
+-/
+inductive typecheck_terminator : LabelEnv → TypeEnv → Terminator → MoveType → Prop where
   -- jump L // Unconditional jump to label L
   -- The current environment must be equivalent to the environment expected at label L
-  | jump : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (L : Label) (envL : TypeEnv),
+  | t_jump : ∀ (lenv : LabelEnv) (env : TypeEnv) (L : Label) (envL : TypeEnv) retType,
     -- Look up the expected environment for label L
     AssocMap.lookup lenv L = some envL →
     -- Current environment must be equivalent to the target label's environment
     TypeEnv.equiv env envL →
-    -- Output environment is arbitrary (control transfers to L, never continues)
-    typecheck_stmt lenv env (.jump L) env'
+    typecheck_terminator lenv env (Terminator.jump L) retType
 
   -- branch a L1 L2 // If (a) goto L1 else goto L2
   -- The site a must hold a boolean, and the environment must match both targets
-  | branch : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (a : Site) (L1 L2 : Label) (envL1 envL2 : TypeEnv),
+  | t_branch : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) (L1 L2 : Label) (envL1 envL2 : TypeEnv) retType,
     -- Site a must hold a boolean value
     AssocMap.lookup env.siteEnv a = some (.basic .tbool) →
     -- Look up the expected environment for label L1
@@ -596,8 +587,25 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → TypeEnv → Prop wh
     TypeEnv.equiv {env with siteEnv := delete env.siteEnv a} envL1 →
     -- Current environment (minus the condition site) must be equivalent to L2's environment
     TypeEnv.equiv {env with siteEnv := delete env.siteEnv a} envL2 →
-    -- Output environment is arbitrary (control transfers, never continues)
-    typecheck_stmt lenv env (.branch a L1 L2) env'
+    typecheck_terminator lenv env (Terminator.branch a L1 L2) retType
+
+  -- return (a1, ..., an) // Return from function
+  -- Return values must have the expected return type
+  | t_ret : ∀ (lenv : LabelEnv) (env : TypeEnv) (as : List Site) τ,
+    -- All sites must have the same type τ (simplified: single return value)
+    -- For multiple return values, check each matches expected type
+    (∀ a, a ∈ as → AssocMap.lookup env.siteEnv a = some τ) →
+    -- All sites must be consumed (removed from environment)
+    -- No local variables may be borrowed (prevents references from escaping)
+    no_locals_borrowed env →
+    typecheck_terminator lenv env (Terminator.ret as) τ
+
+  -- abort a // Abort execution with error value
+  -- Control never continues past abort
+  | t_abort : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) τ retType,
+    -- Site a must exist (consumed by abort)
+    AssocMap.lookup env.siteEnv a = some τ →
+    typecheck_terminator lenv env (Terminator.abort a) retType
 
 
 /- ---------------------------------------------------- -/
@@ -626,26 +634,19 @@ def build_labelEnv (blocks : List Block) (expectedEnvs : List TypeEnv) : LabelEn
   (blocks.zip expectedEnvs).foldl (fun lenv (block, env) => insert lenv block.label env) AssocMap.empty
 
 /--
-  Type checking relation for a single block with output environment.
+  Type checking relation for a single block.
   The block's body is type checked starting from the expected environment for its label,
-  and produces an output environment.
+  producing an intermediate environment, then the terminator is checked against that environment.
 -/
-def typecheck_block (lenv : LabelEnv) (block : Block) (expectedEnv : TypeEnv) (outEnv : TypeEnv) : Prop :=
-  typecheck_stmt lenv expectedEnv block.body outEnv
+def typecheck_block (lenv : LabelEnv) (block : Block) (expectedEnv : TypeEnv) (retType : MoveType) : Prop :=
+  ∃ midEnv, typecheck_stmt lenv expectedEnv block.body midEnv ∧
+            typecheck_terminator lenv midEnv block.terminator retType
 
 /--
   Compute the initial VarEnv for a function from its parameters and locals.
 -/
 def init_fun_varEnv (f : FunDef) : VarEnv :=
   add_locals_to_varEnv (init_varEnv_from_params f.params) f.locals
-
-/--
-  Helper to get the next block's label given the current block index.
--/
-def next_block_label (blocks : List Block) (idx : Nat) : Option Label :=
-  match blocks[idx + 1]? with
-  | some block => some block.label
-  | none => none
 
 /--
   Type checking relation for functions.
@@ -657,15 +658,13 @@ def next_block_label (blocks : List Block) (idx : Nat) : Option Label :=
   2. Adding locals to TypeEnv (invalid variables, not yet assigned)
   3. Using the provided LabelEnv (expected environments for each block)
   4. Type checking each block's body against its expected entry environment
-  5. Verifying the entry block starts with the initial environment
-  6. Ensuring output of each block matches the entry environment of the next block
+  5. Type checking each block's terminator against the resulting environment
+  6. Verifying the entry block starts with the initial environment
 
-  The LabelEnv represents loop invariants / block entry conditions that would be
-  computed by an abstract interpreter. Here they are provided as annotations.
+  Control flow is handled entirely by terminators (jump, branch, ret, abort).
+  Each block is independent - there is no fall-through between blocks.
+  The LabelEnv represents loop invariants / block entry conditions.
 -/
-
--- [TODO](25-12-19): Get rid of fall-through; every block should end with a jump
--- There are no other jumps in the block, except the end
 inductive typecheck_fun : FunDef → LabelEnv → Prop where
   | fun_ok : ∀ (f : FunDef) (lenv : LabelEnv) (initEnv : TypeEnv),
     -- The initial environment has the initialized varEnv, empty siteEnv, initialized pathEnv
@@ -675,22 +674,15 @@ inductive typecheck_fun : FunDef → LabelEnv → Prop where
     -- The function must have at least one block (entry block)
     f.blocks ≠ [] →
     -- The entry block (first block) must have an environment equivalent to initEnv
-    (∀ entryLabel entryEnv,
-      f.blocks.head? = some ⟨entryLabel, _⟩ →
+    (∀ entryLabel entryBody entryTerm entryEnv,
+      f.blocks.head? = some ⟨entryLabel, entryBody, entryTerm⟩ →
       AssocMap.lookup lenv entryLabel = some entryEnv →
       TypeEnv.equiv entryEnv initEnv) →
-    -- Every block must type check and connect properly to the next block:
-    -- 1. Each block typechecks in the environment ascribed to its label
-    -- 2. If there is a next block, the output environment must be equivalent to the next block's entry environment
-    (∀ (idx : Nat) (block : Block),
-      f.blocks[idx]? = some block →
+    -- Every block must type check: body produces an environment, then terminator is checked
+    (∀ (block : Block),
+      block ∈ f.blocks →
       ∀ blockEnv, AssocMap.lookup lenv block.label = some blockEnv →
-        ∃ outEnv, typecheck_block lenv block blockEnv outEnv ∧
-          -- If there's a next block, output env must match its entry env
-          (∀ nextLabel nextEnv,
-            next_block_label f.blocks idx = some nextLabel →
-            AssocMap.lookup lenv nextLabel = some nextEnv →
-            TypeEnv.equiv outEnv nextEnv)) →
+        typecheck_block lenv block blockEnv f.returnType) →
     -- The function type checks
     typecheck_fun f lenv
 

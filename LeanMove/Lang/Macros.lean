@@ -42,18 +42,21 @@ macro "letsite" a:term " ← " "copy" x:term : term =>
 macro "letsite" a:term " ← " "move" x:term : term =>
   `(Stmt.letBind $a (Expr.usage (Usage.move $x)))
 
--- Jump: jump "label"
-macro "jump" l:term : term => `(Stmt.jump $l)
+-- Jump: jump "label" (Terminator)
+macro "jump" l:term : term => `(Terminator.jump $l)
 
--- Branch: branch cond "l1" "l2"
-macro "branch" cond:term l1:term l2:term : term => `(Stmt.branch $cond $l1 $l2)
+-- Branch: branch cond "l1" "l2" (Terminator)
+macro "branch" cond:term l1:term l2:term : term => `(Terminator.branch $cond $l1 $l2)
 
 -- Write reference: *a ::= b (write to reference)
 -- Using *::= to avoid conflict with variable assignment
 macro "*" a:term " ::= " b:term : term => `(Stmt.writeRef $a $b)
 
--- Return: ret [sites]
-macro "ret" sites:term : term => `(Stmt.ret $sites)
+-- Return: ret [sites] (Terminator)
+macro "ret" sites:term : term => `(Terminator.ret $sites)
+
+-- Abort: abort s (Terminator)
+macro "abort" s:term : term => `(Terminator.abort $s)
 
 -- Release: release s
 macro "release" s:term : term => `(Stmt.release $s)
@@ -69,7 +72,7 @@ macro "letsite" a:term " ← " "freeze" b:term : term =>
 /-!
 ## Notes on macros
 
-The following macros work reliably:
+### Statement macros (Stmt)
 - `;;` for statement sequencing
 - `::=` for variable assignment
 - `letsite s ← &x` for immutable borrow
@@ -78,13 +81,16 @@ The following macros work reliably:
 - `letsite s ← move x` for move
 - `letsite s ← *x` for reading reference (dereference)
 - `letsite s ← freeze x` for freezing a reference
-- `jump "label"` for unconditional jump
-- `branch cond "l1" "l2"` for conditional branch
 - `* a ::= b` for write through reference
-- `ret [s1, s2]` for return
 - `release s` for releasing references
 
-For other statement forms, use dot notation directly:
+### Terminator macros (Terminator)
+- `jump "label"` for unconditional jump
+- `branch cond "l1" "l2"` for conditional branch
+- `ret [s1, s2]` for return
+- `abort s` for abort
+
+### Direct notation for other forms
 - `Stmt.call [results] "fname" [args]` for function calls
 - `Stmt.letBind s (Expr.pack "T" [(f, a)])` for packing structs
 - `Stmt.letBind s (Expr.borrowField src bt f)` for borrowing fields

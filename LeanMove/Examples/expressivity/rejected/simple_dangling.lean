@@ -18,7 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
-import LeanMove.Examples.Macros
+import LeanMove.Lang.Macros
 
 /-!
 # Simple Dangling Reference Examples
@@ -103,8 +103,8 @@ def field : FunDef := {
         (var_f ::= s2) ;;                -- f = s2 (f points into s)
         -- s = S { f: 0 } -- THIS SHOULD FAIL: s is borrowed
         Stmt.letBind s3 (Expr.pack "S" [(field_f, .site 11)]) ;;
-        (var_s ::= s3) ;;                -- ERROR: reassigning while f is live
-        Stmt.ret []
+        (var_s ::= s3)                   -- ERROR: reassigning while f is live
+      terminator := ret []
     }
   ]
 }
@@ -146,8 +146,8 @@ def nested_field : FunDef := {
         -- Reassign outer - ERROR: borrowed through f
         Stmt.letBind (.site 20) (Expr.pack "S" [(field_f, .site 11)]) ;;
         Stmt.letBind (.site 21) (Expr.pack "Outer" [(field_inner, .site 20)]) ;;
-        (var_outer ::= (.site 21)) ;;    -- ERROR: reassigning while f is live
-        Stmt.ret []
+        (var_outer ::= (.site 21))       -- ERROR: reassigning while f is live
+      terminator := ret []
     }
   ]
 }
@@ -188,8 +188,8 @@ def simple_call : FunDef := {
         -- Now try to write through the original mutable ref - should fail
         -- because there's an immutable alias
         (letsite s5 ← copy var_f) ;;
-        Stmt.writeRef s5 (.site 11) ;;   -- ERROR: writing with imm alias
-        Stmt.ret []
+        Stmt.writeRef s5 (.site 11)      -- ERROR: writing with imm alias
+      terminator := ret []
     }
   ]
 }

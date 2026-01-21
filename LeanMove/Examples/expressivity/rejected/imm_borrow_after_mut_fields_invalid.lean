@@ -18,7 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
-import LeanMove.Examples.Macros
+import LeanMove.Lang.Macros
 
 /-!
 # Immutable Borrow After Mutable Fields - Invalid Module
@@ -111,12 +111,12 @@ def invalid_write : FunDef := {
         -- *copy(s_mut) = S { f: 0 } -- ERROR: f_imm is still borrowing from s
         -- Pack new value
         Stmt.letBind s5 (Expr.pack "S" [(field_f, .site 11)]) ;;
-        (letsite s6 ← copy var_s_mut) ;; -- s6 = copy(s_mut)
+        (letsite s6 ← copy var_s_mut)   -- s6 = copy(s_mut)
         -- Write through s_mut - ERROR: there's an immutable borrow f_imm
         -- (This would be: Stmt.writeRef s6 s5, but s5 is struct, not basic type)
         -- In MoveLight, writeRef is for basic types, so we simulate with assign
         -- The error should trigger because s is borrowed via f_imm
-        Stmt.ret []
+      terminator := ret []
     }
   ]
 }

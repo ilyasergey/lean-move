@@ -18,7 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
-import LeanMove.Examples.Macros
+import LeanMove.Lang.Macros
 
 /-!
 # Extension Writes After Join
@@ -96,23 +96,22 @@ def t : FunDef := {
   blocks := [
     -- l0: branch on condition
     { label := "l0"
-      body :=
-        (letsite s0 ← copy var_cond) ;;  -- s0 = copy(cond)
-        Stmt.branch s0 "l2" "l1"         -- if s0 then l2 else l1
+      body := (letsite s0 ← copy var_cond)  -- s0 = copy(cond)
+      terminator := Terminator.branch s0 "l2" "l1"  -- if s0 then l2 else l1
     },
     -- l1 (false branch): x = copy(a)
     { label := "l1"
       body :=
         (letsite s1 ← copy var_a) ;;     -- s1 = copy(a)
-        (var_x ::= s1) ;;                -- x = s1
-        jump "l3"
+        (var_x ::= s1)                   -- x = s1
+      terminator := Terminator.jump "l3"
     },
     -- l2 (true branch): x = copy(b)
     { label := "l2"
       body :=
         (letsite s1 ← copy var_b) ;;     -- s1 = copy(b)
-        (var_x ::= s1) ;;                -- x = s1
-        jump "l3"
+        (var_x ::= s1)                   -- x = s1
+      terminator := Terminator.jump "l3"
     },
     -- l3: borrow field and write
     { label := "l3"
@@ -122,8 +121,8 @@ def t : FunDef := {
         (var_f ::= s3) ;;                -- f = s3
         (letsite s4 ← copy var_f) ;;     -- s4 = copy(f)
         Stmt.writeRef s4 (.site 10) ;;   -- *s4 = 0
-        (letsite s5 ← copy var_x) ;;     -- s5 = copy(x)
-        Stmt.ret [s5]                    -- return s5
+        (letsite s5 ← copy var_x)        -- s5 = copy(x)
+      terminator := Terminator.ret [s5]  -- return s5
     }
   ]
 }
