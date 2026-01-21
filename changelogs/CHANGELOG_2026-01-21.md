@@ -1,7 +1,7 @@
 # Changes Made on 2026-01-21
 
 ## Summary
-Added integer literals to MoveLight; refactored control flow into Terminator type; improved MVIR documentation in examples.
+Added integer literals to MoveLight; refactored control flow into Terminator type; improved MVIR documentation in examples; fixed borrowMutField signature to use BasicMoveType instead of Id.
 
 ## Overview
 
@@ -18,7 +18,38 @@ This change introduces several improvements:
 
 4. **Build Targets**: Added `lake build` targets for all example categories.
 
+5. **borrowMutField Signature Fix**: Changed `Expr.borrowMutField` to take `BasicMoveType` instead
+   of `Id` (string), making it consistent with `borrowField` and enabling proper type checking.
+
 ## Major Changes
+
+### borrowMutField Signature Fix
+
+**LeanMove/Lang/MoveLight.lean**:
+- Changed `Expr.borrowMutField : Site → Id → Field → Expr` to `Expr.borrowMutField : Site → BasicMoveType → Field → Expr`
+- Now consistent with `Expr.borrowField` which already used `BasicMoveType`
+
+**LeanMove/Checker/TypeChecking.lean**:
+- Fixed `typecheck_expr.borrowMutField` rule (was incorrectly named `borrowField`)
+- Rule now properly matches `Expr.borrowMutField a bt f` with `bt : BasicMoveType`
+
+**Example Files Updated** (all use new `.trecord entries` syntax instead of string IDs):
+- `LeanMove/Examples/expressivity/accepted/extension_after_call.lean`
+- `LeanMove/Examples/expressivity/accepted/extension_writes_after_join.lean`
+- `LeanMove/Examples/expressivity/accepted/multible_mutable_return_values.lean`
+- `LeanMove/Examples/expressivity/accepted/mutable_borrows_are_not_unique.lean`
+- `LeanMove/Examples/expressivity/accepted/subtree_writes_release.lean`
+- `LeanMove/Examples/expressivity/rejected/mutable_borrows_not_unique_calls_invalid.lean`
+- `LeanMove/Examples/expressivity/rejected/simple_dangling.lean`
+
+**Migration Example**:
+```lean
+-- Old syntax (string ID):
+Expr.borrowMutField s0 "Point" field_x
+
+-- New syntax (BasicMoveType):
+Expr.borrowMutField s0 (.trecord point_entries) field_x
+```
 
 ### Integer Literals Support
 

@@ -105,7 +105,7 @@ inductive Expr where
   | usage : Usage → Expr
   | intLit : Nat → Expr  -- Integer literal (u64 value)
   | borrowField : Site → BasicMoveType → Field → Expr  -- &a.T::f
-  | borrowMutField : Site → Id → Field → Expr  -- &mut a.T::f
+  | borrowMutField : Site → BasicMoveType → Field → Expr  -- &mut a.T::f
   | binop : Binop → Site → Site → Expr  -- a + b
   | readRef : Site → Expr  -- *a
   | pack : Id → List (Field × Site) → Expr  -- T { f: a1, ..., f: an }

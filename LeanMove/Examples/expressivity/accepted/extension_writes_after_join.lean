@@ -143,7 +143,7 @@ def t : FunDef := {
       body :=
         -- f = &mut copy(x).S::f
         (letsite s5 ← copy var_x) ;;
-        Stmt.letBind s6 (Expr.borrowMutField s5 "S" field_f) ;;
+        Stmt.letBind s6 (Expr.borrowMutField s5 (.trecord s_entries) field_f) ;;
         (var_f ::= s6) ;;
         -- *copy(y) = S { f: *copy(f) }
         -- First read *copy(f), then pack into S, then write to *copy(y)

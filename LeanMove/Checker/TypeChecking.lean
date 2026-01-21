@@ -249,7 +249,7 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType �
      -- Update site environment with the new reference
      env' = {env with siteEnv := insert (delete env.siteEnv a) af (.ref btf rf .siteBorrowMut)
                       pathEnv := update_with_extension s rf [.field f] env.pathEnv } →
-     typecheck_expr env (Expr.borrowField a bt f) env' af (.ref btf rf .siteBorrowMut)
+     typecheck_expr env (Expr.borrowMutField a bt f) env' af (.ref btf rf .siteBorrowMut)
 
   -- c <- a ⊕ b
   | binop : ∀ env env' bop bt1 bt2 bt3 (a b c : Site),

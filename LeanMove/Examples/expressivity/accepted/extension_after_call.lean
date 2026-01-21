@@ -96,7 +96,7 @@ def fn_borrow : FunDef := {
     { label := "l0"
       body :=
         (letsite s0 ← copy var_b) ;;     -- s0 = copy(b)
-        Stmt.letBind s1 (Expr.borrowMutField s0 "Box" field_tl) ;; -- s1 = &mut s0.tl
+        Stmt.letBind s1 (Expr.borrowMutField s0 (.trecord box_entries) field_tl) ;; -- s1 = &mut s0.tl
         (var_tl ::= s1) ;;               -- tl = s1
         (letsite s2 ← copy var_tl)       -- s2 = copy(tl)
       terminator := ret [s2]             -- return s2
@@ -131,11 +131,11 @@ def fn_write : FunDef := {
       body :=
         -- p = Self.borrow(copy(b)) - inlined as: p = &mut copy(b).Box::tl
         (letsite s0 ← copy var_b) ;;     -- s0 = copy(b)
-        Stmt.letBind s1 (Expr.borrowMutField s0 "Box" field_tl) ;; -- s1 = &mut s0.tl
+        Stmt.letBind s1 (Expr.borrowMutField s0 (.trecord box_entries) field_tl) ;; -- s1 = &mut s0.tl
         (var_tl ::= s1) ;;               -- tl (p) = s1
         -- x = &mut copy(p).Point::x
         (letsite s2 ← copy var_tl) ;;    -- s2 = copy(p)
-        Stmt.letBind s3 (Expr.borrowMutField s2 "Point" field_x) ;; -- s3 = &mut s2.x
+        Stmt.letBind s3 (Expr.borrowMutField s2 (.trecord point_entries) field_x) ;; -- s3 = &mut s2.x
         (var_x ::= s3) ;;                -- x = s3
         -- *move(x) = 0
         (letsite s6 ← move var_x) ;;     -- s6 = move(x)
@@ -143,7 +143,7 @@ def fn_write : FunDef := {
         Stmt.writeRef s6 s10 ;;          -- *s6 = s10
         -- y = &mut copy(p).Point::y
         (letsite s4 ← copy var_tl) ;;    -- s4 = copy(p)
-        Stmt.letBind s5 (Expr.borrowMutField s4 "Point" field_y) ;; -- s5 = &mut s4.y
+        Stmt.letBind s5 (Expr.borrowMutField s4 (.trecord point_entries) field_y) ;; -- s5 = &mut s4.y
         (var_y ::= s5) ;;                -- y = s5
         -- *move(y) = 0
         (letsite s7 ← move var_y) ;;     -- s7 = move(y)

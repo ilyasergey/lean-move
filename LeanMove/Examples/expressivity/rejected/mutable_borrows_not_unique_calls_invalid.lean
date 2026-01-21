@@ -168,11 +168,11 @@ def call_and_write_invalid : FunDef := {
       body :=
         -- call = Self.borrow_f(copy(s)) -- inlined as &mut copy(s).S::f
         (letsite s0 ← copy var_s) ;;
-        Stmt.letBind s1 (Expr.borrowMutField s0 "S" field_f) ;;
+        Stmt.letBind s1 (Expr.borrowMutField s0 (.trecord s_entries) field_f) ;;
         (var_call ::= s1) ;;
         -- f = &mut copy(s).S::f
         (letsite s2 ← copy var_s) ;;
-        Stmt.letBind s3 (Expr.borrowMutField s2 "S" field_f) ;;
+        Stmt.letBind s3 (Expr.borrowMutField s2 (.trecord s_entries) field_f) ;;
         (var_f ::= s3) ;;
         -- *copy(call) = 0 -- ERROR: relationship with f unknown
         (letsite s4 ← copy var_call) ;;

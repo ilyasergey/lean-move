@@ -210,7 +210,7 @@ def nested_field_dangling : FunDef := {
       body :=
         -- s = &mut copy(p).P::s
         (letsite s0 ← copy var_p) ;;
-        Stmt.letBind s1 (Expr.borrowMutField s0 "P" field_s) ;;
+        Stmt.letBind s1 (Expr.borrowMutField s0 (.trecord p_entries) field_s) ;;
         (var_s ::= s1) ;;
         -- f = &copy(s).S::f
         (letsite s2 ← copy var_s) ;;
