@@ -50,14 +50,14 @@ def var_a : Var := ⟨"a"⟩
 def var_x : Var := ⟨"x"⟩
 def var_y : Var := ⟨"y"⟩
 
--- Sites
-def s0 : Site := .site 0   -- constant 0
+-- Sites (temporaries in A-normal form)
+def s0 : Site := .site 0   -- integer literal 0 (for a = 0)
 def s1 : Site := .site 1   -- &mut a
 def s2 : Site := .site 2   -- &mut a or copy(x)
-def s3 : Site := .site 3   -- copy for write
-def s4 : Site := .site 4   -- constant for write
-def s5 : Site := .site 5   -- copy for write
-def s6 : Site := .site 6   -- constant for write
+def s3 : Site := .site 3   -- move(x) for write
+def s4 : Site := .site 4   -- integer literal 0 (for first write)
+def s5 : Site := .site 5   -- move(y) for write
+def s6 : Site := .site 6   -- integer literal 0 (for second write)
 
 /-
   Module 1: borrow_local_twice
@@ -71,8 +71,8 @@ def s6 : Site := .site 6   -- constant for write
     a = 0;
     x = &mut a;
     y = &mut a;
-    *copy(x) = 0;
-    *copy(y) = 0;
+    *move(x) = 0;
+    *move(y) = 0;
     return;
   }
 -/
@@ -80,21 +80,24 @@ def borrow_local_twice : FunDef := {
   params := []
   returnType := .basic .tunit
   locals := [
-    { name := var_a, type := .basic .tint },
-    { name := var_x, type := .ref .tint (.varRef var_a) .siteBorrowMut },
-    { name := var_y, type := .ref .tint (.varRef var_a) .siteBorrowMut }
+    { name := var_a, type := .basic .u64 },
+    { name := var_x, type := .ref .u64 (.varRef var_a) .siteBorrowMut },
+    { name := var_y, type := .ref .u64 (.varRef var_a) .siteBorrowMut }
   ]
   blocks := [
     { label := "l0"
       body :=
+        (letsite s0 ← #0) ;;            -- s0 = 0
         (var_a ::= s0) ;;               -- a = 0
         (letsite s1 ← &mut var_a) ;;    -- s1 = &mut a
         (var_x ::= s1) ;;               -- x = s1
         (letsite s2 ← &mut var_a) ;;    -- s2 = &mut a
         (var_y ::= s2) ;;               -- y = s2
-        (letsite s3 ← copy var_x) ;;    -- s3 = copy(x)
+        (letsite s3 ← move var_x) ;;    -- s3 = move(x)
+        (letsite s4 ← #0) ;;            -- s4 = 0
         Stmt.writeRef s3 s4 ;;          -- *s3 = 0
-        (letsite s5 ← copy var_y) ;;    -- s5 = copy(y)
+        (letsite s5 ← move var_y) ;;    -- s5 = move(y)
+        (letsite s6 ← #0) ;;            -- s6 = 0
         Stmt.writeRef s5 s6             -- *s5 = 0
       terminator := ret []
     }
@@ -104,26 +107,30 @@ def borrow_local_twice : FunDef := {
 /-
   Module 2: borrow_local_twice_reverse
   Same as above but writes in reverse order (y first, then x).
+  *move(y) = 0; *move(x) = 0;
 -/
 def borrow_local_twice_reverse : FunDef := {
   params := []
   returnType := .basic .tunit
   locals := [
-    { name := var_a, type := .basic .tint },
-    { name := var_x, type := .ref .tint (.varRef var_a) .siteBorrowMut },
-    { name := var_y, type := .ref .tint (.varRef var_a) .siteBorrowMut }
+    { name := var_a, type := .basic .u64 },
+    { name := var_x, type := .ref .u64 (.varRef var_a) .siteBorrowMut },
+    { name := var_y, type := .ref .u64 (.varRef var_a) .siteBorrowMut }
   ]
   blocks := [
     { label := "l0"
       body :=
+        (letsite s0 ← #0) ;;            -- s0 = 0
         (var_a ::= s0) ;;               -- a = 0
         (letsite s1 ← &mut var_a) ;;    -- s1 = &mut a
         (var_x ::= s1) ;;               -- x = s1
         (letsite s2 ← &mut var_a) ;;    -- s2 = &mut a
         (var_y ::= s2) ;;               -- y = s2
-        (letsite s3 ← copy var_y) ;;    -- s3 = copy(y) -- reversed
+        (letsite s3 ← move var_y) ;;    -- s3 = move(y) -- reversed
+        (letsite s4 ← #0) ;;            -- s4 = 0
         Stmt.writeRef s3 s4 ;;          -- *s3 = 0
-        (letsite s5 ← copy var_x) ;;    -- s5 = copy(x) -- reversed
+        (letsite s5 ← move var_x) ;;    -- s5 = move(x) -- reversed
+        (letsite s6 ← #0) ;;            -- s6 = 0
         Stmt.writeRef s5 s6             -- *s5 = 0
       terminator := ret []
     }
@@ -142,8 +149,8 @@ def borrow_local_twice_reverse : FunDef := {
     a = 0;
     x = &mut a;
     y = copy(x);
-    *copy(x) = 0;
-    *copy(y) = 0;
+    *move(x) = 0;
+    *move(y) = 0;
     return;
   }
 -/
@@ -151,21 +158,24 @@ def borrow_local_and_copy_ref : FunDef := {
   params := []
   returnType := .basic .tunit
   locals := [
-    { name := var_a, type := .basic .tint },
-    { name := var_x, type := .ref .tint (.varRef var_a) .siteBorrowMut },
-    { name := var_y, type := .ref .tint (.varRef var_a) .siteBorrowMut }
+    { name := var_a, type := .basic .u64 },
+    { name := var_x, type := .ref .u64 (.varRef var_a) .siteBorrowMut },
+    { name := var_y, type := .ref .u64 (.varRef var_a) .siteBorrowMut }
   ]
   blocks := [
     { label := "l0"
       body :=
+        (letsite s0 ← #0) ;;            -- s0 = 0
         (var_a ::= s0) ;;               -- a = 0
         (letsite s1 ← &mut var_a) ;;    -- s1 = &mut a
         (var_x ::= s1) ;;               -- x = s1
         (letsite s2 ← copy var_x) ;;    -- s2 = copy(x)
         (var_y ::= s2) ;;               -- y = s2
-        (letsite s3 ← copy var_x) ;;    -- s3 = copy(x)
+        (letsite s3 ← move var_x) ;;    -- s3 = move(x)
+        (letsite s4 ← #0) ;;            -- s4 = 0
         Stmt.writeRef s3 s4 ;;          -- *s3 = 0
-        (letsite s5 ← copy var_y) ;;    -- s5 = copy(y)
+        (letsite s5 ← move var_y) ;;    -- s5 = move(y)
+        (letsite s6 ← #0) ;;            -- s6 = 0
         Stmt.writeRef s5 s6             -- *s5 = 0
       terminator := ret []
     }
@@ -175,26 +185,30 @@ def borrow_local_and_copy_ref : FunDef := {
 /-
   Module 4: borrow_local_and_copy_ref_reverse
   Same as above but writes in reverse order.
+  *move(y) = 0; *move(x) = 0;
 -/
 def borrow_local_and_copy_ref_reverse : FunDef := {
   params := []
   returnType := .basic .tunit
   locals := [
-    { name := var_a, type := .basic .tint },
-    { name := var_x, type := .ref .tint (.varRef var_a) .siteBorrowMut },
-    { name := var_y, type := .ref .tint (.varRef var_a) .siteBorrowMut }
+    { name := var_a, type := .basic .u64 },
+    { name := var_x, type := .ref .u64 (.varRef var_a) .siteBorrowMut },
+    { name := var_y, type := .ref .u64 (.varRef var_a) .siteBorrowMut }
   ]
   blocks := [
     { label := "l0"
       body :=
+        (letsite s0 ← #0) ;;            -- s0 = 0
         (var_a ::= s0) ;;               -- a = 0
         (letsite s1 ← &mut var_a) ;;    -- s1 = &mut a
         (var_x ::= s1) ;;               -- x = s1
         (letsite s2 ← copy var_x) ;;    -- s2 = copy(x)
         (var_y ::= s2) ;;               -- y = s2
-        (letsite s3 ← copy var_y) ;;    -- s3 = copy(y) -- reversed
+        (letsite s3 ← move var_y) ;;    -- s3 = move(y) -- reversed
+        (letsite s4 ← #0) ;;            -- s4 = 0
         Stmt.writeRef s3 s4 ;;          -- *s3 = 0
-        (letsite s5 ← copy var_x) ;;    -- s5 = copy(x) -- reversed
+        (letsite s5 ← move var_x) ;;    -- s5 = move(x) -- reversed
+        (letsite s6 ← #0) ;;            -- s6 = 0
         Stmt.writeRef s5 s6             -- *s5 = 0
       terminator := ret []
     }

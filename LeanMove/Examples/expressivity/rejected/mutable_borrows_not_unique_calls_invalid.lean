@@ -25,15 +25,91 @@ import LeanMove.Lang.Macros
 
 Source: https://github.com/tnowacki/sui/blob/example-tests/external-crates/move/crates/bytecode-verifier-transactional-tests/tests/reference_safety/expressivity/mutable_borrows_are_not_unique_calls.mvir
 
-This is the INVALID module (call_and_write_invalid) from the test.
-It fails with WRITEREF_EXISTS_BORROW_ERROR.
+This file contains the INVALID module (call_and_write_invalid) that fails because
+you cannot write to mutable references when their relationship is unknown.
 
-The issue: When we create mutable references through a function call, we cannot
-write to either the call's return value or a field borrow "since we do not know
-the relationship between them."
+Original MVIR:
+```
+// mutable borrows are not unique
 
-Comment from original: "we cannot write to either call or f since we do not know
-the relationship between them"
+//# publish
+module 0x4.call {
+
+    struct S has copy, drop { f: u64 }
+
+    borrow_f(s: &mut Self.S): &mut u64 {
+    label b0:
+        return &mut move(s).S::f;
+    }
+
+    create(s: &mut Self.S) {
+        let call: &mut u64;
+        let f: &mut u64;
+    label b0:
+        // we can create multiple mutable references, even with a call, as long as the argument
+        // to the call does not have any extensions at the time of the call (and as long as it does
+        // not overlap with any other arguments)
+
+        // if we swap the call with the field borrow, this will error
+        call = Self.borrow_f(copy(s));
+        f = &mut copy(s).S::f;
+        return;
+    }
+
+}
+
+//# publish
+module 0x5.call_and_write_invalid {
+
+    struct S has copy, drop { f: u64 }
+
+    borrow_f(s: &mut Self.S): &mut u64 {
+    label b0:
+        return &mut move(s).S::f;
+    }
+
+    write(s: &mut Self.S) {
+        let call: &mut u64;
+        let f: &mut u64;
+    label b0:
+        // While mutable references are not unique, and we can create all sorts of overlaps, that
+        // does not mean that we can write to all of them.
+        // We cannot write to either call or f since we do not know the relationship between them.
+        // While it is "safe" in this case, we do not look at the type layout for that information.
+        // It could be the case that f extends call, and that call extends f.
+        call = Self.borrow_f(copy(s));
+        f = &mut copy(s).S::f;
+        *copy(call) = 0;
+        *copy(f) = 0;
+        return;
+    }
+
+}
+
+//# publish
+module 0x6.call_and_write_valid {
+
+    struct S has copy, drop { f: u64 }
+
+    borrow_f(s: &mut Self.S): &mut u64 {
+    label b0:
+        return &mut move(s).S::f;
+    }
+
+    write(s: &mut Self.S) {
+        let call: &mut u64;
+        let f: &mut u64;
+    label b0:
+        // If however we free the call's return value before borrowing f, this is valid.
+        call = Self.borrow_f(copy(s));
+        *move(call) = 0; // the move frees the value
+        f = &mut copy(s).S::f;
+        *copy(f) = 0;
+        return;
+    }
+
+}
+```
 -/
 
 open LeanMove.Lang
@@ -44,86 +120,74 @@ open Regex
 
 namespace LeanMove.Examples.Expressivity.MutableBorrowsNotUniqueCallsInvalid
 
--- Fields for structs
+-- Fields for struct
 def field_f : Field := ⟨"f"⟩
-def field_0 : Field := ⟨"0"⟩
-def field_1 : Field := ⟨"1"⟩
 
 -- S { f: u64 }
-def s_entries : AssocMap Field BasicMoveType := insert empty field_f .tint
-
--- Pair { 0: S, 1: S }
-def pair_entries : AssocMap Field BasicMoveType :=
-  insert (insert empty field_0 (.trecord s_entries)) field_1 (.trecord s_entries)
+def s_entries : AssocMap Field BasicMoveType := insert empty field_f .u64
 
 -- Variables
-def var_local : Var := ⟨"local"⟩
-def var_root : Var := ⟨"root"⟩
-def var_call : Var := ⟨"call"⟩  -- result from function call
+def var_s : Var := ⟨"s"⟩
+def var_call : Var := ⟨"call"⟩
 def var_f : Var := ⟨"f"⟩
 
 -- Sites
-def s0 : Site := .site 0
-def s1 : Site := .site 1
-def s2 : Site := .site 2
-def s3 : Site := .site 3
-def s4 : Site := .site 4
-def s5 : Site := .site 5
-def s6 : Site := .site 6
-def s7 : Site := .site 7
+def s0 : Site := .site 0   -- copy(s) for call
+def s1 : Site := .site 1   -- &mut s0.S::f (result of borrow_f call)
+def s2 : Site := .site 2   -- copy(s) for f
+def s3 : Site := .site 3   -- &mut s2.S::f (for f)
+def s4 : Site := .site 4   -- copy(call)
+def s5 : Site := .site 5   -- integer literal 0 for first write
+def s6 : Site := .site 6   -- copy(f)
+def s7 : Site := .site 7   -- integer literal 0 for second write
 
 /-
-  call_and_write_invalid: "we cannot write to either call or f since we do not
-  know the relationship between them"
+  call_and_write_invalid module: "we cannot write to either call or f since we
+  do not know the relationship between them"
 
-  t(p: &mut Self.Pair) {
-  label l0:
-    root = move(p);
-    // call = Self.get(copy(root));  -- returns &mut u64
-    // For encoding, we simulate get() as borrowing field 0's f
-    call = &mut copy(root).Pair::0.S::f;
-    f = &mut copy(root).Pair::0.S::f;
-    *copy(call) = 0;    // ERROR: don't know relationship with f
-    *copy(f) = 0;       // ERROR: don't know relationship with call
-    return;
+  write(s: &mut Self.S) {
+      let call: &mut u64;
+      let f: &mut u64;
+  label b0:
+      call = Self.borrow_f(copy(s));  -- inlined as: &mut copy(s).S::f
+      f = &mut copy(s).S::f;
+      *copy(call) = 0;                -- ERROR: relationship with f unknown
+      *copy(f) = 0;                   -- ERROR: relationship with call unknown
+      return;
   }
 -/
 def call_and_write_invalid : FunDef := {
-  params := [(var_local, .ref (.trecord pair_entries) (.varRef var_local) .siteBorrowMut)]
+  params := [(var_s, .ref (.trecord s_entries) (.varRef var_s) .siteBorrowMut)]
   returnType := .basic .tunit
   locals := [
-    { name := var_root, type := .ref (.trecord pair_entries) (.varRef var_local) .siteBorrowMut },
-    { name := var_call, type := .ref .tint (.varRef var_local) .siteBorrowMut },
-    { name := var_f, type := .ref .tint (.varRef var_local) .siteBorrowMut }
+    { name := var_call, type := .ref .u64 (.varRef var_s) .siteBorrowMut },
+    { name := var_f, type := .ref .u64 (.varRef var_s) .siteBorrowMut }
   ]
   blocks := [
-    { label := "l0"
+    { label := "b0"
       body :=
-        -- root = move(p)
-        (letsite s0 ← move var_local) ;;
-        (var_root ::= s0) ;;
-        -- call = &mut root.0.f (simulating function call result)
-        (letsite s1 ← copy var_root) ;;
-        Stmt.letBind s2 (Expr.borrowMutField s1 "Pair" field_0) ;;
+        -- call = Self.borrow_f(copy(s)) -- inlined as &mut copy(s).S::f
+        (letsite s0 ← copy var_s) ;;
+        Stmt.letBind s1 (Expr.borrowMutField s0 "S" field_f) ;;
+        (var_call ::= s1) ;;
+        -- f = &mut copy(s).S::f
+        (letsite s2 ← copy var_s) ;;
         Stmt.letBind s3 (Expr.borrowMutField s2 "S" field_f) ;;
-        (var_call ::= s3) ;;
-        -- f = &mut root.0.f (another borrow to same location)
-        (letsite s4 ← copy var_root) ;;
-        Stmt.letBind s5 (Expr.borrowMutField s4 "Pair" field_0) ;;
-        Stmt.letBind s6 (Expr.borrowMutField s5 "S" field_f) ;;
-        (var_f ::= s6) ;;
-        -- *copy(call) = 0 -- ERROR: f might alias
-        (letsite s7 ← copy var_call) ;;
-        Stmt.writeRef s7 (.site 10) ;;  -- ERROR: unknown relationship with f
-        -- *copy(f) = 0 -- ERROR: call might alias
-        (letsite (.site 8) ← copy var_f) ;;
-        Stmt.writeRef (.site 8) (.site 11) -- ERROR: unknown relationship with call
+        (var_f ::= s3) ;;
+        -- *copy(call) = 0 -- ERROR: relationship with f unknown
+        (letsite s4 ← copy var_call) ;;
+        (letsite s5 ← #0) ;;
+        Stmt.writeRef s4 s5 ;;
+        -- *copy(f) = 0 -- ERROR: relationship with call unknown
+        (letsite s6 ← copy var_f) ;;
+        (letsite s7 ← #0) ;;
+        Stmt.writeRef s6 s7
       terminator := ret []
     }
   ]
 }
 
--- Theorem: call_and_write_invalid is ILL-typed
+-- Theorem: call_and_write_invalid is ILL-typed (REJECTED by type checker)
 theorem call_and_write_invalid_illtyped : ¬ (∃ lenv, typecheck_fun call_and_write_invalid lenv) := by
   sorry
 

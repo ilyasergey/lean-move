@@ -25,15 +25,67 @@ import LeanMove.Lang.Macros
 
 Source: https://github.com/tnowacki/sui/blob/example-tests/external-crates/move/crates/bytecode-verifier-transactional-tests/tests/reference_safety/expressivity/imm_borrow_after_mut_fields.mvir
 
-This is the INVALID module (invalid_write) from the imm_borrow_after_mut_fields test.
-It fails with WRITEREF_EXISTS_BORROW_ERROR.
+This file contains the INVALID module (invalid_write) that fails because you cannot
+write through a mutable reference when an immutable reference to the same location exists.
 
-struct S has copy, drop { f: u64 }
+Original MVIR:
+```
+// can borrow imm fields after a mut borrow, but if the mut is a parent, it won't be writable
 
-The issue: After creating both mutable and immutable references to struct fields,
-you cannot write through the mutable reference when an immutable reference exists.
+//# publish
+module 0x2.field {
 
-Comment from original: "cannot write to s_mut because of f_imm"
+    struct S has copy, drop { f: u64 }
+
+    t(s: Self.S) {
+        let s_imm: &Self.S;
+        let s_mut: &mut Self.S;
+        let f_imm: &u64;
+    label b0:
+        s_imm = &s;
+        s_mut = &mut s;
+        f_imm = &copy(s_imm).S::f;
+        return;
+    }
+}
+
+//# publish
+module 0x3.field {
+
+    struct S has copy, drop { f: u64 }
+
+    t(s: Self.S) {
+        let s_imm: &Self.S;
+        let s_mut: &mut Self.S;
+        let f_imm: &u64;
+    label b0:
+        // not really after, but also allowed
+        s_imm = &s;
+        f_imm = &copy(s_imm).S::f;
+        s_mut = &mut s;
+        return;
+    }
+}
+
+//# publish
+module 0x4.invalid_write {
+
+    struct S has copy, drop { f: u64 }
+
+    t(s: Self.S) {
+        let s_imm: &Self.S;
+        let s_mut: &mut Self.S;
+        let f_imm: &u64;
+    label b0:
+        s_imm = &s;
+        s_mut = &mut s;
+        f_imm = &copy(s_imm).S::f;
+        // cannot write to s_mut because of f_imm
+        *copy(s_mut) = S { f: 0 };
+        return;
+    }
+}
+```
 -/
 
 open LeanMove.Lang
@@ -48,7 +100,7 @@ namespace LeanMove.Examples.Expressivity.ImmBorrowAfterMutFieldsInvalid
 def field_f : Field := ⟨"f"⟩
 
 -- S { f: u64 }
-def s_entries : AssocMap Field BasicMoveType := insert empty field_f .tint
+def s_entries : AssocMap Field BasicMoveType := insert empty field_f .u64
 
 -- Variables
 def var_s : Var := ⟨"s"⟩
@@ -57,71 +109,61 @@ def var_s_imm : Var := ⟨"s_imm"⟩
 def var_f_imm : Var := ⟨"f_imm"⟩
 
 -- Sites
-def s0 : Site := .site 0
-def s1 : Site := .site 1
-def s2 : Site := .site 2
-def s3 : Site := .site 3
-def s4 : Site := .site 4
-def s5 : Site := .site 5
-def s6 : Site := .site 6
-def s7 : Site := .site 7
+def s0 : Site := .site 0   -- &s (for s_imm)
+def s1 : Site := .site 1   -- &mut s (for s_mut)
+def s2 : Site := .site 2   -- copy(s_imm)
+def s3 : Site := .site 3   -- &s2.S::f (for f_imm)
+def s4 : Site := .site 4   -- copy(s_mut)
+def s5 : Site := .site 5   -- integer literal 0 for field
+def s6 : Site := .site 6   -- S { f: 0 } packed struct
 
 /-
-  invalid_write: "cannot write to s_mut because of f_imm"
+  invalid_write module: "cannot write to s_mut because of f_imm"
 
-  t() {
-    let s: Self.S;
-    let s_mut: &mut Self.S;
-    let s_imm: &Self.S;
-    let f_imm: &u64;
-  label l0:
-    s = S { f: 0 };
-    s_mut = &mut s;
-    s_imm = &s;
-    f_imm = &copy(s_imm).S::f;
-    *copy(s_mut) = S { f: 0 };    // ERROR: f_imm borrows from s
-    return;
+  t(s: Self.S) {
+      let s_imm: &Self.S;
+      let s_mut: &mut Self.S;
+      let f_imm: &u64;
+  label b0:
+      s_imm = &s;
+      s_mut = &mut s;
+      f_imm = &copy(s_imm).S::f;
+      *copy(s_mut) = S { f: 0 };    -- ERROR: f_imm borrows from s
+      return;
   }
 -/
 def invalid_write : FunDef := {
-  params := []
+  params := [(var_s, .basic (.trecord s_entries))]  -- s is an owned parameter
   returnType := .basic .tunit
   locals := [
-    { name := var_s, type := .basic (.trecord s_entries) },
-    { name := var_s_mut, type := .ref (.trecord s_entries) (.varRef var_s) .siteBorrowMut },
     { name := var_s_imm, type := .ref (.trecord s_entries) (.varRef var_s) .siteBorrowImm },
-    { name := var_f_imm, type := .ref .tint (.varRef var_s) .siteBorrowImm }
+    { name := var_s_mut, type := .ref (.trecord s_entries) (.varRef var_s) .siteBorrowMut },
+    { name := var_f_imm, type := .ref .u64 (.varRef var_s) .siteBorrowImm }
   ]
   blocks := [
-    { label := "l0"
+    { label := "b0"
       body :=
-        -- s = S { f: 0 }
-        Stmt.letBind s0 (Expr.pack "S" [(field_f, .site 10)]) ;;
-        (var_s ::= s0) ;;
-        -- s_mut = &mut s
-        (letsite s1 ← &mut var_s) ;;    -- s1 = &mut s
-        (var_s_mut ::= s1) ;;           -- s_mut = s1
         -- s_imm = &s
-        (letsite s2 ← &var_s) ;;        -- s2 = &s
-        (var_s_imm ::= s2) ;;           -- s_imm = s2
+        (letsite s0 ← &var_s) ;;
+        (var_s_imm ::= s0) ;;
+        -- s_mut = &mut s
+        (letsite s1 ← &mut var_s) ;;
+        (var_s_mut ::= s1) ;;
         -- f_imm = &copy(s_imm).S::f
-        (letsite s3 ← copy var_s_imm) ;; -- s3 = copy(s_imm)
-        Stmt.letBind s4 (Expr.borrowField s3 (.trecord s_entries) field_f) ;; -- s4 = &s3.f
-        (var_f_imm ::= s4) ;;           -- f_imm = s4
-        -- *copy(s_mut) = S { f: 0 } -- ERROR: f_imm is still borrowing from s
-        -- Pack new value
-        Stmt.letBind s5 (Expr.pack "S" [(field_f, .site 11)]) ;;
-        (letsite s6 ← copy var_s_mut)   -- s6 = copy(s_mut)
-        -- Write through s_mut - ERROR: there's an immutable borrow f_imm
-        -- (This would be: Stmt.writeRef s6 s5, but s5 is struct, not basic type)
-        -- In MoveLight, writeRef is for basic types, so we simulate with assign
-        -- The error should trigger because s is borrowed via f_imm
+        (letsite s2 ← copy var_s_imm) ;;
+        Stmt.letBind s3 (Expr.borrowField s2 (.trecord s_entries) field_f) ;;
+        (var_f_imm ::= s3) ;;
+        -- *copy(s_mut) = S { f: 0 } -- ERROR: f_imm still borrows from s
+        (letsite s4 ← copy var_s_mut) ;;
+        (letsite s5 ← #0) ;;
+        Stmt.letBind s6 (Expr.pack "S" [(field_f, s5)]) ;;
+        Stmt.writeRef s4 s6
       terminator := ret []
     }
   ]
 }
 
--- Theorem: invalid_write is ILL-typed
+-- Theorem: invalid_write is ILL-typed (REJECTED by type checker)
 theorem invalid_write_illtyped : ¬ (∃ lenv, typecheck_fun invalid_write lenv) := by
   sorry
 

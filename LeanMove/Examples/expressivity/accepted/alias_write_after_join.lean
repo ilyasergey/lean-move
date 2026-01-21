@@ -37,7 +37,7 @@ module 0x2.alias_after_join_reborrow {
   label l0:
     a = 0;
     b = 0;
-    jump_if (copy(cond)) l2;
+    jump_if (move(cond)) l2;
   label l1:
     x = &mut a;
     y = &mut b;
@@ -48,9 +48,9 @@ module 0x2.alias_after_join_reborrow {
     jump l3;
   label l3:
     z = &mut a;
-    *copy(z) = 0;
-    *copy(x) = 0;
-    *copy(y) = 0;
+    *move(z) = 0;
+    *move(x) = 0;
+    *move(y) = 0;
     return;
   }
 }
@@ -77,17 +77,18 @@ def var_z : Var := ⟨"z"⟩
 def var_cond : Var := ⟨"cond"⟩
 
 -- Sites (temporaries in A-normal form)
-def s0 : Site := .site 0   -- constant 0
-def s1 : Site := .site 1   -- copy(cond)
-def s2 : Site := .site 2   -- &mut a or &mut b
-def s3 : Site := .site 3   -- &mut b or &mut a
-def s4 : Site := .site 4   -- &mut a (for z)
-def s5 : Site := .site 5   -- copy(z)
-def s6 : Site := .site 6   -- constant 0 for write
-def s7 : Site := .site 7   -- copy(x)
-def s8 : Site := .site 8   -- constant 0 for write
-def s9 : Site := .site 9   -- copy(y)
-def s10 : Site := .site 10 -- constant 0 for write
+def s0 : Site := .site 0   -- integer literal 0 for a
+def s1 : Site := .site 1   -- integer literal 0 for b
+def s2 : Site := .site 2   -- move(cond)
+def s3 : Site := .site 3   -- &mut a or &mut b (for x)
+def s4 : Site := .site 4   -- &mut b or &mut a (for y)
+def s5 : Site := .site 5   -- &mut a (for z)
+def s6 : Site := .site 6   -- move(z)
+def s7 : Site := .site 7   -- integer literal 0 for first write
+def s8 : Site := .site 8   -- move(x)
+def s9 : Site := .site 9   -- integer literal 0 for second write
+def s10 : Site := .site 10 -- move(y)
+def s11 : Site := .site 11 -- integer literal 0 for third write
 
 /-
   Function t(cond: bool) translated to MoveLight AST
@@ -96,50 +97,55 @@ def t : FunDef := {
   params := [(var_cond, .basic .tbool)]
   returnType := .basic .tunit
   locals := [
-    { name := var_a, type := .basic .tint },
-    { name := var_b, type := .basic .tint },
-    { name := var_x, type := .ref .tint (.varRef var_a) .siteBorrowMut },
-    { name := var_y, type := .ref .tint (.varRef var_b) .siteBorrowMut },
-    { name := var_z, type := .ref .tint (.varRef var_a) .siteBorrowMut }
+    { name := var_a, type := .basic .u64 },
+    { name := var_b, type := .basic .u64 },
+    { name := var_x, type := .ref .u64 (.varRef var_a) .siteBorrowMut },
+    { name := var_y, type := .ref .u64 (.varRef var_b) .siteBorrowMut },
+    { name := var_z, type := .ref .u64 (.varRef var_a) .siteBorrowMut }
   ]
   blocks := [
     -- label l0: a = 0; b = 0; branch on cond
     { label := "l0"
       body :=
-        ((var_a ::= s0) ;;               -- a = 0
-        (var_b ::= s0) ;;               -- b = 0
-        (letsite s1 ← copy var_cond))   -- s1 = copy(cond)
-      terminator := Terminator.branch s1 "l2" "l1"
+        (letsite s0 ← #0) ;;            -- s0 = 0 (integer literal)
+        (var_a ::= s0) ;;               -- a = s0
+        (letsite s1 ← #0) ;;            -- s1 = 0 (integer literal)
+        (var_b ::= s1) ;;               -- b = s1
+        (letsite s2 ← move var_cond)    -- s2 = move(cond)
+      terminator := Terminator.branch s2 "l2" "l1"
     },
     -- label l1 (false branch): x = &mut a; y = &mut b; jump l3
     { label := "l1"
       body :=
-        ((letsite s2 ← &mut var_a) ;;    -- s2 = &mut a
-        (var_x ::= s2) ;;               -- x = s2
-        (letsite s3 ← &mut var_b) ;;    -- s3 = &mut b
-        (var_y ::= s3))                 -- y = s3
+        (letsite s3 ← &mut var_a) ;;    -- s3 = &mut a
+        (var_x ::= s3) ;;               -- x = s3
+        (letsite s4 ← &mut var_b) ;;    -- s4 = &mut b
+        (var_y ::= s4)                  -- y = s4
       terminator := Terminator.jump "l3"
     },
     -- label l2 (true branch): x = &mut b; y = &mut a; jump l3
     { label := "l2"
       body :=
-        ((letsite s2 ← &mut var_b) ;;    -- s2 = &mut b
-        (var_x ::= s2) ;;               -- x = s2
-        (letsite s3 ← &mut var_a) ;;    -- s3 = &mut a
-        (var_y ::= s3))                 -- y = s3
+        (letsite s3 ← &mut var_b) ;;    -- s3 = &mut b
+        (var_x ::= s3) ;;               -- x = s3
+        (letsite s4 ← &mut var_a) ;;    -- s4 = &mut a
+        (var_y ::= s4)                  -- y = s4
       terminator := Terminator.jump "l3"
     },
     -- label l3: z = &mut a; writes; return
     { label := "l3"
       body :=
-        ((letsite s4 ← &mut var_a) ;;    -- s4 = &mut a
-        (var_z ::= s4) ;;               -- z = s4
-        (letsite s5 ← copy var_z) ;;    -- s5 = copy(z)
-        Stmt.writeRef s5 s6 ;;          -- *s5 = 0
-        (letsite s7 ← copy var_x) ;;    -- s7 = copy(x)
-        Stmt.writeRef s7 s8 ;;          -- *s7 = 0
-        (letsite s9 ← copy var_y) ;;    -- s9 = copy(y)
-        Stmt.writeRef s9 s10)           -- *s9 = 0
+        (letsite s5 ← &mut var_a) ;;    -- s5 = &mut a
+        (var_z ::= s5) ;;               -- z = s5
+        (letsite s6 ← move var_z) ;;    -- s6 = move(z)
+        (letsite s7 ← #0) ;;            -- s7 = 0 (integer literal)
+        Stmt.writeRef s6 s7 ;;          -- *s6 = s7
+        (letsite s8 ← move var_x) ;;    -- s8 = move(x)
+        (letsite s9 ← #0) ;;            -- s9 = 0 (integer literal)
+        Stmt.writeRef s8 s9 ;;          -- *s8 = s9
+        (letsite s10 ← move var_y) ;;   -- s10 = move(y)
+        (letsite s11 ← #0) ;;           -- s11 = 0 (integer literal)
+        Stmt.writeRef s10 s11           -- *s10 = s11
       terminator := Terminator.ret []   -- return
     }
   ]

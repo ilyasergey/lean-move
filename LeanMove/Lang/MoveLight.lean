@@ -43,7 +43,7 @@ structure Field where
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 inductive BasicMoveType where
-  | tint
+  | u64   -- Unsigned 64-bit integer
   | tbool
   | tunit
   | trecord : AssocMap Field BasicMoveType → BasicMoveType
@@ -103,6 +103,7 @@ deriving Repr, DecidableEq, Inhabited, Hashable
 -- Expressions
 inductive Expr where
   | usage : Usage → Expr
+  | intLit : Nat → Expr  -- Integer literal (u64 value)
   | borrowField : Site → BasicMoveType → Field → Expr  -- &a.T::f
   | borrowMutField : Site → Id → Field → Expr  -- &mut a.T::f
   | binop : Binop → Site → Site → Expr  -- a + b

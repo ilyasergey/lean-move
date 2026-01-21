@@ -66,13 +66,14 @@ def foo : FunDef := {
   params := []
   returnType := .basic .tunit
   locals := [
-    { name := var_x, type := .basic .tint },
-    { name := var_r, type := .ref .tint (.varRef var_x) .siteBorrowImm }
+    { name := var_x, type := .basic .u64 },
+    { name := var_r, type := .ref .u64 (.varRef var_x) .siteBorrowImm }
   ]
   blocks := [
     { label := "l0"
       body :=
-        (var_x ::= s0) ;;          -- x = 0 (in A-normal form)
+        (letsite s0 ← #0) ;;       -- s0 = 0 (integer literal)
+        (var_x ::= s0) ;;          -- x = s0
         (letsite s1 ← &var_x) ;;   -- s1 = &x
         (var_r ::= s1)             -- r = s1
       terminator := jump "l0"      -- jump l0
@@ -101,27 +102,7 @@ open Stmt
 /-!
 ## Analysis: Why foo_welltyped Cannot Be Proven
 
-This program has **two fundamental issues** that prevent it from type-checking:
-
-### Issue 1: Missing Site Initialization
-
-The program uses `assign var_x s0` but `s0` is never introduced into the `siteEnv`.
-In A-normal form, the assignment `x = 0` should be translated as:
-```
-let s0 = <constant 0>   -- introduces s0 into siteEnv
-x = s0                   -- consumes s0
-```
-However, the current AST only has the second statement. The typing rule
-`var_assign_invalid` (TypeChecking.lean:659-664) requires:
-```
-AssocMap.lookup env.siteEnv a = some τ
-```
-Since `s0` is never bound, this lookup fails.
-
-### Issue 2: Borrow-Checking Violation in Loop
-
-Even if Issue 1 were fixed (e.g., by adding a constant expression form), the program
-would still fail to type-check due to a **borrow-checking violation**.
+This program fails type-checking due to a **borrow-checking violation** at the loop back-edge.
 
 Trace through loop iterations:
 
@@ -130,10 +111,10 @@ Trace through loop iterations:
 - `pathEnv` has only root with ε self-edge
 
 After `x = 0`:
-- `x` becomes valid with type `.basic .tint`
+- `x` becomes valid with type `.basic .u64`
 
 After `let s1 = &x` (borrowImm):
-- Creates immutable borrow, `s1 : &tint`
+- Creates immutable borrow, `s1 : &u64`
 - **PathEnv updated**: adds edge from `root` to new ref `r1` via `[.root_to_var var_x]`
 - This means `x` is now **borrowed** (reachable from root via var_x path)
 

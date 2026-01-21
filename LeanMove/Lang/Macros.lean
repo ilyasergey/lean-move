@@ -69,6 +69,10 @@ macro "letsite" a:term " ← " "*" b:term : term =>
 macro "letsite" a:term " ← " "freeze" b:term : term =>
   `(Stmt.letBind $a (Expr.freeze $b))
 
+-- Let binding with integer literal: letsite a ← #n
+macro "letsite" a:term " ← " "#" n:term : term =>
+  `(Stmt.letBind $a (Expr.intLit $n))
+
 /-!
 ## Notes on macros
 
@@ -81,6 +85,7 @@ macro "letsite" a:term " ← " "freeze" b:term : term =>
 - `letsite s ← move x` for move
 - `letsite s ← *x` for reading reference (dereference)
 - `letsite s ← freeze x` for freezing a reference
+- `letsite s ← #n` for integer literal (u64 value n)
 - `* a ::= b` for write through reference
 - `release s` for releasing references
 

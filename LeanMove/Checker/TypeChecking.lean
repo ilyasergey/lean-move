@@ -140,13 +140,13 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Site -> MoveType �
 -- function to take a binop and types of its arguments and return the type of the result
 def binop_type (bop : Binop) (τ1 τ2 : BasicMoveType) : Option BasicMoveType :=
   match (bop, τ1, τ2) with
-  | (.add, .tint, .tint) => some .tint
-  | (.sub, .tint, .tint) => some .tint
-  | (.mul, .tint, .tint) => some .tint
-  | (.div, .tint, .tint) => some .tint
-  | (.mod, .tint, .tint) => some .tint
-  | (.lt,  .tint, .tint) => some .tbool
-  | (.eq, .tint, .tint) =>  some .tbool
+  | (.add, .u64, .u64) => some .u64
+  | (.sub, .u64, .u64) => some .u64
+  | (.mul, .u64, .u64) => some .u64
+  | (.div, .u64, .u64) => some .u64
+  | (.mod, .u64, .u64) => some .u64
+  | (.lt,  .u64, .u64) => some .tbool
+  | (.eq, .u64, .u64) =>  some .tbool
   | (.eq, .tbool, .tbool) => some .tbool
   | (.nand, .tbool, .tbool) => some .tbool
   | _ => none
@@ -214,6 +214,12 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType �
   | usage : ∀ env env' u (c : Site) (τ : MoveType),
      typecheck_usage env u env' c τ ->
      typecheck_expr env (Expr.usage u) env' c τ
+
+  -- c <- n (integer literal)
+  | intLit : ∀ env env' (n : Nat) (c : Site),
+     AssocMap.notIn env.siteEnv c →
+     env' = {env with siteEnv := insert env.siteEnv c (.basic .u64)} →
+     typecheck_expr env (Expr.intLit n) env' c (.basic .u64)
 
   -- af <- &a.T::f
   | borrowField : ∀ env env' a f af bt bt' isBor fentries s (rf : Aref),

@@ -52,7 +52,7 @@ def field_br : Field := ⟨"br"⟩
 
 -- Point { x: u64, y: u64 }
 def point_entries : AssocMap Field BasicMoveType :=
-  insert (insert empty field_x .tint) field_y .tint
+  insert (insert empty field_x .u64) field_y .u64
 
 -- Box { tl: Point, br: Point }
 def box_entries : AssocMap Field BasicMoveType :=
@@ -75,6 +75,8 @@ def s6 : Site := .site 6
 def s7 : Site := .site 7
 def s8 : Site := .site 8
 def s9 : Site := .site 9
+def s10 : Site := .site 10 -- integer literal 0 for *x write
+def s11 : Site := .site 11 -- integer literal 0 for *y write
 
 /-
   borrow(b: &mut Self.Box): &mut Self.Point
@@ -106,39 +108,49 @@ def fn_borrow : FunDef := {
   write(b: &mut Self.Box): &mut Self.Point
   Borrows the top-left point, writes zeros to both coordinates.
 
-  label l0:
-      tl = &mut copy(b).Box::tl;
-      x = &mut copy(tl).Point::x;
-      y = &mut copy(tl).Point::y;
-      *copy(x) = 0;
-      *copy(y) = 0;
-      return copy(tl);
+  Original MVIR:
+  p = Self.borrow(copy(b));
+  x = &mut copy(p).Point::x;
+  *move(x) = 0;
+  y = &mut copy(p).Point::y;
+  *move(y) = 0;
+  return move(p);
+
+  We inline the borrow call.
 -/
 def fn_write : FunDef := {
   params := [(var_b, .ref (.trecord box_entries) (.varRef var_b) .siteBorrowMut)]
-  returnType := .basic .tunit  -- Simplified
+  returnType := .ref (.trecord point_entries) (.varRef var_b) .siteBorrowMut
   locals := [
     { name := var_tl, type := .ref (.trecord point_entries) (.varRef var_b) .siteBorrowMut },
-    { name := var_x, type := .ref .tint (.varRef var_b) .siteBorrowMut },
-    { name := var_y, type := .ref .tint (.varRef var_b) .siteBorrowMut }
+    { name := var_x, type := .ref .u64 (.varRef var_b) .siteBorrowMut },
+    { name := var_y, type := .ref .u64 (.varRef var_b) .siteBorrowMut }
   ]
   blocks := [
     { label := "l0"
       body :=
+        -- p = Self.borrow(copy(b)) - inlined as: p = &mut copy(b).Box::tl
         (letsite s0 ← copy var_b) ;;     -- s0 = copy(b)
         Stmt.letBind s1 (Expr.borrowMutField s0 "Box" field_tl) ;; -- s1 = &mut s0.tl
-        (var_tl ::= s1) ;;               -- tl = s1
-        (letsite s2 ← copy var_tl) ;;    -- s2 = copy(tl)
+        (var_tl ::= s1) ;;               -- tl (p) = s1
+        -- x = &mut copy(p).Point::x
+        (letsite s2 ← copy var_tl) ;;    -- s2 = copy(p)
         Stmt.letBind s3 (Expr.borrowMutField s2 "Point" field_x) ;; -- s3 = &mut s2.x
         (var_x ::= s3) ;;                -- x = s3
-        (letsite s4 ← copy var_tl) ;;    -- s4 = copy(tl)
+        -- *move(x) = 0
+        (letsite s6 ← move var_x) ;;     -- s6 = move(x)
+        (letsite s10 ← #0) ;;            -- s10 = 0 (integer literal)
+        Stmt.writeRef s6 s10 ;;          -- *s6 = s10
+        -- y = &mut copy(p).Point::y
+        (letsite s4 ← copy var_tl) ;;    -- s4 = copy(p)
         Stmt.letBind s5 (Expr.borrowMutField s4 "Point" field_y) ;; -- s5 = &mut s4.y
         (var_y ::= s5) ;;                -- y = s5
-        (letsite s6 ← copy var_x) ;;     -- s6 = copy(x)
-        Stmt.writeRef s6 (.site 10) ;;   -- *s6 = 0
-        (letsite s7 ← copy var_y) ;;     -- s7 = copy(y)
-        Stmt.writeRef s7 (.site 11) ;;   -- *s7 = 0
-        (letsite s8 ← copy var_tl)       -- s8 = copy(tl)
+        -- *move(y) = 0
+        (letsite s7 ← move var_y) ;;     -- s7 = move(y)
+        (letsite s11 ← #0) ;;            -- s11 = 0 (integer literal)
+        Stmt.writeRef s7 s11 ;;          -- *s7 = s11
+        -- return move(p)
+        (letsite s8 ← move var_tl)       -- s8 = move(tl/p)
       terminator := ret [s8]             -- return s8
     }
   ]

@@ -55,6 +55,7 @@ def s3 : Site := .site 3   -- copy(rmut)
 def s4 : Site := .site 4   -- constant for write
 def s5 : Site := .site 5   -- copy(rimm)
 def s6 : Site := .site 6   -- *copy(rimm)
+def s7 : Site := .site 7   -- second constant 0 (for copy_and_freeze write)
 
 /-
   Module 1: direct
@@ -77,20 +78,22 @@ def direct : FunDef := {
   params := []
   returnType := .basic .tunit
   locals := [
-    { name := var_a, type := .basic .tint },
-    { name := var_rmut, type := .ref .tint (.varRef var_a) .siteBorrowMut },
-    { name := var_rimm, type := .ref .tint (.varRef var_a) .siteBorrowImm }
+    { name := var_a, type := .basic .u64 },
+    { name := var_rmut, type := .ref .u64 (.varRef var_a) .siteBorrowMut },
+    { name := var_rimm, type := .ref .u64 (.varRef var_a) .siteBorrowImm }
   ]
   blocks := [
     { label := "l0"
       body :=
-        (var_a ::= s0) ;;               -- a = 0
+        (letsite s0 ← #0) ;;            -- s0 = 0 (integer literal)
+        (var_a ::= s0) ;;               -- a = s0
         (letsite s1 ← &mut var_a) ;;    -- s1 = &mut a
         (var_rmut ::= s1) ;;            -- rmut = s1
         (letsite s2 ← &var_a) ;;        -- s2 = &a
         (var_rimm ::= s2) ;;            -- rimm = s2
         (letsite s3 ← copy var_rmut) ;; -- s3 = copy(rmut)
-        Stmt.writeRef s3 s4 ;;          -- *s3 = 0
+        (letsite s4 ← #0) ;;            -- s4 = 0 (integer literal for write)
+        Stmt.writeRef s3 s4 ;;          -- *s3 = s4
         (letsite s5 ← copy var_rimm) ;; -- s5 = copy(rimm)
         Stmt.letBind s6 (Expr.readRef s5) -- s6 = *s5 (discarded)
       terminator := ret []
@@ -119,21 +122,23 @@ def copy_and_freeze : FunDef := {
   params := []
   returnType := .basic .tunit
   locals := [
-    { name := var_a, type := .basic .tint },
-    { name := var_rmut, type := .ref .tint (.varRef var_a) .siteBorrowMut },
-    { name := var_rimm, type := .ref .tint (.varRef var_a) .siteBorrowImm }
+    { name := var_a, type := .basic .u64 },
+    { name := var_rmut, type := .ref .u64 (.varRef var_a) .siteBorrowMut },
+    { name := var_rimm, type := .ref .u64 (.varRef var_a) .siteBorrowImm }
   ]
   blocks := [
     { label := "l0"
       body :=
-        (var_a ::= s0) ;;               -- a = 0
+        (letsite s0 ← #0) ;;            -- s0 = 0 (integer literal)
+        (var_a ::= s0) ;;               -- a = s0
         (letsite s1 ← &mut var_a) ;;    -- s1 = &mut a
         (var_rmut ::= s1) ;;            -- rmut = s1
         (letsite s2 ← copy var_rmut) ;; -- s2 = copy(rmut)
         Stmt.letBind s3 (Expr.freeze s2) ;; -- s3 = freeze(s2)
         (var_rimm ::= s3) ;;            -- rimm = s3
         (letsite s4 ← copy var_rmut) ;; -- s4 = copy(rmut)
-        Stmt.writeRef s4 s0 ;;          -- *s4 = 0
+        (letsite s7 ← #0) ;;            -- s7 = 0 (integer literal for write)
+        Stmt.writeRef s4 s7 ;;          -- *s4 = s7
         (letsite s5 ← copy var_rimm) ;; -- s5 = copy(rimm)
         Stmt.letBind s6 (Expr.readRef s5) -- s6 = *s5 (discarded)
       terminator := ret []

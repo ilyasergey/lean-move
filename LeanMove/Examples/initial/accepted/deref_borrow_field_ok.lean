@@ -66,7 +66,7 @@ entry foo() {
 -/
 
 -- Abbreviation for the struct type M.T = { f: u64 }
-def M_T_basic : BasicMoveType := .trecord (AssocMap.insert AssocMap.empty ⟨"f"⟩ .tint)
+def M_T_basic : BasicMoveType := .trecord (AssocMap.insert AssocMap.empty ⟨"f"⟩ .u64)
 def M_T : MoveType := .basic M_T_basic
 
 -- Field "f"
@@ -99,7 +99,7 @@ def s3 : Site := .site 3
   - return s1
 -/
 def M_new : FunDef := {
-  params := [(var_g, .basic .tint)]
+  params := [(var_g, .basic .u64)]
   returnType := M_T
   locals := []
   blocks := [
@@ -132,7 +132,7 @@ def M_new : FunDef := {
 def M_t : FunDef := {
   params := [(var_this, .ref M_T_basic (.varRef var_this) .siteBorrowImm)]
   returnType := .basic .tunit
-  locals := [{ name := var_y, type := .basic .tint }]
+  locals := [{ name := var_y, type := .basic .u64 }]
   blocks := [
     { label := "b0"
       body :=
@@ -152,7 +152,7 @@ def M_t : FunDef := {
       let x: M.T;
       let x_ref: &M.T;
   label b0:
-      x = M.new(2);        // call with result in s0, then assign to x
+      x = M.new(2);        // literal 2 into s3, call with s3, result to s0, assign to x
       x_ref = &x;          // borrow x into s1, then assign to x_ref
       M.t(move(x_ref));    // move x_ref into s2, call M.t
       return;
@@ -168,9 +168,10 @@ def foo : FunDef := {
   blocks := [
     { label := "b0"
       body :=
-        -- x = M.new(2) (in A-normal form: call then assign)
-        Stmt.call [s0] "M.new" [] ;;
-        (var_x ::= s0) ;;
+        -- x = M.new(2) (in A-normal form: literal, call, then assign)
+        (letsite s3 ← #2) ;;             -- let s3 = 2 (integer literal)
+        Stmt.call [s0] "M.new" [s3] ;;   -- s0 = M.new(s3)
+        (var_x ::= s0) ;;                -- x = s0
         -- x_ref = &x (in A-normal form: borrow then assign)
         (letsite s1 ← &var_x) ;;
         (var_x_ref ::= s1) ;;
@@ -197,13 +198,13 @@ def foo : FunDef := {
 def module_funEnv : AssocMap Id FunSig :=
   AssocMap.insert
     (AssocMap.insert AssocMap.empty
-      "M.new" ⟨[⟨.tint, none⟩], [⟨M_T_basic, none⟩]⟩)
+      "M.new" ⟨[⟨.u64, none⟩], [⟨M_T_basic, none⟩]⟩)
     "M.t" ⟨[⟨M_T_basic, some false⟩], []⟩
 
 -- Initial environment for M.new: parameter g is a valid mutable int variable
 def M_new_initEnv : TypeEnv := {
   siteEnv := AssocMap.empty
-  varEnv := init_varEnv_from_params [(var_g, .basic .tint)]
+  varEnv := init_varEnv_from_params [(var_g, .basic .u64)]
   pathEnv := PathEnv.init
   funEnv := module_funEnv
 }
@@ -242,10 +243,10 @@ theorem M_new_welltyped : ∃ lenv, typecheck_fun M_new lenv := by
     unfold typecheck_block
 
     -- Define intermediate environments
-    -- After let s0 = move(g): s0 has type .basic .tint, g is invalidated
+    -- After let s0 = move(g): s0 has type .basic .u64, g is invalidated
     let env1 : TypeEnv := {
-      siteEnv := AssocMap.insert M_new_initEnv.siteEnv s0 (.basic .tint)
-      varEnv := AssocMap.update M_new_initEnv.varEnv var_g (.invalidVar, .basic .tint, .mutable)
+      siteEnv := AssocMap.insert M_new_initEnv.siteEnv s0 (.basic .u64)
+      varEnv := AssocMap.update M_new_initEnv.varEnv var_g (.invalidVar, .basic .u64, .mutable)
       pathEnv := M_new_initEnv.pathEnv
       funEnv := M_new_initEnv.funEnv
     }
@@ -265,7 +266,7 @@ theorem M_new_welltyped : ∃ lenv, typecheck_fun M_new lenv := by
       · -- let s0 = move(g)
         apply typecheck_stmt.let_bind
         apply typecheck_expr.usage
-        apply typecheck_usage.t_umove (τ := .basic .tint) (ms := .mutable)
+        apply typecheck_usage.t_umove (τ := .basic .u64) (ms := .mutable)
         · rfl  -- lookup varEnv var_g
         · -- not_borrowed var_g
           unfold not_borrowed
@@ -278,14 +279,14 @@ theorem M_new_welltyped : ∃ lenv, typecheck_fun M_new lenv := by
         · rfl  -- env' = env1
       · -- let s1 = pack T{f: s0}
         apply typecheck_stmt.let_bind
-        apply typecheck_expr.pack (fentries := AssocMap.insert AssocMap.empty field_f .tint)
+        apply typecheck_expr.pack (fentries := AssocMap.insert AssocMap.empty field_f .u64)
         · rfl  -- s1 not in env1.siteEnv
         · -- All field sites exist with correct types
           intro f a hmem
           simp at hmem
           obtain ⟨hf, ha⟩ := hmem
           subst hf ha
-          exists .tint
+          exists .u64
         · -- All field sites distinct
           intro a1 a2 hexists
           obtain ⟨f1, f2, h1, h2, hne⟩ := hexists

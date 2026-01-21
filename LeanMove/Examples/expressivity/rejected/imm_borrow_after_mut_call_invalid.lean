@@ -25,14 +25,80 @@ import LeanMove.Lang.Macros
 
 Source: https://github.com/tnowacki/sui/blob/example-tests/external-crates/move/crates/bytecode-verifier-transactional-tests/tests/reference_safety/expressivity/imm_borrow_after_mut_call.mvir
 
-This is the INVALID module from the imm_borrow_after_mut_call test.
-It fails with WRITEREF_EXISTS_BORROW_ERROR.
+This file contains the INVALID module that fails because you cannot write to
+a mutable reference when an immutable reference to the same root exists.
 
-The issue: After creating a mutable reference and passing it through id_mut(),
-then creating an immutable reference from it, you CANNOT write to the original
-mutable reference because the immutable reference creates an alias.
+Original MVIR:
+```
+// can create an immutabe extension via a call after a mut borrow,
+// but if the mut is a parent, it won't be writable
 
-Comment from original: "cannot write to mut1"
+//# publish
+module 0x2.valid {
+
+    id_mut(r: &mut u64): &mut u64 {
+    label b0:
+        return move(r);
+    }
+
+    id(r: &u64): &u64 {
+    label b0:
+        return move(r);
+    }
+
+    t() {
+        let a: u64;
+        let r: &mut u64;
+        let mut1: &mut u64;
+        let imm1: &u64;
+        let imm2: &u64;
+        let imm3: &u64;
+    label b0:
+        a = 0;
+        r = &mut a;
+        mut1 = Self.id_mut(copy(r));
+        // all valid
+        imm1 = Self.id(&a);
+        imm2 = Self.id(freeze(copy(r)));
+        imm3 = Self.id(freeze(copy(mut1)));
+        // all readable
+        _ = *copy(imm1);
+        _ = *copy(imm2);
+        _ = *copy(imm3);
+        return;
+    }
+}
+
+//# publish
+module 0x2.invalid {
+
+    id_mut(r: &mut u64): &mut u64 {
+    label b0:
+        return move(r);
+    }
+
+    id(r: &u64): &u64 {
+    label b0:
+        return move(r);
+    }
+
+    t() {
+        let a: u64;
+        let r: &mut u64;
+        let mut1: &mut u64;
+        let imm1: &u64;
+    label b0:
+        a = 0;
+        r = &mut a;
+        mut1 = Self.id_mut(copy(r));
+        // all valid
+        imm1 = Self.id(&a);
+        // cannot write to mut1
+        *copy(mut1) = 0;
+        return;
+    }
+}
+```
 -/
 
 open LeanMove.Lang
@@ -50,70 +116,64 @@ def var_mut1 : Var := ⟨"mut1"⟩
 def var_imm1 : Var := ⟨"imm1"⟩
 
 -- Sites
-def s0 : Site := .site 0
-def s1 : Site := .site 1
-def s2 : Site := .site 2
-def s3 : Site := .site 3
-def s4 : Site := .site 4
-def s5 : Site := .site 5
-def s6 : Site := .site 6
-def s7 : Site := .site 7
+def s0 : Site := .site 0   -- integer literal 0 for a
+def s1 : Site := .site 1   -- &mut a
+def s2 : Site := .site 2   -- copy(r)
+def s3 : Site := .site 3   -- &a (for imm1)
+def s4 : Site := .site 4   -- copy(mut1)
+def s5 : Site := .site 5   -- integer literal 0 for write
 
 /-
   invalid module: "cannot write to mut1"
 
   t() {
-    let a: u64;
-    let r: &mut u64;
-    let mut1: &mut u64;
-    let imm1: &u64;
-  label l0:
-    a = 0;
-    r = &mut a;
-    // Simulate: mut1 = Self.id_mut(copy(r));
-    // In our encoding: mut1 = copy(r)
-    mut1 = copy(r);
-    // imm1 = freeze(copy(mut1));
-    imm1 = freeze(copy(mut1));
-    *copy(mut1) = 0;          // ERROR: cannot write - imm1 is an alias
-    _ = *copy(imm1);
-    return;
+      let a: u64;
+      let r: &mut u64;
+      let mut1: &mut u64;
+      let imm1: &u64;
+  label b0:
+      a = 0;
+      r = &mut a;
+      mut1 = Self.id_mut(copy(r));  -- inlined as: mut1 = copy(r)
+      imm1 = Self.id(&a);           -- inlined as: imm1 = &a
+      *copy(mut1) = 0;              -- ERROR: cannot write, a has immutable alias imm1
+      return;
   }
 -/
 def invalid : FunDef := {
   params := []
   returnType := .basic .tunit
   locals := [
-    { name := var_a, type := .basic .tint },
-    { name := var_r, type := .ref .tint (.varRef var_a) .siteBorrowMut },
-    { name := var_mut1, type := .ref .tint (.varRef var_a) .siteBorrowMut },
-    { name := var_imm1, type := .ref .tint (.varRef var_a) .siteBorrowImm }
+    { name := var_a, type := .basic .u64 },
+    { name := var_r, type := .ref .u64 (.varRef var_a) .siteBorrowMut },
+    { name := var_mut1, type := .ref .u64 (.varRef var_a) .siteBorrowMut },
+    { name := var_imm1, type := .ref .u64 (.varRef var_a) .siteBorrowImm }
   ]
   blocks := [
-    { label := "l0"
+    { label := "b0"
       body :=
-        (var_a ::= s0) ;;               -- a = 0
-        (letsite s1 ← &mut var_a) ;;    -- s1 = &mut a
-        (var_r ::= s1) ;;               -- r = s1
-        -- mut1 = copy(r) (simulating id_mut call)
-        (letsite s2 ← copy var_r) ;;    -- s2 = copy(r)
-        (var_mut1 ::= s2) ;;            -- mut1 = s2
-        -- imm1 = freeze(copy(mut1))
-        (letsite s3 ← copy var_mut1) ;; -- s3 = copy(mut1)
-        Stmt.letBind s4 (Expr.freeze s3) ;; -- s4 = freeze(s3)
-        (var_imm1 ::= s4) ;;            -- imm1 = s4
-        -- *copy(mut1) = 0 -- ERROR: mut1 has immutable alias imm1
-        (letsite s5 ← copy var_mut1) ;; -- s5 = copy(mut1)
-        Stmt.writeRef s5 (.site 10) ;;  -- ERROR: write with imm alias
-        -- _ = *copy(imm1)
-        (letsite s6 ← copy var_imm1) ;; -- s6 = copy(imm1)
-        Stmt.letBind s7 (Expr.readRef s6) -- s7 = *s6 (discard)
+        -- a = 0
+        (letsite s0 ← #0) ;;
+        (var_a ::= s0) ;;
+        -- r = &mut a
+        (letsite s1 ← &mut var_a) ;;
+        (var_r ::= s1) ;;
+        -- mut1 = Self.id_mut(copy(r)) -- inlined as copy(r)
+        (letsite s2 ← copy var_r) ;;
+        (var_mut1 ::= s2) ;;
+        -- imm1 = Self.id(&a) -- inlined as &a
+        (letsite s3 ← &var_a) ;;
+        (var_imm1 ::= s3) ;;
+        -- *copy(mut1) = 0 -- ERROR: a is immutably borrowed via imm1
+        (letsite s4 ← copy var_mut1) ;;
+        (letsite s5 ← #0) ;;
+        Stmt.writeRef s4 s5
       terminator := ret []
     }
   ]
 }
 
--- Theorem: invalid is ILL-typed
+-- Theorem: invalid is ILL-typed (REJECTED by type checker)
 theorem invalid_illtyped : ¬ (∃ lenv, typecheck_fun invalid lenv) := by
   sorry
 

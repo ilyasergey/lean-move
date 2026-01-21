@@ -1,18 +1,50 @@
 # Changes Made on 2026-01-21
 
 ## Summary
-Refactored control flow into Terminator type; added build targets for all examples.
+Added integer literals to MoveLight; refactored control flow into Terminator type; improved MVIR documentation in examples.
 
 ## Overview
 
-This change introduces a major refactoring to separate control flow (jump, branch, ret, abort)
-from regular statements into a dedicated `Terminator` type. This ensures that control flow
-only appears at the end of blocks, matching the structure of real intermediate representations.
+This change introduces several improvements:
 
-Additionally, the Macros module was moved from Examples to Lang, and build targets were added
-for all example categories.
+1. **Integer Literals**: Added native support for integer literals in MoveLight with the new
+   `Expr.intLit` expression and renamed `.tint` to `.u64` for clarity.
+
+2. **Control Flow Refactoring**: Separated control flow (jump, branch, ret, abort) from regular
+   statements into a dedicated `Terminator` type.
+
+3. **MVIR Documentation**: All rejected examples now include the full original MVIR source code
+   as documentation comments, and translations have been verified for correctness.
+
+4. **Build Targets**: Added `lake build` targets for all example categories.
 
 ## Major Changes
+
+### Integer Literals Support
+
+**LeanMove/Lang/MoveLight.lean**:
+- Renamed `.tint` to `.u64` in `BasicMoveType` for clarity
+- Added `Expr.intLit : Nat → Expr` constructor for integer literal expressions
+
+**LeanMove/Checker/TypeChecking.lean**:
+- Added `typecheck_expr.t_intLit` rule: integer literals type check to `.basic .u64`
+
+**LeanMove/Lang/Macros.lean**:
+- Added macro `letsite a ← #n` for binding integer literals to sites
+- Example usage: `(letsite s0 ← #0)` binds integer 0 to site s0
+
+### MVIR Documentation in Rejected Examples
+
+All files in `LeanMove/Examples/expressivity/rejected/` now include:
+- Full original MVIR source code as documentation comments
+- Verified translations matching MVIR semantics exactly
+- Proper use of integer literal expressions
+
+Files updated:
+- `simple_dangling.lean` - Four modules demonstrating dangling reference errors
+- `imm_borrow_after_mut_call_invalid.lean` - Cannot write with immutable alias
+- `imm_borrow_after_mut_fields_invalid.lean` - Cannot write through mutable when immutable field ref exists
+- `mutable_borrows_not_unique_calls_invalid.lean` - Unknown relationship between overlapping refs
 
 ### Control Flow Refactoring
 
@@ -81,6 +113,7 @@ Macros for more readable MoveLight code:
 - `release s` - Release reference
 - `letsite a ← *b` - Dereference (read reference)
 - `letsite a ← freeze b` - Freeze reference
+- `letsite a ← #n` - Integer literal (NEW)
 
 ### lakefile.lean
 Build targets for examples:
@@ -111,9 +144,11 @@ theorem t_illtyped : ¬ (∃ lenv, typecheck_fun t lenv) := by
 
 ## Notes
 
-- All examples include links to the original .mvir source files
+- All examples now include full original MVIR source code as documentation comments
 - The transpilation preserves the essential borrow checking semantics
 - Some simplifications were made where MoveLight doesn't support certain features
   (e.g., vectors, tuple return types)
 - Initial examples in `accepted/` have complete proofs (no `sorry`)
 - Expressivity examples have `sorry` placeholders for future proof work
+- Integer literals are now explicitly represented using `Expr.intLit` and the `#n` macro
+- Separate `.mvir` files removed; MVIR source is now embedded in Lean files as comments

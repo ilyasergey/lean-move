@@ -27,12 +27,35 @@ Source: https://github.com/tnowacki/sui/blob/example-tests/external-crates/move/
 
 This module demonstrates writing to extensions after a control flow join.
 
+Original Move IR:
+```
+module 0x2.extension_after_join {
+
 struct S has copy, drop, store { f: u64 }
 
-t(cond: bool, a: &mut S, b: &mut S): &mut S
-  Based on condition, swaps which ref goes to x.
-  Then borrows x.f and writes through it.
-  Returns one of the references.
+t(cond: bool, a: &mut Self.S, b: &mut Self.S): &mut Self.S {
+    let x: &mut Self.S;
+    let y: &mut Self.S;
+    let f: &mut u64;
+label l0:
+    jump_if (move(cond)) l2;
+label l1:
+    x = move(a);
+    y = move(b);
+    jump l3;
+label l2:
+    x = move(b);
+    y = move(a);
+    jump l3;
+label l3:
+    f = &mut copy(x).S::f;
+    *copy(y) = S { f: *copy(f) };
+    *copy(f) = 0;
+    return move(y);
+}
+
+}
+```
 -/
 
 open LeanMove.Lang
@@ -47,13 +70,14 @@ namespace LeanMove.Examples.Expressivity.ExtensionWritesAfterJoin
 def field_f : Field := ⟨"f"⟩
 
 -- S { f: u64 }
-def s_entries : AssocMap Field BasicMoveType := insert empty field_f .tint
+def s_entries : AssocMap Field BasicMoveType := insert empty field_f .u64
 
 -- Variables
 def var_cond : Var := ⟨"cond"⟩
 def var_a : Var := ⟨"a"⟩
 def var_b : Var := ⟨"b"⟩
 def var_x : Var := ⟨"x"⟩
+def var_y : Var := ⟨"y"⟩
 def var_f : Var := ⟨"f"⟩
 
 -- Sites
@@ -65,22 +89,18 @@ def s4 : Site := .site 4
 def s5 : Site := .site 5
 def s6 : Site := .site 6
 def s7 : Site := .site 7
+def s8 : Site := .site 8
+def s9 : Site := .site 9
+def s10 : Site := .site 10
+def s11 : Site := .site 11
+def s12 : Site := .site 12 -- move(y) for return
+def s13 : Site := .site 13 -- integer literal 0 for write
 
 /-
-  t(cond: bool, a: &mut Self.S, b: &mut Self.S): &mut Self.S
-
-  label l0:
-      jump_if (copy(cond)) l2;
-  label l1:
-      x = copy(a);
-      jump l3;
-  label l2:
-      x = copy(b);
-      jump l3;
-  label l3:
-      f = &mut copy(x).S::f;
-      *copy(f) = 0;
-      return copy(x);
+  Translation notes:
+  - move(cond) consumes the boolean condition
+  - Both branches assign x AND y (swapped assignments)
+  - l3: borrows x.f, writes to y (a struct pack), writes to f, returns y
 -/
 def t : FunDef := {
   params := [
@@ -88,41 +108,57 @@ def t : FunDef := {
     (var_a, .ref (.trecord s_entries) (.varRef var_a) .siteBorrowMut),
     (var_b, .ref (.trecord s_entries) (.varRef var_b) .siteBorrowMut)
   ]
-  returnType := .basic .tunit  -- Simplified
+  returnType := .ref (.trecord s_entries) (.varRef var_a) .siteBorrowMut
   locals := [
     { name := var_x, type := .ref (.trecord s_entries) (.varRef var_a) .siteBorrowMut },
-    { name := var_f, type := .ref .tint (.varRef var_a) .siteBorrowMut }
+    { name := var_y, type := .ref (.trecord s_entries) (.varRef var_b) .siteBorrowMut },
+    { name := var_f, type := .ref .u64 (.varRef var_a) .siteBorrowMut }
   ]
   blocks := [
-    -- l0: branch on condition
+    -- l0: jump_if (move(cond)) l2;
     { label := "l0"
-      body := (letsite s0 ← copy var_cond)  -- s0 = copy(cond)
+      body := (letsite s0 ← move var_cond)  -- s0 = move(cond)
       terminator := Terminator.branch s0 "l2" "l1"  -- if s0 then l2 else l1
     },
-    -- l1 (false branch): x = copy(a)
+    -- l1 (false branch): x = move(a); y = move(b); jump l3;
     { label := "l1"
       body :=
-        (letsite s1 ← copy var_a) ;;     -- s1 = copy(a)
-        (var_x ::= s1)                   -- x = s1
+        (letsite s1 ← move var_a) ;;     -- s1 = move(a)
+        (var_x ::= s1) ;;                -- x = s1
+        (letsite s2 ← move var_b) ;;     -- s2 = move(b)
+        (var_y ::= s2)                   -- y = s2
       terminator := Terminator.jump "l3"
     },
-    -- l2 (true branch): x = copy(b)
+    -- l2 (true branch): x = move(b); y = move(a); jump l3;
     { label := "l2"
       body :=
-        (letsite s1 ← copy var_b) ;;     -- s1 = copy(b)
-        (var_x ::= s1)                   -- x = s1
+        (letsite s3 ← move var_b) ;;     -- s3 = move(b)
+        (var_x ::= s3) ;;                -- x = s3
+        (letsite s4 ← move var_a) ;;     -- s4 = move(a)
+        (var_y ::= s4)                   -- y = s4
       terminator := Terminator.jump "l3"
     },
-    -- l3: borrow field and write
+    -- l3: f = &mut copy(x).S::f; *copy(y) = S { f: *copy(f) }; *copy(f) = 0; return move(y);
     { label := "l3"
       body :=
-        (letsite s2 ← copy var_x) ;;     -- s2 = copy(x)
-        Stmt.letBind s3 (Expr.borrowMutField s2 "S" field_f) ;; -- s3 = &mut s2.f
-        (var_f ::= s3) ;;                -- f = s3
-        (letsite s4 ← copy var_f) ;;     -- s4 = copy(f)
-        Stmt.writeRef s4 (.site 10) ;;   -- *s4 = 0
-        (letsite s5 ← copy var_x)        -- s5 = copy(x)
-      terminator := Terminator.ret [s5]  -- return s5
+        -- f = &mut copy(x).S::f
+        (letsite s5 ← copy var_x) ;;
+        Stmt.letBind s6 (Expr.borrowMutField s5 "S" field_f) ;;
+        (var_f ::= s6) ;;
+        -- *copy(y) = S { f: *copy(f) }
+        -- First read *copy(f), then pack into S, then write to *copy(y)
+        (letsite s7 ← copy var_f) ;;
+        Stmt.letBind s8 (Expr.readRef s7) ;;              -- s8 = *s7 (the value in f)
+        Stmt.letBind s9 (Expr.pack "S" [(field_f, s8)]) ;; -- s9 = S { f: s8 }
+        (letsite s10 ← copy var_y) ;;
+        Stmt.writeRef s10 s9 ;;                           -- *s10 = s9 (write struct to y)
+        -- *copy(f) = 0
+        (letsite s11 ← copy var_f) ;;
+        (letsite s13 ← #0) ;;                             -- s13 = 0 (integer literal)
+        Stmt.writeRef s11 s13 ;;                          -- *s11 = s13
+        -- return move(y)
+        (letsite s12 ← move var_y)
+      terminator := Terminator.ret [s12]
     }
   ]
 }

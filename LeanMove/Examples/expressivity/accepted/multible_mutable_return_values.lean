@@ -54,7 +54,7 @@ def field_y : Field := ⟨"y"⟩
 
 -- Point { x: u64, y: u64 }
 def point_entries : AssocMap Field BasicMoveType :=
-  insert (insert empty field_x .tint) field_y .tint
+  insert (insert empty field_x .u64) field_y .u64
 
 -- Variables
 def var_p : Var := ⟨"p"⟩
@@ -70,6 +70,10 @@ def s4 : Site := .site 4
 def s5 : Site := .site 5
 def s6 : Site := .site 6
 def s7 : Site := .site 7
+def s8 : Site := .site 8   -- integer literal 0 for first write
+def s9 : Site := .site 9   -- integer literal 0 for second write
+def s10 : Site := .site 10 -- integer literal 0 for third write
+def s11 : Site := .site 11 -- integer literal 0 for fourth write
 
 /-
   borrow(p: &mut Self.Point): &mut u64 * &mut u64
@@ -84,8 +88,8 @@ def borrow : FunDef := {
   params := [(var_p, .ref (.trecord point_entries) (.varRef var_p) .siteBorrowMut)]
   returnType := .basic .tunit  -- Simplified: MoveLight doesn't have tuple return types yet
   locals := [
-    { name := var_x, type := .ref .tint (.varRef var_p) .siteBorrowMut },
-    { name := var_y, type := .ref .tint (.varRef var_p) .siteBorrowMut }
+    { name := var_x, type := .ref .u64 (.varRef var_p) .siteBorrowMut },
+    { name := var_y, type := .ref .u64 (.varRef var_p) .siteBorrowMut }
   ]
   blocks := [
     { label := "l0"
@@ -119,8 +123,8 @@ def write : FunDef := {
   params := [(var_p, .ref (.trecord point_entries) (.varRef var_p) .siteBorrowMut)]
   returnType := .basic .tunit
   locals := [
-    { name := var_x, type := .ref .tint (.varRef var_p) .siteBorrowMut },
-    { name := var_y, type := .ref .tint (.varRef var_p) .siteBorrowMut }
+    { name := var_x, type := .ref .u64 (.varRef var_p) .siteBorrowMut },
+    { name := var_y, type := .ref .u64 (.varRef var_p) .siteBorrowMut }
   ]
   blocks := [
     { label := "l0"
@@ -135,13 +139,17 @@ def write : FunDef := {
         (var_y ::= s3) ;;
         -- Now write through the refs
         (letsite s4 ← copy var_x) ;;
-        Stmt.writeRef s4 (.site 10) ;;   -- *x = 0
+        (letsite s8 ← #0) ;;             -- s8 = 0 (integer literal)
+        Stmt.writeRef s4 s8 ;;           -- *x = 0
         (letsite s5 ← copy var_y) ;;
-        Stmt.writeRef s5 (.site 11) ;;   -- *y = 0
+        (letsite s9 ← #0) ;;             -- s9 = 0 (integer literal)
+        Stmt.writeRef s5 s9 ;;           -- *y = 0
         (letsite s6 ← copy var_x) ;;
-        Stmt.writeRef s6 (.site 12) ;;   -- *x = 0 (again)
+        (letsite s10 ← #0) ;;            -- s10 = 0 (integer literal)
+        Stmt.writeRef s6 s10 ;;          -- *x = 0 (again)
         (letsite s7 ← copy var_y) ;;
-        Stmt.writeRef s7 (.site 13)      -- *y = 0 (again)
+        (letsite s11 ← #0) ;;            -- s11 = 0 (integer literal)
+        Stmt.writeRef s7 s11             -- *y = 0 (again)
       terminator := ret []
     }
   ]

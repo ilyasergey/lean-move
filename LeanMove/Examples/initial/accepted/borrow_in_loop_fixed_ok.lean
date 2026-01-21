@@ -92,7 +92,7 @@ def s1 : Site := .site 1  -- move(r) for release
   }
 -/
 def foo : FunDef := {
-  params := [(var_x, .basic .tint)]  -- x is a parameter, starts valid
+  params := [(var_x, .basic .u64)]  -- x is a parameter, starts valid
   returnType := .basic .tunit
   locals := []  -- no locals needed for this simplified version
   blocks := [
@@ -112,7 +112,7 @@ def foo : FunDef := {
 -- Initial environment for foo: parameter x is valid, no locals
 def foo_initEnv : TypeEnv := {
   siteEnv := AssocMap.empty
-  varEnv := init_varEnv_from_params [(var_x, .basic .tint)]
+  varEnv := init_varEnv_from_params [(var_x, .basic .u64)]
   pathEnv := PathEnv.init
   funEnv := AssocMap.empty
 }
@@ -142,7 +142,7 @@ def r0 : Aref := .refid 0
 -- s0 holds an immutable reference to x
 -- PathEnv has edge: root --[var_x]--> r0
 def env_after_borrow : TypeEnv := {
-  siteEnv := AssocMap.insert AssocMap.empty s0 (.ref .tint r0 .siteBorrowImm)
+  siteEnv := AssocMap.insert AssocMap.empty s0 (.ref .u64 r0 .siteBorrowImm)
   varEnv := foo_initEnv.varEnv  -- unchanged
   pathEnv := {
     refs := [r0, .root]
@@ -172,11 +172,11 @@ Let's trace through the type checking to understand why this version works:
 
 **Entry environment (foo_initEnv):**
 - `siteEnv`: empty
-- `varEnv`: `{x -> (valid, .basic .tint, mutable)}`
+- `varEnv`: `{x -> (valid, .basic .u64, mutable)}`
 - `pathEnv`: `PathEnv.init` (only root with ε self-edge)
 
 **After `let s0 = &x` (borrowImm):**
-- `siteEnv`: `{s0 -> .ref .tint r0 .siteBorrowImm}`
+- `siteEnv`: `{s0 -> .ref .u64 r0 .siteBorrowImm}`
 - `pathEnv`: adds edge `root --[var_x]--> r0`
 - x is now borrowed
 
@@ -233,15 +233,15 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
                            (update_with_epsilon r0 r0 PathEnv.init)
 
     let env1 : TypeEnv := {
-      siteEnv := AssocMap.insert AssocMap.empty s0 (.ref .tint r0 .siteBorrowImm)
-      varEnv := init_varEnv_from_params [(var_x, .basic .tint)]
+      siteEnv := AssocMap.insert AssocMap.empty s0 (.ref .u64 r0 .siteBorrowImm)
+      varEnv := init_varEnv_from_params [(var_x, .basic .u64)]
       pathEnv := pe1
       funEnv := AssocMap.empty
     }
 
     let env2 : TypeEnv := {
       siteEnv := AssocMap.empty
-      varEnv := init_varEnv_from_params [(var_x, .basic .tint)]
+      varEnv := init_varEnv_from_params [(var_x, .basic .u64)]
       pathEnv := delete_ref_node pe1 r0
       funEnv := AssocMap.empty
     }
@@ -288,7 +288,7 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
       · -- letBind s0 (usage (borrowImm var_x))
         apply typecheck_stmt.let_bind
         apply typecheck_expr.usage
-        apply typecheck_usage.t_uborrowImm_val (τ := .tint) (ms := .mutable) (r := r0)
+        apply typecheck_usage.t_uborrowImm_val (τ := .u64) (ms := .mutable) (r := r0)
         · rfl  -- lookup varEnv var_x
         · rfl  -- notIn siteEnv s0
         · -- freshRef r0: r0 ∉ PathEnv.init.refs = [.root]
@@ -297,7 +297,7 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
           decide
         · rfl  -- env' = expected
       · -- release s0
-        apply typecheck_stmt.release (τ := .tint) (r := r0) (isBor := .siteBorrowImm)
+        apply typecheck_stmt.release (τ := .u64) (r := r0) (isBor := .siteBorrowImm)
         · rfl  -- lookup siteEnv s0
         · rfl  -- env' = expected
     · -- typecheck_terminator for jump "l0"

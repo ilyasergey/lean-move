@@ -25,16 +25,89 @@ import LeanMove.Lang.Macros
 
 Source: https://github.com/tnowacki/sui/blob/example-tests/external-crates/move/crates/bytecode-verifier-transactional-tests/tests/reference_safety/expressivity/simple_dangling.mvir
 
-This file contains five modules that all fail with WRITEREF_EXISTS_BORROW_ERROR.
-Each demonstrates a different way to create a dangling reference:
+This file contains modules that fail because they create dangling references.
+All are REJECTED by the type checker.
 
-1. field: Borrow a struct field, then reassign the struct
-2. nested_field: Borrow a nested field, then reassign intermediate struct
-3. vector: Borrow a vector element, then clear the vector
-4. simple_call: Pass mutable ref to function, modify original after
-5. field_call: Borrow field via function, modify struct after
+Original MVIR:
+```
+// simple tests that the verifier stops the creation of a dangling reference
 
-All are REJECTED by the type checker because they would create dangling references.
+//# publish
+module 0x2.field {
+    struct S has copy, drop { f: u64 }
+    t(s: &mut Self.S) {
+        let f: &u64;
+    label b0:
+        f = &copy(s).S::f;
+        *move(s) = S { f: 0 };
+        return;
+    }
+}
+
+//# publish
+module 0x3.nested_field {
+    struct S has copy, drop { f: u64 }
+    struct P has copy, drop { s: Self.S }
+    t(p: &mut Self.P) {
+        let s: &mut Self.S;
+        let f: &u64;
+    label b0:
+        s = &mut copy(p).P::s;
+        f = &copy(s).S::f;
+        *move(p) = P { s: S { f: 0 } };
+        return;
+    }
+}
+
+//# publish
+module 0x4.vector {
+    t(v: &mut vector<u64>) {
+        let r: &mut u64;
+    label b0:
+        r = vec_mut_borrow<u64>(copy(v), 0);
+        *move(v) = vec_pack_0<u64>();
+        return;
+    }
+}
+
+//# publish
+module 0x5.simple_call {
+    f(r: &mut u64): &u64 {
+    label b0:
+        return freeze(move(r));
+    }
+
+    t() {
+        let a: u64;
+        let m: &mut u64;
+        let i: &u64;
+    label b0:
+        a = 0;
+        m = &mut a;
+        i = Self.f(copy(m));
+        *copy(m) = 0;
+        return;
+    }
+}
+
+//# publish
+module 0x5.field_call {
+    struct S has copy, drop { f: u64 }
+
+    f(r: &mut Self.S): &u64 {
+    label b0:
+        return &move(r).S::f;
+    }
+
+    t(s: &mut Self.S) {
+        let f: &u64;
+    label b0:
+        f = Self.f(copy(s));
+        *copy(s) = S { f: 0 };
+        return;
+    }
+}
+```
 -/
 
 open LeanMove.Lang
@@ -47,20 +120,22 @@ namespace LeanMove.Examples.Expressivity.SimpleDangling
 
 -- Fields for structs
 def field_f : Field := ⟨"f"⟩
-def field_inner : Field := ⟨"inner"⟩
+def field_s : Field := ⟨"s"⟩
 
 -- S { f: u64 }
-def s_entries : AssocMap Field BasicMoveType := insert empty field_f .tint
+def s_entries : AssocMap Field BasicMoveType := insert empty field_f .u64
 
--- Outer { inner: S }
-def outer_entries : AssocMap Field BasicMoveType :=
-  insert empty field_inner (.trecord s_entries)
+-- P { s: S }
+def p_entries : AssocMap Field BasicMoveType :=
+  insert empty field_s (.trecord s_entries)
 
 -- Variables
 def var_s : Var := ⟨"s"⟩
-def var_outer : Var := ⟨"outer"⟩
+def var_p : Var := ⟨"p"⟩
 def var_f : Var := ⟨"f"⟩
-def var_inner : Var := ⟨"inner"⟩
+def var_a : Var := ⟨"a"⟩
+def var_m : Var := ⟨"m"⟩
+def var_i : Var := ⟨"i"⟩
 
 -- Sites
 def s0 : Site := .site 0
@@ -69,41 +144,41 @@ def s2 : Site := .site 2
 def s3 : Site := .site 3
 def s4 : Site := .site 4
 def s5 : Site := .site 5
+def s6 : Site := .site 6
+def s7 : Site := .site 7
+def s8 : Site := .site 8
+def s9 : Site := .site 9
 
 /-
   Module 1: field
-  Borrows a struct field, then reassigns the struct - creates dangling ref.
+  Takes mutable ref to struct, borrows field immutably, then writes through the ref.
 
-  t() {
-    let s: Self.S;
-    let f: &mut u64;
-  label l0:
-    s = S { f: 0 };
-    f = &mut copy(s).S::f;   // f points into s
-    s = S { f: 0 };          // ERROR: s is reassigned while f is live
-    return;
+  t(s: &mut Self.S) {
+      let f: &u64;
+  label b0:
+      f = &copy(s).S::f;       // immutable borrow of field
+      *move(s) = S { f: 0 };   // ERROR: writing while f borrows from s
+      return;
   }
 -/
-def field : FunDef := {
-  params := []
+def field_dangling : FunDef := {
+  params := [(var_s, .ref (.trecord s_entries) (.varRef var_s) .siteBorrowMut)]
   returnType := .basic .tunit
   locals := [
-    { name := var_s, type := .basic (.trecord s_entries) },
-    { name := var_f, type := .ref .tint (.varRef var_s) .siteBorrowMut }
+    { name := var_f, type := .ref .u64 (.varRef var_s) .siteBorrowImm }
   ]
   blocks := [
-    { label := "l0"
+    { label := "b0"
       body :=
-        -- Pack s = S { f: 0 }
-        Stmt.letBind s0 (Expr.pack "S" [(field_f, .site 10)]) ;;
-        (var_s ::= s0) ;;                -- s = packed value
-        -- f = &mut s.f
-        (letsite s1 ← &mut var_s) ;;     -- s1 = &mut s
-        Stmt.letBind s2 (Expr.borrowMutField s1 "S" field_f) ;; -- s2 = &mut s1.f
-        (var_f ::= s2) ;;                -- f = s2 (f points into s)
-        -- s = S { f: 0 } -- THIS SHOULD FAIL: s is borrowed
-        Stmt.letBind s3 (Expr.pack "S" [(field_f, .site 11)]) ;;
-        (var_s ::= s3)                   -- ERROR: reassigning while f is live
+        -- f = &copy(s).S::f (immutable borrow of field)
+        (letsite s0 ← copy var_s) ;;
+        Stmt.letBind s1 (Expr.borrowField s0 (.trecord s_entries) field_f) ;;
+        (var_f ::= s1) ;;
+        -- *move(s) = S { f: 0 } -- ERROR: s is borrowed via f
+        (letsite s2 ← move var_s) ;;
+        (letsite s3 ← #0) ;;
+        Stmt.letBind s4 (Expr.pack "S" [(field_f, s3)]) ;;
+        Stmt.writeRef s2 s4
       terminator := ret []
     }
   ]
@@ -111,97 +186,147 @@ def field : FunDef := {
 
 /-
   Module 2: nested_field
-  Borrows a deeply nested field, then reassigns intermediate struct.
+  Takes mutable ref to P, borrows nested field, then writes through outer ref.
 
-  t() {
-    let outer: Self.Outer;
-    let f: &mut u64;
-  label l0:
-    outer = Outer { inner: S { f: 0 } };
-    f = &mut copy(outer).Outer::inner.S::f;
-    outer = Outer { inner: S { f: 0 } };  // ERROR: outer borrowed via f
-    return;
+  t(p: &mut Self.P) {
+      let s: &mut Self.S;
+      let f: &u64;
+  label b0:
+      s = &mut copy(p).P::s;
+      f = &copy(s).S::f;
+      *move(p) = P { s: S { f: 0 } };  // ERROR: p borrowed via s and f
+      return;
   }
 -/
-def nested_field : FunDef := {
+def nested_field_dangling : FunDef := {
+  params := [(var_p, .ref (.trecord p_entries) (.varRef var_p) .siteBorrowMut)]
+  returnType := .basic .tunit
+  locals := [
+    { name := var_s, type := .ref (.trecord s_entries) (.varRef var_p) .siteBorrowMut },
+    { name := var_f, type := .ref .u64 (.varRef var_p) .siteBorrowImm }
+  ]
+  blocks := [
+    { label := "b0"
+      body :=
+        -- s = &mut copy(p).P::s
+        (letsite s0 ← copy var_p) ;;
+        Stmt.letBind s1 (Expr.borrowMutField s0 "P" field_s) ;;
+        (var_s ::= s1) ;;
+        -- f = &copy(s).S::f
+        (letsite s2 ← copy var_s) ;;
+        Stmt.letBind s3 (Expr.borrowField s2 (.trecord s_entries) field_f) ;;
+        (var_f ::= s3) ;;
+        -- *move(p) = P { s: S { f: 0 } } -- ERROR: p is borrowed
+        (letsite s4 ← move var_p) ;;
+        (letsite s5 ← #0) ;;
+        Stmt.letBind s6 (Expr.pack "S" [(field_f, s5)]) ;;
+        Stmt.letBind s7 (Expr.pack "P" [(field_s, s6)]) ;;
+        Stmt.writeRef s4 s7
+      terminator := ret []
+    }
+  ]
+}
+
+-- Module 3: vector - Skipped (MoveLight doesn't have native vector support)
+
+/-
+  Module 4: simple_call
+  Creates local, borrows it, passes to function returning immutable ref,
+  then tries to write through the mutable ref.
+
+  t() {
+      let a: u64;
+      let m: &mut u64;
+      let i: &u64;
+  label b0:
+      a = 0;
+      m = &mut a;
+      i = Self.f(copy(m));      // f returns freeze(move(r)), creating imm ref
+      *copy(m) = 0;             // ERROR: can't write while i exists
+      return;
+  }
+
+  We inline the call to f() as: i = freeze(copy(m))
+-/
+def simple_call_dangling : FunDef := {
   params := []
   returnType := .basic .tunit
   locals := [
-    { name := var_outer, type := .basic (.trecord outer_entries) },
-    { name := var_f, type := .ref .tint (.varRef var_outer) .siteBorrowMut }
+    { name := var_a, type := .basic .u64 },
+    { name := var_m, type := .ref .u64 (.varRef var_a) .siteBorrowMut },
+    { name := var_i, type := .ref .u64 (.varRef var_a) .siteBorrowImm }
   ]
   blocks := [
-    { label := "l0"
+    { label := "b0"
       body :=
-        -- Pack inner S
-        Stmt.letBind s0 (Expr.pack "S" [(field_f, .site 10)]) ;;
-        -- Pack outer with inner
-        Stmt.letBind s1 (Expr.pack "Outer" [(field_inner, s0)]) ;;
-        (var_outer ::= s1) ;;            -- outer = Outer { inner: S { f: 0 } }
-        -- Navigate and borrow f
-        (letsite s2 ← &mut var_outer) ;; -- s2 = &mut outer
-        Stmt.letBind s3 (Expr.borrowMutField s2 "Outer" field_inner) ;; -- s3 = &mut s2.inner
-        Stmt.letBind s4 (Expr.borrowMutField s3 "S" field_f) ;; -- s4 = &mut s3.f
-        (var_f ::= s4) ;;                -- f = s4 (f points deep into outer)
-        -- Reassign outer - ERROR: borrowed through f
-        Stmt.letBind (.site 20) (Expr.pack "S" [(field_f, .site 11)]) ;;
-        Stmt.letBind (.site 21) (Expr.pack "Outer" [(field_inner, .site 20)]) ;;
-        (var_outer ::= (.site 21))       -- ERROR: reassigning while f is live
+        -- a = 0
+        (letsite s0 ← #0) ;;
+        (var_a ::= s0) ;;
+        -- m = &mut a
+        (letsite s1 ← &mut var_a) ;;
+        (var_m ::= s1) ;;
+        -- i = freeze(copy(m)) (inlined call to f)
+        (letsite s2 ← copy var_m) ;;
+        Stmt.letBind s3 (Expr.freeze s2) ;;
+        (var_i ::= s3) ;;
+        -- *copy(m) = 0 -- ERROR: m has immutable alias i
+        (letsite s4 ← copy var_m) ;;
+        (letsite s5 ← #0) ;;
+        Stmt.writeRef s4 s5
       terminator := ret []
     }
   ]
 }
 
 /-
-  Module 3: vector (simplified - vectors not directly supported in MoveLight)
-  Borrows a vector element, then clears the vector.
+  Module 5: field_call
+  Takes mutable ref to struct, calls function that borrows field immutably,
+  then tries to write through the original ref.
 
-  For MoveLight, we simulate this with a struct containing multiple u64 fields.
--/
--- Skipped: MoveLight doesn't have native vector support
+  t(s: &mut Self.S) {
+      let f: &u64;
+  label b0:
+      f = Self.f(copy(s));      // f returns &move(r).S::f
+      *copy(s) = S { f: 0 };    // ERROR: s borrowed via f
+      return;
+  }
 
-/-
-  Module 4: simple_call (simplified)
-  Passes mutable reference to a function that returns immutable reference,
-  then tries to modify the original.
+  We inline the call as: f = &copy(s).S::f
 -/
-def simple_call : FunDef := {
-  params := []
+def field_call_dangling : FunDef := {
+  params := [(var_s, .ref (.trecord s_entries) (.varRef var_s) .siteBorrowMut)]
   returnType := .basic .tunit
   locals := [
-    { name := var_s, type := .basic (.trecord s_entries) },
-    { name := var_f, type := .ref .tint (.varRef var_s) .siteBorrowMut }
+    { name := var_f, type := .ref .u64 (.varRef var_s) .siteBorrowImm }
   ]
   blocks := [
-    { label := "l0"
+    { label := "b0"
       body :=
-        -- s = S { f: 0 }
-        Stmt.letBind s0 (Expr.pack "S" [(field_f, .site 10)]) ;;
-        (var_s ::= s0) ;;
-        -- f = &mut s.f
-        (letsite s1 ← &mut var_s) ;;
-        Stmt.letBind s2 (Expr.borrowMutField s1 "S" field_f) ;;
-        (var_f ::= s2) ;;
-        -- Freeze to get immutable reference
-        (letsite s3 ← copy var_f) ;;
-        Stmt.letBind s4 (Expr.freeze s3) ;; -- s4 = immutable ref
-        -- Now try to write through the original mutable ref - should fail
-        -- because there's an immutable alias
-        (letsite s5 ← copy var_f) ;;
-        Stmt.writeRef s5 (.site 11)      -- ERROR: writing with imm alias
+        -- f = &copy(s).S::f (inlined call)
+        (letsite s0 ← copy var_s) ;;
+        Stmt.letBind s1 (Expr.borrowField s0 (.trecord s_entries) field_f) ;;
+        (var_f ::= s1) ;;
+        -- *copy(s) = S { f: 0 } -- ERROR: s is borrowed via f
+        (letsite s2 ← copy var_s) ;;
+        (letsite s3 ← #0) ;;
+        Stmt.letBind s4 (Expr.pack "S" [(field_f, s3)]) ;;
+        Stmt.writeRef s2 s4
       terminator := ret []
     }
   ]
 }
 
 -- Theorems: all functions are ILL-typed (rejected by type checker)
-theorem field_illtyped : ¬ (∃ lenv, typecheck_fun field lenv) := by
+theorem field_dangling_illtyped : ¬ (∃ lenv, typecheck_fun field_dangling lenv) := by
   sorry
 
-theorem nested_field_illtyped : ¬ (∃ lenv, typecheck_fun nested_field lenv) := by
+theorem nested_field_dangling_illtyped : ¬ (∃ lenv, typecheck_fun nested_field_dangling lenv) := by
   sorry
 
-theorem simple_call_illtyped : ¬ (∃ lenv, typecheck_fun simple_call lenv) := by
+theorem simple_call_dangling_illtyped : ¬ (∃ lenv, typecheck_fun simple_call_dangling lenv) := by
+  sorry
+
+theorem field_call_dangling_illtyped : ¬ (∃ lenv, typecheck_fun field_call_dangling lenv) := by
   sorry
 
 end LeanMove.Examples.Expressivity.SimpleDangling
