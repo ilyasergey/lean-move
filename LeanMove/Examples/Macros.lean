@@ -45,6 +45,27 @@ macro "letsite" a:term " ← " "move" x:term : term =>
 -- Jump: jump "label"
 macro "jump" l:term : term => `(Stmt.jump $l)
 
+-- Branch: branch cond "l1" "l2"
+macro "branch" cond:term l1:term l2:term : term => `(Stmt.branch $cond $l1 $l2)
+
+-- Write reference: *a ::= b (write to reference)
+-- Using *::= to avoid conflict with variable assignment
+macro "*" a:term " ::= " b:term : term => `(Stmt.writeRef $a $b)
+
+-- Return: ret [sites]
+macro "ret" sites:term : term => `(Stmt.ret $sites)
+
+-- Release: release s
+macro "release" s:term : term => `(Stmt.release $s)
+
+-- Let binding with read reference: letsite a ← *b
+macro "letsite" a:term " ← " "*" b:term : term =>
+  `(Stmt.letBind $a (Expr.readRef $b))
+
+-- Let binding with freeze: letsite a ← freeze b
+macro "letsite" a:term " ← " "freeze" b:term : term =>
+  `(Stmt.letBind $a (Expr.freeze $b))
+
 /-!
 ## Notes on macros
 
@@ -55,13 +76,17 @@ The following macros work reliably:
 - `letsite s ← &mut x` for mutable borrow
 - `letsite s ← copy x` for copy
 - `letsite s ← move x` for move
-- `jump "label"` for jumps
+- `letsite s ← *x` for reading reference (dereference)
+- `letsite s ← freeze x` for freezing a reference
+- `jump "label"` for unconditional jump
+- `branch cond "l1" "l2"` for conditional branch
+- `* a ::= b` for write through reference
+- `ret [s1, s2]` for return
+- `release s` for releasing references
 
 For other statement forms, use dot notation directly:
-- `.ret [s1, s2]` for return
-- `.call [results] "fname" [args]` for function calls
-- `.release s` for releasing references
-- `.letBind s (.pack "T" [(f, a)])` for packing structs
-- `.letBind s (.readRef src)` for reading references
-- `.letBind s (.borrowField src bt f)` for borrowing fields
+- `Stmt.call [results] "fname" [args]` for function calls
+- `Stmt.letBind s (Expr.pack "T" [(f, a)])` for packing structs
+- `Stmt.letBind s (Expr.borrowField src bt f)` for borrowing fields
+- `Stmt.letBind s (Expr.borrowMutField src name f)` for mutable field borrow
 -/

@@ -19,3 +19,15 @@ require ssreflect from
 @[default_target]
 lean_lib «LeanMove» where
   -- add any library configuration options here
+
+-- Build target for expressivity examples
+-- Build with: lake build expressivity
+lean_lib «expressivity» where
+  srcDir := "LeanMove/Examples/expressivity"
+  roots := #[`accepted.alias_write_after_join, `accepted.alias_writes,
+             `accepted.extension_after_call, `accepted.extension_writes_after_join,
+             `accepted.imm_borrow_after_mut, `accepted.multible_mutable_return_values,
+             `accepted.mutable_borrows_are_not_unique, `accepted.subtree_writes_release,
+             `rejected.simple_dangling, `rejected.imm_borrow_after_mut_call_invalid,
+             `rejected.imm_borrow_after_mut_fields_invalid,
+             `rejected.mutable_borrows_not_unique_calls_invalid]
