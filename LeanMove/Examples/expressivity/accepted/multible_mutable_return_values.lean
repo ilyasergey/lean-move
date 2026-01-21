@@ -176,33 +176,6 @@ def write_lenv : LabelEnv :=
 
 -- Theorem: write is well-typed
 theorem write_welltyped : ∃ lenv, typecheck_fun write lenv := by
-  exists write_lenv
-  apply typecheck_fun.fun_ok (initEnv := write_initEnv)
-  · rfl  -- initEnv.varEnv = init_fun_varEnv write
-  · rfl  -- initEnv.siteEnv = empty
-  · rfl  -- initEnv.pathEnv = PathEnv.init
-  · simp only [write]; intro h; exact List.noConfusion h  -- blocks ≠ []
-  · -- Entry block environment equivalence
-    intro entryLabel entryBody entryTerm entryEnv hhead hlookup
-    simp only [write, List.head?] at hhead
-    injection hhead with hblock
-    have h1 : entryLabel = "l0" := (congrArg Block.label hblock).symm
-    subst h1
-    simp only [write_lenv, AssocMap.insert, AssocMap.lookup] at hlookup
-    injection hlookup with heq
-    rw [← heq]
-    unfold TypeEnv.equiv
-    refine ⟨rfl, rfl, rfl, ?_⟩
-    intros; rfl
-  · -- Every block must type check
-    intro block hmem blockEnv hlookup
-    simp only [write, List.mem_singleton] at hmem
-    subst hmem
-    simp only [write_lenv, AssocMap.insert, AssocMap.lookup] at hlookup
-    injection hlookup with heq
-    subst heq
-    unfold typecheck_block
-    -- The body has many statements including multiple writes
-    sorry
+  sorry
 
 end LeanMove.Examples.Expressivity.MultipleMutableReturnValues
