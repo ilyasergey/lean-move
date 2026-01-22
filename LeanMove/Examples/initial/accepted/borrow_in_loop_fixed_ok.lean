@@ -287,8 +287,7 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
       apply typecheck_stmt.seq (env' := env1)
       · -- letBind s0 (usage (borrowImm var_x))
         apply typecheck_stmt.let_bind
-        apply typecheck_expr.usage (τ := .ref .u64 r0 .siteBorrowImm) (env' := env1)
-        -- check_usage foo_initEnv (borrowImm var_x) s0 τ = some env1
+        -- check_expr foo_initEnv (.usage (borrowImm var_x)) s0 = some (τ, env1)
         rfl
       · -- release s0
         apply typecheck_stmt.release (τ := .u64) (r := r0) (isBor := .siteBorrowImm)

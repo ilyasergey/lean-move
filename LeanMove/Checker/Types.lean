@@ -198,21 +198,16 @@ def freshRef (r: Aref) (pe: PathEnv) := r ∉ pe.refs
 /-- Boolean version of freshRef for use in algorithmic type checking -/
 def freshRefBool (r: Aref) (pe: PathEnv) : Bool := !(pe.refs.contains r)
 
-theorem freshRef_iff_freshRefBool (r : Aref) (pe : PathEnv) :
-    freshRef r pe ↔ freshRefBool r pe = true := by
-  unfold freshRef freshRefBool
-  simp only [Bool.not_eq_true', List.contains_eq_any_beq]
-  constructor
-  · intro hNotIn
-    rw [List.any_eq_false]
-    intro x hx hbeq
-    have heq : r = x := beq_iff_eq.mp hbeq
-    exact hNotIn (heq ▸ hx)
-  · intro hAny hIn
-    rw [List.any_eq_false] at hAny
-    have := hAny r hIn
-    have hbeq : (r == r) = true := beq_self_eq_true r
-    exact this hbeq
+/-- Extract the refid from an Aref, returning 0 for non-refid Arefs -/
+def getRefId (r : Aref) : Nat :=
+  match r with
+  | .refid n => n
+  | _ => 0
+
+/-- Compute a fresh Aref by finding the maximum refid in the PathEnv and adding 1 -/
+def nextFreshRef (pe : PathEnv) : Aref :=
+  let maxId := pe.refs.foldl (fun acc r => max acc (getRefId r)) 0
+  .refid (maxId + 1)
 
 /- ---------------------------------------------------- -/
 /-       Function Signatures                            -/
@@ -282,103 +277,5 @@ structure WellFormedEnv (typeEnv : TypeEnv) where
   rootPresent : Aref.root ∈ typeEnv.pathEnv.refs
   -- TODO: say that for all pairs in pathEnv there is either
   -- a variable in varEnv or a site in siteEnv
-
-/- ---------------------------------------------------- -/
-/-       Lemmas for PathEnv operations                   -/
-/- ---------------------------------------------------- -/
-
-/--
-  When we delete a reference `r` from a PathEnv,
-  the resulting refs list filters out `r`.
--/
-lemma delete_ref_node_refs (pe : PathEnv) (r : Aref) :
-    (delete_ref_node pe r).refs = List.filter (fun r' => r' ≠ r) pe.refs := by
-  rfl
-
-/--
-  When we delete a reference `r`, all paths involving `r` become empty.
--/
-lemma delete_ref_node_paths_involving_r (pe : PathEnv) (r : Aref) (u v : Aref) :
-    u = r ∨ v = r → (delete_ref_node pe r).paths (u, v) = Regex.empty := by
-  move=> h
-  simp only [delete_ref_node]
-  scase: h => hr
-  · simp [hr]
-  · simp [hr]
-
-/--
-  When we delete a reference `r`, paths not involving `r` are unchanged.
--/
-lemma delete_ref_node_paths_not_involving_r (pe : PathEnv) (r : Aref) (u v : Aref) :
-    u ≠ r → v ≠ r → (delete_ref_node pe r).paths (u, v) = pe.paths (u, v) := by
-  move=> hu hv
-  simp only [delete_ref_node]
-  simp [hu, hv]
-
-/--
-  Deleting a reference `r ≠ .root` from a PathEnv with refs = [r, .root]
-  gives refs = [.root].
--/
-lemma delete_ref_node_restores_init_refs (pe : PathEnv) (r : Aref) (hr : r ≠ .root)
-    (hrefs : pe.refs = [r, .root]) :
-    (delete_ref_node pe r).refs = [.root] := by
-  simp only [delete_ref_node, hrefs, List.filter]
-  have h : Aref.root ≠ r := fun h => hr h.symm
-  simp [h]
-
-/-!
-### PathEnv Equivalence After delete_ref_node
-
-The lemma `delete_ref_node PathEnv.init r = PathEnv.init` is **NOT provable**
-for syntactic equality because:
-
-- `PathEnv.init.paths (r, r) = Regex.ε` for ANY `r` (the function returns ε when u = v)
-- `(delete_ref_node PathEnv.init r).paths (r, r) = Regex.empty` (paths involving r are emptied)
-
-These differ syntactically even though `r ∉ PathEnv.init.refs`.
-
-**Solution implemented:** We weakened `TypeEnv.equiv` to only compare paths between
-references that are in the refs list. This is semantically correct because paths
-involving non-live references are irrelevant for borrow checking.
-
-With this weaker equivalence, `delete_ref_node` on a PathEnv that was extended
-from `PathEnv.init` correctly produces an equivalent PathEnv.
--/
-
-/--
-  For references u, v that are both in PathEnv.init.refs (i.e., both equal .root),
-  delete_ref_node preserves the path value when r ≠ .root.
--/
-lemma delete_ref_node_init_paths_between_roots (r : Aref) (hr : r ≠ .root) :
-    (delete_ref_node PathEnv.init r).paths (.root, .root) = PathEnv.init.paths (.root, .root) := by
-  simp only [delete_ref_node, PathEnv.init]
-  have h1 : ¬(Aref.root = r) := fun h => hr h.symm
-  simp [h1]
-
-/--
-  After deleting a fresh reference r ≠ .root from PathEnv.init,
-  the refs list is [.root] (same as PathEnv.init.refs).
--/
-lemma delete_ref_node_init_refs (r : Aref) (hr : r ≠ .root) :
-    (delete_ref_node PathEnv.init r).refs = PathEnv.init.refs := by
-  simp only [delete_ref_node, PathEnv.init, List.filter]
-  have h : Aref.root ≠ r := fun h => hr h.symm
-  simp [h]
-
-/--
-  Key lemma: For any PathEnv `pe`, after deleting `r`, the paths between
-  remaining refs match the original paths. This is because `delete_ref_node`
-  only modifies paths involving `r`, and refs remaining in the list are
-  guaranteed to be different from `r`.
--/
-lemma delete_ref_node_paths_between_remaining (pe : PathEnv) (r : Aref)
-    (u v : Aref) (hu : u ∈ (delete_ref_node pe r).refs) (hv : v ∈ (delete_ref_node pe r).refs) :
-    (delete_ref_node pe r).paths (u, v) = pe.paths (u, v) := by
-  -- u and v are in the filtered refs, so u ≠ r and v ≠ r
-  simp only [delete_ref_node_refs] at hu hv
-  simp only [List.mem_filter, decide_eq_true_eq] at hu hv
-  have hur : u ≠ r := hu.2
-  have hvr : v ≠ r := hv.2
-  exact delete_ref_node_paths_not_involving_r pe r u v hur hvr
 
 end LeanMove.Checker

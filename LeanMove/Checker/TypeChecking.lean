@@ -211,6 +211,7 @@ def check_usage (env : TypeEnv) (u : Usage) (a : Site) (τ : MoveType) : Option 
 /- Typing relations for expressions -/
 /- ---------------------------------------------------- -/
 
+
 -- function to take a binop and types of its arguments and return the type of the result
 def binop_type (bop : Binop) (τ1 τ2 : BasicMoveType) : Option BasicMoveType :=
   match (bop, τ1, τ2) with
@@ -370,6 +371,135 @@ inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType �
      -- Environment update: remove all field sites, add b with record type
      env' = {env with siteEnv := insert (deleteAll env.siteEnv (fields.map Prod.snd)) b (.basic (.trecord fentries))} →
      typecheck_expr env (Expr.pack recName fields) env' b (.basic (.trecord fentries))
+
+
+/--
+Algorithmic version of typecheck_expr.
+
+Given an input environment `env`, an expression `e`, and a destination site `c`,
+returns `some (τ, env')` where τ is the type and env' is the updated environment,
+or `none` if the expression doesn't type check.
+
+This function computes both the output type and the resulting environment.
+-/
+def check_expr (env : TypeEnv) (e : Expr) (c : Site) : Option (MoveType × TypeEnv) :=
+  match e with
+  | .usage u =>
+    -- Try each possible type form that check_usage could produce
+    -- For move/copy/borrow, we need to infer the type from the variable lookup
+    match u with
+    | .move x =>
+      match AssocMap.lookup env.varEnv x with
+      | some (.validVar, τ, ms) =>
+        if ¬notIn env.siteEnv c then none
+        else if ¬not_borrowed_bool x env then none
+        else some (τ, { env with varEnv  := update env.varEnv x (.invalidVar, τ, ms)
+                                 siteEnv := insert env.siteEnv c τ })
+      | _ => none
+    | .copy x =>
+      match AssocMap.lookup env.varEnv x with
+      | some (.validVar, .basic bt, _) =>
+        if ¬notIn env.siteEnv c then none
+        else some (.basic bt, { env with siteEnv := insert env.siteEnv c (.basic bt) })
+      | some (.validVar, .ref innerτ s isBor, _) =>
+        if ¬notIn env.siteEnv c then none
+        else
+          let t := nextFreshRef env.pathEnv
+          some (.ref innerτ t isBor, { env with siteEnv := insert env.siteEnv c (.ref innerτ t isBor)
+                                                pathEnv := update_with_epsilon s t env.pathEnv })
+      | _ => none
+    | .borrowImm x =>
+      match AssocMap.lookup env.varEnv x with
+      | some (.validVar, .basic bt, _) =>
+        if ¬notIn env.siteEnv c then none
+        else
+          let r := nextFreshRef env.pathEnv
+          some (.ref bt r .siteBorrowImm, { env with siteEnv := insert env.siteEnv c (.ref bt r .siteBorrowImm)
+                                                     pathEnv := update_with_epsilon r r env.pathEnv |>
+                                                                update_with_extension .root r [.root_to_var x] })
+      | _ => none
+    | .borrowMut x =>
+      match AssocMap.lookup env.varEnv x with
+      | some (.validVar, .basic bt, .mutable) =>
+        if ¬notIn env.siteEnv c then none
+        else
+          let r := nextFreshRef env.pathEnv
+          some (.ref bt r .siteBorrowMut, { env with siteEnv := insert env.siteEnv c (.ref bt r .siteBorrowMut)
+                                                     pathEnv := update_with_epsilon r r env.pathEnv |>
+                                                                update_with_extension .root r [.root_to_var x] })
+      | _ => none
+
+  | .intLit _ =>
+    if ¬notIn env.siteEnv c then none
+    else some (.basic .u64, { env with siteEnv := insert env.siteEnv c (.basic .u64) })
+
+  | .borrowField a bt f =>
+    match AssocMap.lookup env.siteEnv a with
+    | some (.ref bt' s isBor) =>
+      if ¬(BasicMoveType.beq bt bt') then none
+      else match bt with
+      | .trecord fentries =>
+        match lookup fentries f with
+        | some btf =>
+          if ¬notIn env.siteEnv c then none
+          else
+            let rf := nextFreshRef env.pathEnv
+            some (.ref btf rf isBor, { env with siteEnv := insert (delete env.siteEnv a) c (.ref btf rf isBor)
+                                                pathEnv := update_with_extension s rf [.field f] env.pathEnv })
+        | none => none
+      | _ => none
+    | _ => none
+
+  | .borrowMutField a bt f =>
+    match AssocMap.lookup env.siteEnv a with
+    | some (.ref bt' s .siteBorrowMut) =>
+      if ¬(BasicMoveType.beq bt bt') then none
+      else match bt with
+      | .trecord fentries =>
+        match lookup fentries f with
+        | some btf =>
+          if ¬notIn env.siteEnv c then none
+          else
+            let rf := nextFreshRef env.pathEnv
+            some (.ref btf rf .siteBorrowMut, { env with siteEnv := insert (delete env.siteEnv a) c (.ref btf rf .siteBorrowMut)
+                                                         pathEnv := update_with_extension s rf [.field f] env.pathEnv })
+        | none => none
+      | _ => none
+    | _ => none
+
+  | .binop bop a b =>
+    match AssocMap.lookup env.siteEnv a, AssocMap.lookup env.siteEnv b with
+    | some (.basic bt1), some (.basic bt2) =>
+      match binop_type bop bt1 bt2 with
+      | some bt3 =>
+        if ¬notIn env.siteEnv c then none
+        else some (.basic bt3, { env with siteEnv := insert (delete (delete env.siteEnv a) b) c (.basic bt3) })
+      | none => none
+    | _, _ => none
+
+  | .readRef a =>
+    match AssocMap.lookup env.siteEnv a with
+    | some (.ref τ r _) =>
+      if ¬notIn env.siteEnv c then none
+      else some (.basic τ, { env with siteEnv := insert (delete env.siteEnv a) c (.basic τ)
+                                      pathEnv := delete_ref_node env.pathEnv r })
+    | _ => none
+
+  | .freeze a =>
+    match AssocMap.lookup env.siteEnv a with
+    | some (.ref τ r _) =>
+      if ¬notIn env.siteEnv c then none
+      else
+        let r' := nextFreshRef env.pathEnv
+        some (.ref τ r' .siteBorrowImm, { env with siteEnv := insert (delete env.siteEnv a) c (.ref τ r' .siteBorrowImm)
+                                                   pathEnv := consume_ref_transfer env.pathEnv r r' })
+    | _ => none
+
+  | .pack _ _ =>
+    -- Pack expressions require complex field type checking that is handled
+    -- by the relational typecheck_expr.pack constructor.
+    -- The algorithmic version conservatively returns none.
+    none
 
 -- Helper for unpack: adds field sites to siteEnv based on record field types
 def addFieldSites (fentries : AssocMap Field BasicMoveType) (se : AssocMap Site MoveType) (fields : List (Field × Site)) : AssocMap Site MoveType :=
