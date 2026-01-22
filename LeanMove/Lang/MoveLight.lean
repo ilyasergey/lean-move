@@ -74,24 +74,23 @@ inductive Expr where
   | freeze : Site → Expr
 deriving Repr, Inhabited, Hashable
 
--- Statements in a-normal form (no control flow - that's in Terminator)
+-- Statements in a-normal form with continuation-passing style
+-- Terminal statements (skip, jump, branch, ret, abort) have no continuation
+-- Non-terminal statements take their continuation as the last argument
 inductive Stmt where
-  | skip : Stmt
-  | letBind : Site → Expr → Stmt  -- let a = e
-  | unpack : List (Field × Site) → Site → Stmt  -- T { fi: ai, ...} = b
-  | call : List Site → Id → List Site → Stmt  -- let (a1, ..., an) = f(b1, ..., bm)
-  | assign : Var → Site → Stmt  -- x = a
-  | writeRef : Site → Site → Stmt  -- *a = b
-  | release : Site → Stmt  -- release(a)
-  | seq : Stmt → Stmt → Stmt  -- s1; s2 (sequential composition)
-deriving Repr, Inhabited
-
--- Block terminators (control flow) - every block must end with exactly one
-inductive Terminator where
-  | jump : Label → Terminator  -- goto L
-  | branch : Site → Label → Label → Terminator  -- if (a) goto L1 else goto L2
-  | ret : List Site → Terminator  -- return (a1, ..., an)
-  | abort : Site → Terminator  -- abort a
+  -- Terminal statements (no continuation)
+  | skip : Stmt                                    -- no-op (terminal)
+  | jump : Label → Stmt                            -- goto L
+  | branch : Site → Label → Label → Stmt           -- if (a) goto L1 else goto L2
+  | ret : List Site → Stmt                         -- return (a1, ..., an)
+  | abort : Site → Stmt                            -- abort a
+  -- Non-terminal statements (take continuation)
+  | letBind : Site → Expr → Stmt → Stmt            -- let a = e; cont
+  | unpack : List (Field × Site) → Site → Stmt → Stmt  -- T { fi: ai, ...} = b; cont
+  | call : List Site → Id → List Site → Stmt → Stmt    -- let (a1, ..., an) = f(b1, ..., bm); cont
+  | assign : Var → Site → Stmt → Stmt              -- x = a; cont
+  | writeRef : Site → Site → Stmt → Stmt           -- *a = b; cont
+  | release : Site → Stmt → Stmt                   -- release(a); cont
 deriving Repr, Inhabited
 
 -- Local variable declaration
@@ -100,11 +99,10 @@ structure LocalVar where
   type : MoveType
 deriving Repr, Inhabited, Hashable
 
--- A labeled block: label, body statements, and terminator
+-- A labeled block: label and body (which ends with a terminal statement)
 structure Block where
   label : Label
   body : Stmt
-  terminator : Terminator
 deriving Repr, Inhabited
 
 -- Function definition

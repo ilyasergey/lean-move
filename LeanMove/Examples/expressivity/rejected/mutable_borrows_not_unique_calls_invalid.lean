@@ -181,8 +181,8 @@ def call_and_write_invalid : FunDef := {
         -- *copy(f) = 0 -- ERROR: relationship with call unknown
         (letsite s6 ← copy var_f) ;;
         (letsite s7 ← #0) ;;
-        Stmt.writeRef s6 s7
-      terminator := ret []
+        Stmt.writeRef s6 s7 ;;
+        Stmt.ret []
     }
   ]
 }

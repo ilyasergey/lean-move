@@ -204,28 +204,39 @@ def no_locals_borrowed (env: TypeEnv) : Prop :=
   ∀ (x : Var) (v : IsValid × MoveType × Mut), (x, v) ∈ env.varEnv.entries → not_borrowed x env
 
 /--
-Type checking relation for statements (no control flow - that's in Terminator).
+Type checking relation for statements in continuation-passing style.
 
-Judgment form: `⟨env⟩ ⊢ s ⤳ ⟨env'⟩`
+Judgment form: `Λ; ⟨Γ⟩ ⊢ s : τᵣ`
 
-This relation handles all statement forms that transform the environment:
-- **skip**: No-op, environment unchanged
-- **let a = e**: Bind expression result to site (delegates to typecheck_expr)
-- **x = a**: Assign site value to variable, invalidating previous variable binding
-- ***a = b**: Write through mutable reference, consuming both sites
-- **let (a1, ..., an) = f(b1, ..., bm)**: Function call with path updates
-- **T { f1: a1, ..., fn: an } = b**: Unpack record into field sites
-- **release(a)**: Explicitly release a reference
-- **s1; s2**: Sequential composition - threads environment from s1 to s2
+This relation handles all statement forms, including both:
+- **Non-terminal statements** that transform the environment and continue to their continuation
+- **Terminal statements** (skip, jump, branch, ret, abort) that end execution
 
-Control flow (jump, branch, ret, abort) is handled separately by typecheck_terminator.
+Non-terminal statements take a continuation as their last argument and type check
+by constructing the new environment and passing it to the continuation's type check.
+
+Terminal statements:
+- **skip**: No-op terminal (just ends)
+- **jump L**: Unconditional jump to label L
+- **branch a L1 L2**: Conditional branch based on boolean site a
+- **ret [a1, ..., an]**: Return from function with values
+- **abort a**: Abort execution (error path)
+
+Non-terminal statements:
+- **let a = e; cont**: Bind expression result to site, continue with updated env
+- **x = a; cont**: Assign site value to variable, continue
+- ***a = b; cont**: Write through mutable reference, continue
+- **let (a1, ..., an) = f(b1, ..., bm); cont**: Function call, continue
+- **T { f1: a1, ..., fn: an } = b; cont**: Unpack record, continue
+- **release(a); cont**: Explicitly release a reference, continue
 
 Components:
+- `lenv`: Label environment mapping labels to expected entry TypeEnvs
 - `env`: Input type environment before executing the statement
 - `Stmt`: The statement being type checked
-- `env'`: Output type environment after execution
+- `retType`: The function's return type (for ret checking)
 
-Key environment transformations:
+Key environment transformations (passed to continuations):
 ⋆ **varEnv updates**: Assignments update variable bindings; moves invalidate variables
 ⋆ **siteEnv updates**: Sites are consumed by operations and new sites are produced
 ⋆ **PathEnv updates**:
@@ -235,298 +246,252 @@ Key environment transformations:
   - Write operations check for dangling reference prevention (no outbound edges)
 ⋆ **Reference lifecycle**: Abstract references are allocated, tracked, and garbage collected
 
-Function call path update rules (via call_connect_inputs_outputs):
-  1. Immutable outputs (IO) ←.* from all inputs (MI ∪ II)
-  2. Mutable outputs (MO) ←.* from mutable inputs (MI) only
-  3. Immutable outputs ←.* from each other
-
-Validation checks:
-⋆ **Mutable input isolation**: No mutable input reaches any other input (prevents aliasing)
-⋆ **Liveness**: All mutable inputs have non-trivial outbound edges (properly connected)
-⋆ **No dangling references**: Write operations require target has no outbound edges beyond ε
-⋆ **Type conformance**: Function arguments/returns match declared types and mutability
-
 Linear resource tracking:
 ⋆ Sites represent linear resources that are consumed exactly once
 ⋆ Variables can be invalidated (moved) or preserved (copied/borrowed)
 ⋆ PathEnv tracks which variables are borrowed (via not_borrowed check)
 -/
-inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → TypeEnv → Prop where
-  | skip : ∀ (lenv : LabelEnv) (env : TypeEnv), typecheck_stmt lenv env .skip env
+inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop where
+  -- ==================== Terminal Statements ====================
 
-  -- let a = move(x)
-  | let_bind_move : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (a : Site) x τ ms,
-     lookup env.varEnv x = some (.validVar, τ, ms) →
-     not_borrowed x env →
-     notIn env.siteEnv a →
-     env' = {env with varEnv := update env.varEnv x (.invalidVar, τ, ms)
-                      siteEnv := insert env.siteEnv a τ} →
-     typecheck_stmt lenv env (.letBind a (.usage (.move x))) env'
+  -- skip // No-op terminal
+  | skip : ∀ (lenv : LabelEnv) (env : TypeEnv) retType,
+      typecheck_stmt lenv env .skip retType
 
-  -- let a = copy(x) where x has basic type
-  | let_bind_copy_val : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (a : Site) x bt ms,
-     lookup env.varEnv x = some (.validVar, .basic bt, ms) →
-     notIn env.siteEnv a →
-     env' = {env with siteEnv := insert env.siteEnv a (.basic bt)} →
-     typecheck_stmt lenv env (.letBind a (.usage (.copy x))) env'
+  -- jump L // Unconditional jump to label L
+  | jump : ∀ (lenv : LabelEnv) (env : TypeEnv) (L : Label) (envL : TypeEnv) retType,
+      AssocMap.lookup lenv L = some envL →
+      TypeEnv.equiv env envL →
+      typecheck_stmt lenv env (.jump L) retType
 
-  -- let a = copy(x) where x has reference type
-  | let_bind_copy_ref : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (a : Site) x τ ms (s t : Aref) isBor,
-     lookup env.varEnv x = some (.validVar, .ref τ s isBor, ms) →
-     notIn env.siteEnv a →
-     freshRefBool t env.pathEnv →
-     env' = {env with siteEnv := insert env.siteEnv a (.ref τ t isBor)
-                      pathEnv := update_with_epsilon s t env.pathEnv} →
-     typecheck_stmt lenv env (.letBind a (.usage (.copy x))) env'
+  -- branch a L1 L2 // If (a) goto L1 else goto L2
+  | branch : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) (L1 L2 : Label) (envL1 envL2 : TypeEnv) retType,
+      AssocMap.lookup env.siteEnv a = some (.basic .tbool) →
+      AssocMap.lookup lenv L1 = some envL1 →
+      AssocMap.lookup lenv L2 = some envL2 →
+      TypeEnv.equiv {env with siteEnv := delete env.siteEnv a} envL1 →
+      TypeEnv.equiv {env with siteEnv := delete env.siteEnv a} envL2 →
+      typecheck_stmt lenv env (.branch a L1 L2) retType
 
-  -- let a = &x (immutable borrow)
-  | let_bind_borrowImm : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (a : Site) x τ ms (r : Aref),
-     lookup env.varEnv x = some (.validVar, .basic τ, ms) →
-     notIn env.siteEnv a →
-     freshRefBool r env.pathEnv →
-     env' = {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowImm)
-                      pathEnv := update_with_epsilon r r env.pathEnv |>
-                                 update_with_extension .root r [.root_to_var x]} →
-     typecheck_stmt lenv env (.letBind a (.usage (.borrowImm x))) env'
+  -- return (a1, ..., an) // Return from function
+  | ret : ∀ (lenv : LabelEnv) (env : TypeEnv) (as : List Site) τ,
+      (∀ a, a ∈ as → AssocMap.lookup env.siteEnv a = some τ) →
+      no_locals_borrowed env →
+      typecheck_stmt lenv env (.ret as) τ
 
-  -- let a = &mut x (mutable borrow)
-  | let_bind_borrowMut : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (a : Site) x τ ms (r : Aref),
-     LE.le .mutable ms →
-     lookup env.varEnv x = some (.validVar, .basic τ, ms) →
-     notIn env.siteEnv a →
-     freshRefBool r env.pathEnv →
-     env' = {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowMut)
-                      pathEnv := update_with_epsilon r r env.pathEnv |>
-                                 update_with_extension .root r [.root_to_var x]} →
-     typecheck_stmt lenv env (.letBind a (.usage (.borrowMut x))) env'
+  -- abort a // Abort execution with error value
+  | abort : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) τ retType,
+      AssocMap.lookup env.siteEnv a = some τ →
+      typecheck_stmt lenv env (.abort a) retType
 
-  -- let a = n (integer literal)
-  | let_bind_intLit : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (a : Site) (n : Nat),
-     notIn env.siteEnv a →
-     env' = {env with siteEnv := insert env.siteEnv a (.basic .u64)} →
-     typecheck_stmt lenv env (.letBind a (.intLit n)) env'
+  -- ==================== Non-terminal Statements ====================
 
-  -- let af = &a.T::f (field borrow)
-  | let_bind_borrowField : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (a af : Site) f bt bt' isBor fentries s (rf : Aref),
-     lookup env.siteEnv a = some (.ref bt s isBor) →
-     bt = .trecord fentries →
-     lookup fentries f = some bt' →
-     notIn env.siteEnv af →
-     freshRef rf env.pathEnv →
-     env' = {env with siteEnv := insert (delete env.siteEnv a) af (.ref bt' rf isBor)
-                      pathEnv := update_with_extension s rf [.field f] env.pathEnv} →
-     typecheck_stmt lenv env (.letBind af (.borrowField a bt f)) env'
+  -- let a = move(x); cont
+  | let_bind_move : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) x τ ms cont retType,
+      lookup env.varEnv x = some (.validVar, τ, ms) →
+      not_borrowed x env →
+      notIn env.siteEnv a →
+      typecheck_stmt lenv
+        {env with varEnv := update env.varEnv x (.invalidVar, τ, ms)
+                  siteEnv := insert env.siteEnv a τ}
+        cont retType →
+      typecheck_stmt lenv env (.letBind a (.usage (.move x)) cont) retType
 
-  -- let af = &mut a.T::f (mutable field borrow)
-  | let_bind_borrowMutField : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (a af : Site) f bt btf fentries (s rf : Aref),
-     lookup env.siteEnv a = some (.ref bt s .siteBorrowMut) →
-     bt = .trecord fentries →
-     lookup fentries f = some btf →
-     notIn env.siteEnv af →
-     freshRef rf env.pathEnv →
-     env' = {env with siteEnv := insert (delete env.siteEnv a) af (.ref btf rf .siteBorrowMut)
-                      pathEnv := update_with_extension s rf [.field f] env.pathEnv} →
-     typecheck_stmt lenv env (.letBind af (.borrowMutField a bt f)) env'
+  -- let a = copy(x); cont where x has basic type
+  | let_bind_copy_val : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) x bt ms cont retType,
+      lookup env.varEnv x = some (.validVar, .basic bt, ms) →
+      notIn env.siteEnv a →
+      typecheck_stmt lenv
+        {env with siteEnv := insert env.siteEnv a (.basic bt)}
+        cont retType →
+      typecheck_stmt lenv env (.letBind a (.usage (.copy x)) cont) retType
 
-  -- let c = a ⊕ b (binary operation)
-  | let_bind_binop : ∀ (lenv : LabelEnv) (env env' : TypeEnv) bop bt1 bt2 bt3 (a b c : Site),
-     lookup env.siteEnv a = some (.basic bt1) →
-     lookup env.siteEnv b = some (.basic bt2) →
-     binop_type bop bt1 bt2 = some bt3 →
-     notIn env.siteEnv c →
-     env' = {env with siteEnv := insert (delete (delete env.siteEnv a) b) c (.basic bt3)} →
-     typecheck_stmt lenv env (.letBind c (.binop bop a b)) env'
+  -- let a = copy(x); cont where x has reference type
+  | let_bind_copy_ref : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) x τ ms (s t : Aref) isBor cont retType,
+      lookup env.varEnv x = some (.validVar, .ref τ s isBor, ms) →
+      notIn env.siteEnv a →
+      freshRefBool t env.pathEnv →
+      typecheck_stmt lenv
+        {env with siteEnv := insert env.siteEnv a (.ref τ t isBor)
+                  pathEnv := update_with_epsilon s t env.pathEnv}
+        cont retType →
+      typecheck_stmt lenv env (.letBind a (.usage (.copy x)) cont) retType
 
-  -- let c = *a (dereference)
-  | let_bind_readRef : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (a c : Site) r (τ : BasicMoveType) isBor,
-     lookup env.siteEnv a = some (.ref τ r isBor) →
-     notIn env.siteEnv c →
-     env' = {env with siteEnv := insert (delete env.siteEnv a) c (.basic τ)
-                      pathEnv := delete_ref_node env.pathEnv r} →
-     typecheck_stmt lenv env (.letBind c (.readRef a)) env'
+  -- let a = &x; cont (immutable borrow)
+  | let_bind_borrowImm : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) x τ ms (r : Aref) cont retType,
+      lookup env.varEnv x = some (.validVar, .basic τ, ms) →
+      notIn env.siteEnv a →
+      freshRefBool r env.pathEnv →
+      typecheck_stmt lenv
+        {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowImm)
+                  pathEnv := update_with_epsilon r r env.pathEnv |>
+                             update_with_extension .root r [.root_to_var x]}
+        cont retType →
+      typecheck_stmt lenv env (.letBind a (.usage (.borrowImm x)) cont) retType
 
-  -- let c = freeze a
-  | let_bind_freeze : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (a c : Site) (τ : BasicMoveType) (r r' : Aref) isBor,
-     lookup env.siteEnv a = some (.ref τ r isBor) →
-     notIn env.siteEnv c →
-     freshRef r' env.pathEnv →
-     env' = {env with siteEnv := insert (delete env.siteEnv a) c (.ref τ r' .siteBorrowImm)
-                      pathEnv := consume_ref_transfer env.pathEnv r r'} →
-     typecheck_stmt lenv env (.letBind c (.freeze a)) env'
+  -- let a = &mut x; cont (mutable borrow)
+  | let_bind_borrowMut : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) x τ ms (r : Aref) cont retType,
+      LE.le .mutable ms →
+      lookup env.varEnv x = some (.validVar, .basic τ, ms) →
+      notIn env.siteEnv a →
+      freshRefBool r env.pathEnv →
+      typecheck_stmt lenv
+        {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowMut)
+                  pathEnv := update_with_epsilon r r env.pathEnv |>
+                             update_with_extension .root r [.root_to_var x]}
+        cont retType →
+      typecheck_stmt lenv env (.letBind a (.usage (.borrowMut x)) cont) retType
 
-  -- let b = T { f1: a1, ..., fn: an } (pack)
-  | let_bind_pack : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (b : Site) (recName : Id)
-      (fields : List (Field × Site)) (fentries : AssocMap Field BasicMoveType),
-     notIn env.siteEnv b →
-     (∀ f a, (f, a) ∈ fields →
-        ∃ (bt : BasicMoveType), lookup env.siteEnv a = some (.basic bt) ∧
-                                lookup fentries f = some bt) →
-     (∀ a₁ a₂, (∃ f₁ f₂, (f₁, a₁) ∈ fields ∧ (f₂, a₂) ∈ fields ∧ f₁ ≠ f₂) → a₁ ≠ a₂) →
-     env' = {env with siteEnv := insert (deleteAll env.siteEnv (fields.map Prod.snd)) b (.basic (.trecord fentries))} →
-     typecheck_stmt lenv env (.letBind b (.pack recName fields)) env'
+  -- let a = n; cont (integer literal)
+  | let_bind_intLit : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) (n : Nat) cont retType,
+      notIn env.siteEnv a →
+      typecheck_stmt lenv
+        {env with siteEnv := insert env.siteEnv a (.basic .u64)}
+        cont retType →
+      typecheck_stmt lenv env (.letBind a (.intLit n) cont) retType
 
-  -- *a = b
-  | write_ref : ∀ (lenv : LabelEnv) (env env' : TypeEnv) a b τ (r: Aref),
-      -- a is of type reference to a basic typ τ, its aref is s
+  -- let af = &a.T::f; cont (field borrow)
+  | let_bind_borrowField : ∀ (lenv : LabelEnv) (env : TypeEnv) (a af : Site) f bt bt' isBor fentries s (rf : Aref) cont retType,
+      lookup env.siteEnv a = some (.ref bt s isBor) →
+      bt = .trecord fentries →
+      lookup fentries f = some bt' →
+      notIn env.siteEnv af →
+      freshRef rf env.pathEnv →
+      typecheck_stmt lenv
+        {env with siteEnv := insert (delete env.siteEnv a) af (.ref bt' rf isBor)
+                  pathEnv := update_with_extension s rf [.field f] env.pathEnv}
+        cont retType →
+      typecheck_stmt lenv env (.letBind af (.borrowField a bt f) cont) retType
+
+  -- let af = &mut a.T::f; cont (mutable field borrow)
+  | let_bind_borrowMutField : ∀ (lenv : LabelEnv) (env : TypeEnv) (a af : Site) f bt btf fentries (s rf : Aref) cont retType,
+      lookup env.siteEnv a = some (.ref bt s .siteBorrowMut) →
+      bt = .trecord fentries →
+      lookup fentries f = some btf →
+      notIn env.siteEnv af →
+      freshRef rf env.pathEnv →
+      typecheck_stmt lenv
+        {env with siteEnv := insert (delete env.siteEnv a) af (.ref btf rf .siteBorrowMut)
+                  pathEnv := update_with_extension s rf [.field f] env.pathEnv}
+        cont retType →
+      typecheck_stmt lenv env (.letBind af (.borrowMutField a bt f) cont) retType
+
+  -- let c = a ⊕ b; cont (binary operation)
+  | let_bind_binop : ∀ (lenv : LabelEnv) (env : TypeEnv) bop bt1 bt2 bt3 (a b c : Site) cont retType,
+      lookup env.siteEnv a = some (.basic bt1) →
+      lookup env.siteEnv b = some (.basic bt2) →
+      binop_type bop bt1 bt2 = some bt3 →
+      notIn env.siteEnv c →
+      typecheck_stmt lenv
+        {env with siteEnv := insert (delete (delete env.siteEnv a) b) c (.basic bt3)}
+        cont retType →
+      typecheck_stmt lenv env (.letBind c (.binop bop a b) cont) retType
+
+  -- let c = *a; cont (dereference)
+  | let_bind_readRef : ∀ (lenv : LabelEnv) (env : TypeEnv) (a c : Site) r (τ : BasicMoveType) isBor cont retType,
+      lookup env.siteEnv a = some (.ref τ r isBor) →
+      notIn env.siteEnv c →
+      typecheck_stmt lenv
+        {env with siteEnv := insert (delete env.siteEnv a) c (.basic τ)
+                  pathEnv := delete_ref_node env.pathEnv r}
+        cont retType →
+      typecheck_stmt lenv env (.letBind c (.readRef a) cont) retType
+
+  -- let c = freeze a; cont
+  | let_bind_freeze : ∀ (lenv : LabelEnv) (env : TypeEnv) (a c : Site) (τ : BasicMoveType) (r r' : Aref) isBor cont retType,
+      lookup env.siteEnv a = some (.ref τ r isBor) →
+      notIn env.siteEnv c →
+      freshRef r' env.pathEnv →
+      typecheck_stmt lenv
+        {env with siteEnv := insert (delete env.siteEnv a) c (.ref τ r' .siteBorrowImm)
+                  pathEnv := consume_ref_transfer env.pathEnv r r'}
+        cont retType →
+      typecheck_stmt lenv env (.letBind c (.freeze a) cont) retType
+
+  -- let b = T { f1: a1, ..., fn: an }; cont (pack)
+  | let_bind_pack : ∀ (lenv : LabelEnv) (env : TypeEnv) (b : Site) (recName : Id)
+      (fields : List (Field × Site)) (fentries : AssocMap Field BasicMoveType) cont retType,
+      notIn env.siteEnv b →
+      (∀ f a, (f, a) ∈ fields →
+         ∃ (bt : BasicMoveType), lookup env.siteEnv a = some (.basic bt) ∧
+                                 lookup fentries f = some bt) →
+      (∀ a₁ a₂, (∃ f₁ f₂, (f₁, a₁) ∈ fields ∧ (f₂, a₂) ∈ fields ∧ f₁ ≠ f₂) → a₁ ≠ a₂) →
+      typecheck_stmt lenv
+        {env with siteEnv := insert (deleteAll env.siteEnv (fields.map Prod.snd)) b (.basic (.trecord fentries))}
+        cont retType →
+      typecheck_stmt lenv env (.letBind b (.pack recName fields) cont) retType
+
+  -- *a = b; cont
+  | write_ref : ∀ (lenv : LabelEnv) (env : TypeEnv) a b τ (r: Aref) cont retType,
       AssocMap.lookup env.siteEnv a = some (.ref τ r .siteBorrowMut) →
-      -- b has the same basic type
       AssocMap.lookup env.siteEnv b = some (.basic τ) →
-      -- [Path Checking] This is an important check to ensure the absence of
-      -- dangling pointers. All outbound edges from a.s are ε: nothing extends
-      -- this reference. This ensures no dangling references.  We don't care
-      -- about inbound edges: they won't cause dangling references
       check_outbound env.pathEnv r (λ r ↦ r = .ε ∨ r = .empty) →
-      -- remove all involved sites a and b from the environment
-      -- retire the abstract reference s
-      env' = {env with siteEnv := delete (delete env.siteEnv b) a
-                       pathEnv := garbage_collect env.pathEnv r } →
-      typecheck_stmt lenv env (.writeRef a b) env'
+      typecheck_stmt lenv
+        {env with siteEnv := delete (delete env.siteEnv b) a
+                  pathEnv := garbage_collect env.pathEnv r}
+        cont retType →
+      typecheck_stmt lenv env (.writeRef a b cont) retType
 
-  -- x = a // x is a valid var
+  -- x = a; cont // x is a valid var
   -- Inlines typecheck_usage.t_uborrowMut_val for the mutable borrow of x
-  | var_assign_valid : ∀ (lenv : LabelEnv) (env env' env'' : TypeEnv) x a ax τ ms (r : Aref),
-      -- Premises from t_uborrowMut_val (mutable borrow of x into intermediate site ax):
+  -- Intermediate env has: ax bound to mutable ref, pathEnv updated with borrow
+  -- Final env has: ax and a consumed, r garbage collected
+  | var_assign_valid : ∀ (lenv : LabelEnv) (env : TypeEnv) x a ax τ ms (r : Aref) cont retType,
       LE.le .mutable ms →
       lookup env.varEnv x = some (.validVar, .basic τ, ms) →
       notIn env.siteEnv ax →
       freshRefBool r env.pathEnv →
-      env' = {env with siteEnv := insert env.siteEnv ax (.ref τ r .siteBorrowMut)
-                       pathEnv := update_with_epsilon r r env.pathEnv |>
-                                  update_with_extension .root r [.root_to_var x]} →
-      -- Then write through the reference (ax will be removed from env'')
-      typecheck_stmt lenv env' (.writeRef ax a) env'' →
-      typecheck_stmt lenv env (.assign x a) env''
+      -- After writeRef: both ax and a are consumed, r is garbage collected
+      -- The intermediate pathEnv is: update_with_extension .root r [.root_to_var x] (update_with_epsilon r r env.pathEnv)
+      -- The intermediate siteEnv has ax with the mutable borrow
+      -- After write: ax and a deleted, r garbage collected
+      typecheck_stmt lenv
+        {env with siteEnv := delete (delete (insert env.siteEnv ax (.ref τ r .siteBorrowMut)) a) ax
+                  pathEnv := garbage_collect (update_with_extension .root r [.root_to_var x] (update_with_epsilon r r env.pathEnv)) r}
+        cont retType →
+      typecheck_stmt lenv env (.assign x a cont) retType
 
-  -- x = a // x is an invalid variable
-  | var_assign_invalid : ∀ (lenv : LabelEnv) (env env' : TypeEnv) x a τ,
-    -- Only works if x invalid
-    AssocMap.lookup env.varEnv x = some (.invalidVar, τ, .mutable) →
-    -- Checking the type confromance
-    AssocMap.lookup env.siteEnv a = some τ →
-    typecheck_stmt lenv env (.assign x a) env'
+  -- x = a; cont // x is an invalid variable
+  | var_assign_invalid : ∀ (lenv : LabelEnv) (env : TypeEnv) x a τ cont retType,
+      AssocMap.lookup env.varEnv x = some (.invalidVar, τ, .mutable) →
+      AssocMap.lookup env.siteEnv a = some τ →
+      typecheck_stmt lenv
+        {env with varEnv := update env.varEnv x (.validVar, τ, .mutable)
+                  siteEnv := delete env.siteEnv a}
+        cont retType →
+      typecheck_stmt lenv env (.assign x a cont) retType
 
-  -- let (a1, ..., an) = f(b1, ..., bm) // Call
-  | call : ∀ (lenv : LabelEnv) (env env' : TypeEnv) fnName (as bs: List Site) (params rets : List ParamType),
-    -- Check that as are all fresh
-    all_fresh_sites env as →
-    -- Check that the function exists
-    AssocMap.lookup env.funEnv fnName = some ⟨params, rets⟩  →
-    -- Check type conformance for parameters and return types
-    types_conform env.siteEnv bs params →
-    types_conform env.siteEnv as rets →
-    -- Validation: No mutable input reaches any other input
-    check_mutable_inputs_isolated env bs →
-    -- Validation: All mutable inputs have non-trivial outbound edges
-    check_mutable_inputs_have_outbound env bs →
-    -- Update environment: remove input sites, add output sites, connect paths
-    env' = call_connect_inputs_outputs env as bs →
-    typecheck_stmt lenv env (.call as fnName bs) env'
+  -- let (a1, ..., an) = f(b1, ..., bm); cont // Call
+  | call : ∀ (lenv : LabelEnv) (env : TypeEnv) fnName (as bs: List Site) (params rets : List ParamType) cont retType,
+      all_fresh_sites env as →
+      AssocMap.lookup env.funEnv fnName = some ⟨params, rets⟩ →
+      types_conform env.siteEnv bs params →
+      types_conform env.siteEnv as rets →
+      check_mutable_inputs_isolated env bs →
+      check_mutable_inputs_have_outbound env bs →
+      typecheck_stmt lenv (call_connect_inputs_outputs env as bs) cont retType →
+      typecheck_stmt lenv env (.call as fnName bs cont) retType
 
-  -- s1; s2 // Sequential composition
-  -- Threads the environment through: s1 produces env', which becomes input to s2
-  | seq : ∀ (lenv : LabelEnv) (env env' env'' : TypeEnv) s1 s2,
-    -- Type check first statement, transforming env to env'
-    typecheck_stmt lenv env s1 env' →
-    -- Type check second statement, transforming env' to env''
-    typecheck_stmt lenv env' s2 env'' →
-    -- The final environment is the result of executing both statements in sequence
-    typecheck_stmt lenv env (.seq s1 s2) env''
+  -- release(a); cont
+  | release : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) (τ : BasicMoveType) (r : Aref) isBor cont retType,
+      AssocMap.lookup env.siteEnv a = some (.ref τ r isBor) →
+      typecheck_stmt lenv
+        {env with siteEnv := delete env.siteEnv a
+                  pathEnv := delete_ref_node env.pathEnv r}
+        cont retType →
+      typecheck_stmt lenv env (.release a cont) retType
 
-  -- release(a)
-  -- Explicitly release a reference, consuming it without producing any value
-  | release : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (a : Site) (τ : BasicMoveType) (r : Aref) isBor,
-    -- Site a must hold a reference
-    AssocMap.lookup env.siteEnv a = some (.ref τ r isBor) →
-    -- Remove site a and delete reference r from pathEnv
-    env' = {env with siteEnv := delete env.siteEnv a
-                     pathEnv := delete_ref_node env.pathEnv r } →
-    typecheck_stmt lenv env (.release a) env'
-
-  -- T { f1: a1, ..., fn: an } = b
-  -- Unpack a record into its constituent field sites (dual of pack expression)
-  | unpack : ∀ (lenv : LabelEnv) (env env' : TypeEnv) (fields : List (Field × Site)) (b : Site) (fentries : AssocMap Field BasicMoveType),
-    -- b must hold a record type
-    AssocMap.lookup env.siteEnv b = some (.basic (.trecord fentries)) →
-    -- All output field sites must be fresh
-    (∀ (f : Field) (a : Site), (f, a) ∈ fields → AssocMap.notIn env.siteEnv a) →
-    -- All output field sites must be distinct (no aliasing)
-    (∀ a₁ a₂, (∃ f₁ f₂, (f₁, a₁) ∈ fields ∧ (f₂, a₂) ∈ fields ∧ f₁ ≠ f₂) → a₁ ≠ a₂) →
-    -- Fields in unpack must match record's field entries
-    (∀ (f : Field) (a : Site), (f, a) ∈ fields → ∃ bt, AssocMap.lookup fentries f = some bt) →
-    -- Environment update: remove b, add all field sites with their types
-    env' = {env with siteEnv := addFieldSites fentries (delete env.siteEnv b) fields} →
-    typecheck_stmt lenv env (.unpack fields b) env'
-
-
-/- ---------------------------------------------------- -/
-/-       Type checking relation for terminators          -/
-/- ---------------------------------------------------- -/
-
-/--
-Type checking relation for block terminators (control flow).
-
-Judgment form: `Λ; ⟨Γ⟩ ⊢ t`
-
-This relation handles all terminator forms that end a block:
-- **jump L**: Unconditional jump to label L
-- **branch a L1 L2**: Conditional branch based on boolean site a
-- **ret [a1, ..., an]**: Return from function with values
-- **abort a**: Abort execution (error path)
-
-Components:
-- `lenv`: Label environment mapping labels to expected entry TypeEnvs
-- `env`: Type environment at the end of the block (after executing body)
-- `Terminator`: The terminator being type checked
-- `returnType`: The function's return type (for ret checking)
-
-Key invariants:
-⋆ Jump targets must exist in lenv and environment must be equivalent to target's expected env
-⋆ Branch requires boolean condition and environment must match both targets (after consuming condition)
-⋆ Return values must match the function's declared return type
-⋆ No local variables may be borrowed at return (prevents escaping references)
--/
-inductive typecheck_terminator : LabelEnv → TypeEnv → Terminator → MoveType → Prop where
-  -- jump L // Unconditional jump to label L
-  -- The current environment must be equivalent to the environment expected at label L
-  | t_jump : ∀ (lenv : LabelEnv) (env : TypeEnv) (L : Label) (envL : TypeEnv) retType,
-    -- Look up the expected environment for label L
-    AssocMap.lookup lenv L = some envL →
-    -- Current environment must be equivalent to the target label's environment
-    TypeEnv.equiv env envL →
-    typecheck_terminator lenv env (Terminator.jump L) retType
-
-  -- branch a L1 L2 // If (a) goto L1 else goto L2
-  -- The site a must hold a boolean, and the environment must match both targets
-  | t_branch : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) (L1 L2 : Label) (envL1 envL2 : TypeEnv) retType,
-    -- Site a must hold a boolean value
-    AssocMap.lookup env.siteEnv a = some (.basic .tbool) →
-    -- Look up the expected environment for label L1
-    AssocMap.lookup lenv L1 = some envL1 →
-    -- Look up the expected environment for label L2
-    AssocMap.lookup lenv L2 = some envL2 →
-    -- Current environment (minus the condition site) must be equivalent to L1's environment
-    TypeEnv.equiv {env with siteEnv := delete env.siteEnv a} envL1 →
-    -- Current environment (minus the condition site) must be equivalent to L2's environment
-    TypeEnv.equiv {env with siteEnv := delete env.siteEnv a} envL2 →
-    typecheck_terminator lenv env (Terminator.branch a L1 L2) retType
-
-  -- return (a1, ..., an) // Return from function
-  -- Return values must have the expected return type
-  | t_ret : ∀ (lenv : LabelEnv) (env : TypeEnv) (as : List Site) τ,
-    -- All sites must have the same type τ (simplified: single return value)
-    -- For multiple return values, check each matches expected type
-    (∀ a, a ∈ as → AssocMap.lookup env.siteEnv a = some τ) →
-    -- All sites must be consumed (removed from environment)
-    -- No local variables may be borrowed (prevents references from escaping)
-    no_locals_borrowed env →
-    typecheck_terminator lenv env (Terminator.ret as) τ
-
-  -- abort a // Abort execution with error value
-  -- Control never continues past abort
-  | t_abort : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) τ retType,
-    -- Site a must exist (consumed by abort)
-    AssocMap.lookup env.siteEnv a = some τ →
-    typecheck_terminator lenv env (Terminator.abort a) retType
+  -- T { f1: a1, ..., fn: an } = b; cont
+  | unpack : ∀ (lenv : LabelEnv) (env : TypeEnv) (fields : List (Field × Site)) (b : Site)
+      (fentries : AssocMap Field BasicMoveType) cont retType,
+      AssocMap.lookup env.siteEnv b = some (.basic (.trecord fentries)) →
+      (∀ (f : Field) (a : Site), (f, a) ∈ fields → AssocMap.notIn env.siteEnv a) →
+      (∀ a₁ a₂, (∃ f₁ f₂, (f₁, a₁) ∈ fields ∧ (f₂, a₂) ∈ fields ∧ f₁ ≠ f₂) → a₁ ≠ a₂) →
+      (∀ (f : Field) (a : Site), (f, a) ∈ fields → ∃ bt, AssocMap.lookup fentries f = some bt) →
+      typecheck_stmt lenv
+        {env with siteEnv := addFieldSites fentries (delete env.siteEnv b) fields}
+        cont retType →
+      typecheck_stmt lenv env (.unpack fields b cont) retType
 
 
 /- ---------------------------------------------------- -/
@@ -556,12 +521,11 @@ def build_labelEnv (blocks : List Block) (expectedEnvs : List TypeEnv) : LabelEn
 
 /--
   Type checking relation for a single block.
-  The block's body is type checked starting from the expected environment for its label,
-  producing an intermediate environment, then the terminator is checked against that environment.
+  The block's body (which includes the terminal statement) is type checked
+  starting from the expected environment for its label.
 -/
 def typecheck_block (lenv : LabelEnv) (block : Block) (expectedEnv : TypeEnv) (retType : MoveType) : Prop :=
-  ∃ midEnv, typecheck_stmt lenv expectedEnv block.body midEnv ∧
-            typecheck_terminator lenv midEnv block.terminator retType
+  typecheck_stmt lenv expectedEnv block.body retType
 
 /--
   Compute the initial VarEnv for a function from its parameters and locals.
@@ -579,10 +543,9 @@ def init_fun_varEnv (f : FunDef) : VarEnv :=
   2. Adding locals to TypeEnv (invalid variables, not yet assigned)
   3. Using the provided LabelEnv (expected environments for each block)
   4. Type checking each block's body against its expected entry environment
-  5. Type checking each block's terminator against the resulting environment
-  6. Verifying the entry block starts with the initial environment
+  5. Verifying the entry block starts with the initial environment
 
-  Control flow is handled entirely by terminators (jump, branch, ret, abort).
+  Control flow is handled by terminal statements within each block's body.
   Each block is independent - there is no fall-through between blocks.
   The LabelEnv represents loop invariants / block entry conditions.
 -/
@@ -595,11 +558,11 @@ inductive typecheck_fun : FunDef → LabelEnv → Prop where
     -- The function must have at least one block (entry block)
     f.blocks ≠ [] →
     -- The entry block (first block) must have an environment equivalent to initEnv
-    (∀ entryLabel entryBody entryTerm entryEnv,
-      f.blocks.head? = some ⟨entryLabel, entryBody, entryTerm⟩ →
+    (∀ entryLabel entryBody entryEnv,
+      f.blocks.head? = some ⟨entryLabel, entryBody⟩ →
       AssocMap.lookup lenv entryLabel = some entryEnv →
       TypeEnv.equiv entryEnv initEnv) →
-    -- Every block must type check: body produces an environment, then terminator is checked
+    -- Every block must type check
     (∀ (block : Block),
       block ∈ f.blocks →
       ∀ blockEnv, AssocMap.lookup lenv block.label = some blockEnv →

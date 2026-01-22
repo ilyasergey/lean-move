@@ -167,8 +167,8 @@ def invalid : FunDef := {
         -- *copy(mut1) = 0 -- ERROR: a is immutably borrowed via imm1
         (letsite s4 ← copy var_mut1) ;;
         (letsite s5 ← #0) ;;
-        Stmt.writeRef s4 s5
-      terminator := ret []
+        Stmt.writeRef s4 s5 ;;
+        Stmt.ret []
     }
   ]
 }

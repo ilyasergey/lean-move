@@ -157,8 +157,8 @@ def invalid_write : FunDef := {
         (letsite s4 ← copy var_s_mut) ;;
         (letsite s5 ← #0) ;;
         Stmt.letBind s6 (Expr.pack "S" [(field_f, s5)]) ;;
-        Stmt.writeRef s4 s6
-      terminator := ret []
+        Stmt.writeRef s4 s6 ;;
+        Stmt.ret []
     }
   ]
 }

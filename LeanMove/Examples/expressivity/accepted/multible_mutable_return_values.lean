@@ -99,12 +99,12 @@ def borrow : FunDef := {
         -- Create first mutable borrow to field x
         (letsite s0 ← copy var_p) ;;     -- s0 = copy(p)
         Stmt.letBind s1 (Expr.borrowMutField s0 (BasicMoveType.trecord point_entries) field_x) ;; -- s1 = &mut s0.x
-        Stmt.release s1 ;;               -- release s1
+        (release s1) ;;                  -- release s1
         -- Create second mutable borrow to field y
         (letsite s2 ← copy var_p) ;;     -- s2 = copy(p)
         Stmt.letBind s3 (Expr.borrowMutField s2 (BasicMoveType.trecord point_entries) field_y) ;; -- s3 = &mut s2.y
-        Stmt.release s3                  -- release s3
-      terminator := ret []               -- return unit
+        (release s3) ;;                  -- release s3
+        Stmt.ret []                      -- return unit
     }
   ]
 }
@@ -151,8 +151,8 @@ def write : FunDef := {
         Stmt.writeRef s6 s10 ;;          -- *x = 0 (again)
         (letsite s7 ← copy var_y) ;;
         (letsite s11 ← #0) ;;            -- s11 = 0 (integer literal)
-        Stmt.writeRef s7 s11             -- *y = 0 (again)
-      terminator := ret []
+        Stmt.writeRef s7 s11 ;;          -- *y = 0 (again)
+        Stmt.ret []
     }
   ]
 }

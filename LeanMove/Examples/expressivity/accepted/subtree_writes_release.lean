@@ -133,8 +133,9 @@ def t : FunDef := {
   blocks := [
     -- l0: branch on condition
     { label := "l0"
-      body := (letsite s0 ← move var_cond)  -- s0 = move(cond)
-      terminator := Terminator.branch s0 "l2" "l1"  -- if s0 then l2 else l1
+      body :=
+        (letsite s0 ← move var_cond) ;;  -- s0 = move(cond)
+        Stmt.branch s0 "l2" "l1"         -- if s0 then l2 else l1
     },
     -- l1 (false branch): x = &mut root.l; y = &mut x.l.l
     { label := "l1"
@@ -147,8 +148,8 @@ def t : FunDef := {
         (letsite s3 ← copy var_x) ;;
         Stmt.letBind s4 (Expr.borrowMutField s3 (.trecord sub1_entries) field_l) ;;  -- Sub2
         Stmt.letBind s5 (Expr.borrowMutField s4 (.trecord sub2_entries) field_l) ;;  -- u64
-        (var_y ::= s5)
-      terminator := Terminator.jump "l3"
+        (var_y ::= s5) ;;
+        Stmt.jump "l3"
     },
     -- l2 (true branch): x = &mut root.r; y = &mut x.r.r
     { label := "l2"
@@ -161,8 +162,8 @@ def t : FunDef := {
         (letsite s3 ← copy var_x) ;;
         Stmt.letBind s4 (Expr.borrowMutField s3 (.trecord sub1_entries) field_r) ;;  -- Sub2
         Stmt.letBind s5 (Expr.borrowMutField s4 (.trecord sub2_entries) field_r) ;;  -- u64
-        (var_y ::= s5)
-      terminator := Terminator.jump "l3"
+        (var_y ::= s5) ;;
+        Stmt.jump "l3"
     },
     -- l3: release x, write to root.l.r, write through y
     { label := "l3"
@@ -182,8 +183,8 @@ def t : FunDef := {
         -- *move(y) = 0
         (letsite s10 ← move var_y) ;;
         (letsite s16 ← #0) ;;            -- s16 = 0 (integer literal)
-        Stmt.writeRef s10 s16
-      terminator := Terminator.ret []
+        Stmt.writeRef s10 s16 ;;
+        Stmt.ret []
     }
   ]
 }

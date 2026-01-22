@@ -117,8 +117,9 @@ def t : FunDef := {
   blocks := [
     -- l0: jump_if (move(cond)) l2;
     { label := "l0"
-      body := (letsite s0 ← move var_cond)  -- s0 = move(cond)
-      terminator := Terminator.branch s0 "l2" "l1"  -- if s0 then l2 else l1
+      body :=
+        (letsite s0 ← move var_cond) ;;  -- s0 = move(cond)
+        Stmt.branch s0 "l2" "l1"         -- if s0 then l2 else l1
     },
     -- l1 (false branch): x = move(a); y = move(b); jump l3;
     { label := "l1"
@@ -126,8 +127,8 @@ def t : FunDef := {
         (letsite s1 ← move var_a) ;;     -- s1 = move(a)
         (var_x ::= s1) ;;                -- x = s1
         (letsite s2 ← move var_b) ;;     -- s2 = move(b)
-        (var_y ::= s2)                   -- y = s2
-      terminator := Terminator.jump "l3"
+        (var_y ::= s2) ;;                -- y = s2
+        Stmt.jump "l3"
     },
     -- l2 (true branch): x = move(b); y = move(a); jump l3;
     { label := "l2"
@@ -135,8 +136,8 @@ def t : FunDef := {
         (letsite s3 ← move var_b) ;;     -- s3 = move(b)
         (var_x ::= s3) ;;                -- x = s3
         (letsite s4 ← move var_a) ;;     -- s4 = move(a)
-        (var_y ::= s4)                   -- y = s4
-      terminator := Terminator.jump "l3"
+        (var_y ::= s4) ;;                -- y = s4
+        Stmt.jump "l3"
     },
     -- l3: f = &mut copy(x).S::f; *copy(y) = S { f: *copy(f) }; *copy(f) = 0; return move(y);
     { label := "l3"
@@ -157,8 +158,8 @@ def t : FunDef := {
         (letsite s13 ← #0) ;;                             -- s13 = 0 (integer literal)
         Stmt.writeRef s11 s13 ;;                          -- *s11 = s13
         -- return move(y)
-        (letsite s12 ← move var_y)
-      terminator := Terminator.ret [s12]
+        (letsite s12 ← move var_y) ;;
+        Stmt.ret [s12]
     }
   ]
 }

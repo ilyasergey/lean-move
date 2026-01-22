@@ -105,9 +105,9 @@ def M_new : FunDef := {
   blocks := [
     { label := "b0"
       body :=
-        (letsite s0 ← move var_g) ;;                -- let s0 = move(g)
-        Stmt.letBind s1 (Expr.pack "T" [(field_f, s0)])  -- let s1 = T{f: s0}
-      terminator := ret [s1]                        -- return s1
+        (letsite s0 ← move var_g) ;;                           -- let s0 = move(g)
+        Stmt.letBind s1 (Expr.pack "T" [(field_f, s0)])        -- let s1 = T{f: s0}
+          (Stmt.ret [s1])                                      -- return s1
     }
   ]
 }
@@ -136,11 +136,11 @@ def M_t : FunDef := {
   blocks := [
     { label := "b0"
       body :=
-        (letsite s0 ← move var_this) ;;                   -- let s0 = move(this)
-        Stmt.letBind s1 (Expr.borrowField s0 M_T_basic field_f) ;; -- let s1 = &s0.T::f
-        Stmt.letBind s2 (Expr.readRef s1) ;;              -- let s2 = *s1
-        (var_y ::= s2)                                    -- y = s2
-      terminator := ret []                                -- return
+        (letsite s0 ← move var_this) ;;                              -- let s0 = move(this)
+        Stmt.letBind s1 (Expr.borrowField s0 M_T_basic field_f)      -- let s1 = &s0.T::f
+          (Stmt.letBind s2 (Expr.readRef s1)                         -- let s2 = *s1
+            ((var_y ::= s2) ;;                                       -- y = s2
+             Stmt.ret []))                                           -- return
     }
   ]
 }
@@ -169,16 +169,16 @@ def foo : FunDef := {
     { label := "b0"
       body :=
         -- x = M.new(2) (in A-normal form: literal, call, then assign)
-        (letsite s3 ← #2) ;;             -- let s3 = 2 (integer literal)
-        Stmt.call [s0] "M.new" [s3] ;;   -- s0 = M.new(s3)
-        (var_x ::= s0) ;;                -- x = s0
-        -- x_ref = &x (in A-normal form: borrow then assign)
-        (letsite s1 ← &var_x) ;;
-        (var_x_ref ::= s1) ;;
-        -- M.t(move(x_ref)) (in A-normal form: move then call)
-        (letsite s2 ← move var_x_ref) ;;
-        Stmt.call [] "M.t" [s2]
-      terminator := ret []   -- return
+        (letsite s3 ← #2) ;;                            -- let s3 = 2 (integer literal)
+        Stmt.call [s0] "M.new" [s3]                     -- s0 = M.new(s3)
+          ((var_x ::= s0) ;;                            -- x = s0
+           -- x_ref = &x (in A-normal form: borrow then assign)
+           (letsite s1 ← &var_x) ;;
+           (var_x_ref ::= s1) ;;
+           -- M.t(move(x_ref)) (in A-normal form: move then call)
+           (letsite s2 ← move var_x_ref) ;;
+           Stmt.call [] "M.t" [s2]                      -- M.t(s2)
+             (Stmt.ret []))                             -- return
     }
   ]
 }
@@ -221,8 +221,8 @@ theorem M_new_welltyped : ∃ lenv, typecheck_fun M_new lenv := by
   · rfl  -- initEnv.siteEnv
   · rfl  -- initEnv.pathEnv
   · simp only [M_new]; intro h; exact List.noConfusion h  -- blocks ≠ []
-  · -- Entry block environment equivalence
-    intro entryLabel entryBody entryTerm entryEnv hhead hlookup
+  · -- Entry block environment equivalence (now 2-tuple Block)
+    intro entryLabel entryBody entryEnv hhead hlookup
     simp only [M_new, List.head?] at hhead
     injection hhead with hblock
     have h1 : entryLabel = "b0" := (congrArg Block.label hblock).symm
@@ -242,70 +242,48 @@ theorem M_new_welltyped : ∃ lenv, typecheck_fun M_new lenv := by
     subst heq
     unfold typecheck_block
 
-    -- Define intermediate environments
-    -- After let s0 = move(g): s0 has type .basic .u64, g is invalidated
-    let env1 : TypeEnv := {
-      siteEnv := AssocMap.insert M_new_initEnv.siteEnv s0 (.basic .u64)
-      varEnv := AssocMap.update M_new_initEnv.varEnv var_g (.invalidVar, .basic .u64, .mutable)
-      pathEnv := M_new_initEnv.pathEnv
-      funEnv := M_new_initEnv.funEnv
-    }
-
-    -- After let s1 = pack T{f: s0}: s0 is consumed, s1 has the record type
-    let midEnv : TypeEnv := {
-      siteEnv := AssocMap.insert (AssocMap.deleteAll env1.siteEnv [s0]) s1 M_T
-      varEnv := env1.varEnv
-      pathEnv := env1.pathEnv
-      funEnv := env1.funEnv
-    }
-
-    exists midEnv
-    constructor
-    · -- typecheck_stmt for body
-      apply typecheck_stmt.seq (env' := env1)
-      · -- let s0 = move(g)
-        apply typecheck_stmt.let_bind_move
-        · rfl  -- lookup varEnv var_g
-        · -- not_borrowed var_g env
-          unfold not_borrowed
-          intro r
+    -- Body: letBind s0 (move g) (letBind s1 (pack ...) (ret [s1]))
+    -- Type check follows CPS structure: let_bind_move -> let_bind_pack -> ret
+    apply typecheck_stmt.let_bind_move
+    · rfl  -- lookup varEnv var_g
+    · -- not_borrowed var_g env
+      unfold not_borrowed
+      intro r
+      simp only [M_new_initEnv, PathEnv.init]
+      split
+      · simp only [Regex.interpret_regex]; intro h; cases h
+      · simp only [Regex.interpret_regex]; exact id
+    · rfl  -- notIn siteEnv s0
+    · -- continuation: letBind s1 (pack ...) (ret [s1])
+      apply typecheck_stmt.let_bind_pack (fentries := AssocMap.insert AssocMap.empty field_f .u64)
+      · rfl  -- s1 not in env1.siteEnv
+      · -- All field sites exist with correct types
+        intro f a hmem
+        simp at hmem
+        obtain ⟨hf, ha⟩ := hmem
+        subst hf ha
+        exists .u64
+      · -- All field sites distinct
+        intro a1 a2 hexists
+        obtain ⟨f1, f2, h1, h2, hne⟩ := hexists
+        simp at h1 h2
+        have hf1 : f1 = field_f := h1.1
+        have hf2 : f2 = field_f := h2.1
+        rw [hf1, hf2] at hne
+        exact absurd rfl hne
+      · -- continuation: ret [s1]
+        apply typecheck_stmt.ret
+        · -- All return sites have correct type
+          intro a ha
+          simp only [List.mem_singleton] at ha
+          subst ha
+          rfl
+        · -- no_locals_borrowed
+          unfold no_locals_borrowed not_borrowed
+          intro x v hmem r
           simp only [M_new_initEnv, PathEnv.init]
           split
           · simp only [Regex.interpret_regex]; intro h; cases h
           · simp only [Regex.interpret_regex]; exact id
-        · rfl  -- notIn siteEnv s0
-        · rfl  -- env' = env1
-      · -- let s1 = pack T{f: s0}
-        apply typecheck_stmt.let_bind_pack (fentries := AssocMap.insert AssocMap.empty field_f .u64)
-        · rfl  -- s1 not in env1.siteEnv
-        · -- All field sites exist with correct types
-          intro f a hmem
-          simp at hmem
-          obtain ⟨hf, ha⟩ := hmem
-          subst hf ha
-          exists .u64
-        · -- All field sites distinct
-          intro a1 a2 hexists
-          obtain ⟨f1, f2, h1, h2, hne⟩ := hexists
-          simp at h1 h2
-          have hf1 : f1 = field_f := h1.1
-          have hf2 : f2 = field_f := h2.1
-          rw [hf1, hf2] at hne
-          exact absurd rfl hne
-        · rfl  -- env' = midEnv
-    · -- typecheck_terminator for ret [s1]
-      apply typecheck_terminator.t_ret
-      · -- All return sites have correct type
-        intro a ha
-        simp only [List.mem_singleton] at ha
-        subst ha
-        rfl
-      · -- no_locals_borrowed
-        unfold no_locals_borrowed not_borrowed
-        intro x v hmem r
-        simp only [midEnv, env1, M_new_initEnv, PathEnv.init]
-        split
-        · simp only [Regex.interpret_regex]; intro h; cases h
-        · simp only [Regex.interpret_regex]; exact id
 
 end LeanMove.Examples

@@ -98,8 +98,8 @@ def borrow_local_twice : FunDef := {
         Stmt.writeRef s3 s4 ;;          -- *s3 = 0
         (letsite s5 ← move var_y) ;;    -- s5 = move(y)
         (letsite s6 ← #0) ;;            -- s6 = 0
-        Stmt.writeRef s5 s6             -- *s5 = 0
-      terminator := ret []
+        Stmt.writeRef s5 s6 ;;          -- *s5 = 0
+        Stmt.ret []
     }
   ]
 }
@@ -131,8 +131,8 @@ def borrow_local_twice_reverse : FunDef := {
         Stmt.writeRef s3 s4 ;;          -- *s3 = 0
         (letsite s5 ← move var_x) ;;    -- s5 = move(x) -- reversed
         (letsite s6 ← #0) ;;            -- s6 = 0
-        Stmt.writeRef s5 s6             -- *s5 = 0
-      terminator := ret []
+        Stmt.writeRef s5 s6 ;;          -- *s5 = 0
+        Stmt.ret []
     }
   ]
 }
@@ -176,8 +176,8 @@ def borrow_local_and_copy_ref : FunDef := {
         Stmt.writeRef s3 s4 ;;          -- *s3 = 0
         (letsite s5 ← move var_y) ;;    -- s5 = move(y)
         (letsite s6 ← #0) ;;            -- s6 = 0
-        Stmt.writeRef s5 s6             -- *s5 = 0
-      terminator := ret []
+        Stmt.writeRef s5 s6 ;;          -- *s5 = 0
+        Stmt.ret []
     }
   ]
 }
@@ -209,8 +209,8 @@ def borrow_local_and_copy_ref_reverse : FunDef := {
         Stmt.writeRef s3 s4 ;;          -- *s3 = 0
         (letsite s5 ← move var_x) ;;    -- s5 = move(x) -- reversed
         (letsite s6 ← #0) ;;            -- s6 = 0
-        Stmt.writeRef s5 s6             -- *s5 = 0
-      terminator := ret []
+        Stmt.writeRef s5 s6 ;;          -- *s5 = 0
+        Stmt.ret []
     }
   ]
 }

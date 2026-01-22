@@ -98,8 +98,8 @@ def fn_borrow : FunDef := {
         (letsite s0 ← copy var_b) ;;     -- s0 = copy(b)
         Stmt.letBind s1 (Expr.borrowMutField s0 (.trecord box_entries) field_tl) ;; -- s1 = &mut s0.tl
         (var_tl ::= s1) ;;               -- tl = s1
-        (letsite s2 ← copy var_tl)       -- s2 = copy(tl)
-      terminator := ret [s2]             -- return s2
+        (letsite s2 ← copy var_tl) ;;    -- s2 = copy(tl)
+        Stmt.ret [s2]                    -- return s2
     }
   ]
 }
@@ -150,8 +150,8 @@ def fn_write : FunDef := {
         (letsite s11 ← #0) ;;            -- s11 = 0 (integer literal)
         Stmt.writeRef s7 s11 ;;          -- *s7 = s11
         -- return move(p)
-        (letsite s8 ← move var_tl)       -- s8 = move(tl/p)
-      terminator := ret [s8]             -- return s8
+        (letsite s8 ← move var_tl) ;;    -- s8 = move(tl/p)
+        Stmt.ret [s8]                    -- return s8
     }
   ]
 }

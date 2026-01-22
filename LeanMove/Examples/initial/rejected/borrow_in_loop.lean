@@ -75,8 +75,8 @@ def foo : FunDef := {
         (letsite s0 ← #0) ;;       -- s0 = 0 (integer literal)
         (var_x ::= s0) ;;          -- x = s0
         (letsite s1 ← &var_x) ;;   -- s1 = &x
-        (var_r ::= s1)             -- r = s1
-      terminator := jump "l0"      -- jump l0
+        (var_r ::= s1) ;;          -- r = s1
+        jump "l0"                  -- jump l0 (terminal)
     }
   ]
 }

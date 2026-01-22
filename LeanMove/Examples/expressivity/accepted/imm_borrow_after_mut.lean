@@ -95,8 +95,8 @@ def direct : FunDef := {
         (letsite s4 ← #0) ;;            -- s4 = 0 (integer literal for write)
         Stmt.writeRef s3 s4 ;;          -- *s3 = s4
         (letsite s5 ← copy var_rimm) ;; -- s5 = copy(rimm)
-        Stmt.letBind s6 (Expr.readRef s5) -- s6 = *s5 (discarded)
-      terminator := ret []
+        Stmt.letBind s6 (Expr.readRef s5) ;; -- s6 = *s5 (discarded)
+        Stmt.ret []
     }
   ]
 }
@@ -140,8 +140,8 @@ def copy_and_freeze : FunDef := {
         (letsite s7 ← #0) ;;            -- s7 = 0 (integer literal for write)
         Stmt.writeRef s4 s7 ;;          -- *s4 = s7
         (letsite s5 ← copy var_rimm) ;; -- s5 = copy(rimm)
-        Stmt.letBind s6 (Expr.readRef s5) -- s6 = *s5 (discarded)
-      terminator := ret []
+        Stmt.letBind s6 (Expr.readRef s5) ;; -- s6 = *s5 (discarded)
+        Stmt.ret []
     }
   ]
 }

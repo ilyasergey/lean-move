@@ -178,8 +178,8 @@ def field_dangling : FunDef := {
         (letsite s2 ← move var_s) ;;
         (letsite s3 ← #0) ;;
         Stmt.letBind s4 (Expr.pack "S" [(field_f, s3)]) ;;
-        Stmt.writeRef s2 s4
-      terminator := ret []
+        Stmt.writeRef s2 s4 ;;
+        Stmt.ret []
     }
   ]
 }
@@ -221,8 +221,8 @@ def nested_field_dangling : FunDef := {
         (letsite s5 ← #0) ;;
         Stmt.letBind s6 (Expr.pack "S" [(field_f, s5)]) ;;
         Stmt.letBind s7 (Expr.pack "P" [(field_s, s6)]) ;;
-        Stmt.writeRef s4 s7
-      terminator := ret []
+        Stmt.writeRef s4 s7 ;;
+        Stmt.ret []
     }
   ]
 }
@@ -272,8 +272,8 @@ def simple_call_dangling : FunDef := {
         -- *copy(m) = 0 -- ERROR: m has immutable alias i
         (letsite s4 ← copy var_m) ;;
         (letsite s5 ← #0) ;;
-        Stmt.writeRef s4 s5
-      terminator := ret []
+        Stmt.writeRef s4 s5 ;;
+        Stmt.ret []
     }
   ]
 }
@@ -310,8 +310,8 @@ def field_call_dangling : FunDef := {
         (letsite s2 ← copy var_s) ;;
         (letsite s3 ← #0) ;;
         Stmt.letBind s4 (Expr.pack "S" [(field_f, s3)]) ;;
-        Stmt.writeRef s2 s4
-      terminator := ret []
+        Stmt.writeRef s2 s4 ;;
+        Stmt.ret []
     }
   ]
 }

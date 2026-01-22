@@ -99,8 +99,8 @@ def foo : FunDef := {
     { label := "l0"
       body :=
         (letsite s0 ← &var_x) ;;  -- let s0 = &x
-        Stmt.release s0           -- release(s0)
-      terminator := jump "l0"     -- jump l0
+        (release s0) ;;           -- release(s0)
+        jump "l0"                 -- jump l0 (terminal)
     }
   ]
 }
@@ -207,8 +207,8 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
     rfl
   · -- foo.blocks ≠ []
     simp only [foo]; intro h; exact List.noConfusion h
-  · -- Entry block environment equivalence
-    intro entryLabel entryBody entryTerm entryEnv hhead hlookup
+  · -- Entry block environment equivalence (now 2-tuple Block)
+    intro entryLabel entryBody entryEnv hhead hlookup
     simp only [foo, List.head?] at hhead
     injection hhead with hblock
     have h1 : entryLabel = "l0" := (congrArg Block.label hblock).symm
@@ -279,25 +279,20 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
       subst hu hv
       exact hpaths_root
 
-    -- typecheck_block requires: ∃ midEnv, typecheck_stmt ... ∧ typecheck_terminator ...
+    -- typecheck_block is now just typecheck_stmt (body includes terminal)
     unfold typecheck_block
-    exists env2
-    constructor
-    · -- typecheck_stmt for body: (letsite s0 ← &var_x) ;; release s0
-      apply typecheck_stmt.seq (env' := env1)
-      · -- letBind s0 (usage (borrowImm var_x))
-        apply typecheck_stmt.let_bind_borrowImm (r := r0)
-        · rfl  -- lookup varEnv var_x
-        · rfl  -- notIn siteEnv s0
-        · rfl  -- freshRefBool r0
-        · rfl  -- env' = env1
-      · -- release s0
-        apply typecheck_stmt.release (τ := .u64) (r := r0) (isBor := .siteBorrowImm)
-        · rfl  -- lookup siteEnv s0
-        · rfl  -- env' = expected
-    · -- typecheck_terminator for jump "l0"
-      apply typecheck_terminator.t_jump (envL := foo_initEnv)
-      · rfl  -- lookup lenv "l0" = some foo_initEnv
-      · exact hequiv  -- TypeEnv.equiv env2 foo_initEnv
+    -- Body: letBind s0 (&x) (release s0 (jump "l0"))
+    -- Type check: let_bind_borrowImm -> release -> jump
+    apply typecheck_stmt.let_bind_borrowImm (r := r0)
+    · rfl  -- lookup varEnv var_x
+    · rfl  -- notIn siteEnv s0
+    · rfl  -- freshRefBool r0
+    · -- continuation: release s0 (jump "l0")
+      apply typecheck_stmt.release (τ := .u64) (r := r0) (isBor := .siteBorrowImm)
+      · rfl  -- lookup siteEnv s0
+      · -- continuation: jump "l0"
+        apply typecheck_stmt.jump (envL := foo_initEnv)
+        · rfl  -- lookup lenv "l0" = some foo_initEnv
+        · exact hequiv  -- TypeEnv.equiv env2 foo_initEnv
 
 end LeanMove.Examples.BorrowInLoopFixed

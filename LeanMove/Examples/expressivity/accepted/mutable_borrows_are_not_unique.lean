@@ -228,8 +228,8 @@ def fields : FunDef := {
         -- f_2_2 = &mut copy(s2_2).S::f
         (letsite s15 ← copy var_s2_2) ;;
         Stmt.letBind s16 (Expr.borrowMutField s15 (.trecord s_entries) field_f) ;;
-        (var_f_2_2 ::= s16)
-      terminator := ret []
+        (var_f_2_2 ::= s16) ;;
+        Stmt.ret []
     }
   ]
 }
@@ -327,8 +327,8 @@ def fields_write : FunDef := {
         (letsite s24 ← move var_s2_2) ;;
         (letsite s35 ← #0) ;;
         Stmt.letBind s36 (Expr.pack "S" [(field_f, s35)]) ;;
-        Stmt.writeRef s24 s36
-      terminator := ret []
+        Stmt.writeRef s24 s36 ;;
+        Stmt.ret []
     }
   ]
 }
