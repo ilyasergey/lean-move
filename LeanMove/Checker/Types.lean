@@ -60,11 +60,19 @@ instance : Ord Mut where
     | .immut, .immut => .eq
     | .mutable, .mutable => .eq
 
+def Mut.le (a b : Mut) : Prop :=
+  match a, b with
+  | _, .mutable => True
+  | .mutable, .immut => False
+  | .immut, .immut => True
+
 instance : LE Mut where
-  le a b := match a, b with
-    | _, .mutable => true
-    | .mutable, .immut => false
-    | .immut, .immut => true
+  le := Mut.le
+
+instance : (a b : Mut) → Decidable (a ≤ b)
+  | _, .mutable => isTrue (by simp only [LE.le, Mut.le])
+  | .mutable, .immut => isFalse (by simp only [LE.le, Mut.le]; exact id)
+  | .immut, .immut => isTrue (by simp only [LE.le, Mut.le])
 
 -- Whether the variable is borrowed or not
 inductive VarBorrowStatus where
@@ -186,6 +194,25 @@ def consume_ref_transfer (pe: PathEnv) (r r' : Aref) : PathEnv :=
             paths := paths' }
 
 def freshRef (r: Aref) (pe: PathEnv) := r ∉ pe.refs
+
+/-- Boolean version of freshRef for use in algorithmic type checking -/
+def freshRefBool (r: Aref) (pe: PathEnv) : Bool := !(pe.refs.contains r)
+
+theorem freshRef_iff_freshRefBool (r : Aref) (pe : PathEnv) :
+    freshRef r pe ↔ freshRefBool r pe = true := by
+  unfold freshRef freshRefBool
+  simp only [Bool.not_eq_true', List.contains_eq_any_beq]
+  constructor
+  · intro hNotIn
+    rw [List.any_eq_false]
+    intro x hx hbeq
+    have heq : r = x := beq_iff_eq.mp hbeq
+    exact hNotIn (heq ▸ hx)
+  · intro hAny hIn
+    rw [List.any_eq_false] at hAny
+    have := hAny r hIn
+    have hbeq : (r == r) = true := beq_self_eq_true r
+    exact this hbeq
 
 /- ---------------------------------------------------- -/
 /-       Function Signatures                            -/

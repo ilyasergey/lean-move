@@ -54,6 +54,19 @@ open AssocMap
     -- The regex should not accept a path that starts with root_to_var x
     ¬ interpret_regex regex [.root_to_var x]
 
+/-- Boolean version of not_borrowed for algorithmic type checking.
+    Checks only refs in pathEnv.refs (the live references). -/
+def not_borrowed_bool (x: Var) (env: TypeEnv) : Bool :=
+  env.pathEnv.refs.all fun r =>
+    let regex := env.pathEnv.paths (.root, r)
+    -- Check that the regex does not accept the single-element path [root_to_var x]
+    -- For common regex forms, we can check this directly
+    match regex with
+    | .empty => true  -- empty regex accepts nothing
+    | .ε => true      -- ε only accepts [], not [root_to_var x]
+    | .char c => c != .root_to_var x  -- char c accepts [c], check it's not our path
+    | _ => false  -- Conservative: for complex regexes, assume borrowed
+
 def all_fresh_sites (env: TypeEnv) (as: List Site) : Prop :=
   List.all as (fun a ↦ notIn env.siteEnv a)
 
@@ -103,7 +116,7 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Site -> MoveType �
   | t_ucopy_ref : ∀ env env' x τ ms a (s t: Aref) isBor,
      AssocMap.lookup env.varEnv x = some (.validVar, .ref τ s isBor, ms) →
      notIn env.siteEnv a →
-     freshRef t env.pathEnv →
+     freshRefBool t env.pathEnv →
      env' = { env with siteEnv := insert env.siteEnv a (.ref τ t isBor)
                        -- [Fun fact] since s is reachable from the root, so is t now
                        pathEnv := update_with_epsilon s t env.pathEnv } →
@@ -113,7 +126,7 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Site -> MoveType �
   | t_uborrowImm_val : ∀ env env' x τ ms a (r: Aref),
      AssocMap.lookup env.varEnv x = some (.validVar, .basic τ, ms) →
      AssocMap.notIn env.siteEnv a →
-     freshRef r env.pathEnv →
+     freshRefBool r env.pathEnv →
      env' = { env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowImm)
                        -- The graph is updated with a var-transition from from Root to r
                        pathEnv := update_with_epsilon r r env.pathEnv |>
@@ -126,12 +139,73 @@ inductive typecheck_usage : TypeEnv → Usage → TypeEnv → Site -> MoveType �
      LE.le .mutable ms  →
      AssocMap.lookup env.varEnv x = some (.validVar, .basic τ, ms) →
      AssocMap.notIn env.siteEnv a →
-     freshRef r env.pathEnv →
+     freshRefBool r env.pathEnv →
      env' = { env with siteEnv := insert env.siteEnv a (.ref τ r (.siteBorrowMut))
                        -- The graph is updated with a var-transition from from Root to r
                        pathEnv := update_with_epsilon r r env.pathEnv |>
                                   update_with_extension .root r [.root_to_var x]  } →
      typecheck_usage env (.borrowMut x) env' a (.ref τ r .siteBorrowMut)
+
+/--
+Algorithmic version of typecheck_usage.
+
+Given an input environment `env`, a usage `u`, a destination site `a`, and an expected type `τ`,
+returns `some env'` if the usage type checks with the given parameters, `none` otherwise.
+-/
+def check_usage (env : TypeEnv) (u : Usage) (a : Site) (τ : MoveType) : Option TypeEnv :=
+  if ¬notIn env.siteEnv a then none
+  else match u with
+  | .move x =>
+    if ¬not_borrowed_bool x env then none
+    else match AssocMap.lookup env.varEnv x with
+    | some (.validVar, τ', ms) =>
+      if MoveType.beq τ τ' then
+        some { env with varEnv  := update env.varEnv x (.invalidVar, τ, ms)
+                        siteEnv := insert env.siteEnv a τ }
+      else none
+    | _ => none
+
+  | .copy x =>
+    match AssocMap.lookup env.varEnv x with
+    | some (.validVar, .basic bt, _) =>
+      if MoveType.beq τ (.basic bt) then
+        some { env with siteEnv := insert env.siteEnv a (.basic bt) }
+      else none
+    | some (.validVar, .ref innerτ s isBor, _) =>
+      match τ with
+      | .ref innerτ' t isBor' =>
+        if BasicMoveType.beq innerτ innerτ' && isBor == isBor' && freshRefBool t env.pathEnv then
+          some { env with siteEnv := insert env.siteEnv a (.ref innerτ t isBor)
+                          pathEnv := update_with_epsilon s t env.pathEnv }
+        else none
+      | _ => none
+    | _ => none
+
+  | .borrowImm x =>
+    match AssocMap.lookup env.varEnv x with
+    | some (.validVar, .basic bt, _) =>
+      match τ with
+      | .ref bt' r .siteBorrowImm =>
+        if BasicMoveType.beq bt bt' && freshRefBool r env.pathEnv then
+          some { env with siteEnv := insert env.siteEnv a (.ref bt r .siteBorrowImm)
+                          pathEnv := update_with_epsilon r r env.pathEnv |>
+                                     update_with_extension .root r [.root_to_var x] }
+        else none
+      | _ => none
+    | _ => none
+
+  | .borrowMut x =>
+    match AssocMap.lookup env.varEnv x with
+    | some (.validVar, .basic bt, .mutable) =>
+      match τ with
+      | .ref bt' r .siteBorrowMut =>
+        if BasicMoveType.beq bt bt' && freshRefBool r env.pathEnv then
+          some { env with siteEnv := insert env.siteEnv a (.ref bt r .siteBorrowMut)
+                          pathEnv := update_with_epsilon r r env.pathEnv |>
+                                     update_with_extension .root r [.root_to_var x] }
+        else none
+      | _ => none
+    | _ => none
 
 /- ---------------------------------------------------- -/
 /- Typing relations for expressions -/
@@ -211,8 +285,10 @@ Type safety properties:
 inductive typecheck_expr : TypeEnv → Expr → TypeEnv → Site → MoveType → Prop where
 
   -- c <- u (see above)
-  | usage : ∀ env env' u (c : Site) (τ : MoveType),
-     typecheck_usage env u env' c τ ->
+  -- Uses the algorithmic check_usage function; env' is computed, not given
+  -- The not_borrowed check for move is now part of check_usage
+  | usage : ∀ env u (c : Site) (τ : MoveType) env',
+     check_usage env u c τ = some env' →
      typecheck_expr env (Expr.usage u) env' c τ
 
   -- c <- n (integer literal)

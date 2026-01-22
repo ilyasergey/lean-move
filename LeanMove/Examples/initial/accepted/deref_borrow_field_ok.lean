@@ -265,18 +265,9 @@ theorem M_new_welltyped : ∃ lenv, typecheck_fun M_new lenv := by
       apply typecheck_stmt.seq (env' := env1)
       · -- let s0 = move(g)
         apply typecheck_stmt.let_bind
-        apply typecheck_expr.usage
-        apply typecheck_usage.t_umove (τ := .basic .u64) (ms := .mutable)
-        · rfl  -- lookup varEnv var_g
-        · -- not_borrowed var_g
-          unfold not_borrowed
-          intro r
-          simp only [M_new_initEnv, PathEnv.init]
-          split
-          · simp only [Regex.interpret_regex]; intro h; cases h
-          · simp only [Regex.interpret_regex]; exact id
-        · rfl  -- notIn siteEnv s0
-        · rfl  -- env' = env1
+        apply typecheck_expr.usage (τ := .basic .u64) (env' := env1)
+        -- check_usage M_new_initEnv (move var_g) s0 (.basic .u64) = some env1
+        rfl
       · -- let s1 = pack T{f: s0}
         apply typecheck_stmt.let_bind
         apply typecheck_expr.pack (fentries := AssocMap.insert AssocMap.empty field_f .u64)

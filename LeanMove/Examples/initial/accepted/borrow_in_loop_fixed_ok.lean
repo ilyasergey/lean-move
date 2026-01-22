@@ -287,15 +287,9 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
       apply typecheck_stmt.seq (env' := env1)
       · -- letBind s0 (usage (borrowImm var_x))
         apply typecheck_stmt.let_bind
-        apply typecheck_expr.usage
-        apply typecheck_usage.t_uborrowImm_val (τ := .u64) (ms := .mutable) (r := r0)
-        · rfl  -- lookup varEnv var_x
-        · rfl  -- notIn siteEnv s0
-        · -- freshRef r0: r0 ∉ PathEnv.init.refs = [.root]
-          unfold freshRef
-          simp only [foo_initEnv, PathEnv.init, r0]
-          decide
-        · rfl  -- env' = expected
+        apply typecheck_expr.usage (τ := .ref .u64 r0 .siteBorrowImm) (env' := env1)
+        -- check_usage foo_initEnv (borrowImm var_x) s0 τ = some env1
+        rfl
       · -- release s0
         apply typecheck_stmt.release (τ := .u64) (r := r0) (isBor := .siteBorrowImm)
         · rfl  -- lookup siteEnv s0

@@ -16,7 +16,7 @@
 
 import Batteries.Data.HashMap
 import Ssreflect.Lang
-import LeanMove.Structures.AssocMap
+import LeanMove.Structures.DecidableEquality
 
 /- -----------------------------------------------------
  -       Definition of the Move Light language      --
@@ -37,46 +37,8 @@ deriving Repr, DecidableEq, Inhabited, Hashable
 
 namespace MoveLight
 
--- Field names for structs
-structure Field where
-  id: Id
-deriving Repr, DecidableEq, Inhabited, Hashable
-
-inductive BasicMoveType where
-  | u64   -- Unsigned 64-bit integer
-  | tbool
-  | tunit
-  | trecord : AssocMap Field BasicMoveType → BasicMoveType
-deriving Repr, Inhabited, Hashable
-
--- Variables are just identifiers
-structure Var where
-  id: Id
-deriving Repr, DecidableEq, Inhabited, Hashable
-
--- Abstract references
-inductive Aref where
-  | root : Aref
-  | refid : Nat → Aref
-  | varRef : Var → Aref
-deriving Repr, DecidableEq, Inhabited, Hashable
-
-
--- Borrowing kind: tracks only mutability, NOT provenance
--- Provenance (which variable was borrowed) is tracked via PathEnv edges
-inductive BorrowingKind where
-  | siteBorrowImm : BorrowingKind
-  | siteBorrowMut : BorrowingKind
-deriving Repr, DecidableEq, Inhabited, Hashable
-
--- Types
-inductive MoveType where
-  | basic: BasicMoveType → MoveType
-  -- The reference type stores: basic type, abstract reference, and mutability
-  -- Note: Provenance (which variable was borrowed from) is tracked separately
-  -- via PathEnv with root_to_var edges, not in this type
-  | ref : BasicMoveType → Aref → BorrowingKind → MoveType
-deriving Repr, Inhabited, Hashable
+-- Types Field, BasicMoveType, Var, Aref, BorrowingKind, MoveType are imported
+-- from LeanMove.Structures.DecidableEquality (same namespace)
 
 -- Variable Usage
 inductive Usage where
