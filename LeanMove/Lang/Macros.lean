@@ -82,6 +82,18 @@ macro "*" a:term " ::= " b:term : term =>
 macro "release" s:term : term =>
   `((fun cont => Stmt.release $s cont : StmtBuilder))
 
+-- Pack struct builder: letsite s ← pack("T", [(f, a)]) (produces StmtBuilder)
+macro "letsite" a:term " ← " "pack" "(" name:term "," fields:term ")" : term =>
+  `((fun cont => Stmt.letBind $a (Expr.pack $name $fields) cont : StmtBuilder))
+
+-- Borrow field builder: letsite s ← borrowField(src, bt, f) (produces StmtBuilder)
+macro "letsite" af:term " ← " "borrowField" "(" a:term "," bt:term "," f:term ")" : term =>
+  `((fun cont => Stmt.letBind $af (Expr.borrowField $a $bt $f) cont : StmtBuilder))
+
+-- Call builder: call(results, fname, args) (produces StmtBuilder)
+macro "call" "(" results:term "," fnName:term "," args:term ")" : term =>
+  `((fun cont => Stmt.call $results $fnName $args cont : StmtBuilder))
+
 -- Terminal statements (no continuation needed)
 
 -- Jump: jump "label" (terminal Stmt)
@@ -110,6 +122,9 @@ macro "abort" s:term : term => `(Stmt.abort $s)
 - `letsite s ← #n` for integer literal (u64 value n)
 - `* a ::= b` for write through reference
 - `release s` for releasing references
+- `letsite s ← pack("T", [(f, a)])` for packing structs
+- `letsite s ← borrowField(src, bt, f)` for borrowing fields
+- `call(results, "fname", args)` for function calls
 
 ### Terminal statement macros (produce Stmt directly)
 - `jump "label"` for unconditional jump
@@ -124,9 +139,6 @@ macro "abort" s:term : term => `(Stmt.abort $s)
   expands to: `Stmt.letBind s (Expr.usage (Usage.move x)) (Stmt.ret [s])`
 
 ### Direct notation for other forms
-- `Stmt.call [results] "fname" [args] cont` for function calls
-- `Stmt.letBind s (Expr.pack "T" [(f, a)]) cont` for packing structs
-- `Stmt.letBind s (Expr.borrowField src bt f) cont` for borrowing fields
 - `Stmt.letBind s (Expr.borrowMutField src name f) cont` for mutable field borrow
 - `Stmt.unpack [(f, s)] src cont` for unpacking structs
 -/
