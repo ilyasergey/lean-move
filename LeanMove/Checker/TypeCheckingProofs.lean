@@ -312,6 +312,150 @@ lemma delete_ref_node_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFo
     simp only [this]
     exact hborrow
 
+/-- nextFreshRef always returns a .refid, never .root or .varRef -/
+lemma nextFreshRef_not_root (pe : PathEnv) : nextFreshRef pe ≠ Aref.root := by
+  simp only [nextFreshRef]
+  intro h
+  cases h
+
+/-- nextFreshRef returns a .refid -/
+lemma nextFreshRef_is_refid (pe : PathEnv) : ∃ n, nextFreshRef pe = Aref.refid n := by
+  simp only [nextFreshRef]
+  exact ⟨_, rfl⟩
+
+/-- All references in a SiteEnv are not root.
+    This invariant is maintained because refs come from:
+    1. nextFreshRef (always .refid n)
+    2. Function parameters (always .varRef x)
+    3. Copies of existing refs (preserves non-root) -/
+def SiteEnv.RefsNotRoot (senv : SiteEnv) : Prop :=
+  ∀ s τ, lookup senv s = some τ →
+    match τ with
+    | .ref _ r _ => r ≠ Aref.root
+    | .basic _ => True
+
+/-- Empty siteEnv satisfies RefsNotRoot -/
+lemma SiteEnv.empty_refs_not_root : SiteEnv.RefsNotRoot AssocMap.empty := by
+  intro s τ h
+  simp only [AssocMap.lookup, AssocMap.empty, List.lookup] at h
+  cases h
+
+/-- Inserting a non-root ref preserves RefsNotRoot -/
+lemma SiteEnv.insert_refs_not_root (senv : SiteEnv) (s : Site) (τ : MoveType)
+    (hwf : SiteEnv.RefsNotRoot senv)
+    (hτ : match τ with | .ref _ r _ => r ≠ Aref.root | .basic _ => True) :
+    SiteEnv.RefsNotRoot (insert senv s τ) := by
+  sorry
+
+/-- Deleting from siteEnv preserves RefsNotRoot -/
+lemma SiteEnv.delete_refs_not_root (senv : SiteEnv) (s : Site)
+    (hwf : SiteEnv.RefsNotRoot senv) :
+    SiteEnv.RefsNotRoot (delete senv s) := by
+  sorry
+
+/-- Deleting multiple sites from siteEnv preserves RefsNotRoot -/
+lemma SiteEnv.deleteAll_refs_not_root (senv : SiteEnv) (ss : List Site)
+    (hwf : SiteEnv.RefsNotRoot senv) :
+    SiteEnv.RefsNotRoot (deleteAll senv ss) := by
+  sorry
+
+/- ---------------------------------------------------- -/
+/-       Combined TypeEnv.WellFormed                     -/
+/- ---------------------------------------------------- -/
+
+/-- A type environment is well-formed if:
+    1. The path environment is well-formed
+    2. All references in siteEnv are not root -/
+structure TypeEnv.WellFormed (env : TypeEnv) : Prop where
+  pathEnv_wf : PathEnv.WellFormed env.pathEnv
+  siteEnv_wf : SiteEnv.RefsNotRoot env.siteEnv
+
+/-- Initial TypeEnv with empty siteEnv and PathEnv.init is well-formed -/
+lemma TypeEnv.init_wellformed (varEnv : VarEnv) (funEnv : FunEnv) :
+    TypeEnv.WellFormed { siteEnv := AssocMap.empty, varEnv := varEnv, pathEnv := PathEnv.init, funEnv := funEnv } := by
+  constructor
+  · exact PathEnv.init_wellformed
+  · exact SiteEnv.empty_refs_not_root
+
+/-- Updating siteEnv with insert preserves TypeEnv.WellFormed if the new type satisfies RefsNotRoot -/
+lemma TypeEnv.insert_siteEnv_wf (env : TypeEnv) (s : Site) (τ : MoveType) (hwf : TypeEnv.WellFormed env)
+    (hτ : match τ with | .ref _ r _ => r ≠ Aref.root | .basic _ => True) :
+    TypeEnv.WellFormed {env with siteEnv := insert env.siteEnv s τ} := by
+  constructor
+  · exact hwf.pathEnv_wf
+  · exact SiteEnv.insert_refs_not_root env.siteEnv s τ hwf.siteEnv_wf hτ
+
+/-- Updating siteEnv with delete preserves TypeEnv.WellFormed -/
+lemma TypeEnv.delete_siteEnv_wf (env : TypeEnv) (s : Site) (hwf : TypeEnv.WellFormed env) :
+    TypeEnv.WellFormed {env with siteEnv := delete env.siteEnv s} := by
+  constructor
+  · exact hwf.pathEnv_wf
+  · exact SiteEnv.delete_refs_not_root env.siteEnv s hwf.siteEnv_wf
+
+/-- Updating siteEnv with deleteAll preserves TypeEnv.WellFormed -/
+lemma TypeEnv.deleteAll_siteEnv_wf (env : TypeEnv) (ss : List Site) (hwf : TypeEnv.WellFormed env) :
+    TypeEnv.WellFormed {env with siteEnv := deleteAll env.siteEnv ss} := by
+  constructor
+  · exact hwf.pathEnv_wf
+  · exact SiteEnv.deleteAll_refs_not_root env.siteEnv ss hwf.siteEnv_wf
+
+/-- Updating varEnv preserves TypeEnv.WellFormed -/
+lemma TypeEnv.update_varEnv_wf (env : TypeEnv) (x : Var) (v : IsValid × MoveType × Mut)
+    (hwf : TypeEnv.WellFormed env) :
+    TypeEnv.WellFormed {env with varEnv := update env.varEnv x v} := by
+  constructor
+  · exact hwf.pathEnv_wf
+  · exact hwf.siteEnv_wf
+
+/-- Combined update: insert site and update varEnv preserves WellFormed -/
+lemma TypeEnv.insert_update_wf (env : TypeEnv) (s : Site) (τ : MoveType) (x : Var) (v : IsValid × MoveType × Mut)
+    (hwf : TypeEnv.WellFormed env)
+    (hτ : match τ with | .ref _ r _ => r ≠ Aref.root | .basic _ => True) :
+    TypeEnv.WellFormed {env with siteEnv := insert env.siteEnv s τ, varEnv := update env.varEnv x v} := by
+  constructor
+  · exact hwf.pathEnv_wf
+  · exact SiteEnv.insert_refs_not_root env.siteEnv s τ hwf.siteEnv_wf hτ
+
+/-- Combined: insert site and update pathEnv preserves WellFormed -/
+lemma TypeEnv.insert_pathEnv_wf (env : TypeEnv) (s : Site) (τ : MoveType) (pe' : PathEnv)
+    (hwf : TypeEnv.WellFormed env) (hpe : PathEnv.WellFormed pe')
+    (hτ : match τ with | .ref _ r _ => r ≠ Aref.root | .basic _ => True) :
+    TypeEnv.WellFormed {env with siteEnv := insert env.siteEnv s τ, pathEnv := pe'} := by
+  constructor
+  · exact hpe
+  · exact SiteEnv.insert_refs_not_root env.siteEnv s τ hwf.siteEnv_wf hτ
+
+/-- Combined: delete+insert site and update pathEnv preserves WellFormed -/
+lemma TypeEnv.delete_insert_pathEnv_wf (env : TypeEnv) (sdel sins : Site) (τ : MoveType) (pe' : PathEnv)
+    (hwf : TypeEnv.WellFormed env) (hpe : PathEnv.WellFormed pe')
+    (hτ : match τ with | .ref _ r _ => r ≠ Aref.root | .basic _ => True) :
+    TypeEnv.WellFormed {env with siteEnv := insert (delete env.siteEnv sdel) sins τ, pathEnv := pe'} := by
+  constructor
+  · exact hpe
+  · have hdel := SiteEnv.delete_refs_not_root env.siteEnv sdel hwf.siteEnv_wf
+    exact SiteEnv.insert_refs_not_root (delete env.siteEnv sdel) sins τ hdel hτ
+
+/-- Combined: delete+delete+insert site preserves WellFormed -/
+lemma TypeEnv.delete_delete_insert_wf (env : TypeEnv) (s1 s2 sins : Site) (τ : MoveType)
+    (hwf : TypeEnv.WellFormed env)
+    (hτ : match τ with | .ref _ r _ => r ≠ Aref.root | .basic _ => True) :
+    TypeEnv.WellFormed {env with siteEnv := insert (delete (delete env.siteEnv s1) s2) sins τ} := by
+  constructor
+  · exact hwf.pathEnv_wf
+  · have hdel1 := SiteEnv.delete_refs_not_root env.siteEnv s1 hwf.siteEnv_wf
+    have hdel2 := SiteEnv.delete_refs_not_root (delete env.siteEnv s1) s2 hdel1
+    exact SiteEnv.insert_refs_not_root _ sins τ hdel2 hτ
+
+/-- Combined: deleteAll+insert site preserves WellFormed -/
+lemma TypeEnv.deleteAll_insert_wf (env : TypeEnv) (ss : List Site) (sins : Site) (τ : MoveType)
+    (hwf : TypeEnv.WellFormed env)
+    (hτ : match τ with | .ref _ r _ => r ≠ Aref.root | .basic _ => True) :
+    TypeEnv.WellFormed {env with siteEnv := insert (deleteAll env.siteEnv ss) sins τ} := by
+  constructor
+  · exact hwf.pathEnv_wf
+  · have hdel := SiteEnv.deleteAll_refs_not_root env.siteEnv ss hwf.siteEnv_wf
+    exact SiteEnv.insert_refs_not_root _ sins τ hdel hτ
+
 /-- update_with_extension preserves WellFormed.
     In practice, z is always a fresh ref from nextFreshRef (never .root or varRef),
     and the path is either [] or [.root_to_var x] or [.field f].
@@ -613,8 +757,8 @@ lemma check_fields_distinct_implies_sites_distinct (fields : List (Field × Site
     3. WellFormed preservation for path environment updates
     4. Argument order differences between algorithmic checker and relational rules -/
 lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr) (cont : Stmt) (retType : MoveType)
-    (hwf : PathEnv.WellFormed env.pathEnv)
-    (ih_cont : ∀ env', PathEnv.WellFormed env'.pathEnv →
+    (hwf : TypeEnv.WellFormed env)
+    (ih_cont : ∀ env', TypeEnv.WellFormed env' →
         (check_stmt lenv env' cont retType).isSome = true → typecheck_stmt lenv env' cont retType)
     (h : (check_stmt lenv env (.letBind a e cont) retType).isSome = true) :
     typecheck_stmt lenv env (.letBind a e cont) retType := by
@@ -627,7 +771,8 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
     · rename_i hfresh
       apply typecheck_stmt.let_bind_intLit
       · exact hfresh
-      · exact ih_cont _ hwf h
+      · have hwf' := TypeEnv.insert_siteEnv_wf env a (.basic .u64) hwf trivial
+        exact ih_cont _ hwf' h
     · simp at h
 
   -- Usage expressions (move, copy, borrow)
@@ -648,9 +793,15 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
             obtain ⟨hnotbor, hfresh⟩ := hcond
             apply typecheck_stmt.let_bind_move (τ := τ) (ms := ms)
             · simp only [hlookup, hentry]
-            · exact not_borrowed_bool_sound x env hwf hnotbor
+            · exact not_borrowed_bool_sound x env hwf.pathEnv_wf hnotbor
             · exact hfresh
-            · exact ih_cont _ hwf h
+            · -- τ from varEnv; need VarEnv.RefsNotRoot invariant for full proof
+              have hτ : (τ_copy : MoveType) → (match τ_copy with | .ref _ r _ => r ≠ Aref.root | .basic _ => True) :=
+                fun τ_copy => match τ_copy with
+                | .basic _ => trivial
+                | .ref _ _ _ => by sorry  -- Would need VarEnv.RefsNotRoot invariant
+              have hwf' := TypeEnv.insert_update_wf env a τ x (.invalidVar, τ, ms) hwf (hτ τ)
+              exact ih_cont _ hwf' h
           · simp at h
         | (.invalidVar, _, _) => simp [hentry] at h
 
@@ -668,7 +819,8 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
             apply typecheck_stmt.let_bind_copy_val (bt := bt) (ms := ms)
             · simp only [hlookup, hentry]
             · exact hfresh
-            · exact ih_cont _ hwf h
+            · have hwf' := TypeEnv.insert_siteEnv_wf env a (.basic bt) hwf trivial
+              exact ih_cont _ hwf' h
           · simp at h
         | (.validVar, .ref τ s isBor, ms) =>
           simp only [hentry] at h
@@ -679,8 +831,10 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
             · simp only [hlookup, hentry]
             · exact hfresh
             · exact nextFreshRef_fresh env.pathEnv
-            · have hwf' : PathEnv.WellFormed (update_with_epsilon s t env.pathEnv) :=
-                update_with_epsilon_wellformed s t env.pathEnv hwf
+            · have hpe' := update_with_epsilon_wellformed s t env.pathEnv hwf.pathEnv_wf
+              have hτ : match (MoveType.ref τ t isBor) with | .ref _ r _ => r ≠ Aref.root | .basic _ => True :=
+                nextFreshRef_not_root env.pathEnv
+              have hwf' := TypeEnv.insert_pathEnv_wf env a (.ref τ t isBor) _ hwf hpe' hτ
               exact ih_cont _ hwf' h
           · simp at h
         | (.invalidVar, _, _) => simp [hentry] at h
@@ -695,19 +849,17 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
         | (.validVar, .basic τ, ms) =>
           simp only [hentry] at h
           split at h
-          · rename_i hcond
-            simp only [Bool.and_eq_true] at hcond
-            obtain ⟨hfresh, hnotbor⟩ := hcond
-            let r := Aref.varRef x
+          · rename_i hfresh
+            let r := nextFreshRef env.pathEnv
             apply typecheck_stmt.let_bind_borrowImm (τ := τ) (ms := ms) (r := r)
-            · simp only [hlookup, hentry]
+            · simp only [hlookup]
             · exact hfresh
-            · -- freshness of varRef x follows from not_borrowed via varRef_fresh_when_not_borrowed
-              exact varRef_fresh_when_not_borrowed x env.pathEnv hwf
-                (not_borrowed_bool_sound x env hwf hnotbor)
-            · have hwf' : PathEnv.WellFormed _ :=
-                update_with_extension_wellformed r .root [.root_to_var x] _
-                  (update_with_epsilon_wellformed r r env.pathEnv hwf)
+            · exact nextFreshRef_fresh env.pathEnv
+            · have hpe' := update_with_extension_wellformed r .root [.root_to_var x] _
+                (update_with_epsilon_wellformed r r env.pathEnv hwf.pathEnv_wf)
+              have hτ : match (MoveType.ref τ r .siteBorrowImm) with | .ref _ r' _ => r' ≠ Aref.root | .basic _ => True :=
+                nextFreshRef_not_root env.pathEnv
+              have hwf' := TypeEnv.insert_pathEnv_wf env a (.ref τ r .siteBorrowImm) _ hwf hpe' hτ
               exact ih_cont _ hwf' h
           · simp at h
         | (.validVar, .ref _ _ _, _) => simp [hentry] at h
@@ -725,18 +877,18 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
           split at h
           · rename_i hcond
             simp only [Bool.and_eq_true, beq_iff_eq] at hcond
-            obtain ⟨⟨hms, hfresh⟩, hnotbor⟩ := hcond
-            let r := Aref.varRef x
+            obtain ⟨hms, hfresh⟩ := hcond
+            let r := nextFreshRef env.pathEnv
             apply typecheck_stmt.let_bind_borrowMut (τ := τ) (ms := ms) (r := r)
             · simp only [hms, LE.le, Mut.le]
-            · simp only [hlookup, hentry]
+            · simp only [hlookup]
             · exact hfresh
-            · -- freshness of varRef x follows from not_borrowed via varRef_fresh_when_not_borrowed
-              exact varRef_fresh_when_not_borrowed x env.pathEnv hwf
-                (not_borrowed_bool_sound x env hwf hnotbor)
-            · have hwf' : PathEnv.WellFormed _ :=
-                update_with_extension_wellformed r .root [.root_to_var x] _
-                  (update_with_epsilon_wellformed r r env.pathEnv hwf)
+            · exact nextFreshRef_fresh env.pathEnv
+            · have hpe' := update_with_extension_wellformed r .root [.root_to_var x] _
+                (update_with_epsilon_wellformed r r env.pathEnv hwf.pathEnv_wf)
+              have hτ : match (MoveType.ref τ r .siteBorrowMut) with | .ref _ r' _ => r' ≠ Aref.root | .basic _ => True :=
+                nextFreshRef_not_root env.pathEnv
+              have hwf' := TypeEnv.insert_pathEnv_wf env a (.ref τ r .siteBorrowMut) _ hwf hpe' hτ
               exact ih_cont _ hwf' h
           · simp at h
         | (.validVar, .ref _ _ _, _) => simp [hentry] at h
@@ -767,7 +919,8 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
                 · exact hlookup2
                 · exact hbinop
                 · exact hfresh
-                · exact ih_cont _ hwf h
+                · have hwf' := TypeEnv.delete_delete_insert_wf env src1 src2 a (.basic bt3) hwf trivial
+                  exact ih_cont _ hwf' h
               · simp at h
           | ref _ _ _ => simp at h
         | ref _ _ _ => simp at h
@@ -787,12 +940,10 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
           apply typecheck_stmt.let_bind_readRef
           · exact hlookup
           · exact hfresh
-          · -- TODO: Prove r ≠ root via TypeEnv invariant (refs in siteEnv are never root)
-            have hr_not_root : r ≠ Aref.root := by
-              -- References in siteEnv come from nextFreshRef (.refid n) or varRef x, never root
-              sorry
-            have hwf' : PathEnv.WellFormed (delete_ref_node env.pathEnv r) :=
-              delete_ref_node_wellformed env.pathEnv r hwf hr_not_root
+          · -- Use the SiteEnv.RefsNotRoot invariant to prove r ≠ root
+            have hr_not_root : r ≠ Aref.root := hwf.siteEnv_wf src (.ref bt r isBor) hlookup
+            have hpe' := delete_ref_node_wellformed env.pathEnv r hwf.pathEnv_wf hr_not_root
+            have hwf' := TypeEnv.delete_insert_pathEnv_wf env src a (.basic bt) _ hwf hpe' trivial
             exact ih_cont _ hwf' h
         · simp at h
 
@@ -813,8 +964,10 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
           · exact hlookup
           · exact hfresh
           · exact freshRefBool_implies_freshRef r' env.pathEnv (nextFreshRef_fresh env.pathEnv)
-          · have hwf' : PathEnv.WellFormed (consume_ref_transfer env.pathEnv r r') :=
-              consume_ref_transfer_wellformed env.pathEnv r r' hwf
+          · have hpe' := consume_ref_transfer_wellformed env.pathEnv r r' hwf.pathEnv_wf
+            have hτ : match (MoveType.ref bt r' .siteBorrowImm) with | .ref _ r'' _ => r'' ≠ Aref.root | .basic _ => True :=
+              nextFreshRef_not_root env.pathEnv
+            have hwf' := TypeEnv.delete_insert_pathEnv_wf env src a (.ref bt r' .siteBorrowImm) _ hwf hpe' hτ
             exact ih_cont _ hwf' h
         · simp at h
 
@@ -848,8 +1001,10 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
                 · exact hlookupf
                 · exact hfresh
                 · exact freshRefBool_implies_freshRef rf env.pathEnv (nextFreshRef_fresh env.pathEnv)
-                · have hwf' : PathEnv.WellFormed (update_with_extension rf s [.field f] env.pathEnv) :=
-                    update_with_extension_wellformed rf s [.field f] env.pathEnv hwf
+                · have hpe' := update_with_extension_wellformed rf s [.field f] env.pathEnv hwf.pathEnv_wf
+                  have hτ : match (MoveType.ref btf rf isBor) with | .ref _ r _ => r ≠ Aref.root | .basic _ => True :=
+                    nextFreshRef_not_root env.pathEnv
+                  have hwf' := TypeEnv.delete_insert_pathEnv_wf env src a (.ref btf rf isBor) _ hwf hpe' hτ
                   exact ih_cont _ hwf' h
               · simp at h
           | _ => simp at h
@@ -888,8 +1043,10 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
                   · exact hlookupf
                   · exact hfresh
                   · exact freshRefBool_implies_freshRef rf env.pathEnv (nextFreshRef_fresh env.pathEnv)
-                  · have hwf' : PathEnv.WellFormed (update_with_extension rf s [.field f] env.pathEnv) :=
-                      update_with_extension_wellformed rf s [.field f] env.pathEnv hwf
+                  · have hpe' := update_with_extension_wellformed rf s [.field f] env.pathEnv hwf.pathEnv_wf
+                    have hτ : match (MoveType.ref btf rf .siteBorrowMut) with | .ref _ r _ => r ≠ Aref.root | .basic _ => True :=
+                      nextFreshRef_not_root env.pathEnv
+                    have hwf' := TypeEnv.delete_insert_pathEnv_wf env src a (.ref btf rf .siteBorrowMut) _ hwf hpe' hτ
                     exact ih_cont _ hwf' h
                 · simp at h
             | _ => simp at h
@@ -910,7 +1067,8 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
         · -- Need to show fields have basic types and exist in fentries
           sorry
         · exact check_fields_distinct_implies_sites_distinct fields hdistinct
-        · exact ih_cont _ hwf h
+        · have hwf' := TypeEnv.deleteAll_insert_wf env (fields.map Prod.snd) a (.basic (.trecord fentries)) hwf trivial
+          exact ih_cont _ hwf' h
       · simp at h
     · simp at h
 
@@ -919,10 +1077,10 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
 /- ---------------------------------------------------- -/
 
 /-- Soundness: If the algorithmic check succeeds, the relational judgment holds.
-    This requires the path environment to be well-formed.
+    This requires the type environment to be well-formed (pathEnv and siteEnv invariants).
 -/
 theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType : MoveType)
-    (hwf : PathEnv.WellFormed env.pathEnv) :
+    (hwf : TypeEnv.WellFormed env) :
     (check_stmt lenv env s retType).isSome = true → typecheck_stmt lenv env s retType := by
   -- Use induction on the statement structure to get IH for recursive cases
   induction s generalizing env with
@@ -992,7 +1150,7 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
           -- hbeq : (τ == retType) = true
           have := MoveType.eq_of_beq τ retType hbeq
           simp [this]
-      · exact no_locals_borrowed_bool_sound env hwf hnolocals
+      · exact no_locals_borrowed_bool_sound env hwf.pathEnv_wf hnolocals
     · simp at h
 
   | abort a =>
@@ -1016,9 +1174,11 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
         -- where env' = {env with siteEnv := delete env.siteEnv a, pathEnv := delete_ref_node env.pathEnv r}
         let env' : TypeEnv := {env with siteEnv := delete env.siteEnv a,
                                          pathEnv := delete_ref_node env.pathEnv r}
-        -- TODO: Prove r ≠ root via TypeEnv invariant (refs in siteEnv are never root)
-        have hr_not_root : r ≠ Aref.root := by sorry
-        have hwf' : PathEnv.WellFormed env'.pathEnv := delete_ref_node_wellformed env.pathEnv r hwf hr_not_root
+        -- Use SiteEnv.RefsNotRoot invariant to prove r ≠ root
+        have hr_not_root : r ≠ Aref.root := hwf.siteEnv_wf a (.ref bt r isBor) hlookup
+        have hpe' := delete_ref_node_wellformed env.pathEnv r hwf.pathEnv_wf hr_not_root
+        have hsenv' := SiteEnv.delete_refs_not_root env.siteEnv a hwf.siteEnv_wf
+        have hwf' : TypeEnv.WellFormed env' := ⟨hpe', hsenv'⟩
         apply typecheck_stmt.release lenv env a bt r isBor cont retType hlookup
         exact ih_cont env' hwf' h
 
@@ -1055,8 +1215,11 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
               | some bt' => exact ⟨bt', rfl⟩
             · -- recursive call
               let env' := {env with siteEnv := addFieldSites fentries (delete env.siteEnv b) fields}
-              -- PathEnv is unchanged for unpack, so WellFormed is preserved
-              have hwf' : PathEnv.WellFormed env'.pathEnv := hwf
+              -- PathEnv is unchanged for unpack; SiteEnv has delete + addFieldSites (basic types only)
+              have hsenv' : SiteEnv.RefsNotRoot env'.siteEnv := by
+                -- addFieldSites only adds basic types, so RefsNotRoot is preserved after delete
+                sorry
+              have hwf' : TypeEnv.WellFormed env' := ⟨hwf.pathEnv_wf, hsenv'⟩
               exact ih_cont env' hwf' h
           · simp at h
         | _ => simp [hlookup] at h
