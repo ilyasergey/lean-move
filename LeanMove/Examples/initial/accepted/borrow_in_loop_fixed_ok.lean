@@ -18,6 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
+import LeanMove.Checker.TypeCheckingAlgorithmic
 import LeanMove.Lang.Macros
 
 /-!
@@ -194,6 +195,9 @@ The key insight is that `release` removes the reference from PathEnv via
 `delete_ref_node`, which sets all paths involving r0 to `empty` and removes
 r0 from the refs list. This restores the PathEnv to its initial state.
 -/
+
+-- Test theorem
+theorem foo_check: check_fun foo foo_lenv := by rfl
 
 -- Theorem: foo is well-typed
 theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
