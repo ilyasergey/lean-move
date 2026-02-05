@@ -714,9 +714,55 @@ lemma update_with_epsilon_wellformed (s t : Aref) (pe : PathEnv) (hwf : PathEnv.
 
 /-- garbage_collect preserves WellFormed.
     Removes ref r from refs and clears all paths involving r. -/
-lemma garbage_collect_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFormed pe) :
+lemma garbage_collect_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFormed pe)
+    (hr_not_root : r ≠ Aref.root) :
     PathEnv.WellFormed (garbage_collect pe r) := by
-  sorry
+  constructor
+  · -- Simple: paths from root are still simple
+    intro v
+    simp only [garbage_collect]
+    by_cases hv : Aref.root = r ∨ v = r
+    · -- Path involves r, so it's empty
+      simp only [hv, ↓reduceIte]
+      exact SimpleRootPath.empty
+    · -- Path doesn't involve r, preserved from original
+      simp only [hv, ↓reduceIte]
+      exact hwf.simple v
+  · -- refs_complete: refs not in list have empty paths from root
+    intro v hv
+    simp only [garbage_collect, List.mem_filter, decide_eq_true_eq] at hv
+    simp only [garbage_collect]
+    -- v ∉ filter (≠ r) pe.refs means: ¬(v ∈ pe.refs ∧ v ≠ r) = v ∉ pe.refs ∨ v = r
+    by_cases hvr : v = r
+    · -- v = r: path from root to r is empty (condition is true since r = r)
+      subst hvr
+      simp only [or_true, ↓reduceIte]
+    · -- v ≠ r: v ∉ pe.refs, so original path was empty
+      have hvnotin : v ∉ pe.refs := by
+        intro hcontra
+        exact hv ⟨hcontra, hvr⟩
+      have horiginal := hwf.refs_complete v hvnotin
+      -- Now show the new path is also empty
+      have hcond : ¬(Aref.root = r ∨ v = r) := by
+        intro hcontra
+        cases hcontra with
+        | inl h => exact hr_not_root h.symm
+        | inr h => exact hvr h
+      simp only [hcond, ↓reduceIte]
+      exact horiginal
+  · -- varref_tracked: varRef x in refs implies borrow path
+    intro x hx
+    simp only [garbage_collect, List.mem_filter, decide_eq_true_eq] at hx
+    obtain ⟨hxin, hxne⟩ := hx
+    simp only [garbage_collect]
+    -- varRef x ≠ r, and root ≠ r, so the path is unchanged
+    have hcond : ¬(Aref.root = r ∨ Aref.varRef x = r) := by
+      intro hcontra
+      cases hcontra with
+      | inl h => exact hr_not_root h.symm
+      | inr h => exact hxne h
+    simp only [hcond, ↓reduceIte]
+    exact hwf.varref_tracked x hxin
 
 /-- consume_ref_transfer preserves WellFormed.
     Transfers edges from r to r' and removes r. -/
