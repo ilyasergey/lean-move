@@ -19,6 +19,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
+import LeanMove.Checker.TypeCheckingAlgorithmic
 import LeanMove.Lang.Macros
 
 -- -----------------------------------------------------
@@ -147,6 +148,9 @@ def M_new_initEnv : TypeEnv := {
 def M_new_lenv : LabelEnv :=
   AssocMap.insert AssocMap.empty "b0" M_new_initEnv
 
+-- Test theorem 1
+theorem M_new_check: check_fun M_new M_new_lenv := by rfl
+
 -- Theorem: M.new is well-typed
 theorem M_new_welltyped : ∃ lenv, typecheck_fun M_new lenv := by
   exists M_new_lenv
@@ -268,6 +272,9 @@ def M_t_initEnv : TypeEnv := {
 -- LabelEnv for M_t: maps "b0" to the initial environment
 def M_t_lenv : LabelEnv :=
   AssocMap.insert AssocMap.empty "b0" M_t_initEnv
+
+-- Test theorem 2
+theorem M_t_check: check_fun M_t M_t_lenv := by rfl
 
 -- Theorem: M_t is well-typed
 theorem M_t_welltyped : ∃ lenv, typecheck_fun M_t lenv := by
@@ -398,6 +405,9 @@ def foo_initEnv : TypeEnv := {
 -- LabelEnv for foo: maps "b0" to the initial environment
 def foo_lenv : LabelEnv :=
   AssocMap.insert AssocMap.empty "b0" foo_initEnv
+
+-- Test theorem 3
+theorem foo_check: check_fun foo foo_lenv := by rfl
 
 -- Theorem: foo is well-typed
 theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
