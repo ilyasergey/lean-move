@@ -18,6 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
+import LeanMove.Checker.TypeCheckingAlgorithmic
 import LeanMove.Lang.Macros
 
 /-!
@@ -214,6 +215,74 @@ def borrow_local_and_copy_ref_reverse : FunDef := {
     }
   ]
 }
+
+-- -----------------------------------------------------
+-- -           Algorithmic Type Checking Tests        --
+-- -----------------------------------------------------
+
+-- Initial environment for borrow_local_twice
+def borrow_local_twice_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := init_fun_varEnv borrow_local_twice
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+-- LabelEnv for borrow_local_twice: maps "l0" to initial environment
+def borrow_local_twice_lenv : LabelEnv :=
+  AssocMap.insert AssocMap.empty "l0" borrow_local_twice_initEnv
+
+-- Test theorem: borrow_local_twice type checks algorithmically
+theorem borrow_local_twice_check : check_fun borrow_local_twice borrow_local_twice_lenv := by sorry
+
+-- Initial environment for borrow_local_twice_reverse
+def borrow_local_twice_reverse_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := init_fun_varEnv borrow_local_twice_reverse
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+-- LabelEnv for borrow_local_twice_reverse: maps "l0" to initial environment
+def borrow_local_twice_reverse_lenv : LabelEnv :=
+  AssocMap.insert AssocMap.empty "l0" borrow_local_twice_reverse_initEnv
+
+-- Test theorem: borrow_local_twice_reverse type checks algorithmically
+theorem borrow_local_twice_reverse_check : check_fun borrow_local_twice_reverse borrow_local_twice_reverse_lenv := by sorry
+
+-- Initial environment for borrow_local_and_copy_ref
+def borrow_local_and_copy_ref_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := init_fun_varEnv borrow_local_and_copy_ref
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+-- LabelEnv for borrow_local_and_copy_ref: maps "l0" to initial environment
+def borrow_local_and_copy_ref_lenv : LabelEnv :=
+  AssocMap.insert AssocMap.empty "l0" borrow_local_and_copy_ref_initEnv
+
+-- Test theorem: borrow_local_and_copy_ref type checks algorithmically
+theorem borrow_local_and_copy_ref_check : check_fun borrow_local_and_copy_ref borrow_local_and_copy_ref_lenv := by sorry
+
+-- Initial environment for borrow_local_and_copy_ref_reverse
+def borrow_local_and_copy_ref_reverse_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := init_fun_varEnv borrow_local_and_copy_ref_reverse
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+-- LabelEnv for borrow_local_and_copy_ref_reverse: maps "l0" to initial environment
+def borrow_local_and_copy_ref_reverse_lenv : LabelEnv :=
+  AssocMap.insert AssocMap.empty "l0" borrow_local_and_copy_ref_reverse_initEnv
+
+-- Test theorem: borrow_local_and_copy_ref_reverse type checks algorithmically
+theorem borrow_local_and_copy_ref_reverse_check : check_fun borrow_local_and_copy_ref_reverse borrow_local_and_copy_ref_reverse_lenv := by sorry
+
+-- -----------------------------------------------------
+-- -           Relational Type Checking Theorems      --
+-- -----------------------------------------------------
 
 -- Theorems: all functions are well-typed
 theorem borrow_local_twice_welltyped : ∃ lenv, typecheck_fun borrow_local_twice lenv := by

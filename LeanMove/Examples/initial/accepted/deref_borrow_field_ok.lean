@@ -373,7 +373,7 @@ def foo : FunDef := {
   returnType := .basic .tunit
   locals := [
     { name := var_x, type := M_T },
-    { name := var_x_ref, type := .ref M_T_basic (.varRef var_x) .siteBorrowImm }
+    { name := var_x_ref, type := .ref M_T_basic (.refid 1) .siteBorrowImm }
   ]
   blocks := [
     { label := "b0"
@@ -463,10 +463,10 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
         · rfl  -- lookup varEnv var_x
         · rfl  -- lookup siteEnv s0 = some M_T
         · -- Step 4: let s1 = &var_x
-          apply typecheck_stmt.let_bind_borrowImm (r := Aref.varRef var_x)
+          apply typecheck_stmt.let_bind_borrowImm (r := .refid 1)
           · rfl  -- lookup varEnv var_x = some (.validVar, .basic M_T_basic, .mutable)
           · rfl  -- notIn siteEnv s1
-          · rfl  -- freshRefBool (.varRef var_x) pathEnv
+          · rfl  -- freshRef (.refid 0) pathEnv
           · -- Step 5: var_x_ref = s1
             apply typecheck_stmt.var_assign_invalid
             · rfl  -- lookup varEnv var_x_ref
@@ -479,25 +479,18 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
                 intro r
                 simp only [update_with_extension, update_with_epsilon,
                             Regex.extend, Regex.der, List.foldl, var_x]
-                -- After argument order change: z = varRef var_x, x = .root
-                -- paths(.root, r) depends on whether r = varRef var_x
-                by_cases hr : r = Aref.varRef ⟨"x"⟩
-                · -- r = varRef var_x: path is ε ∘ [.root_to_var var_x]
+                -- paths(.root, r) depends on whether r = refid 1
+                by_cases hr : r = .refid 1
+                · -- r = refid 1: path is ε ∘ [.root_to_var var_x]
                   subst hr
-                  -- Simplify the nested if conditions
-                  simp only [foo_initEnv, PathEnv.init, Regex.extend]
-                  -- The path becomes char(.root_to_var var_x) after simplification
+                  simp only [foo_initEnv, PathEnv.init]
                   simp only [var_x_ref, and_true]
                   intro ⟨w, hw⟩
                   obtain ⟨ax2, heq, hw', hax2⟩ := hw
-                  -- hax2: interpret_regex (char (.root_to_var var_x)) ax2
                   simp only [Regex.interpret_regex] at hax2
                   subst hax2
-                  -- heq: [.root_to_var var_x_ref] = w ++ [.root_to_var var_x]
-                  -- hw': interpret_regex (nested if) w
-                  -- The nested ifs simplify: Aref.root ≠ Aref.varRef ..., so the result is ε
                   split_ifs at hw' <;> simp_all [Regex.interpret_regex]
-                · -- r ≠ varRef var_x
+                · -- r ≠ refid 1
                   simp only [hr, ↓reduceIte, foo_initEnv, PathEnv.init]
                   split_ifs <;> simp_all [Regex.interpret_regex]
               · rfl  -- notIn siteEnv s2
@@ -522,7 +515,7 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
                   simp only [AssocMap.lookup, AssocMap.insert, AssocMap.empty] at hlookup
                   exact absurd hlookup (by simp)
                 · -- Step 8: release s2
-                  apply typecheck_stmt.release (τ := M_T_basic) (r := Aref.varRef var_x)
+                  apply typecheck_stmt.release (τ := M_T_basic) (r := .refid 1)
                                               (isBor := .siteBorrowImm)
                   · rfl  -- lookup siteEnv s2
                   · -- Step 9: ret []

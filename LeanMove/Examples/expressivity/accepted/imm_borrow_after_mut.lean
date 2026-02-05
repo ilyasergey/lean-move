@@ -18,6 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
+import LeanMove.Checker.TypeCheckingAlgorithmic
 import LeanMove.Lang.Macros
 
 /-!
@@ -79,8 +80,8 @@ def direct : FunDef := {
   returnType := .basic .tunit
   locals := [
     { name := var_a, type := .basic .u64 },
-    { name := var_rmut, type := .ref .u64 (.varRef var_a) .siteBorrowMut },
-    { name := var_rimm, type := .ref .u64 (.varRef var_a) .siteBorrowImm }
+    { name := var_rmut, type := .ref .u64 (.refid 1) .siteBorrowMut },
+    { name := var_rimm, type := .ref .u64 (.refid 2) .siteBorrowImm }
   ]
   blocks := [
     { label := "l0"
@@ -123,8 +124,8 @@ def copy_and_freeze : FunDef := {
   returnType := .basic .tunit
   locals := [
     { name := var_a, type := .basic .u64 },
-    { name := var_rmut, type := .ref .u64 (.varRef var_a) .siteBorrowMut },
-    { name := var_rimm, type := .ref .u64 (.varRef var_a) .siteBorrowImm }
+    { name := var_rmut, type := .ref .u64 (.refid 1) .siteBorrowMut },
+    { name := var_rimm, type := .ref .u64 (.refid 3) .siteBorrowImm }
   ]
   blocks := [
     { label := "l0"
@@ -145,6 +146,44 @@ def copy_and_freeze : FunDef := {
     }
   ]
 }
+
+-- -----------------------------------------------------
+-- -           Algorithmic Type Checking Tests        --
+-- -----------------------------------------------------
+
+-- Initial environment for direct
+def direct_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := init_fun_varEnv direct
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+-- LabelEnv for direct: maps "l0" to initial environment
+def direct_lenv : LabelEnv :=
+  AssocMap.insert AssocMap.empty "l0" direct_initEnv
+
+-- Test theorem: direct type checks algorithmically
+theorem direct_check : check_fun direct direct_lenv := by rfl
+
+-- Initial environment for copy_and_freeze
+def copy_and_freeze_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := init_fun_varEnv copy_and_freeze
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+-- LabelEnv for copy_and_freeze: maps "l0" to initial environment
+def copy_and_freeze_lenv : LabelEnv :=
+  AssocMap.insert AssocMap.empty "l0" copy_and_freeze_initEnv
+
+-- Test theorem: copy_and_freeze type checks algorithmically
+theorem copy_and_freeze_check : check_fun copy_and_freeze copy_and_freeze_lenv := by rfl
+
+-- -----------------------------------------------------
+-- -           Relational Type Checking Theorems      --
+-- -----------------------------------------------------
 
 -- Theorems: both functions are well-typed
 theorem direct_welltyped : ∃ lenv, typecheck_fun direct lenv := by
