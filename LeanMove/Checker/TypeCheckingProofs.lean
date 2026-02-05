@@ -15,7 +15,6 @@
 -/
 
 import LeanMove.Checker.TypeChecking
-import LeanMove.Checker.TypeCheckingMisc
 
 /-!
 # Type Checking Proofs for MoveLight
@@ -27,7 +26,6 @@ defined in `TypeChecking.lean`.
 - `PathEnv.WellFormed` - Well-formedness predicate for PathEnv
 - `PathEnv.init_wellformed` - Proof that initial PathEnv is well-formed
 - `not_borrowed_bool_implies_not_borrowed` - Soundness of boolean borrow check
-- `check_usage_sound` - Soundness of algorithmic usage checking
 -/
 
 namespace LeanMove.Checker
@@ -36,6 +34,23 @@ open Lang
 open Lang.MoveLight
 open AssocMap
 open Regex
+
+/- ---------------------------------------------------- -/
+/-       Algorithmic helpers for soundness proofs        -/
+/- ---------------------------------------------------- -/
+
+/-- Boolean version of not_borrowed for algorithmic type checking.
+    Checks only refs in pathEnv.refs (the live references). -/
+def not_borrowed_bool (x: Var) (env: TypeEnv) : Bool :=
+  env.pathEnv.refs.all fun r =>
+    let regex := env.pathEnv.paths (.root, r)
+    -- Check that the regex does not accept the single-element path [root_to_var x]
+    -- For common regex forms, we can check this directly
+    match regex with
+    | .empty => true  -- empty regex accepts nothing
+    | .ε => true      -- ε only accepts [], not [root_to_var x]
+    | .char c => c != .root_to_var x  -- char c accepts [c], check it's not our path
+    | _ => false  -- Conservative: for complex regexes, assume borrowed
 
 /- ---------------------------------------------------- -/
 /-       Theorems about freshRef and nextFreshRef        -/
