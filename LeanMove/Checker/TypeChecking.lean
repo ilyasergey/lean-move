@@ -325,7 +325,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowImm)
                   pathEnv := update_with_epsilon r r env.pathEnv |>
-                             update_with_extension .root r [.root_to_var x]}
+                             update_with_extension r .root [.root_to_var x]}
         cont retType →
       typecheck_stmt lenv env (.letBind a (.usage (.borrowImm x)) cont) retType
 
@@ -338,7 +338,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowMut)
                   pathEnv := update_with_epsilon r r env.pathEnv |>
-                             update_with_extension .root r [.root_to_var x]}
+                             update_with_extension r .root [.root_to_var x]}
         cont retType →
       typecheck_stmt lenv env (.letBind a (.usage (.borrowMut x)) cont) retType
 
@@ -359,7 +359,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       freshRef rf env.pathEnv →
       typecheck_stmt lenv
         {env with siteEnv := insert (delete env.siteEnv a) af (.ref bt' rf isBor)
-                  pathEnv := update_with_extension s rf [.field f] env.pathEnv}
+                  pathEnv := update_with_extension rf s [.field f] env.pathEnv}
         cont retType →
       typecheck_stmt lenv env (.letBind af (.borrowField a bt f) cont) retType
 
@@ -372,7 +372,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       freshRef rf env.pathEnv →
       typecheck_stmt lenv
         {env with siteEnv := insert (delete env.siteEnv a) af (.ref btf rf .siteBorrowMut)
-                  pathEnv := update_with_extension s rf [.field f] env.pathEnv}
+                  pathEnv := update_with_extension rf s [.field f] env.pathEnv}
         cont retType →
       typecheck_stmt lenv env (.letBind af (.borrowMutField a bt f) cont) retType
 

@@ -505,6 +505,314 @@ lemma check_fields_distinct_implies_sites_distinct (fields : List (Field × Site
   sorry
 
 /- ---------------------------------------------------- -/
+/-       letBind soundness helper lemma                  -/
+/- ---------------------------------------------------- -/
+
+/-- Helper lemma for letBind soundness: handles all expression sub-cases.
+    This lemma is complex due to the many expression variants. Each case
+    requires matching the algorithmic check with the corresponding relational rule.
+
+    Key challenges:
+    1. VarEnv entries are tuples (IsValid, MoveType × Mut)
+    2. Fresh reference generation must be shown to produce valid fresh refs
+    3. WellFormed preservation for path environment updates
+    4. Argument order differences between algorithmic checker and relational rules -/
+lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr) (cont : Stmt) (retType : MoveType)
+    (hwf : PathEnv.WellFormed env.pathEnv)
+    (ih_cont : ∀ env', PathEnv.WellFormed env'.pathEnv →
+        (check_stmt lenv env' cont retType).isSome = true → typecheck_stmt lenv env' cont retType)
+    (h : (check_stmt lenv env (.letBind a e cont) retType).isSome = true) :
+    typecheck_stmt lenv env (.letBind a e cont) retType := by
+  -- Case split on expression type
+  cases e with
+  -- Integer literal: simple case
+  | intLit n =>
+    simp only [check_stmt] at h
+    split at h
+    · rename_i hfresh
+      apply typecheck_stmt.let_bind_intLit
+      · exact hfresh
+      · exact ih_cont _ hwf h
+    · simp at h
+
+  -- Usage expressions (move, copy, borrow)
+  | usage u =>
+    cases u with
+    | move x =>
+      simp only [check_stmt] at h
+      cases hlookup : lookup env.varEnv x with
+      | none => simp [hlookup] at h
+      | some entry =>
+        simp only [hlookup] at h
+        match hentry : entry with
+        | (.validVar, τ, ms) =>
+          simp only [hentry] at h
+          split at h
+          · rename_i hcond
+            simp only [Bool.and_eq_true] at hcond
+            obtain ⟨hnotbor, hfresh⟩ := hcond
+            apply typecheck_stmt.let_bind_move (τ := τ) (ms := ms)
+            · simp only [hlookup, hentry]
+            · exact not_borrowed_bool_sound x env hwf hnotbor
+            · exact hfresh
+            · exact ih_cont _ hwf h
+          · simp at h
+        | (.invalidVar, _, _) => simp [hentry] at h
+
+    | copy x =>
+      simp only [check_stmt] at h
+      cases hlookup : lookup env.varEnv x with
+      | none => simp [hlookup] at h
+      | some entry =>
+        simp only [hlookup] at h
+        match hentry : entry with
+        | (.validVar, .basic bt, ms) =>
+          simp only [hentry] at h
+          split at h
+          · rename_i hfresh
+            apply typecheck_stmt.let_bind_copy_val (bt := bt) (ms := ms)
+            · simp only [hlookup, hentry]
+            · exact hfresh
+            · exact ih_cont _ hwf h
+          · simp at h
+        | (.validVar, .ref τ s isBor, ms) =>
+          simp only [hentry] at h
+          split at h
+          · rename_i hfresh
+            let t := nextFreshRef env.pathEnv
+            apply typecheck_stmt.let_bind_copy_ref (τ := τ) (s := s) (t := t) (isBor := isBor) (ms := ms)
+            · simp only [hlookup, hentry]
+            · exact hfresh
+            · exact nextFreshRef_fresh env.pathEnv
+            · have hwf' : PathEnv.WellFormed (update_with_epsilon s t env.pathEnv) :=
+                update_with_epsilon_wellformed s t env.pathEnv hwf
+              exact ih_cont _ hwf' h
+          · simp at h
+        | (.invalidVar, _, _) => simp [hentry] at h
+
+    | borrowImm x =>
+      simp only [check_stmt] at h
+      cases hlookup : lookup env.varEnv x with
+      | none => simp [hlookup] at h
+      | some entry =>
+        simp only [hlookup] at h
+        match hentry : entry with
+        | (.validVar, .basic τ, ms) =>
+          simp only [hentry] at h
+          split at h
+          · rename_i hfresh
+            let r := Aref.varRef x
+            apply typecheck_stmt.let_bind_borrowImm (τ := τ) (ms := ms) (r := r)
+            · simp only [hlookup, hentry]
+            · exact hfresh
+            · -- freshRefBool (varRef x) env.pathEnv
+              -- This holds if varRef x is not in env.pathEnv.refs
+              sorry
+            · have hwf' : PathEnv.WellFormed _ :=
+                update_with_extension_wellformed r .root [.root_to_var x] _
+                  (update_with_epsilon_wellformed r r env.pathEnv hwf)
+              exact ih_cont _ hwf' h
+          · simp at h
+        | (.validVar, .ref _ _ _, _) => simp [hentry] at h
+        | (.invalidVar, _, _) => simp [hentry] at h
+
+    | borrowMut x =>
+      simp only [check_stmt] at h
+      cases hlookup : lookup env.varEnv x with
+      | none => simp [hlookup] at h
+      | some entry =>
+        simp only [hlookup] at h
+        match hentry : entry with
+        | (.validVar, .basic τ, ms) =>
+          simp only [hentry] at h
+          split at h
+          · rename_i hcond
+            simp only [Bool.and_eq_true, beq_iff_eq] at hcond
+            obtain ⟨hms, hfresh⟩ := hcond
+            let r := Aref.varRef x
+            apply typecheck_stmt.let_bind_borrowMut (τ := τ) (ms := ms) (r := r)
+            · simp only [hms, LE.le, Mut.le]
+            · simp only [hlookup, hentry]
+            · exact hfresh
+            · -- freshRefBool (varRef x) env.pathEnv
+              sorry
+            · have hwf' : PathEnv.WellFormed _ :=
+                update_with_extension_wellformed r .root [.root_to_var x] _
+                  (update_with_epsilon_wellformed r r env.pathEnv hwf)
+              exact ih_cont _ hwf' h
+          · simp at h
+        | (.validVar, .ref _ _ _, _) => simp [hentry] at h
+        | (.invalidVar, _, _) => simp [hentry] at h
+
+  -- Binary operation
+  | binop bop src1 src2 =>
+    simp only [check_stmt] at h
+    cases hlookup1 : lookup env.siteEnv src1 with
+    | none => simp [hlookup1] at h
+    | some τ1 =>
+      cases hlookup2 : lookup env.siteEnv src2 with
+      | none => simp [hlookup1, hlookup2] at h
+      | some τ2 =>
+        simp only [hlookup1, hlookup2] at h
+        cases τ1 with
+        | basic bt1 =>
+          cases τ2 with
+          | basic bt2 =>
+            cases hbinop : binop_type bop bt1 bt2 with
+            | none => simp [hbinop] at h
+            | some bt3 =>
+              simp only [hbinop] at h
+              split at h
+              · rename_i hfresh
+                apply typecheck_stmt.let_bind_binop
+                · exact hlookup1
+                · exact hlookup2
+                · exact hbinop
+                · exact hfresh
+                · exact ih_cont _ hwf h
+              · simp at h
+          | ref _ _ _ => simp at h
+        | ref _ _ _ => simp at h
+
+  -- Read reference (dereference)
+  | readRef src =>
+    simp only [check_stmt] at h
+    cases hlookup : lookup env.siteEnv src with
+    | none => simp [hlookup] at h
+    | some τ =>
+      cases τ with
+      | basic _ => simp [hlookup] at h
+      | ref bt r isBor =>
+        simp only [hlookup] at h
+        split at h
+        · rename_i hfresh
+          apply typecheck_stmt.let_bind_readRef
+          · exact hlookup
+          · exact hfresh
+          · have hwf' : PathEnv.WellFormed (delete_ref_node env.pathEnv r) :=
+              delete_ref_node_wellformed env.pathEnv r hwf
+            exact ih_cont _ hwf' h
+        · simp at h
+
+  -- Freeze
+  | freeze src =>
+    simp only [check_stmt] at h
+    cases hlookup : lookup env.siteEnv src with
+    | none => simp [hlookup] at h
+    | some τ =>
+      cases τ with
+      | basic _ => simp [hlookup] at h
+      | ref bt r isBor =>
+        simp only [hlookup] at h
+        split at h
+        · rename_i hfresh
+          let r' := nextFreshRef env.pathEnv
+          apply typecheck_stmt.let_bind_freeze (r' := r')
+          · exact hlookup
+          · exact hfresh
+          · exact freshRefBool_implies_freshRef r' env.pathEnv (nextFreshRef_fresh env.pathEnv)
+          · have hwf' : PathEnv.WellFormed (consume_ref_transfer env.pathEnv r r') :=
+              consume_ref_transfer_wellformed env.pathEnv r r' hwf
+            exact ih_cont _ hwf' h
+        · simp at h
+
+  -- Borrow field
+  | borrowField src bt f =>
+    simp only [check_stmt] at h
+    cases hlookup : lookup env.siteEnv src with
+    | none => simp [hlookup] at h
+    | some τ =>
+      cases τ with
+      | basic _ => simp [hlookup] at h
+      | ref bt' s isBor =>
+        simp only [hlookup] at h
+        split at h
+        · rename_i hbeq
+          cases bt with
+          | trecord fentries =>
+            cases hlookupf : lookup fentries f with
+            | none => simp [hlookupf] at h
+            | some btf =>
+              simp only [hlookupf] at h
+              split at h
+              · rename_i hfresh
+                let rf := nextFreshRef env.pathEnv
+                have hbt_eq : BasicMoveType.trecord fentries = bt' :=
+                  BasicMoveType.eq_of_beq _ _ hbeq
+                apply typecheck_stmt.let_bind_borrowField (bt := .trecord fentries)
+                    (bt' := btf) (isBor := isBor) (fentries := fentries) (s := s) (rf := rf)
+                · simp only [hlookup, hbt_eq]
+                · rfl
+                · exact hlookupf
+                · exact hfresh
+                · exact freshRefBool_implies_freshRef rf env.pathEnv (nextFreshRef_fresh env.pathEnv)
+                · have hwf' : PathEnv.WellFormed (update_with_extension rf s [.field f] env.pathEnv) :=
+                    update_with_extension_wellformed rf s [.field f] env.pathEnv hwf
+                  exact ih_cont _ hwf' h
+              · simp at h
+          | _ => simp at h
+        · simp at h
+
+  -- Mutable borrow field
+  | borrowMutField src bt f =>
+    simp only [check_stmt] at h
+    cases hlookup : lookup env.siteEnv src with
+    | none => simp [hlookup] at h
+    | some τ =>
+      cases τ with
+      | basic _ => simp [hlookup] at h
+      | ref bt' s isBor =>
+        cases isBor with
+        | siteBorrowImm => simp [hlookup] at h
+        | siteBorrowMut =>
+          simp only [hlookup] at h
+          split at h
+          · rename_i hbeq
+            cases bt with
+            | trecord fentries =>
+              cases hlookupf : lookup fentries f with
+              | none => simp [hlookupf] at h
+              | some btf =>
+                simp only [hlookupf] at h
+                split at h
+                · rename_i hfresh
+                  let rf := nextFreshRef env.pathEnv
+                  have hbt_eq : BasicMoveType.trecord fentries = bt' :=
+                    BasicMoveType.eq_of_beq _ _ hbeq
+                  apply typecheck_stmt.let_bind_borrowMutField (bt := .trecord fentries)
+                      (btf := btf) (fentries := fentries) (s := s) (rf := rf)
+                  · simp only [hlookup, hbt_eq]
+                  · rfl
+                  · exact hlookupf
+                  · exact hfresh
+                  · exact freshRefBool_implies_freshRef rf env.pathEnv (nextFreshRef_fresh env.pathEnv)
+                  · have hwf' : PathEnv.WellFormed (update_with_extension rf s [.field f] env.pathEnv) :=
+                      update_with_extension_wellformed rf s [.field f] env.pathEnv hwf
+                    exact ih_cont _ hwf' h
+                · simp at h
+            | _ => simp at h
+          · simp at h
+
+  -- Pack
+  | pack recName fields =>
+    simp only [check_stmt] at h
+    split at h
+    · rename_i hcond
+      simp only [Bool.and_eq_true] at hcond
+      obtain ⟨hfresh, hdistinct⟩ := hcond
+      -- Split on the match in h
+      split at h
+      · rename_i fentries hfold
+        apply typecheck_stmt.let_bind_pack (fentries := fentries)
+        · exact hfresh
+        · -- Need to show fields have basic types and exist in fentries
+          sorry
+        · exact check_fields_distinct_implies_sites_distinct fields hdistinct
+        · exact ih_cont _ hwf h
+      · simp at h
+    · simp at h
+
+/- ---------------------------------------------------- -/
 /-       Statement type checking soundness               -/
 /- ---------------------------------------------------- -/
 

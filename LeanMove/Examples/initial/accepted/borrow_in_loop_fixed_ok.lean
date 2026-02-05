@@ -233,7 +233,7 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
     subst heq
 
     -- Define intermediate environments
-    let pe1 : PathEnv := update_with_extension .root r0 [.root_to_var var_x]
+    let pe1 : PathEnv := update_with_extension r0 .root [.root_to_var var_x]
                            (update_with_epsilon r0 r0 PathEnv.init)
 
     let env1 : TypeEnv := {

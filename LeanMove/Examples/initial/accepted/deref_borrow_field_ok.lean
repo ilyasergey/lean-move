@@ -478,14 +478,28 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
                 unfold not_borrowed
                 intro r
                 simp only [update_with_extension, update_with_epsilon,
-                            Regex.extend, Regex.der, List.foldl]
-                split_ifs <;> simp_all [Regex.interpret_regex, var_x_ref, var_x,
-                                        foo_initEnv, PathEnv.init]
-                -- remaining inner if: .varRef var_x = r (reversed from hypothesis)
-                rename_i hr1 hr2
-                split
-                · rename_i heq; exact absurd heq.symm hr2
-                · simp [Regex.interpret_regex]
+                            Regex.extend, Regex.der, List.foldl, var_x]
+                -- After argument order change: z = varRef var_x, x = .root
+                -- paths(.root, r) depends on whether r = varRef var_x
+                by_cases hr : r = Aref.varRef ⟨"x"⟩
+                · -- r = varRef var_x: path is ε ∘ [.root_to_var var_x]
+                  subst hr
+                  -- Simplify the nested if conditions
+                  simp only [foo_initEnv, PathEnv.init, Regex.extend]
+                  -- The path becomes char(.root_to_var var_x) after simplification
+                  simp only [var_x_ref, and_true]
+                  intro ⟨w, hw⟩
+                  obtain ⟨ax2, heq, hw', hax2⟩ := hw
+                  -- hax2: interpret_regex (char (.root_to_var var_x)) ax2
+                  simp only [Regex.interpret_regex] at hax2
+                  subst hax2
+                  -- heq: [.root_to_var var_x_ref] = w ++ [.root_to_var var_x]
+                  -- hw': interpret_regex (nested if) w
+                  -- The nested ifs simplify: Aref.root ≠ Aref.varRef ..., so the result is ε
+                  split_ifs at hw' <;> simp_all [Regex.interpret_regex]
+                · -- r ≠ varRef var_x
+                  simp only [hr, ↓reduceIte, foo_initEnv, PathEnv.init]
+                  split_ifs <;> simp_all [Regex.interpret_regex]
               · rfl  -- notIn siteEnv s2
               · -- Step 7: call M.t(s2)
                 apply typecheck_stmt.call (params := [⟨M_T_basic, some false⟩]) (rets := [])
