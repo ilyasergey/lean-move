@@ -340,24 +340,177 @@ lemma SiteEnv.empty_refs_not_root : SiteEnv.RefsNotRoot AssocMap.empty := by
   simp only [AssocMap.lookup, AssocMap.empty, List.lookup] at h
   cases h
 
+/-- Helper: lookup in filtered list implies lookup in original list (for keys not filtered) -/
+lemma List.lookup_filter_of_lookup {K V : Type} [DecidableEq K] (entries : List (K × V))
+    (k k' : K) (v : V) (hne : k ≠ k') :
+    List.lookup k (entries.filter (fun p => p.1 != k')) = some v →
+    List.lookup k entries = some v := by
+  induction entries with
+  | nil => simp [List.lookup]
+  | cons hd tl ih =>
+    intro h
+    simp only [List.filter] at h
+    simp only [List.lookup]
+    by_cases hfilt : hd.1 != k'
+    · simp only [hfilt, List.lookup] at h
+      by_cases hhd : k == hd.1
+      · simp only [hhd] at h ⊢; exact h
+      · simp only [hhd] at h ⊢; exact ih h
+    · simp only [bne_iff_ne, ne_eq, not_not] at hfilt
+      simp only [hfilt, bne_self_eq_false] at h
+      by_cases hhd : k == hd.1
+      · simp only [beq_iff_eq] at hhd
+        subst hhd
+        exact absurd hfilt hne
+      · simp only [hhd]
+        exact ih h
+
 /-- Inserting a non-root ref preserves RefsNotRoot -/
 lemma SiteEnv.insert_refs_not_root (senv : SiteEnv) (s : Site) (τ : MoveType)
     (hwf : SiteEnv.RefsNotRoot senv)
     (hτ : match τ with | .ref _ r _ => r ≠ Aref.root | .basic _ => True) :
     SiteEnv.RefsNotRoot (insert senv s τ) := by
-  sorry
+  intro s' τ' hlookup
+  simp only [AssocMap.insert, AssocMap.lookup, List.lookup] at hlookup
+  by_cases heq : s' == s
+  · -- s' = s: the inserted value τ is returned
+    simp only [heq] at hlookup
+    cases hlookup
+    exact hτ
+  · -- s' ≠ s: lookup in the filtered original list
+    simp only [heq] at hlookup
+    have hne : s' ≠ s := by simp only [beq_iff_eq] at heq; exact heq
+    have hlookup' : lookup senv s' = some τ' := by
+      simp only [AssocMap.lookup]
+      exact List.lookup_filter_of_lookup senv.entries s' s τ' hne hlookup
+    exact hwf s' τ' hlookup'
 
-/-- Deleting from siteEnv preserves RefsNotRoot -/
+/-- Looking up a key in a list filtered to remove that key returns none -/
+lemma List.lookup_filter_self_none {K V : Type} [DecidableEq K] (entries : List (K × V)) (k : K) :
+    List.lookup k (entries.filter (fun p => p.1 != k)) = none := by
+  induction entries with
+  | nil => rfl
+  | cons hd tl ih =>
+    simp only [List.filter]
+    by_cases hfilt : hd.1 != k
+    · simp only [hfilt, ↓reduceIte, List.lookup]
+      by_cases hhd : k == hd.1
+      · simp only [beq_iff_eq] at hhd
+        simp only [bne_iff_ne] at hfilt
+        exact absurd hhd.symm hfilt
+      · simp only [hhd, ↓reduceIte]
+        exact ih
+    · simp only [bne_iff_ne, ne_eq, not_not] at hfilt
+      have hfilt' : (hd.1 != k) = false := by simp [bne_iff_ne, hfilt]
+      simp only [hfilt', ↓reduceIte]
+      exact ih
+
+/-- Looking up a key that's in the filter list returns none -/
+lemma List.lookup_filter_mem_none {K V : Type} [DecidableEq K] (entries : List (K × V)) (k : K) (ks : List K) :
+    k ∈ ks → List.lookup k (entries.filter (fun p => p.1 ∉ ks)) = none := by
+  intro hmem
+  induction entries with
+  | nil => rfl
+  | cons hd tl ih =>
+    simp only [List.filter]
+    by_cases hfilt : hd.1 ∉ ks
+    · have hfilt' : decide (hd.1 ∉ ks) = true := decide_eq_true hfilt
+      simp only [hfilt', ↓reduceIte, List.lookup]
+      by_cases hhd : k == hd.1
+      · simp only [beq_iff_eq] at hhd
+        exact absurd (hhd ▸ hmem) hfilt
+      · simp only [hhd, ↓reduceIte]
+        exact ih
+    · simp only [not_not] at hfilt
+      have hfilt' : decide (hd.1 ∉ ks) = false := decide_eq_false (not_not.mpr hfilt)
+      simp only [hfilt', ↓reduceIte]
+      exact ih
+
+/-- Lookup in filtered list (key not filtered) gives same result as original -/
+lemma List.lookup_filter_ne {K V : Type} [DecidableEq K] (entries : List (K × V)) (k k' : K) (hne : k ≠ k') :
+    List.lookup k (entries.filter (fun p => p.1 != k')) = List.lookup k entries := by
+  induction entries with
+  | nil => rfl
+  | cons hd tl ih =>
+    simp only [List.filter, List.lookup]
+    by_cases hfilt : hd.1 != k'
+    · simp only [hfilt, ↓reduceIte, List.lookup]
+      by_cases hhd : k == hd.1
+      · simp only [hhd]
+      · simp only [hhd]
+        exact ih
+    · simp only [bne_iff_ne, ne_eq, not_not] at hfilt
+      have hfilt' : (hd.1 != k') = false := by simp [bne_iff_ne, hfilt]
+      simp only [hfilt', ↓reduceIte]
+      by_cases hhd : k == hd.1
+      · simp only [beq_iff_eq] at hhd
+        exact absurd (hfilt ▸ hhd) hne
+      · simp only [hhd]
+        exact ih
+
+/-- Lookup in filtered list (key not in filter list) gives same result as original -/
+lemma List.lookup_filter_notin {K V : Type} [DecidableEq K] (entries : List (K × V)) (k : K) (ks : List K) (hnotin : k ∉ ks) :
+    List.lookup k (entries.filter (fun p => p.1 ∉ ks)) = List.lookup k entries := by
+  induction entries with
+  | nil => rfl
+  | cons hd tl ih =>
+    simp only [List.filter, List.lookup]
+    by_cases hfilt : hd.1 ∉ ks
+    · have hfilt' : decide (hd.1 ∉ ks) = true := decide_eq_true hfilt
+      simp only [hfilt', ↓reduceIte, List.lookup]
+      by_cases hhd : k == hd.1
+      · simp only [hhd]
+      · simp only [hhd]
+        exact ih
+    · simp only [not_not] at hfilt
+      have hfilt' : decide (hd.1 ∉ ks) = false := decide_eq_false (not_not.mpr hfilt)
+      simp only [hfilt', ↓reduceIte]
+      by_cases hhd : k == hd.1
+      · simp only [beq_iff_eq] at hhd
+        exact absurd (hhd ▸ hfilt) hnotin
+      · simp only [hhd]
+        exact ih
+
+/-- Deleting from siteEnv preserves RefsNotRoot.
+    The key insight: any value in the filtered siteEnv was also in the original,
+    and all values in the original satisfy RefsNotRoot. -/
 lemma SiteEnv.delete_refs_not_root (senv : SiteEnv) (s : Site)
     (hwf : SiteEnv.RefsNotRoot senv) :
     SiteEnv.RefsNotRoot (delete senv s) := by
-  sorry
+  intro s' τ' hlookup
+  simp only [AssocMap.delete, AssocMap.lookup] at hlookup
+  -- s' ≠ s, otherwise lookup would return none
+  have hne : s' ≠ s := by
+    intro heq
+    have hself := List.lookup_filter_self_none senv.entries s
+    rw [heq] at hlookup
+    rw [hself] at hlookup
+    cases hlookup
+  -- Lookup in filtered list equals lookup in original
+  have hlookup' : lookup senv s' = some τ' := by
+    simp only [AssocMap.lookup]
+    rw [← List.lookup_filter_ne senv.entries s' s hne]
+    exact hlookup
+  exact hwf s' τ' hlookup'
 
 /-- Deleting multiple sites from siteEnv preserves RefsNotRoot -/
 lemma SiteEnv.deleteAll_refs_not_root (senv : SiteEnv) (ss : List Site)
     (hwf : SiteEnv.RefsNotRoot senv) :
     SiteEnv.RefsNotRoot (deleteAll senv ss) := by
-  sorry
+  intro s' τ' hlookup
+  simp only [AssocMap.deleteAll, AssocMap.lookup] at hlookup
+  -- s' ∉ ss, otherwise lookup would return none
+  have hnotin : s' ∉ ss := by
+    intro hmem
+    have := List.lookup_filter_mem_none senv.entries s' ss hmem
+    rw [this] at hlookup
+    cases hlookup
+  -- Lookup in filtered list equals lookup in original
+  have hlookup' : lookup senv s' = some τ' := by
+    simp only [AssocMap.lookup]
+    rw [← List.lookup_filter_notin senv.entries s' ss hnotin]
+    exact hlookup
+  exact hwf s' τ' hlookup'
 
 /- ---------------------------------------------------- -/
 /-       Combined TypeEnv.WellFormed                     -/
