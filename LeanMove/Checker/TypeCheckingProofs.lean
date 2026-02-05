@@ -393,16 +393,16 @@ lemma List.lookup_filter_self_none {K V : Type} [DecidableEq K] (entries : List 
   | cons hd tl ih =>
     simp only [List.filter]
     by_cases hfilt : hd.1 != k
-    · simp only [hfilt, ↓reduceIte, List.lookup]
+    · simp only [hfilt, List.lookup]
       by_cases hhd : k == hd.1
       · simp only [beq_iff_eq] at hhd
         simp only [bne_iff_ne] at hfilt
         exact absurd hhd.symm hfilt
-      · simp only [hhd, ↓reduceIte]
+      · simp only [hhd]
         exact ih
     · simp only [bne_iff_ne, ne_eq, not_not] at hfilt
-      have hfilt' : (hd.1 != k) = false := by simp [bne_iff_ne, hfilt]
-      simp only [hfilt', ↓reduceIte]
+      have hfilt' : (hd.1 != k) = false := by simp [hfilt]
+      simp only [hfilt']
       exact ih
 
 /-- Looking up a key that's in the filter list returns none -/
@@ -415,15 +415,15 @@ lemma List.lookup_filter_mem_none {K V : Type} [DecidableEq K] (entries : List (
     simp only [List.filter]
     by_cases hfilt : hd.1 ∉ ks
     · have hfilt' : decide (hd.1 ∉ ks) = true := decide_eq_true hfilt
-      simp only [hfilt', ↓reduceIte, List.lookup]
+      simp only [hfilt', List.lookup]
       by_cases hhd : k == hd.1
       · simp only [beq_iff_eq] at hhd
         exact absurd (hhd ▸ hmem) hfilt
-      · simp only [hhd, ↓reduceIte]
+      · simp only [hhd]
         exact ih
     · simp only [not_not] at hfilt
       have hfilt' : decide (hd.1 ∉ ks) = false := decide_eq_false (not_not.mpr hfilt)
-      simp only [hfilt', ↓reduceIte]
+      simp only [hfilt']
       exact ih
 
 /-- Lookup in filtered list (key not filtered) gives same result as original -/
@@ -434,14 +434,14 @@ lemma List.lookup_filter_ne {K V : Type} [DecidableEq K] (entries : List (K × V
   | cons hd tl ih =>
     simp only [List.filter, List.lookup]
     by_cases hfilt : hd.1 != k'
-    · simp only [hfilt, ↓reduceIte, List.lookup]
+    · simp only [hfilt, List.lookup]
       by_cases hhd : k == hd.1
       · simp only [hhd]
       · simp only [hhd]
         exact ih
     · simp only [bne_iff_ne, ne_eq, not_not] at hfilt
-      have hfilt' : (hd.1 != k') = false := by simp [bne_iff_ne, hfilt]
-      simp only [hfilt', ↓reduceIte]
+      have hfilt' : (hd.1 != k') = false := by simp [hfilt]
+      simp only [hfilt']
       by_cases hhd : k == hd.1
       · simp only [beq_iff_eq] at hhd
         exact absurd (hfilt ▸ hhd) hne
@@ -457,14 +457,14 @@ lemma List.lookup_filter_notin {K V : Type} [DecidableEq K] (entries : List (K �
     simp only [List.filter, List.lookup]
     by_cases hfilt : hd.1 ∉ ks
     · have hfilt' : decide (hd.1 ∉ ks) = true := decide_eq_true hfilt
-      simp only [hfilt', ↓reduceIte, List.lookup]
+      simp only [hfilt', List.lookup]
       by_cases hhd : k == hd.1
       · simp only [hhd]
       · simp only [hhd]
         exact ih
     · simp only [not_not] at hfilt
       have hfilt' : decide (hd.1 ∉ ks) = false := decide_eq_false (not_not.mpr hfilt)
-      simp only [hfilt', ↓reduceIte]
+      simp only [hfilt']
       by_cases hhd : k == hd.1
       · simp only [beq_iff_eq] at hhd
         exact absurd (hhd ▸ hfilt) hnotin
@@ -513,22 +513,95 @@ lemma SiteEnv.deleteAll_refs_not_root (senv : SiteEnv) (ss : List Site)
   exact hwf s' τ' hlookup'
 
 /- ---------------------------------------------------- -/
+/-       VarEnv.RefsNotRoot invariant                    -/
+/- ---------------------------------------------------- -/
+
+/-- All references in a VarEnv are not root.
+    VarEnv entries are tuples (IsValid, MoveType, Mut).
+    We require that all reference types have refs that are not root. -/
+def VarEnv.RefsNotRoot (venv : VarEnv) : Prop :=
+  ∀ x entry, lookup venv x = some entry →
+    match entry.2.1 with  -- entry = (isValid, (τ, mut)), so entry.2.1 = τ
+    | .ref _ r _ => r ≠ Aref.root
+    | .basic _ => True
+
+/-- Empty varEnv satisfies RefsNotRoot -/
+lemma VarEnv.empty_refs_not_root : VarEnv.RefsNotRoot AssocMap.empty := by
+  intro x entry h
+  simp only [AssocMap.lookup, AssocMap.empty, List.lookup] at h
+  cases h
+
+/-- Inserting a non-root ref preserves VarEnv.RefsNotRoot -/
+lemma VarEnv.insert_refs_not_root (venv : VarEnv) (x : Var) (entry : IsValid × MoveType × Mut)
+    (hwf : VarEnv.RefsNotRoot venv)
+    (hentry : match entry.2.1 with | .ref _ r _ => r ≠ Aref.root | .basic _ => True) :
+    VarEnv.RefsNotRoot (insert venv x entry) := by
+  intro x' entry' hlookup
+  simp only [AssocMap.insert, AssocMap.lookup, List.lookup] at hlookup
+  by_cases heq : x' == x
+  · simp only [heq] at hlookup
+    cases hlookup
+    exact hentry
+  · simp only [heq] at hlookup
+    have hne : x' ≠ x := by simp only [beq_iff_eq] at heq; exact heq
+    have hlookup' : lookup venv x' = some entry' := by
+      simp only [AssocMap.lookup]
+      exact List.lookup_filter_of_lookup venv.entries x' x entry' hne hlookup
+    exact hwf x' entry' hlookup'
+
+/-- Updating (which is same as insert for AssocMap) preserves VarEnv.RefsNotRoot -/
+lemma VarEnv.update_refs_not_root (venv : VarEnv) (x : Var) (entry : IsValid × MoveType × Mut)
+    (hwf : VarEnv.RefsNotRoot venv)
+    (hentry : match entry.2.1 with | .ref _ r _ => r ≠ Aref.root | .basic _ => True) :
+    VarEnv.RefsNotRoot (update venv x entry) := by
+  -- update is the same as insert for AssocMap
+  exact VarEnv.insert_refs_not_root venv x entry hwf hentry
+
+/-- If we lookup a type from a VarEnv that satisfies RefsNotRoot,
+    the type satisfies the refs-not-root condition -/
+lemma VarEnv.lookup_refs_not_root (venv : VarEnv) (x : Var) (entry : IsValid × MoveType × Mut)
+    (hwf : VarEnv.RefsNotRoot venv) (hlookup : lookup venv x = some entry) :
+    match entry.2.1 with | .ref _ r _ => r ≠ Aref.root | .basic _ => True :=
+  hwf x entry hlookup
+
+/-- Helper function: predicate that a MoveType's ref is not root -/
+def moveTypeRefsNotRoot (τ : MoveType) : Prop :=
+  match τ with | .ref _ r _ => r ≠ Aref.root | .basic _ => True
+
+/-- Helper: extract the type condition for a specific MoveType from varEnv lookup -/
+lemma VarEnv.lookup_type_refs_not_root (venv : VarEnv) (x : Var) (isValid : IsValid) (τ : MoveType) (m : Mut)
+    (hwf : VarEnv.RefsNotRoot venv) (hlookup : lookup venv x = some (isValid, τ, m)) :
+    moveTypeRefsNotRoot τ := by
+  have h := hwf x (isValid, τ, m) hlookup
+  cases τ <;> exact h
+
+/-- moveTypeRefsNotRoot unfolds to the match expression -/
+lemma moveTypeRefsNotRoot_eq (τ : MoveType) :
+    moveTypeRefsNotRoot τ = (match τ with | .ref _ r _ => r ≠ Aref.root | .basic _ => True) := by
+  cases τ <;> rfl
+
+/- ---------------------------------------------------- -/
 /-       Combined TypeEnv.WellFormed                     -/
 /- ---------------------------------------------------- -/
 
 /-- A type environment is well-formed if:
     1. The path environment is well-formed
-    2. All references in siteEnv are not root -/
+    2. All references in siteEnv are not root
+    3. All references in varEnv are not root -/
 structure TypeEnv.WellFormed (env : TypeEnv) : Prop where
   pathEnv_wf : PathEnv.WellFormed env.pathEnv
   siteEnv_wf : SiteEnv.RefsNotRoot env.siteEnv
+  varEnv_wf : VarEnv.RefsNotRoot env.varEnv
 
-/-- Initial TypeEnv with empty siteEnv and PathEnv.init is well-formed -/
-lemma TypeEnv.init_wellformed (varEnv : VarEnv) (funEnv : FunEnv) :
+/-- Initial TypeEnv with empty siteEnv and PathEnv.init is well-formed
+    when the provided varEnv satisfies RefsNotRoot -/
+lemma TypeEnv.init_wellformed (varEnv : VarEnv) (funEnv : FunEnv)
+    (hvarEnv : VarEnv.RefsNotRoot varEnv) :
     TypeEnv.WellFormed { siteEnv := AssocMap.empty, varEnv := varEnv, pathEnv := PathEnv.init, funEnv := funEnv } := by
   constructor
   · exact PathEnv.init_wellformed
   · exact SiteEnv.empty_refs_not_root
+  · exact hvarEnv
 
 /-- Updating siteEnv with insert preserves TypeEnv.WellFormed if the new type satisfies RefsNotRoot -/
 lemma TypeEnv.insert_siteEnv_wf (env : TypeEnv) (s : Site) (τ : MoveType) (hwf : TypeEnv.WellFormed env)
@@ -537,6 +610,7 @@ lemma TypeEnv.insert_siteEnv_wf (env : TypeEnv) (s : Site) (τ : MoveType) (hwf 
   constructor
   · exact hwf.pathEnv_wf
   · exact SiteEnv.insert_refs_not_root env.siteEnv s τ hwf.siteEnv_wf hτ
+  · exact hwf.varEnv_wf
 
 /-- Updating siteEnv with delete preserves TypeEnv.WellFormed -/
 lemma TypeEnv.delete_siteEnv_wf (env : TypeEnv) (s : Site) (hwf : TypeEnv.WellFormed env) :
@@ -544,6 +618,7 @@ lemma TypeEnv.delete_siteEnv_wf (env : TypeEnv) (s : Site) (hwf : TypeEnv.WellFo
   constructor
   · exact hwf.pathEnv_wf
   · exact SiteEnv.delete_refs_not_root env.siteEnv s hwf.siteEnv_wf
+  · exact hwf.varEnv_wf
 
 /-- Updating siteEnv with deleteAll preserves TypeEnv.WellFormed -/
 lemma TypeEnv.deleteAll_siteEnv_wf (env : TypeEnv) (ss : List Site) (hwf : TypeEnv.WellFormed env) :
@@ -551,23 +626,28 @@ lemma TypeEnv.deleteAll_siteEnv_wf (env : TypeEnv) (ss : List Site) (hwf : TypeE
   constructor
   · exact hwf.pathEnv_wf
   · exact SiteEnv.deleteAll_refs_not_root env.siteEnv ss hwf.siteEnv_wf
+  · exact hwf.varEnv_wf
 
-/-- Updating varEnv preserves TypeEnv.WellFormed -/
+/-- Updating varEnv preserves TypeEnv.WellFormed if the new entry satisfies RefsNotRoot -/
 lemma TypeEnv.update_varEnv_wf (env : TypeEnv) (x : Var) (v : IsValid × MoveType × Mut)
-    (hwf : TypeEnv.WellFormed env) :
+    (hwf : TypeEnv.WellFormed env)
+    (hv : match v.2.1 with | .ref _ r _ => r ≠ Aref.root | .basic _ => True) :
     TypeEnv.WellFormed {env with varEnv := update env.varEnv x v} := by
   constructor
   · exact hwf.pathEnv_wf
   · exact hwf.siteEnv_wf
+  · exact VarEnv.update_refs_not_root env.varEnv x v hwf.varEnv_wf hv
 
 /-- Combined update: insert site and update varEnv preserves WellFormed -/
 lemma TypeEnv.insert_update_wf (env : TypeEnv) (s : Site) (τ : MoveType) (x : Var) (v : IsValid × MoveType × Mut)
     (hwf : TypeEnv.WellFormed env)
-    (hτ : match τ with | .ref _ r _ => r ≠ Aref.root | .basic _ => True) :
+    (hτ : match τ with | .ref _ r _ => r ≠ Aref.root | .basic _ => True)
+    (hv : match v.2.1 with | .ref _ r _ => r ≠ Aref.root | .basic _ => True) :
     TypeEnv.WellFormed {env with siteEnv := insert env.siteEnv s τ, varEnv := update env.varEnv x v} := by
   constructor
   · exact hwf.pathEnv_wf
   · exact SiteEnv.insert_refs_not_root env.siteEnv s τ hwf.siteEnv_wf hτ
+  · exact VarEnv.update_refs_not_root env.varEnv x v hwf.varEnv_wf hv
 
 /-- Combined: insert site and update pathEnv preserves WellFormed -/
 lemma TypeEnv.insert_pathEnv_wf (env : TypeEnv) (s : Site) (τ : MoveType) (pe' : PathEnv)
@@ -577,6 +657,7 @@ lemma TypeEnv.insert_pathEnv_wf (env : TypeEnv) (s : Site) (τ : MoveType) (pe' 
   constructor
   · exact hpe
   · exact SiteEnv.insert_refs_not_root env.siteEnv s τ hwf.siteEnv_wf hτ
+  · exact hwf.varEnv_wf
 
 /-- Combined: delete+insert site and update pathEnv preserves WellFormed -/
 lemma TypeEnv.delete_insert_pathEnv_wf (env : TypeEnv) (sdel sins : Site) (τ : MoveType) (pe' : PathEnv)
@@ -587,6 +668,7 @@ lemma TypeEnv.delete_insert_pathEnv_wf (env : TypeEnv) (sdel sins : Site) (τ : 
   · exact hpe
   · have hdel := SiteEnv.delete_refs_not_root env.siteEnv sdel hwf.siteEnv_wf
     exact SiteEnv.insert_refs_not_root (delete env.siteEnv sdel) sins τ hdel hτ
+  · exact hwf.varEnv_wf
 
 /-- Combined: delete+delete+insert site preserves WellFormed -/
 lemma TypeEnv.delete_delete_insert_wf (env : TypeEnv) (s1 s2 sins : Site) (τ : MoveType)
@@ -598,6 +680,7 @@ lemma TypeEnv.delete_delete_insert_wf (env : TypeEnv) (s1 s2 sins : Site) (τ : 
   · have hdel1 := SiteEnv.delete_refs_not_root env.siteEnv s1 hwf.siteEnv_wf
     have hdel2 := SiteEnv.delete_refs_not_root (delete env.siteEnv s1) s2 hdel1
     exact SiteEnv.insert_refs_not_root _ sins τ hdel2 hτ
+  · exact hwf.varEnv_wf
 
 /-- Combined: deleteAll+insert site preserves WellFormed -/
 lemma TypeEnv.deleteAll_insert_wf (env : TypeEnv) (ss : List Site) (sins : Site) (τ : MoveType)
@@ -608,6 +691,7 @@ lemma TypeEnv.deleteAll_insert_wf (env : TypeEnv) (ss : List Site) (sins : Site)
   · exact hwf.pathEnv_wf
   · have hdel := SiteEnv.deleteAll_refs_not_root env.siteEnv ss hwf.siteEnv_wf
     exact SiteEnv.insert_refs_not_root _ sins τ hdel hτ
+  · exact hwf.varEnv_wf
 
 /-- update_with_extension preserves WellFormed.
     In practice, z is always a fresh ref from nextFreshRef (never .root or varRef),
@@ -945,15 +1029,13 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
             simp only [Bool.and_eq_true] at hcond
             obtain ⟨hnotbor, hfresh⟩ := hcond
             apply typecheck_stmt.let_bind_move (τ := τ) (ms := ms)
-            · simp only [hlookup, hentry]
+            · simp only [hlookup]
             · exact not_borrowed_bool_sound x env hwf.pathEnv_wf hnotbor
             · exact hfresh
-            · -- τ from varEnv; need VarEnv.RefsNotRoot invariant for full proof
-              have hτ : (τ_copy : MoveType) → (match τ_copy with | .ref _ r _ => r ≠ Aref.root | .basic _ => True) :=
-                fun τ_copy => match τ_copy with
-                | .basic _ => trivial
-                | .ref _ _ _ => by sorry  -- Would need VarEnv.RefsNotRoot invariant
-              have hwf' := TypeEnv.insert_update_wf env a τ x (.invalidVar, τ, ms) hwf (hτ τ)
+            · -- τ comes from varEnv, so it satisfies RefsNotRoot by hwf.varEnv_wf
+              have hτ_wf := VarEnv.lookup_type_refs_not_root env.varEnv x .validVar τ ms hwf.varEnv_wf hlookup
+              rw [moveTypeRefsNotRoot_eq] at hτ_wf
+              have hwf' := TypeEnv.insert_update_wf env a τ x (.invalidVar, τ, ms) hwf hτ_wf hτ_wf
               exact ih_cont _ hwf' h
           · simp at h
         | (.invalidVar, _, _) => simp [hentry] at h
@@ -1331,7 +1413,7 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
         have hr_not_root : r ≠ Aref.root := hwf.siteEnv_wf a (.ref bt r isBor) hlookup
         have hpe' := delete_ref_node_wellformed env.pathEnv r hwf.pathEnv_wf hr_not_root
         have hsenv' := SiteEnv.delete_refs_not_root env.siteEnv a hwf.siteEnv_wf
-        have hwf' : TypeEnv.WellFormed env' := ⟨hpe', hsenv'⟩
+        have hwf' : TypeEnv.WellFormed env' := ⟨hpe', hsenv', hwf.varEnv_wf⟩
         apply typecheck_stmt.release lenv env a bt r isBor cont retType hlookup
         exact ih_cont env' hwf' h
 
@@ -1372,16 +1454,16 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
               have hsenv' : SiteEnv.RefsNotRoot env'.siteEnv := by
                 -- addFieldSites only adds basic types, so RefsNotRoot is preserved after delete
                 sorry
-              have hwf' : TypeEnv.WellFormed env' := ⟨hwf.pathEnv_wf, hsenv'⟩
+              have hwf' : TypeEnv.WellFormed env' := ⟨hwf.pathEnv_wf, hsenv', hwf.varEnv_wf⟩
               exact ih_cont env' hwf' h
           · simp at h
         | _ => simp [hlookup] at h
       | ref _ _ _ => simp [hlookup] at h
 
-  -- letBind case: many sub-cases depending on expression type
-  -- Each sub-case requires careful matching of the algorithmic and relational rules
-  -- The WellFormed preservation lemmas are in place, but the proof structure is complex
-  | letBind a e cont ih_cont => sorry
+  -- letBind case: use the check_letBind_sound helper lemma
+  | letBind a e cont ih_cont =>
+    intro h
+    exact check_letBind_sound lenv env a e cont retType hwf ih_cont h
 
   | writeRef a b cont ih_cont => sorry
 
