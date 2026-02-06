@@ -43,6 +43,20 @@
   - **Valid case**: Follows the borrowMut WellFormed preservation pattern — uses `update_with_epsilon_wellformed`, `update_with_extension_wellformed`, `garbage_collect_wellformed`, `SiteEnv.insert_refs_not_root`, `SiteEnv.delete_refs_not_root`, then applies the induction hypothesis
   - **Invalid case**: Uses `MoveType.eq_of_beq`, `VarEnv.lookup_type_is_fresh`, `VarEnv.update_refs_are_fresh`, `SiteEnv.delete_refs_not_root` for WellFormed preservation, then applies the relational `var_assign_invalid` rule
 
+### LeanMove/Examples/expressivity/accepted/alias_writes.lean
+
+**Fixed local type declarations and proved algorithmic type checking:**
+
+- Fixed local variable types in all four functions (`borrow_local_twice`, `borrow_local_twice_reverse`, `borrow_local_and_copy_ref`, `borrow_local_and_copy_ref_reverse`): changed Aref from `.varRef var_a` to `.refid N` to match what `nextFreshRef` generates during algorithmic type checking
+  - `var_x`: `.refid 1` (first `nextFreshRef` from `refs=[.root]`)
+  - `var_y`: `.refid 2` (second `nextFreshRef` from `refs=[.refid 1, .root]`)
+- Added `#eval` debug checks for all four functions (check_fun returns `true`)
+- Added step-by-step `#eval` debug checks for `borrow_local_twice` (11 incremental prefix checks)
+- Proved all four algorithmic check theorems via `by decide` (replacing `sorry`)
+  - Note: `rfl` hits kernel reduction limits; `native_decide` incorrectly returns `false` (Lean 4 native code compilation issue with deeply nested closures); `decide` works correctly
+
+**Root cause:** The `assign` rule for invalid variables requires exact type equality (`τ == τ'`) between the local's declared type (from `varEnv`) and the site's type (from `siteEnv`). The algorithmic checker generates fresh refs via `nextFreshRef` (producing `.refid N`), so local declarations must use matching `.refid N` values, not `.varRef`.
+
 ## Technical Notes
 
 ### Key Lean 4 pitfalls discovered

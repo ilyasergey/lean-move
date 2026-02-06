@@ -82,8 +82,8 @@ def borrow_local_twice : FunDef := {
   returnType := .basic .tunit
   locals := [
     { name := var_a, type := .basic .u64 },
-    { name := var_x, type := .ref .u64 (.varRef var_a) .siteBorrowMut },
-    { name := var_y, type := .ref .u64 (.varRef var_a) .siteBorrowMut }
+    { name := var_x, type := .ref .u64 (.refid 1) .siteBorrowMut },
+    { name := var_y, type := .ref .u64 (.refid 2) .siteBorrowMut }
   ]
   blocks := [
     { label := "l0"
@@ -115,8 +115,8 @@ def borrow_local_twice_reverse : FunDef := {
   returnType := .basic .tunit
   locals := [
     { name := var_a, type := .basic .u64 },
-    { name := var_x, type := .ref .u64 (.varRef var_a) .siteBorrowMut },
-    { name := var_y, type := .ref .u64 (.varRef var_a) .siteBorrowMut }
+    { name := var_x, type := .ref .u64 (.refid 1) .siteBorrowMut },
+    { name := var_y, type := .ref .u64 (.refid 2) .siteBorrowMut }
   ]
   blocks := [
     { label := "l0"
@@ -160,8 +160,8 @@ def borrow_local_and_copy_ref : FunDef := {
   returnType := .basic .tunit
   locals := [
     { name := var_a, type := .basic .u64 },
-    { name := var_x, type := .ref .u64 (.varRef var_a) .siteBorrowMut },
-    { name := var_y, type := .ref .u64 (.varRef var_a) .siteBorrowMut }
+    { name := var_x, type := .ref .u64 (.refid 1) .siteBorrowMut },
+    { name := var_y, type := .ref .u64 (.refid 2) .siteBorrowMut }
   ]
   blocks := [
     { label := "l0"
@@ -193,8 +193,8 @@ def borrow_local_and_copy_ref_reverse : FunDef := {
   returnType := .basic .tunit
   locals := [
     { name := var_a, type := .basic .u64 },
-    { name := var_x, type := .ref .u64 (.varRef var_a) .siteBorrowMut },
-    { name := var_y, type := .ref .u64 (.varRef var_a) .siteBorrowMut }
+    { name := var_x, type := .ref .u64 (.refid 1) .siteBorrowMut },
+    { name := var_y, type := .ref .u64 (.refid 2) .siteBorrowMut }
   ]
   blocks := [
     { label := "l0"
@@ -232,8 +232,92 @@ def borrow_local_twice_initEnv : TypeEnv := {
 def borrow_local_twice_lenv : LabelEnv :=
   AssocMap.insert AssocMap.empty "l0" borrow_local_twice_initEnv
 
+-- Debug: test algorithmic type checking
+#eval check_fun borrow_local_twice borrow_local_twice_lenv
+
+-- Debug: step-by-step type checking of l0 body
+-- Step 1: intLit 0
+#eval (check_stmt borrow_local_twice_lenv borrow_local_twice_initEnv
+  ((letsite s0 ← #0) ;; Stmt.skip)
+  (.basic .tunit)).isSome
+-- Step 2: + assign a
+#eval (check_stmt borrow_local_twice_lenv borrow_local_twice_initEnv
+  ((letsite s0 ← #0) ;; (var_a ::= s0) ;; Stmt.skip)
+  (.basic .tunit)).isSome
+-- Step 3: + borrow mut a
+#eval (check_stmt borrow_local_twice_lenv borrow_local_twice_initEnv
+  ((letsite s0 ← #0) ;; (var_a ::= s0) ;;
+   (letsite s1 ← &mut var_a) ;; Stmt.skip)
+  (.basic .tunit)).isSome
+-- Step 4: + assign x
+#eval (check_stmt borrow_local_twice_lenv borrow_local_twice_initEnv
+  ((letsite s0 ← #0) ;; (var_a ::= s0) ;;
+   (letsite s1 ← &mut var_a) ;; (var_x ::= s1) ;; Stmt.skip)
+  (.basic .tunit)).isSome
+-- Step 5: + second borrow mut a
+#eval (check_stmt borrow_local_twice_lenv borrow_local_twice_initEnv
+  ((letsite s0 ← #0) ;; (var_a ::= s0) ;;
+   (letsite s1 ← &mut var_a) ;; (var_x ::= s1) ;;
+   (letsite s2 ← &mut var_a) ;; Stmt.skip)
+  (.basic .tunit)).isSome
+-- Step 6: + assign y
+#eval (check_stmt borrow_local_twice_lenv borrow_local_twice_initEnv
+  ((letsite s0 ← #0) ;; (var_a ::= s0) ;;
+   (letsite s1 ← &mut var_a) ;; (var_x ::= s1) ;;
+   (letsite s2 ← &mut var_a) ;; (var_y ::= s2) ;; Stmt.skip)
+  (.basic .tunit)).isSome
+-- Step 7: + move x
+#eval (check_stmt borrow_local_twice_lenv borrow_local_twice_initEnv
+  ((letsite s0 ← #0) ;; (var_a ::= s0) ;;
+   (letsite s1 ← &mut var_a) ;; (var_x ::= s1) ;;
+   (letsite s2 ← &mut var_a) ;; (var_y ::= s2) ;;
+   (letsite s3 ← move var_x) ;; Stmt.skip)
+  (.basic .tunit)).isSome
+-- Step 8: + intLit for first write
+#eval (check_stmt borrow_local_twice_lenv borrow_local_twice_initEnv
+  ((letsite s0 ← #0) ;; (var_a ::= s0) ;;
+   (letsite s1 ← &mut var_a) ;; (var_x ::= s1) ;;
+   (letsite s2 ← &mut var_a) ;; (var_y ::= s2) ;;
+   (letsite s3 ← move var_x) ;; (letsite s4 ← #0) ;; Stmt.skip)
+  (.basic .tunit)).isSome
+-- Step 9: + writeRef *s3 = s4
+#eval (check_stmt borrow_local_twice_lenv borrow_local_twice_initEnv
+  ((letsite s0 ← #0) ;; (var_a ::= s0) ;;
+   (letsite s1 ← &mut var_a) ;; (var_x ::= s1) ;;
+   (letsite s2 ← &mut var_a) ;; (var_y ::= s2) ;;
+   (letsite s3 ← move var_x) ;; (letsite s4 ← #0) ;;
+   Stmt.writeRef s3 s4 ;; Stmt.skip)
+  (.basic .tunit)).isSome
+
+-- Debug: remaining steps - move y, intLit, second writeRef, return
+-- Step 10: + move y + intLit + second writeRef
+#eval (check_stmt borrow_local_twice_lenv borrow_local_twice_initEnv
+  ((letsite s0 ← #0) ;; (var_a ::= s0) ;;
+   (letsite s1 ← &mut var_a) ;; (var_x ::= s1) ;;
+   (letsite s2 ← &mut var_a) ;; (var_y ::= s2) ;;
+   (letsite s3 ← move var_x) ;; (letsite s4 ← #0) ;;
+   Stmt.writeRef s3 s4 ;;
+   (letsite s5 ← move var_y) ;; (letsite s6 ← #0) ;;
+   Stmt.writeRef s5 s6 ;; Stmt.skip)
+  (.basic .tunit)).isSome
+-- Step 11: full body with ret
+#eval (check_stmt borrow_local_twice_lenv borrow_local_twice_initEnv
+  ((letsite s0 ← #0) ;; (var_a ::= s0) ;;
+   (letsite s1 ← &mut var_a) ;; (var_x ::= s1) ;;
+   (letsite s2 ← &mut var_a) ;; (var_y ::= s2) ;;
+   (letsite s3 ← move var_x) ;; (letsite s4 ← #0) ;;
+   Stmt.writeRef s3 s4 ;;
+   (letsite s5 ← move var_y) ;; (letsite s6 ← #0) ;;
+   Stmt.writeRef s5 s6 ;; Stmt.ret [])
+  (.basic .tunit)).isSome
+
+-- Debug: equiv_bool check (what check_fun does internally)
+#eval TypeEnv.equiv_bool borrow_local_twice_initEnv
+  { varEnv := init_fun_varEnv borrow_local_twice, siteEnv := AssocMap.empty,
+    pathEnv := PathEnv.init, funEnv := AssocMap.empty }
+
 -- Test theorem: borrow_local_twice type checks algorithmically
-theorem borrow_local_twice_check : check_fun borrow_local_twice borrow_local_twice_lenv := by sorry
+theorem borrow_local_twice_check : check_fun borrow_local_twice borrow_local_twice_lenv := by decide
 
 -- Initial environment for borrow_local_twice_reverse
 def borrow_local_twice_reverse_initEnv : TypeEnv := {
@@ -247,8 +331,11 @@ def borrow_local_twice_reverse_initEnv : TypeEnv := {
 def borrow_local_twice_reverse_lenv : LabelEnv :=
   AssocMap.insert AssocMap.empty "l0" borrow_local_twice_reverse_initEnv
 
+-- Debug: test algorithmic type checking
+#eval check_fun borrow_local_twice_reverse borrow_local_twice_reverse_lenv
+
 -- Test theorem: borrow_local_twice_reverse type checks algorithmically
-theorem borrow_local_twice_reverse_check : check_fun borrow_local_twice_reverse borrow_local_twice_reverse_lenv := by sorry
+theorem borrow_local_twice_reverse_check : check_fun borrow_local_twice_reverse borrow_local_twice_reverse_lenv := by decide
 
 -- Initial environment for borrow_local_and_copy_ref
 def borrow_local_and_copy_ref_initEnv : TypeEnv := {
@@ -262,8 +349,11 @@ def borrow_local_and_copy_ref_initEnv : TypeEnv := {
 def borrow_local_and_copy_ref_lenv : LabelEnv :=
   AssocMap.insert AssocMap.empty "l0" borrow_local_and_copy_ref_initEnv
 
+-- Debug: test algorithmic type checking
+#eval check_fun borrow_local_and_copy_ref borrow_local_and_copy_ref_lenv
+
 -- Test theorem: borrow_local_and_copy_ref type checks algorithmically
-theorem borrow_local_and_copy_ref_check : check_fun borrow_local_and_copy_ref borrow_local_and_copy_ref_lenv := by sorry
+theorem borrow_local_and_copy_ref_check : check_fun borrow_local_and_copy_ref borrow_local_and_copy_ref_lenv := by decide
 
 -- Initial environment for borrow_local_and_copy_ref_reverse
 def borrow_local_and_copy_ref_reverse_initEnv : TypeEnv := {
@@ -277,8 +367,11 @@ def borrow_local_and_copy_ref_reverse_initEnv : TypeEnv := {
 def borrow_local_and_copy_ref_reverse_lenv : LabelEnv :=
   AssocMap.insert AssocMap.empty "l0" borrow_local_and_copy_ref_reverse_initEnv
 
+-- Debug: test algorithmic type checking
+#eval check_fun borrow_local_and_copy_ref_reverse borrow_local_and_copy_ref_reverse_lenv
+
 -- Test theorem: borrow_local_and_copy_ref_reverse type checks algorithmically
-theorem borrow_local_and_copy_ref_reverse_check : check_fun borrow_local_and_copy_ref_reverse borrow_local_and_copy_ref_reverse_lenv := by sorry
+theorem borrow_local_and_copy_ref_reverse_check : check_fun borrow_local_and_copy_ref_reverse borrow_local_and_copy_ref_reverse_lenv := by decide
 
 -- -----------------------------------------------------
 -- -           Relational Type Checking Theorems      --
