@@ -472,6 +472,21 @@ lemma SiteEnv.deleteAll_refs_not_root (senv : SiteEnv) (ss : List Site)
     exact hlookup
   exact hwf s' τ' hlookup'
 
+/-- addFieldSites preserves RefsNotRoot because it only inserts basic types -/
+lemma addFieldSites_refs_not_root (fentries : AssocMap Field BasicMoveType)
+    (se : SiteEnv) (fields : List (Field × Site))
+    (hwf : SiteEnv.RefsNotRoot se) :
+    SiteEnv.RefsNotRoot (addFieldSites fentries se fields) := by
+  unfold addFieldSites
+  induction fields generalizing se with
+  | nil => simp [List.foldl]; exact hwf
+  | cons hd tl ih =>
+    simp only [List.foldl]
+    apply ih
+    cases lookup fentries hd.1 with
+    | none => exact hwf
+    | some bt => exact SiteEnv.insert_refs_not_root se hd.2 (.basic bt) hwf trivial
+
 /- ---------------------------------------------------- -/
 /-       VarEnv.RefsNotRoot invariant                    -/
 /- ---------------------------------------------------- -/
@@ -1868,10 +1883,6 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
           · simp at h
       | (.invalidVar, _, .immut) => simp at h
 
-  | writeRef a b cont ih_cont => sorry
-
-  | call as fnName bs cont ih_cont => sorry
-
   | unpack fields b cont ih_cont =>
     intro h
     simp only [check_stmt] at h
@@ -1894,8 +1905,8 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
               intro f a hfa
               simp only [check_unpack_fields_fresh, List.all_eq_true] at hfresh
               exact hfresh (f, a) hfa
-            · -- distinctness: this is more complex - needs a separate lemma
-              sorry
+            · -- distinctness
+              exact check_fields_distinct_implies_sites_distinct fields hdistinct
             · -- fields exist in fentries
               intro f a hfa
               simp only [check_unpack_fields_exist, List.all_eq_true] at hexist
@@ -1906,14 +1917,18 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
             · -- recursive call
               let env' := {env with siteEnv := addFieldSites fentries (delete env.siteEnv b) fields}
               -- PathEnv is unchanged for unpack; SiteEnv has delete + addFieldSites (basic types only)
-              have hsenv' : SiteEnv.RefsNotRoot env'.siteEnv := by
-                -- addFieldSites only adds basic types, so RefsNotRoot is preserved after delete
-                sorry
+              have hsenv' : SiteEnv.RefsNotRoot env'.siteEnv :=
+                addFieldSites_refs_not_root fentries _ fields
+                  (SiteEnv.delete_refs_not_root env.siteEnv b hwf.siteEnv_wf)
               have hwf' : TypeEnv.WellFormed env' := ⟨hwf.pathEnv_wf, hsenv', hwf.varEnv_wf⟩
               exact ih_cont env' hwf' h
           · simp at h
         | _ => simp [hlookup] at h
       | ref _ _ _ => simp [hlookup] at h
+
+  | writeRef a b cont ih_cont => sorry
+
+  | call as fnName bs cont ih_cont => sorry
 
 
 /- ---------------------------------------------------- -/
