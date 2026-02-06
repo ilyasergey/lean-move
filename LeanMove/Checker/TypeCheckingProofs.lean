@@ -1807,9 +1807,68 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
     intro h
     exact check_letBind_sound lenv env a e cont retType hwf ih_cont h
 
-  | writeRef a b cont ih_cont => sorry
+  | assign x a cont ih_cont =>
+    intro h
+    simp only [check_stmt] at h
+    cases hlookup : lookup env.varEnv x with
+    | none => simp [hlookup] at h
+    | some entry =>
+      simp only [hlookup] at h
+      match hentry : entry with
+      | (.validVar, .basic τ, ms) =>
+        simp only at h
+        split at h
+        · rename_i hms
+          split at h
+          · rename_i hfresh_ax
+            let r := nextFreshRef env.pathEnv
+            let ax : Site := .site (env.siteEnv.entries.length)
+            apply typecheck_stmt.var_assign_valid (τ := τ) (ms := ms) (r := r) (ax := ax)
+            · simp only [beq_iff_eq] at hms; simp only [hms, LE.le, Mut.le]
+            · exact hlookup
+            · exact hfresh_ax
+            · exact nextFreshRef_fresh env.pathEnv
+            · have hr_not_root : r ≠ Aref.root := nextFreshRef_not_root env.pathEnv
+              have hr_not_varRef : ∀ v, r ≠ Aref.varRef v := nextFreshRef_not_varRef env.pathEnv
+              have hpe' := update_with_extension_wellformed r .root [.root_to_var x] _
+                (update_with_epsilon_wellformed r r env.pathEnv hwf.pathEnv_wf hr_not_root hr_not_varRef) hr_not_root hr_not_varRef
+              have hpe_gc := garbage_collect_wellformed _ r hpe' hr_not_root
+              have hsenv_ins := SiteEnv.insert_refs_not_root env.siteEnv ax (.ref τ r .siteBorrowMut) hwf.siteEnv_wf
+                (by exact hr_not_root)
+              have hsenv_del1 := SiteEnv.delete_refs_not_root _ a hsenv_ins
+              have hsenv_del2 := SiteEnv.delete_refs_not_root _ ax hsenv_del1
+              let env' : TypeEnv := {env with
+                siteEnv := delete (delete (insert env.siteEnv ax (.ref τ r .siteBorrowMut)) a) ax
+                pathEnv := garbage_collect (update_with_extension r .root [.root_to_var x] (update_with_epsilon r r env.pathEnv)) r}
+              have hwf' : TypeEnv.WellFormed env' := ⟨hpe_gc, hsenv_del2, hwf.varEnv_wf⟩
+              exact ih_cont env' hwf' h
+          · simp at h
+        · simp at h
+      | (.validVar, .ref _ _ _, _) => simp at h
+      | (.invalidVar, τ, .mutable) =>
+        simp only at h
+        cases hlookup_a : lookup env.siteEnv a with
+        | none => simp [hlookup_a] at h
+        | some τ' =>
+          simp only [hlookup_a] at h
+          split at h
+          · rename_i hbeq
+            have hτeq := MoveType.eq_of_beq τ τ' hbeq
+            subst hτeq
+            have hτ_fresh := VarEnv.lookup_type_is_fresh env.varEnv x .invalidVar τ .mutable hwf.varEnv_wf hlookup
+            have hsenv' := SiteEnv.delete_refs_not_root env.siteEnv a hwf.siteEnv_wf
+            have hvarenv' := VarEnv.update_refs_are_fresh env.varEnv x (.validVar, τ, .mutable) hwf.varEnv_wf hτ_fresh
+            let env' : TypeEnv := {env with varEnv := update env.varEnv x (.validVar, τ, .mutable)
+                                            siteEnv := delete env.siteEnv a}
+            have hwf' : TypeEnv.WellFormed env' := ⟨hwf.pathEnv_wf, hsenv', hvarenv'⟩
+            apply typecheck_stmt.var_assign_invalid
+            · exact hlookup
+            · exact hlookup_a
+            · exact ih_cont env' hwf' h
+          · simp at h
+      | (.invalidVar, _, .immut) => simp at h
 
-  | assign x a cont ih_cont => sorry
+  | writeRef a b cont ih_cont => sorry
 
   | call as fnName bs cont ih_cont => sorry
 

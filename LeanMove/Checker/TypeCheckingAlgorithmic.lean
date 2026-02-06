@@ -318,7 +318,7 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType : MoveType)
         if notIn env.siteEnv ax then
           let r := nextFreshRef env.pathEnv
           let env' := {env with siteEnv := delete (delete (insert env.siteEnv ax (.ref τ r .siteBorrowMut)) a) ax
-                                pathEnv := garbage_collect (update_with_extension .root r [.root_to_var x] (update_with_epsilon r r env.pathEnv)) r}
+                                pathEnv := garbage_collect (update_with_extension r .root [.root_to_var x] (update_with_epsilon r r env.pathEnv)) r}
           check_stmt lenv env' cont retType
         else none
       else none

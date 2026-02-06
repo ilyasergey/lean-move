@@ -442,12 +442,12 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       notIn env.siteEnv ax →
       freshRefBool r env.pathEnv →
       -- After writeRef: both ax and a are consumed, r is garbage collected
-      -- The intermediate pathEnv is: update_with_extension .root r [.root_to_var x] (update_with_epsilon r r env.pathEnv)
+      -- The intermediate pathEnv is: update_with_extension r .root [.root_to_var x] (update_with_epsilon r r env.pathEnv)
       -- The intermediate siteEnv has ax with the mutable borrow
       -- After write: ax and a deleted, r garbage collected
       typecheck_stmt lenv
         {env with siteEnv := delete (delete (insert env.siteEnv ax (.ref τ r .siteBorrowMut)) a) ax
-                  pathEnv := garbage_collect (update_with_extension .root r [.root_to_var x] (update_with_epsilon r r env.pathEnv)) r}
+                  pathEnv := garbage_collect (update_with_extension r .root [.root_to_var x] (update_with_epsilon r r env.pathEnv)) r}
         cont retType →
       typecheck_stmt lenv env (.assign x a cont) retType
 

@@ -1,7 +1,8 @@
 # Changes Made on 2026-02-06
 
 ## Summary
-Proved the pack case of `check_letBind_sound` and fixed all helper lemmas so TypeCheckingProofs.lean compiles as part of the build.
+1. Proved the pack case of `check_letBind_sound` and fixed all helper lemmas so TypeCheckingProofs.lean compiles as part of the build.
+2. Fixed a bug in the assign valid typing rule (reversed `update_with_extension` arguments) and proved the assign case soundness.
 
 ## Changes
 
@@ -27,6 +28,20 @@ Proved the pack case of `check_letBind_sound` and fixed all helper lemmas so Typ
 
 ### LeanMove/Structures/AssocMap.lean
 - Minor tactic fixes: replaced `aesop` with `simp` in two places in `notIn_uniqueKeys_insert`
+
+### LeanMove/Checker/TypeChecking.lean (relational rules)
+- **Bug fix**: Swapped reversed `update_with_extension` arguments in `var_assign_valid` rule
+  - Was: `update_with_extension .root r [.root_to_var x]` (z=.root, meaning .root = &r.path — nonsensical)
+  - Now: `update_with_extension r .root [.root_to_var x]` (z=r, meaning r = &.root.path — matches borrowMut pattern)
+  - With z=.root, all paths from .root were destroyed, making WellFormed unpreservable
+
+### LeanMove/Checker/TypeCheckingAlgorithmic.lean (algorithmic checker)
+- **Bug fix**: Same `update_with_extension` argument swap in the assign valid case to match the relational rule fix
+
+### LeanMove/Checker/TypeCheckingProofs.lean (assign case)
+- **Proved assign case** (both valid and invalid branches):
+  - **Valid case**: Follows the borrowMut WellFormed preservation pattern — uses `update_with_epsilon_wellformed`, `update_with_extension_wellformed`, `garbage_collect_wellformed`, `SiteEnv.insert_refs_not_root`, `SiteEnv.delete_refs_not_root`, then applies the induction hypothesis
+  - **Invalid case**: Uses `MoveType.eq_of_beq`, `VarEnv.lookup_type_is_fresh`, `VarEnv.update_refs_are_fresh`, `SiteEnv.delete_refs_not_root` for WellFormed preservation, then applies the relational `var_assign_invalid` rule
 
 ## Technical Notes
 
