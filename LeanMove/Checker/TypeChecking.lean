@@ -175,7 +175,7 @@ def check_mutable_inputs_isolated (env: TypeEnv) (bs: List Site) : Prop :=
 
     For each mutable input site mi_site with abstract reference mi_ref,
     verify that there exists at least one target reference that mi_ref reaches
-    via a non-empty path in PathEnv.
+    via a non-empty path in PathEnv (checked via `has_nonempty_match`).
 
     This ensures that mutable borrows passed to functions are "live" and have
     meaningful connections in the path graph (beyond just the trivial ε edge to itself).
@@ -187,8 +187,7 @@ def check_mutable_inputs_have_outbound (env: TypeEnv) (bs: List Site) : Prop :=
     ∀ (mi_bt : BasicMoveType) (mi_ref : Aref),
       AssocMap.lookup env.siteEnv mi_site = some (.ref mi_bt mi_ref .siteBorrowMut) →
       ∃ (target : Aref), target ∈ env.pathEnv.refs ∧ mi_ref ≠ target ∧
-        let regex := env.pathEnv.paths (mi_ref, target)
-        ∃ path, interpret_regex regex path ∧ path ≠ []
+        has_nonempty_match (env.pathEnv.paths (mi_ref, target))
 
 /--
   Check that no local variables are currently borrowed.

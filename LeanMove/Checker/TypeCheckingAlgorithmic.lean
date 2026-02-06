@@ -101,9 +101,16 @@ def check_mutable_inputs_isolated_bool (env: TypeEnv) (bs: List Site) : Bool :=
         else true
     | _ => true
 
-/-- Boolean check for check_mutable_inputs_have_outbound (conservative) -/
-def check_mutable_inputs_have_outbound_bool (_env: TypeEnv) (_bs: List Site) : Bool :=
-  true
+/-- Boolean check for check_mutable_inputs_have_outbound.
+    For each mutable input, checks that at least one distinct target ref
+    has a non-empty path from the mutable input's ref. -/
+def check_mutable_inputs_have_outbound_bool (env: TypeEnv) (bs: List Site) : Bool :=
+  bs.all fun mi_site =>
+    match AssocMap.lookup env.siteEnv mi_site with
+    | some (.ref _ mi_ref .siteBorrowMut) =>
+      env.pathEnv.refs.any fun target =>
+        mi_ref != target && has_nonempty_match (env.pathEnv.paths (mi_ref, target))
+    | _ => true
 
 /-- Boolean check for no_locals_borrowed -/
 def no_locals_borrowed_bool (env: TypeEnv) : Bool :=

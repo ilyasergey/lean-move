@@ -257,6 +257,37 @@ def only_matches_empty : Regex α → Bool
   | .star r => only_matches_empty r
   | .deriv r _ => only_matches_empty r
 
+/-- Check if a regex definitely matches at least one string (possibly empty).
+    Sound: `is_nonempty r = true → ∃ s, ⟦ r ⟧ s`.
+    Conservative for `deriv` (returns false).
+    The `dot` case assumes a non-empty alphabet (always true for `PathElement`). -/
+def is_nonempty : Regex α → Bool
+  | .empty => false
+  | .ε => true
+  | .char _ => true
+  | .dot => true
+  | .union r1 r2 => is_nonempty r1 || is_nonempty r2
+  | .concat r1 r2 => is_nonempty r1 && is_nonempty r2
+  | .star _ => true
+  | .deriv _ _ => false
+
+/-- Check if a regex definitely matches at least one non-empty string.
+    Sound: `has_nonempty_match r = true → ∃ s, s ≠ [] ∧ ⟦ r ⟧ s`.
+    Uses `is_nonempty` in the `concat` case: one operand must have a non-empty match
+    while the other must match something (possibly empty).
+    Conservative for `deriv` (returns false). -/
+def has_nonempty_match : Regex α → Bool
+  | .empty => false
+  | .ε => false
+  | .char _ => true
+  | .dot => true
+  | .union r1 r2 => has_nonempty_match r1 || has_nonempty_match r2
+  | .concat r1 r2 =>
+      (has_nonempty_match r1 && is_nonempty r2) ||
+      (is_nonempty r1 && has_nonempty_match r2)
+  | .star r => has_nonempty_match r
+  | .deriv _ _ => false
+
 /-! ## Boolean Regex Matcher -/
 
 /-- All ways to split a list into two parts whose concatenation equals the original list.
