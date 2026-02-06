@@ -104,10 +104,12 @@ def check_outbound_bool (penv: PathEnv) (s: Aref) : Bool :=
     | .ε | .empty => true
     | _ => false
 
-/-- Check field sites are distinct -/
+/-- Check field names and sites are both distinct -/
 def check_fields_distinct (fields : List (Field × Site)) : Bool :=
   let sites := fields.map Prod.snd
-  sites.length == sites.eraseDups.length
+  let fnames := fields.map Prod.fst
+  sites.length == sites.eraseDups.length &&
+  fnames.length == fnames.eraseDups.length
 
 /-- Check unpack field freshness -/
 def check_unpack_fields_fresh (siteEnv : SiteEnv) (fields : List (Field × Site)) : Bool :=

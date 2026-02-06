@@ -598,7 +598,7 @@ lemma VarEnv.insert_refs_are_fresh (venv : VarEnv) (x : Var) (entry : IsValid ×
   · simp only [heq] at hlookup
     cases hlookup
     simp only [moveTypeIsFreshRef] at hentry
-    cases hτ : entry.2.1 <;> simp only [hτ] <;> simp only [hτ] at hentry <;> exact hentry
+    cases hτ : entry.2.1 <;> simp only ; simp only [hτ] at hentry ; exact hentry
   · simp only [heq] at hlookup
     have hne : x' ≠ x := by simp only [beq_iff_eq] at heq; exact heq
     have hlookup' : lookup venv x' = some entry' := by
@@ -776,7 +776,7 @@ lemma update_with_extension_wellformed (z x : Aref) (path : List PathElement) (p
       · -- varRef x' = z: impossible since z is not a varRef
         exact absurd hvz.symm (hz_not_varRef x')
       · have hnotboth : ¬(Aref.root = z ∧ Aref.varRef x' = z) := fun h => hz_not_root h.1.symm
-        simp only [hnotboth, hvz, hnotz, ↓reduceIte]
+        simp only [hvz, hnotz, ↓reduceIte]
         exact hborrow
     · -- z not in refs
       simp only [hzin, not_false_eq_true, ↓reduceIte, List.mem_cons] at hx'
@@ -789,7 +789,7 @@ lemma update_with_extension_wellformed (z x : Aref) (path : List PathElement) (p
         by_cases hvz : Aref.varRef x' = z
         · exact absurd (hvz ▸ hx'in) hzin
         · have hnotboth : ¬(Aref.root = z ∧ Aref.varRef x' = z) := fun h => hz_not_root h.1.symm
-          simp only [hnotboth, hvz, hnotz, ↓reduceIte]
+          simp only [hvz, hnotz, ↓reduceIte]
           exact hborrow
 
 /-- update_with_epsilon preserves WellFormed -/
@@ -1176,7 +1176,7 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
         simp only [hlookup] at h
         match hentry : entry with
         | (.validVar, τ, ms) =>
-          simp only [hentry] at h
+          simp only at h
           split at h
           · rename_i hcond
             simp only [Bool.and_eq_true] at hcond
@@ -1197,7 +1197,7 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
               have hwf' := TypeEnv.insert_update_wf env a τ x (.invalidVar, τ, ms) hwf hτ_not_root hτ_fresh
               exact ih_cont _ hwf' h
           · simp at h
-        | (.invalidVar, _, _) => simp [hentry] at h
+        | (.invalidVar, _, _) => simp at h
 
     | copy x =>
       simp only [check_stmt] at h
@@ -1207,22 +1207,22 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
         simp only [hlookup] at h
         match hentry : entry with
         | (.validVar, .basic bt, ms) =>
-          simp only [hentry] at h
+          simp only at h
           split at h
           · rename_i hfresh
             apply typecheck_stmt.let_bind_copy_val (bt := bt) (ms := ms)
-            · simp only [hlookup, hentry]
+            · simp only [hlookup]
             · exact hfresh
             · have hwf' := TypeEnv.insert_siteEnv_wf env a (.basic bt) hwf trivial
               exact ih_cont _ hwf' h
           · simp at h
         | (.validVar, .ref τ s isBor, ms) =>
-          simp only [hentry] at h
+          simp only at h
           split at h
           · rename_i hfresh
             let t := nextFreshRef env.pathEnv
             apply typecheck_stmt.let_bind_copy_ref (τ := τ) (s := s) (t := t) (isBor := isBor) (ms := ms)
-            · simp only [hlookup, hentry]
+            · simp only [hlookup]
             · exact hfresh
             · exact nextFreshRef_fresh env.pathEnv
             · have hs_fresh := VarEnv.lookup_type_is_fresh env.varEnv x .validVar (.ref τ s isBor) ms hwf.varEnv_wf hlookup
@@ -1235,7 +1235,7 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
               have hwf' := TypeEnv.insert_pathEnv_wf env a (.ref τ t isBor) _ hwf hpe' hτ
               exact ih_cont _ hwf' h
           · simp at h
-        | (.invalidVar, _, _) => simp [hentry] at h
+        | (.invalidVar, _, _) => simp at h
 
     | borrowImm x =>
       simp only [check_stmt] at h
@@ -1245,7 +1245,7 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
         simp only [hlookup] at h
         match hentry : entry with
         | (.validVar, .basic τ, ms) =>
-          simp only [hentry] at h
+          simp only at h
           split at h
           · rename_i hfresh
             let r := nextFreshRef env.pathEnv
@@ -1262,8 +1262,8 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
               have hwf' := TypeEnv.insert_pathEnv_wf env a (.ref τ r .siteBorrowImm) _ hwf hpe' hτ
               exact ih_cont _ hwf' h
           · simp at h
-        | (.validVar, .ref _ _ _, _) => simp [hentry] at h
-        | (.invalidVar, _, _) => simp [hentry] at h
+        | (.validVar, .ref _ _ _, _) => simp at h
+        | (.invalidVar, _, _) => simp at h
 
     | borrowMut x =>
       simp only [check_stmt] at h
@@ -1273,7 +1273,7 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
         simp only [hlookup] at h
         match hentry : entry with
         | (.validVar, .basic τ, ms) =>
-          simp only [hentry] at h
+          simp only at h
           split at h
           · rename_i hcond
             simp only [Bool.and_eq_true, beq_iff_eq] at hcond
@@ -1293,8 +1293,8 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
               have hwf' := TypeEnv.insert_pathEnv_wf env a (.ref τ r .siteBorrowMut) _ hwf hpe' hτ
               exact ih_cont _ hwf' h
           · simp at h
-        | (.validVar, .ref _ _ _, _) => simp [hentry] at h
-        | (.invalidVar, _, _) => simp [hentry] at h
+        | (.validVar, .ref _ _ _, _) => simp at h
+        | (.invalidVar, _, _) => simp at h
 
   -- Binary operation
   | binop bop src1 src2 =>
@@ -1592,6 +1592,17 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
         apply typecheck_stmt.release lenv env a bt r isBor cont retType hlookup
         exact ih_cont env' hwf' h
 
+  -- letBind case: use the check_letBind_sound helper lemma
+  | letBind a e cont ih_cont =>
+    intro h
+    exact check_letBind_sound lenv env a e cont retType hwf ih_cont h
+
+  | writeRef a b cont ih_cont => sorry
+
+  | assign x a cont ih_cont => sorry
+
+  | call as fnName bs cont ih_cont => sorry
+
   | unpack fields b cont ih_cont =>
     intro h
     simp only [check_stmt] at h
@@ -1635,16 +1646,6 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
         | _ => simp [hlookup] at h
       | ref _ _ _ => simp [hlookup] at h
 
-  -- letBind case: use the check_letBind_sound helper lemma
-  | letBind a e cont ih_cont =>
-    intro h
-    exact check_letBind_sound lenv env a e cont retType hwf ih_cont h
-
-  | writeRef a b cont ih_cont => sorry
-
-  | assign x a cont ih_cont => sorry
-
-  | call as fnName bs cont ih_cont => sorry
 
 /- ---------------------------------------------------- -/
 /-       Statement type checking completeness            -/
