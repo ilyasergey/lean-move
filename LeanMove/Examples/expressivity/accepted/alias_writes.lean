@@ -19,6 +19,7 @@ import Ssreflect.Lang
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
 import LeanMove.Checker.TypeCheckingAlgorithmic
+import LeanMove.Checker.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
 
 /-!
@@ -317,7 +318,9 @@ def borrow_local_twice_lenv : LabelEnv :=
     pathEnv := PathEnv.init, funEnv := AssocMap.empty }
 
 -- Test theorem: borrow_local_twice type checks algorithmically
-theorem borrow_local_twice_check : check_fun borrow_local_twice borrow_local_twice_lenv := by decide
+theorem borrow_local_twice_check :
+  check_fun borrow_local_twice
+  borrow_local_twice_lenv := by rfl
 
 -- Initial environment for borrow_local_twice_reverse
 def borrow_local_twice_reverse_initEnv : TypeEnv := {
@@ -335,7 +338,9 @@ def borrow_local_twice_reverse_lenv : LabelEnv :=
 #eval check_fun borrow_local_twice_reverse borrow_local_twice_reverse_lenv
 
 -- Test theorem: borrow_local_twice_reverse type checks algorithmically
-theorem borrow_local_twice_reverse_check : check_fun borrow_local_twice_reverse borrow_local_twice_reverse_lenv := by decide
+theorem borrow_local_twice_reverse_check :
+  check_fun borrow_local_twice_reverse
+  borrow_local_twice_reverse_lenv := by rfl
 
 -- Initial environment for borrow_local_and_copy_ref
 def borrow_local_and_copy_ref_initEnv : TypeEnv := {
@@ -353,7 +358,9 @@ def borrow_local_and_copy_ref_lenv : LabelEnv :=
 #eval check_fun borrow_local_and_copy_ref borrow_local_and_copy_ref_lenv
 
 -- Test theorem: borrow_local_and_copy_ref type checks algorithmically
-theorem borrow_local_and_copy_ref_check : check_fun borrow_local_and_copy_ref borrow_local_and_copy_ref_lenv := by decide
+theorem borrow_local_and_copy_ref_check :
+  check_fun borrow_local_and_copy_ref
+  borrow_local_and_copy_ref_lenv := by rfl
 
 -- Initial environment for borrow_local_and_copy_ref_reverse
 def borrow_local_and_copy_ref_reverse_initEnv : TypeEnv := {
@@ -371,23 +378,98 @@ def borrow_local_and_copy_ref_reverse_lenv : LabelEnv :=
 #eval check_fun borrow_local_and_copy_ref_reverse borrow_local_and_copy_ref_reverse_lenv
 
 -- Test theorem: borrow_local_and_copy_ref_reverse type checks algorithmically
-theorem borrow_local_and_copy_ref_reverse_check : check_fun borrow_local_and_copy_ref_reverse borrow_local_and_copy_ref_reverse_lenv := by decide
+theorem borrow_local_and_copy_ref_reverse_check :
+ check_fun borrow_local_and_copy_ref_reverse
+ borrow_local_and_copy_ref_reverse_lenv := by rfl
 
 -- -----------------------------------------------------
 -- -           Relational Type Checking Theorems      --
 -- -----------------------------------------------------
 
--- Theorems: all functions are well-typed
-theorem borrow_local_twice_welltyped : ∃ lenv, typecheck_fun borrow_local_twice lenv := by
-  sorry
+-- Helper: init_fun_varEnv for these functions has fresh refs
+private lemma borrow_local_twice_varEnv_fresh :
+    VarEnv.RefsAreFresh (init_fun_varEnv borrow_local_twice) := by
+  unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
+  simp only [borrow_local_twice, List.foldl]
+  apply VarEnv.insert_refs_are_fresh
+  · apply VarEnv.insert_refs_are_fresh
+    · apply VarEnv.insert_refs_are_fresh
+      · exact VarEnv.empty_refs_are_fresh
+      · trivial
+    · exact ⟨1, rfl⟩
+  · exact ⟨2, rfl⟩
 
-theorem borrow_local_twice_reverse_welltyped : ∃ lenv, typecheck_fun borrow_local_twice_reverse lenv := by
-  sorry
+-- Helper: all envs in the single-entry lenv are well-formed
+private lemma borrow_local_twice_lenv_wf :
+    ∀ l env, lookup borrow_local_twice_lenv l = some env → TypeEnv.WellFormed env := by
+  intro l env hlookup
+  simp only [borrow_local_twice_lenv, borrow_local_twice_initEnv,
+             AssocMap.insert, AssocMap.empty, AssocMap.lookup,
+             List.filter, List.lookup] at hlookup
+  split at hlookup
+  · injection hlookup with heq; subst heq
+    exact TypeEnv.init_wellformed _ _ borrow_local_twice_varEnv_fresh
+  · exact absurd hlookup (by simp)
 
-theorem borrow_local_and_copy_ref_welltyped : ∃ lenv, typecheck_fun borrow_local_and_copy_ref lenv := by
-  sorry
+-- Theorems: all functions are well-typed (via soundness of algorithmic checker)
+theorem borrow_local_twice_welltyped : ∃ lenv, typecheck_fun borrow_local_twice lenv :=
+  ⟨_, check_fun_sound _ _ borrow_local_twice_lenv_wf borrow_local_twice_check⟩
 
-theorem borrow_local_and_copy_ref_reverse_welltyped : ∃ lenv, typecheck_fun borrow_local_and_copy_ref_reverse lenv := by
-  sorry
+theorem borrow_local_twice_reverse_welltyped : ∃ lenv, typecheck_fun borrow_local_twice_reverse lenv :=
+  ⟨_, check_fun_sound _ _ (fun l env hlookup => by
+    simp only [borrow_local_twice_reverse_lenv, borrow_local_twice_reverse_initEnv,
+               AssocMap.insert, AssocMap.empty, AssocMap.lookup,
+               List.filter, List.lookup] at hlookup
+    split at hlookup
+    · injection hlookup with heq; subst heq
+      exact TypeEnv.init_wellformed _ _ (by
+        unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
+        simp only [borrow_local_twice_reverse, List.foldl]
+        apply VarEnv.insert_refs_are_fresh
+        · apply VarEnv.insert_refs_are_fresh
+          · apply VarEnv.insert_refs_are_fresh
+            · exact VarEnv.empty_refs_are_fresh
+            · trivial
+          · exact ⟨1, rfl⟩
+        · exact ⟨2, rfl⟩)
+    · exact absurd hlookup (by simp)) borrow_local_twice_reverse_check⟩
+
+theorem borrow_local_and_copy_ref_welltyped : ∃ lenv, typecheck_fun borrow_local_and_copy_ref lenv :=
+  ⟨_, check_fun_sound _ _ (fun l env hlookup => by
+    simp only [borrow_local_and_copy_ref_lenv, borrow_local_and_copy_ref_initEnv,
+               AssocMap.insert, AssocMap.empty, AssocMap.lookup,
+               List.filter, List.lookup] at hlookup
+    split at hlookup
+    · injection hlookup with heq; subst heq
+      exact TypeEnv.init_wellformed _ _ (by
+        unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
+        simp only [borrow_local_and_copy_ref, List.foldl]
+        apply VarEnv.insert_refs_are_fresh
+        · apply VarEnv.insert_refs_are_fresh
+          · apply VarEnv.insert_refs_are_fresh
+            · exact VarEnv.empty_refs_are_fresh
+            · trivial
+          · exact ⟨1, rfl⟩
+        · exact ⟨2, rfl⟩)
+    · exact absurd hlookup (by simp)) borrow_local_and_copy_ref_check⟩
+
+theorem borrow_local_and_copy_ref_reverse_welltyped : ∃ lenv, typecheck_fun borrow_local_and_copy_ref_reverse lenv :=
+  ⟨_, check_fun_sound _ _ (fun l env hlookup => by
+    simp only [borrow_local_and_copy_ref_reverse_lenv, borrow_local_and_copy_ref_reverse_initEnv,
+               AssocMap.insert, AssocMap.empty, AssocMap.lookup,
+               List.filter, List.lookup] at hlookup
+    split at hlookup
+    · injection hlookup with heq; subst heq
+      exact TypeEnv.init_wellformed _ _ (by
+        unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
+        simp only [borrow_local_and_copy_ref_reverse, List.foldl]
+        apply VarEnv.insert_refs_are_fresh
+        · apply VarEnv.insert_refs_are_fresh
+          · apply VarEnv.insert_refs_are_fresh
+            · exact VarEnv.empty_refs_are_fresh
+            · trivial
+          · exact ⟨1, rfl⟩
+        · exact ⟨2, rfl⟩)
+    · exact absurd hlookup (by simp)) borrow_local_and_copy_ref_reverse_check⟩
 
 end LeanMove.Examples.Expressivity.AliasWrites

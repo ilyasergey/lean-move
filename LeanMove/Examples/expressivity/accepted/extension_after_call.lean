@@ -18,6 +18,8 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
+import LeanMove.Checker.TypeCheckingAlgorithmic
+import LeanMove.Checker.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
 
 /-!
@@ -87,10 +89,10 @@ def s11 : Site := .site 11 -- integer literal 0 for *y write
       return copy(tl);
 -/
 def fn_borrow : FunDef := {
-  params := [(var_b, .ref (.trecord box_entries) (.varRef var_b) .siteBorrowMut)]
-  returnType := .basic .tunit  -- Simplified
+  params := [(var_b, .ref (.trecord box_entries) (.refid 0) .siteBorrowMut)]
+  returnType := .ref (.trecord point_entries) (.refid 2) .siteBorrowMut
   locals := [
-    { name := var_tl, type := .ref (.trecord point_entries) (.varRef var_b) .siteBorrowMut }
+    { name := var_tl, type := .ref (.trecord point_entries) (.refid 1) .siteBorrowMut }
   ]
   blocks := [
     { label := "l0"
@@ -119,12 +121,12 @@ def fn_borrow : FunDef := {
   We inline the borrow call.
 -/
 def fn_write : FunDef := {
-  params := [(var_b, .ref (.trecord box_entries) (.varRef var_b) .siteBorrowMut)]
-  returnType := .ref (.trecord point_entries) (.varRef var_b) .siteBorrowMut
+  params := [(var_b, .ref (.trecord box_entries) (.refid 0) .siteBorrowMut)]
+  returnType := .ref (.trecord point_entries) (.refid 1) .siteBorrowMut
   locals := [
-    { name := var_tl, type := .ref (.trecord point_entries) (.varRef var_b) .siteBorrowMut },
-    { name := var_x, type := .ref .u64 (.varRef var_b) .siteBorrowMut },
-    { name := var_y, type := .ref .u64 (.varRef var_b) .siteBorrowMut }
+    { name := var_tl, type := .ref (.trecord point_entries) (.refid 1) .siteBorrowMut },
+    { name := var_x, type := .ref .u64 (.refid 2) .siteBorrowMut },
+    { name := var_y, type := .ref .u64 (.refid 2) .siteBorrowMut }
   ]
   blocks := [
     { label := "l0"
@@ -156,11 +158,95 @@ def fn_write : FunDef := {
   ]
 }
 
--- Theorems: both functions are well-typed
-theorem borrow_welltyped : ∃ lenv, typecheck_fun fn_borrow lenv := by
-  sorry
+-- -----------------------------------------------------
+-- -           Algorithmic Type Checking Tests        --
+-- -----------------------------------------------------
 
-theorem write_welltyped : ∃ lenv, typecheck_fun fn_write lenv := by
-  sorry
+-- Initial environments
+def fn_borrow_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := init_fun_varEnv fn_borrow
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+def fn_borrow_lenv : LabelEnv :=
+  AssocMap.insert AssocMap.empty "l0" fn_borrow_initEnv
+
+def fn_write_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := init_fun_varEnv fn_write
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+def fn_write_lenv : LabelEnv :=
+  AssocMap.insert AssocMap.empty "l0" fn_write_initEnv
+
+-- Debug: test algorithmic type checking
+#eval check_fun fn_borrow fn_borrow_lenv
+#eval check_fun fn_write fn_write_lenv
+
+-- Test theorems: both functions type check algorithmically
+theorem fn_borrow_check : check_fun fn_borrow fn_borrow_lenv = true := by rfl
+theorem fn_write_check : check_fun fn_write fn_write_lenv = true := by rfl
+
+-- -----------------------------------------------------
+-- -           Relational Type Checking Theorems      --
+-- -----------------------------------------------------
+
+-- Helper: init_fun_varEnv for fn_borrow has fresh refs
+private lemma fn_borrow_varEnv_fresh :
+    VarEnv.RefsAreFresh (init_fun_varEnv fn_borrow) := by
+  unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
+  simp only [fn_borrow, List.foldl]
+  apply VarEnv.insert_refs_are_fresh
+  · apply VarEnv.insert_refs_are_fresh
+    · exact VarEnv.empty_refs_are_fresh
+    · exact ⟨0, rfl⟩
+  · exact ⟨1, rfl⟩
+
+private lemma fn_borrow_lenv_wf :
+    ∀ l env, lookup fn_borrow_lenv l = some env → TypeEnv.WellFormed env := by
+  intro l env hlookup
+  simp only [fn_borrow_lenv, fn_borrow_initEnv,
+             AssocMap.insert, AssocMap.empty, AssocMap.lookup,
+             List.filter, List.lookup] at hlookup
+  split at hlookup
+  · injection hlookup with heq; subst heq
+    exact TypeEnv.init_wellformed _ _ fn_borrow_varEnv_fresh
+  · exact absurd hlookup (by simp)
+
+theorem borrow_welltyped : ∃ lenv, typecheck_fun fn_borrow lenv :=
+  ⟨_, check_fun_sound _ _ fn_borrow_lenv_wf fn_borrow_check⟩
+
+-- Helper: init_fun_varEnv for fn_write has fresh refs
+private lemma fn_write_varEnv_fresh :
+    VarEnv.RefsAreFresh (init_fun_varEnv fn_write) := by
+  unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
+  simp only [fn_write, List.foldl]
+  apply VarEnv.insert_refs_are_fresh
+  · apply VarEnv.insert_refs_are_fresh
+    · apply VarEnv.insert_refs_are_fresh
+      · apply VarEnv.insert_refs_are_fresh
+        · exact VarEnv.empty_refs_are_fresh
+        · exact ⟨0, rfl⟩
+      · exact ⟨1, rfl⟩
+    · exact ⟨2, rfl⟩
+  · exact ⟨2, rfl⟩
+
+private lemma fn_write_lenv_wf :
+    ∀ l env, lookup fn_write_lenv l = some env → TypeEnv.WellFormed env := by
+  intro l env hlookup
+  simp only [fn_write_lenv, fn_write_initEnv,
+             AssocMap.insert, AssocMap.empty, AssocMap.lookup,
+             List.filter, List.lookup] at hlookup
+  split at hlookup
+  · injection hlookup with heq; subst heq
+    exact TypeEnv.init_wellformed _ _ fn_write_varEnv_fresh
+  · exact absurd hlookup (by simp)
+
+theorem write_welltyped : ∃ lenv, typecheck_fun fn_write lenv :=
+  ⟨_, check_fun_sound _ _ fn_write_lenv_wf fn_write_check⟩
 
 end LeanMove.Examples.Expressivity.ExtensionAfterCall

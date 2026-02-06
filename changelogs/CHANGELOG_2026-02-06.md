@@ -3,6 +3,7 @@
 ## Summary
 1. Proved the pack case of `check_letBind_sound` and fixed all helper lemmas so TypeCheckingProofs.lean compiles as part of the build.
 2. Fixed a bug in the assign valid typing rule (reversed `update_with_extension` arguments) and proved the assign case soundness.
+3. Proved relational welltyped theorems for three expressivity examples via `check_fun_sound`.
 
 ## Changes
 
@@ -56,6 +57,39 @@
   - Note: `rfl` hits kernel reduction limits; `native_decide` incorrectly returns `false` (Lean 4 native code compilation issue with deeply nested closures); `decide` works correctly
 
 **Root cause:** The `assign` rule for invalid variables requires exact type equality (`τ == τ'`) between the local's declared type (from `varEnv`) and the site's type (from `siteEnv`). The algorithmic checker generates fresh refs via `nextFreshRef` (producing `.refid N`), so local declarations must use matching `.refid N` values, not `.varRef`.
+
+### LeanMove/Examples/expressivity/accepted/alias_writes.lean (welltyped proofs)
+
+- Added `import LeanMove.Checker.AlgorithmicTypingSoundness`
+- Changed algorithmic check theorems from `by decide` to `by rfl` (faster)
+- Proved all four `_welltyped` theorems using `check_fun_sound` with `VarEnv.insert_refs_are_fresh` chains
+- Pattern: `simp only [... List.filter, List.lookup] at hlookup; split at hlookup; injection; exact TypeEnv.init_wellformed _ _ fresh_proof`
+
+### LeanMove/Examples/expressivity/accepted/extension_after_call.lean
+
+**Fixed local types to match `nextFreshRef` output and proved welltyped theorems:**
+
+- Added imports for `TypeCheckingAlgorithmic` and `AlgorithmicTypingSoundness`
+- Changed param type from `.varRef var_b` to `.refid 0` in both `fn_borrow` and `fn_write`
+- Fixed local types to match `nextFreshRef` output:
+  - `fn_borrow`: var_tl = `.refid 1`, returnType = `.refid 2`
+  - `fn_write`: var_tl = `.refid 1`, var_x = `.refid 2`, var_y = `.refid 2` (recycled after `garbage_collect` in `writeRef`), returnType = `.refid 1`
+- Added `#eval` checks, algorithmic check theorems (`by rfl`), and welltyped theorems via `check_fun_sound`
+
+### LeanMove/Examples/expressivity/accepted/alias_write_after_join.lean
+
+**Proved welltyped theorem for multi-block function with custom PathEnv:**
+
+- Added `import LeanMove.Checker.AlgorithmicTypingSoundness`
+- Proved `t_varEnv_fresh`, `t_branch_varEnv_fresh`, `t_l3_varEnv_fresh` (VarEnv freshness)
+- Proved `t_l3_pathEnv_wf` (PathEnv.WellFormed for custom paths function with refs_complete and varref_tracked)
+- Proved `t_lenv_wf` (all 4 envs in lenv are well-formed) using `rfl` for concrete lookups and `beq = false` derivations for the exfalso case
+- Proved `t_welltyped` via `check_fun_sound`
+
+**Key proof techniques:**
+- For concrete lookups on TypeEnv (which has a function-valued `paths` field), use `rfl` instead of `native_decide` (TypeEnv doesn't have DecidableEq)
+- For exfalso (abstract label not in lenv): convert `l ≠ "lN"` to `(l == "lN") = false` via `cases h : l == "lN"`, then `simp [h3, h2, h1, h0, List.lookup]` reduces the match chain
+- For PathEnv.WellFormed with negation hypotheses: `simp [hroot, hr1, hr2]` handles the if-chain reduction
 
 ## Technical Notes
 
