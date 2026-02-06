@@ -16,4 +16,5 @@
 
 import LeanMove.Checker.TypeChecking
 import LeanMove.Checker.TypeCheckingAlgorithmic
-import LeanMove.Checker.TypeCheckingProofs
+import LeanMove.Checker.AlgorithmicTypingSoundness
+import LeanMove.Checker.AlgorithmicTypingCompleteness

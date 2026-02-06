@@ -60,7 +60,7 @@ Key differences:
 3. The simplified version doesn't assign to a local variable `r` to avoid Aref mismatch issues
 
 The proof demonstrates that `release` removes the reference from PathEnv via
-`delete_ref_node`, which allows `TypeEnv.equiv` to succeed at the back-edge.
+`delete_ref_node`, which allows `TypeEnv.subsumes` to succeed at the back-edge.
 -/
 
 open LeanMove.Lang
@@ -273,15 +273,16 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
       simp only [hne, ite_false]
       rfl
 
-    -- TypeEnv.equiv env2 foo_initEnv
-    have hequiv : TypeEnv.equiv env2 foo_initEnv := by
-      unfold TypeEnv.equiv
+    -- TypeEnv.subsumes foo_initEnv env2
+    have hsubsumes : TypeEnv.subsumes foo_initEnv env2 := by
+      unfold TypeEnv.subsumes
       refine ⟨rfl, rfl, hrefs_eq, ?_⟩
-      intro u v hu hv
+      intro u v hu hv path hinterp
       rw [hrefs] at hu hv
       simp only [List.mem_singleton] at hu hv
       subst hu hv
-      exact hpaths_root
+      simp only [foo_initEnv]
+      rwa [← hpaths_root]
 
     -- typecheck_block is now just typecheck_stmt (body includes terminal)
     unfold typecheck_block
@@ -297,6 +298,6 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
       · -- continuation: jump "l0"
         apply typecheck_stmt.jump (envL := foo_initEnv)
         · rfl  -- lookup lenv "l0" = some foo_initEnv
-        · exact hequiv  -- TypeEnv.equiv env2 foo_initEnv
+        · exact hsubsumes  -- TypeEnv.subsumes foo_initEnv env2
 
 end LeanMove.Examples.BorrowInLoopFixed
