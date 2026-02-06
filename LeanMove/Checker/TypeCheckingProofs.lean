@@ -33,8 +33,7 @@ specification in `TypeChecking.lean`.
 
 ## Key Invariants
 
-- `PathEnv.Simple`: Paths from root are always simple (empty, ε, or single char)
-- `PathEnv.WellFormed`: Combines Simple with refs completeness
+- `PathEnv.WellFormed`: Refs completeness + varref tracking
 - These invariants are preserved by all path environment operations
 -/
 
@@ -196,41 +195,6 @@ lemma delete_ref_node_paths_not_involving_r (pe : PathEnv) (r : Aref) (u v : Are
   simp only [delete_ref_node]
   simp [hu, hv]
 
-/- ---------------------------------------------------- -/
-/-       PathEnv simplicity (key invariant)              -/
-/- ---------------------------------------------------- -/
-
-/-- A path environment has "simple" paths from root if all paths from root
-    to any reference are either empty, ε, a single character, or ε ⬝ char c.
-    The last case is produced by update_with_extension (ε ∘ [c] = concat ε (char c)).
-    This is an invariant maintained by the type checker. -/
-inductive SimpleRootPath : Regex PathElement → Prop where
-  | empty : SimpleRootPath .empty
-  | eps : SimpleRootPath .ε
-  | char (c : PathElement) : SimpleRootPath (.char c)
-  | concat_eps_char (c : PathElement) : SimpleRootPath (.concat .ε (.char c))
-  | concat_simple_char (r : Regex PathElement) (c : PathElement) :
-      SimpleRootPath r → SimpleRootPath (.concat r (.char c))
-
-/-- Extending a SimpleRootPath by any path produces another SimpleRootPath.
-    This is key for update_with_extension_wellformed. -/
-lemma extend_simple_is_simple (re : Regex PathElement) (p : Path) (h : SimpleRootPath re) :
-    SimpleRootPath (re ∘ p) := by
-  induction p generalizing re with
-  | nil =>
-    simp only [extend, List.foldl]
-    exact h
-  | cons c cs ih =>
-    simp only [extend, List.foldl]
-    -- extend re (c :: cs) = foldl f (concat re (char c)) cs
-    -- Need to show SimpleRootPath (foldl f (concat re (char c)) cs)
-    -- By IH with re' = concat re (char c)
-    have h' : SimpleRootPath (.concat re (.char c)) := SimpleRootPath.concat_simple_char re c h
-    exact ih (.concat re (.char c)) h'
-
-def PathEnv.Simple (pe : PathEnv) : Prop :=
-  ∀ r, SimpleRootPath (pe.paths (.root, r))
-
 /-- A path from root is a "borrow path" for variable x if it accepts [.root_to_var x].
     This happens when the path is char (.root_to_var x) or concat ε (char (.root_to_var x)). -/
 def isBorrowPath (x : Var) (regex : Regex PathElement) : Prop :=
@@ -245,13 +209,6 @@ def isBorrowPath (x : Var) (regex : Regex PathElement) : Prop :=
 structure PathEnv.WellFormed (pe : PathEnv) : Prop where
   refs_complete : ∀ r, r ∉ pe.refs → pe.paths (.root, r) = .empty
   varref_tracked : ∀ x, Aref.varRef x ∈ pe.refs → isBorrowPath x (pe.paths (.root, Aref.varRef x))
-
-lemma PathEnv.init_simple : PathEnv.Simple PathEnv.init := by
-  intro r
-  simp only [PathEnv.init]
-  by_cases hr : Aref.root = r
-  · simp [hr]; exact SimpleRootPath.eps
-  · simp [hr]; exact SimpleRootPath.empty
 
 lemma PathEnv.init_wellformed : PathEnv.WellFormed PathEnv.init := by
   constructor
