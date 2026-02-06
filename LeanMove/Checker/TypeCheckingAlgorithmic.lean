@@ -85,9 +85,21 @@ def types_conform_bool (siteEnv : SiteEnv) (sites : List Site) (paramTypes : Lis
     | none => false
   | _, _ => false
 
-/-- Boolean check for check_mutable_inputs_isolated (conservative) -/
-def check_mutable_inputs_isolated_bool (_env: TypeEnv) (_bs: List Site) : Bool :=
-  true
+/-- Boolean check for check_mutable_inputs_isolated.
+    For each mutable input, checks that the path regex to every other input
+    only matches the empty string (or nothing). -/
+def check_mutable_inputs_isolated_bool (env: TypeEnv) (bs: List Site) : Bool :=
+  bs.all fun mi_site =>
+    match AssocMap.lookup env.siteEnv mi_site with
+    | some (.ref _ mi_ref .siteBorrowMut) =>
+      bs.all fun other_site =>
+        if mi_site != other_site then
+          match AssocMap.lookup env.siteEnv other_site with
+          | some (.ref _ other_ref _) =>
+            only_matches_empty (env.pathEnv.paths (mi_ref, other_ref))
+          | _ => true
+        else true
+    | _ => true
 
 /-- Boolean check for check_mutable_inputs_have_outbound (conservative) -/
 def check_mutable_inputs_have_outbound_bool (_env: TypeEnv) (_bs: List Site) : Bool :=

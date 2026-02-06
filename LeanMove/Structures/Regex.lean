@@ -226,6 +226,37 @@ example : ⟦ ∂[1] ⌜1⌝★ ⟧ [1] := by
 
 end TestLemmas
 
+/-! ## Emptiness and Only-Matches-Empty Checks -/
+
+/-- Check if a regex's language is empty (matches nothing at all).
+    Sound: `is_empty r = true → ∀ s, ¬ ⟦ r ⟧ s`.
+    Conservative for `deriv` (returns `is_empty` of the inner regex). -/
+def is_empty : Regex α → Bool
+  | .empty => true
+  | .ε => false
+  | .char _ => false
+  | .dot => false
+  | .union r1 r2 => is_empty r1 && is_empty r2
+  | .concat r1 r2 => is_empty r1 || is_empty r2
+  | .star _ => false
+  | .deriv r _ => is_empty r
+
+/-- Check if a regex only matches the empty string (or nothing at all),
+    i.e., L(r) ⊆ {[]}.
+    Sound: `only_matches_empty r = true → ∀ s, ⟦ r ⟧ s → s = []`.
+    Uses `is_empty` in the `concat` case for completeness:
+    if either operand has empty language, the concatenation matches nothing. -/
+def only_matches_empty : Regex α → Bool
+  | .empty => true
+  | .ε => true
+  | .char _ => false
+  | .dot => false
+  | .union r1 r2 => only_matches_empty r1 && only_matches_empty r2
+  | .concat r1 r2 => is_empty r1 || is_empty r2 ||
+      (only_matches_empty r1 && only_matches_empty r2)
+  | .star r => only_matches_empty r
+  | .deriv r _ => only_matches_empty r
+
 /-! ## Boolean Regex Matcher -/
 
 /-- All ways to split a list into two parts whose concatenation equals the original list.

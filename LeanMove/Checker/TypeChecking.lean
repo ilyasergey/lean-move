@@ -154,7 +154,8 @@ def call_connect_inputs_outputs (env: TypeEnv) (as bs: List Site) : TypeEnv :=
 
     For each mutable input site mi_site with abstract reference mi_ref,
     and for every other input site other_site with reference other_ref,
-    verify that there is no non-empty path from mi_ref to other_ref in PathEnv.
+    verify that the path regex from mi_ref to other_ref only matches the
+    empty string (or nothing), i.e., there is no non-empty path between them.
 
     This ensures that mutable borrows passed to a function are properly isolated:
     no mutable input can alias or reach any other input parameter, preventing
@@ -168,8 +169,7 @@ def check_mutable_inputs_isolated (env: TypeEnv) (bs: List Site) : Prop :=
         ∀ (other_bt : BasicMoveType) (other_ref : Aref) (bk : BorrowingKind),
           AssocMap.lookup env.siteEnv other_site = some (.ref other_bt other_ref bk) →
           mi_site ≠ other_site →
-            let regex := env.pathEnv.paths (mi_ref, other_ref)
-            ¬ (∃ path, interpret_regex regex path ∧ path ≠ [])
+            only_matches_empty (env.pathEnv.paths (mi_ref, other_ref))
 
 /-- Check that all mutable inputs have non-trivial outbound edges.
 
