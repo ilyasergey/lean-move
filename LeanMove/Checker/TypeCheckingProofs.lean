@@ -1932,6 +1932,55 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
 
 
 /- ---------------------------------------------------- -/
+/-       Function type checking soundness                -/
+/- ---------------------------------------------------- -/
+
+/-- Soundness: If the algorithmic check succeeds, the relational judgment holds.
+    Requires that all environments in the label environment are well-formed. -/
+theorem check_fun_sound (f : FunDef) (lenv : LabelEnv)
+    (hlenv_wf : ∀ l env, lookup lenv l = some env → TypeEnv.WellFormed env) :
+    check_fun f lenv = true → typecheck_fun f lenv := by
+  intro h
+  simp only [check_fun] at h
+  cases hblocks : f.blocks with
+  | nil => simp [hblocks] at h
+  | cons entry rest =>
+    simp only [hblocks] at h
+    cases hlookup : lookup lenv entry.label with
+    | none => simp [hlookup] at h
+    | some entryEnv =>
+      simp only [hlookup, Bool.and_eq_true, List.all_eq_true] at h
+      obtain ⟨hequiv, hblocks_check⟩ := h
+      let initEnv : TypeEnv := {
+        varEnv := init_fun_varEnv f
+        siteEnv := AssocMap.empty
+        pathEnv := PathEnv.init
+        funEnv := AssocMap.empty
+      }
+      apply typecheck_fun.fun_ok f lenv initEnv
+      · rfl
+      · rfl
+      · rfl
+      · simp [hblocks]
+      · intro entryLabel entryBody entryEnv' hhead hlookup'
+        simp only [hblocks, List.head?_cons, Option.some.injEq] at hhead
+        -- hhead : { label := entryLabel, body := entryBody } = entry
+        -- Extract the field equalities
+        have heq1 : entryLabel = entry.label := congrArg Block.label hhead.symm
+        have heq2 : entryBody = entry.body := congrArg Block.body hhead.symm
+        rw [heq1] at hlookup'
+        simp only [hlookup] at hlookup'
+        cases hlookup'
+        exact TypeEnv.equiv_bool_implies_equiv _ _ hequiv
+      · intro block hblock blockEnv hblockLookup
+        have hblock' : block ∈ entry :: rest := by rw [← hblocks]; exact hblock
+        have hcheck := hblocks_check block hblock'
+        simp only [hblockLookup, check_block] at hcheck
+        exact check_stmt_sound lenv blockEnv block.body f.returnType
+          (hlenv_wf _ _ hblockLookup) hcheck
+
+
+/- ---------------------------------------------------- -/
 /-       Statement type checking completeness            -/
 /- ---------------------------------------------------- -/
 
@@ -1992,52 +2041,6 @@ theorem check_stmt_complete (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTyp
   | call => sorry
   | release => sorry
   | unpack => sorry
-
-/- ---------------------------------------------------- -/
-/-       Function type checking soundness                -/
-/- ---------------------------------------------------- -/
-
-/-- Soundness: If the algorithmic check succeeds, the relational judgment holds -/
-theorem check_fun_sound (f : FunDef) (lenv : LabelEnv) :
-    check_fun f lenv = true → typecheck_fun f lenv := by
-  intro h
-  simp only [check_fun] at h
-  cases hblocks : f.blocks with
-  | nil => simp [hblocks] at h
-  | cons entry rest =>
-    simp only [hblocks] at h
-    cases hlookup : lookup lenv entry.label with
-    | none => simp [hlookup] at h
-    | some entryEnv =>
-      simp only [hlookup, Bool.and_eq_true, List.all_eq_true] at h
-      obtain ⟨hequiv, hblocks_check⟩ := h
-      let initEnv : TypeEnv := {
-        varEnv := init_fun_varEnv f
-        siteEnv := AssocMap.empty
-        pathEnv := PathEnv.init
-        funEnv := AssocMap.empty
-      }
-      apply typecheck_fun.fun_ok f lenv initEnv
-      · rfl
-      · rfl
-      · rfl
-      · simp [hblocks]
-      · intro entryLabel entryBody entryEnv' hhead hlookup'
-        simp only [hblocks, List.head?_cons, Option.some.injEq] at hhead
-        -- hhead : { label := entryLabel, body := entryBody } = entry
-        -- Extract the field equalities
-        have heq1 : entryLabel = entry.label := congrArg Block.label hhead.symm
-        have heq2 : entryBody = entry.body := congrArg Block.body hhead.symm
-        rw [heq1] at hlookup'
-        simp only [hlookup] at hlookup'
-        cases hlookup'
-        exact TypeEnv.equiv_bool_implies_equiv _ _ hequiv
-      · intro block hblock blockEnv hblockLookup
-        have hblock' : block ∈ entry :: rest := by rw [← hblocks]; exact hblock
-        have hcheck := hblocks_check block hblock'
-        simp only [hblockLookup, check_block] at hcheck
-        -- Statement-level soundness requires per-case induction
-        sorry
 
 /- ---------------------------------------------------- -/
 /-       Function type checking completeness             -/
@@ -2103,8 +2106,9 @@ theorem check_fun_complete (f : FunDef) (lenv : LabelEnv) :
             sorry
 
 /-- Main equivalence theorem -/
-theorem check_fun_equiv (f : FunDef) (lenv : LabelEnv) :
+theorem check_fun_equiv (f : FunDef) (lenv : LabelEnv)
+    (hlenv_wf : ∀ l env, lookup lenv l = some env → TypeEnv.WellFormed env) :
     check_fun f lenv = true ↔ typecheck_fun f lenv :=
-  ⟨check_fun_sound f lenv, check_fun_complete f lenv⟩
+  ⟨check_fun_sound f lenv hlenv_wf, check_fun_complete f lenv⟩
 
 end LeanMove.Checker
