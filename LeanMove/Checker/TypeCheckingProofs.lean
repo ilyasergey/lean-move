@@ -240,11 +240,9 @@ def isBorrowPath (x : Var) (regex : Regex PathElement) : Prop :=
   | _ => False
 
 /-- A path environment is well-formed if:
-    1. Paths from root are simple (empty, ε, single char, or concat ε (char c))
-    2. Refs not in the refs list have empty paths from root
-    3. VarRef x is in refs only if the path from root is a borrow path for x -/
+    1. Refs not in the refs list have empty paths from root
+    2. VarRef x is in refs only if the path from root is a borrow path for x -/
 structure PathEnv.WellFormed (pe : PathEnv) : Prop where
-  simple : PathEnv.Simple pe
   refs_complete : ∀ r, r ∉ pe.refs → pe.paths (.root, r) = .empty
   varref_tracked : ∀ x, Aref.varRef x ∈ pe.refs → isBorrowPath x (pe.paths (.root, Aref.varRef x))
 
@@ -257,7 +255,6 @@ lemma PathEnv.init_simple : PathEnv.Simple PathEnv.init := by
 
 lemma PathEnv.init_wellformed : PathEnv.WellFormed PathEnv.init := by
   constructor
-  · exact PathEnv.init_simple
   · intro r hr
     simp only [PathEnv.init, List.mem_singleton] at hr
     simp only [PathEnv.init]
@@ -276,24 +273,6 @@ lemma delete_ref_node_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFo
     (hr_not_root : r ≠ Aref.root) :
     PathEnv.WellFormed (delete_ref_node pe r) := by
   constructor
-  · -- Simple preservation
-    intro r'
-    by_cases hr : Aref.root = r
-    · -- root = r, so all paths from root are empty
-      have := delete_ref_node_paths_involving_r pe r .root r' (Or.inl hr)
-      simp only [this]
-      exact SimpleRootPath.empty
-    · -- root ≠ r
-      by_cases hr' : r' = r
-      · -- r' = r, so path from root to r' is empty
-        have := delete_ref_node_paths_involving_r pe r .root r' (Or.inr hr')
-        simp only [this]
-        exact SimpleRootPath.empty
-      · -- r' ≠ r, so path is preserved
-        have hne : Aref.root ≠ r := hr
-        have := delete_ref_node_paths_not_involving_r pe r .root r' hne hr'
-        simp only [this]
-        exact hwf.simple r'
   · -- refs_complete preservation
     intro r' hr'
     by_cases hr : Aref.root = r
@@ -810,20 +789,6 @@ lemma update_with_extension_wellformed (z x : Aref) (path : List PathElement) (p
     PathEnv.WellFormed (update_with_extension z x path pe) := by
   have hnotz : Aref.root ≠ z := fun h => hz_not_root h.symm
   constructor
-  · -- Simple: paths from root are still simple
-    intro r
-    simp only [update_with_extension]
-    -- Since z ≠ root, we have ¬(root = z ∧ r = z)
-    have hnotboth : ¬(Aref.root = z ∧ r = z) := fun h => hz_not_root h.1.symm
-    simp only [hnotboth, ↓reduceIte]
-    by_cases hrz : r = z
-    · -- r = z: path is G(root, x) ∘ path
-      simp only [hrz, ↓reduceIte]
-      have hsimple := hwf.simple x
-      exact extend_simple_is_simple _ path hsimple
-    · -- r ≠ z and root ≠ z: path is unchanged
-      simp only [hrz, hnotz, ↓reduceIte]
-      exact hwf.simple r
   · -- refs_complete: refs not in list have empty paths from root
     intro r hr
     simp only [update_with_extension] at hr ⊢
@@ -883,16 +848,6 @@ lemma garbage_collect_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFo
     (hr_not_root : r ≠ Aref.root) :
     PathEnv.WellFormed (garbage_collect pe r) := by
   constructor
-  · -- Simple: paths from root are still simple
-    intro v
-    simp only [garbage_collect]
-    by_cases hv : Aref.root = r ∨ v = r
-    · -- Path involves r, so it's empty
-      simp only [hv, ↓reduceIte]
-      exact SimpleRootPath.empty
-    · -- Path doesn't involve r, preserved from original
-      simp only [hv, ↓reduceIte]
-      exact hwf.simple v
   · -- refs_complete: refs not in list have empty paths from root
     intro v hv
     simp only [garbage_collect, List.mem_filter, decide_eq_true_eq] at hv
@@ -966,11 +921,26 @@ lemma TypeEnv.equiv_implies_equiv_bool (env1 env2 : TypeEnv) :
 /-       not_borrowed soundness (WellFormed → Bool → Prop)   -/
 /- ---------------------------------------------------- -/
 
-/-- Soundness: if boolean check passes and path env is well-formed, semantic property holds -/
+/-- Soundness: if boolean check passes and path env is well-formed, semantic property holds.
+    Uses match_bool_complete for refs in the list, and refs_complete for refs not in the list. -/
 lemma not_borrowed_bool_sound (x : Var) (env : TypeEnv)
     (hwf : PathEnv.WellFormed env.pathEnv) :
     not_borrowed_bool x env = true → not_borrowed x env := by
-  sorry
+  intro hbool
+  simp only [not_borrowed_bool, List.all_eq_true] at hbool
+  intro r
+  show ¬ interpret_regex (env.pathEnv.paths (.root, r)) [.root_to_var x]
+  by_cases hr : r ∈ env.pathEnv.refs
+  · -- r ∈ refs: use match_bool_complete (contrapositive)
+    have h := hbool r hr
+    intro haccept
+    have hmatch := @Regex.match_bool_complete _ _ _ _ haccept
+    simp only [hmatch, Bool.not_true] at h
+    exact absurd h (by decide)
+  · -- r ∉ refs: path from root is empty by refs_complete
+    have hempty := hwf.refs_complete r hr
+    simp only [hempty, interpret_regex]
+    exact not_false
 
 /- ---------------------------------------------------- -/
 /-       no_locals_borrowed soundness                    -/

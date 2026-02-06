@@ -226,4 +226,93 @@ example : ⟦ ∂[1] ⌜1⌝★ ⟧ [1] := by
 
 end TestLemmas
 
+/-! ## Boolean Regex Matcher -/
+
+/-- All ways to split a list into two parts whose concatenation equals the original list.
+    For example, `splits [1,2]` returns `[([],[1,2]), ([1],[2]), ([1,2],[])]`. -/
+def List.splits {α : Type} : List α → List (List α × List α)
+  | [] => [([], [])]
+  | a :: as => ([], a :: as) :: (List.splits as |>.map fun (l, r) => (a :: l, r))
+
+/-- Every pair in `splits s` is a valid split of `s` -/
+theorem List.splits_sound {α : Type} (s s1 s2 : List α) :
+    (s1, s2) ∈ List.splits s → s = s1 ++ s2 := by
+  induction s generalizing s1 s2 with
+  | nil =>
+    simp only [List.splits, List.mem_singleton, Prod.mk.injEq]
+    intro ⟨h1, h2⟩; subst h1; subst h2; rfl
+  | cons a as ih =>
+    simp only [List.splits, List.mem_cons, Prod.mk.injEq, List.mem_map, Prod.exists]
+    intro h
+    cases h with
+    | inl h =>
+      obtain ⟨h1, h2⟩ := h; subst h1; subst h2; rfl
+    | inr h =>
+      obtain ⟨l, r, hmem, h1, h2⟩ := h
+      subst h1; subst h2
+      have := ih l r hmem
+      simp only [this, List.cons_append]
+
+/-- Every valid split of `s` appears in `splits s` -/
+theorem List.splits_complete {α : Type} (s s1 s2 : List α) :
+    s = s1 ++ s2 → (s1, s2) ∈ List.splits s := by
+  intro h
+  induction s1 generalizing s with
+  | nil =>
+    simp only [List.nil_append] at h; subst h
+    -- Goal: ([], s) ∈ List.splits s
+    cases s with
+    | nil => simp [List.splits]
+    | cons b bs => simp [List.splits]
+  | cons a s1' ih =>
+    simp only [List.cons_append] at h; subst h
+    -- Goal: (a :: s1', s2) ∈ List.splits (a :: (s1' ++ s2))
+    simp only [List.splits, List.mem_cons, List.mem_map, Prod.exists]
+    right
+    refine ⟨s1', s2, ih (s1' ++ s2) rfl, ?_⟩
+    simp
+
+/-- Boolean regex matcher. Returns `true` if the regex accepts the given string.
+    Conservative for `star` and `deriv` (returns `true`), which is safe for completeness. -/
+def match_bool [DecidableEq α] : Regex α → List α → Bool
+  | .empty, _ => false
+  | .ε, s => s == []
+  | .char c, s => s == [c]
+  | .dot, s => s.length == 1
+  | .union re1 re2, s => match_bool re1 s || match_bool re2 s
+  | .concat re1 re2, s =>
+      (List.splits s).any fun p => match_bool re1 p.1 && match_bool re2 p.2
+  | _, _ => true  -- conservative for star, deriv
+
+/-- Completeness: if a regex semantically accepts a string, the boolean matcher returns true.
+    This is the direction needed for `not_borrowed_bool_sound`. -/
+theorem match_bool_complete [DecidableEq α] (re : Regex α) (s : List α) :
+    interpret_regex re s → match_bool re s = true := by
+  induction re generalizing s with
+  | empty => simp [interpret_regex]
+  | ε =>
+    simp only [interpret_regex, match_bool]
+    intro h; subst h; simp
+  | char c =>
+    simp only [interpret_regex, match_bool]
+    intro h; subst h; simp
+  | dot =>
+    simp only [interpret_regex, match_bool]
+    intro h; simp [h]
+  | union re1 re2 ih1 ih2 =>
+    simp only [interpret_regex, match_bool, Bool.or_eq_true]
+    intro h
+    cases h with
+    | inl h => exact Or.inl (ih1 s h)
+    | inr h => exact Or.inr (ih2 s h)
+  | concat re1 re2 ih1 ih2 =>
+    simp only [interpret_regex, match_bool]
+    intro ⟨s1, s2, heq, h1, h2⟩
+    rw [List.any_eq_true]
+    refine ⟨(s1, s2), List.splits_complete s s1 s2 heq, ?_⟩
+    simp only [Bool.and_eq_true]
+    exact ⟨ih1 s1 h1, ih2 s2 h2⟩
+  | star => simp [match_bool]
+  | deriv => simp [match_bool]
+
 end Regex

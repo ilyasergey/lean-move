@@ -34,19 +34,11 @@ open AssocMap
 open Regex
 
 /-- Boolean version of not_borrowed for algorithmic type checking.
-    Handles semantically equivalent regex forms:
-    - empty, ε: not borrowing
-    - char c: borrowing if c = .root_to_var x
-    - concat ε (char c): equivalent to char c (from extend function) -/
+    Uses the general regex matcher to check that no path from root accepts [.root_to_var x]. -/
 def not_borrowed_bool (x: Var) (env: TypeEnv) : Bool :=
   env.pathEnv.refs.all fun r =>
     let regex := env.pathEnv.paths (.root, r)
-    match regex with
-    | .empty => true
-    | .ε => true
-    | .char c => c != .root_to_var x
-    | .concat .ε (.char c) => c != .root_to_var x  -- ε ⬝ char c ≡ char c
-    | _ => false
+    !match_bool regex [.root_to_var x]
 
 /-- Boolean equality for Regex -/
 def regexBeq [BEq α] : Regex α → Regex α → Bool
