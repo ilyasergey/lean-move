@@ -18,6 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
+import LeanMove.Checker.TypeCheckingAlgorithmic
 import LeanMove.Lang.Macros
 
 /-!
@@ -99,9 +100,9 @@ def t : FunDef := {
   locals := [
     { name := var_a, type := .basic .u64 },
     { name := var_b, type := .basic .u64 },
-    { name := var_x, type := .ref .u64 (.varRef var_a) .siteBorrowMut },
-    { name := var_y, type := .ref .u64 (.varRef var_b) .siteBorrowMut },
-    { name := var_z, type := .ref .u64 (.varRef var_a) .siteBorrowMut }
+    { name := var_x, type := .ref .u64 (.refid 1) .siteBorrowMut },
+    { name := var_y, type := .ref .u64 (.refid 2) .siteBorrowMut },
+    { name := var_z, type := .ref .u64 (.refid 3) .siteBorrowMut }
   ]
   blocks := [
     -- label l0: a = 0; b = 0; branch on cond
@@ -151,8 +152,115 @@ def t : FunDef := {
   ]
 }
 
--- Theorem: t is well-typed
-theorem t_welltyped : ∃ lenv, typecheck_fun t lenv := by
-  sorry
+-- Abbreviations for path elements and refs
+def rta : PathElement := .root_to_var var_a
+def rtb : PathElement := .root_to_var var_b
+def r1 : Aref := .refid 1
+def r2 : Aref := .refid 2
+
+-- VarEnv at l1/l2 entry (after l0: a,b assigned, cond consumed)
+def t_branch_varEnv : VarEnv :=
+  let ve := init_fun_varEnv t
+  let ve := update ve var_a (.validVar, .basic .u64, .mutable)
+  let ve := update ve var_b (.validVar, .basic .u64, .mutable)
+  update ve var_cond (.invalidVar, .basic .tbool, .mutable)
+
+-- Environment at l1/l2 entry
+def t_branch_env : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := t_branch_varEnv
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+-- VarEnv at l3 entry (x and y now valid refs)
+def t_l3_varEnv : VarEnv :=
+  let ve := t_branch_varEnv
+  let ve := update ve var_x (.validVar, .ref .u64 r1 .siteBorrowMut, .mutable)
+  update ve var_y (.validVar, .ref .u64 r2 .siteBorrowMut, .mutable)
+
+-- Environment at l3 entry (join of l1 and l2 with union paths)
+def t_l3_env : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := t_l3_varEnv
+  pathEnv := {
+    refs := [r2, r1, .root]
+    paths := fun (u, v) =>
+      if u == .root && v == .root then .ε
+      else if u == r1 && v == r1 then .ε
+      else if u == r2 && v == r2 then .ε
+      else if u == .root && v == r1 then (.ε ⬝ ⌜rta⌝) ∣ (.ε ⬝ ⌜rtb⌝)
+      else if u == .root && v == r2 then (.ε ⬝ ⌜rtb⌝) ∣ (.ε ⬝ ⌜rta⌝)
+      else if u == r1 && v == .root then (∂[rta] .ε) ∣ (∂[rtb] .ε)
+      else if u == r2 && v == .root then (∂[rtb] .ε) ∣ (∂[rta] .ε)
+      else if u == r1 && v == r2 then ((∂[rta] .ε) ⬝ ⌜rtb⌝) ∣ ((∂[rtb] .ε) ⬝ ⌜rta⌝)
+      else if u == r2 && v == r1 then (∂[rtb] (.ε ⬝ ⌜rta⌝)) ∣ (∂[rta] (.ε ⬝ ⌜rtb⌝))
+      else .empty
+  }
+  funEnv := AssocMap.empty
+}
+
+-- Label environment
+def t_lenv : LabelEnv :=
+  insert (insert (insert (insert AssocMap.empty
+    "l0" { siteEnv := AssocMap.empty
+           varEnv := init_fun_varEnv t
+           pathEnv := PathEnv.init
+           funEnv := AssocMap.empty })
+    "l1" t_branch_env)
+    "l2" t_branch_env)
+    "l3" t_l3_env
+
+-- Initial environment (for entry block check)
+def t_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty, varEnv := init_fun_varEnv t,
+  pathEnv := PathEnv.init, funEnv := AssocMap.empty }
+
+-- Debug: step-by-step type checking of l1 body (incremental prefix checks)
+#eval (check_stmt t_lenv t_branch_env  -- Step 1: borrow a
+  (Stmt.letBind s3 (Expr.usage (Usage.borrowMut var_a)) Stmt.skip)
+  (.basic .tunit)).isSome
+#eval (check_stmt t_lenv t_branch_env  -- Step 2: borrow a + assign x
+  (Stmt.letBind s3 (Expr.usage (Usage.borrowMut var_a))
+    (Stmt.assign var_x s3 Stmt.skip))
+  (.basic .tunit)).isSome
+#eval (check_stmt t_lenv t_branch_env  -- Step 3: + borrow b
+  (Stmt.letBind s3 (Expr.usage (Usage.borrowMut var_a))
+    (Stmt.assign var_x s3
+      (Stmt.letBind s4 (Expr.usage (Usage.borrowMut var_b)) Stmt.skip)))
+  (.basic .tunit)).isSome
+#eval (check_stmt t_lenv t_branch_env  -- Step 4: + assign y
+  (Stmt.letBind s3 (Expr.usage (Usage.borrowMut var_a))
+    (Stmt.assign var_x s3
+      (Stmt.letBind s4 (Expr.usage (Usage.borrowMut var_b))
+        (Stmt.assign var_y s4 Stmt.skip))))
+  (.basic .tunit)).isSome
+#eval (check_stmt t_lenv t_branch_env  -- Step 5: full l1 body with jump
+  (Stmt.letBind s3 (Expr.usage (Usage.borrowMut var_a))
+    (Stmt.assign var_x s3
+      (Stmt.letBind s4 (Expr.usage (Usage.borrowMut var_b))
+        (Stmt.assign var_y s4
+          (Stmt.jump "l3")))))
+  (.basic .tunit)).isSome
+
+-- Debug: check_fun components
+#eval (lookup t_lenv "l0").isSome                  -- entry label found in lenv
+#eval TypeEnv.equiv_bool t_initEnv t_initEnv       -- initEnv self-equiv
+#eval do                                            -- entry env ≡ initEnv
+  let entryEnv ← lookup t_lenv "l0"
+  return TypeEnv.equiv_bool entryEnv t_initEnv
+
+-- Debug: per-block check via lenv lookup (as in check_fun)
+#eval t.blocks.map fun block =>
+  (block.label, match lookup t_lenv block.label with
+  | some blockEnv => check_block t_lenv block blockEnv t.returnType
+  | none => false)
+
+-- Full function check
+#eval check_fun t t_lenv
+
+-- Theorem: t is well-typed (algorithmic)
+theorem t_check : check_fun t t_lenv = true := by rfl
+
 
 end LeanMove.Examples.Expressivity.AliasWriteAfterJoin

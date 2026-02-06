@@ -1708,6 +1708,76 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
     · simp at h
 
 /- ---------------------------------------------------- -/
+/-       Subsumption soundness lemmas                    -/
+/- ---------------------------------------------------- -/
+
+/-- Soundness of is_empty: if is_empty returns true, the language is empty. -/
+theorem is_empty_sound [DecidableEq α] : ∀ (r : Regex α), is_empty r = true → ∀ s, ¬ interpret_regex r s := by
+  intro r
+  induction r with
+  | empty => intro _ s h; exact h
+  | ε => intro h; simp [is_empty] at h
+  | char _ => intro h; simp [is_empty] at h
+  | dot => intro h; simp [is_empty] at h
+  | union r1 r2 ih1 ih2 =>
+    intro h s hmatch
+    simp only [is_empty, Bool.and_eq_true] at h
+    simp only [interpret_regex] at hmatch
+    cases hmatch with
+    | inl h1 => exact ih1 h.1 s h1
+    | inr h2 => exact ih2 h.2 s h2
+  | concat r1 r2 ih1 ih2 =>
+    intro h s hmatch
+    simp only [is_empty, Bool.or_eq_true] at h
+    simp only [interpret_regex] at hmatch
+    obtain ⟨s1, s2, _, h1, h2⟩ := hmatch
+    cases h with
+    | inl h1e => exact ih1 h1e s1 h1
+    | inr h2e => exact ih2 h2e s2 h2
+  | star _ => intro h; simp [is_empty] at h
+  | deriv r _ ih =>
+    intro h s hmatch
+    simp only [is_empty] at h
+    simp only [interpret_regex] at hmatch
+    exact ih h _ hmatch
+
+/-- Soundness of regexSubsumedBy: if it returns true, L(r1) ⊆ L(r2). -/
+theorem regexSubsumedBy_sound [DecidableEq α] (r1 : Regex α) :
+    ∀ (r2 : Regex α), regexSubsumedBy r1 r2 = true →
+    ∀ path, interpret_regex r1 path → interpret_regex r2 path := by
+  intro r2
+  induction r2 with
+  | union s1 s2 ih1 ih2 =>
+    intro h path hmatch
+    simp only [regexSubsumedBy, Bool.or_eq_true] at h
+    rcases h with ((hempty | hbeq) | hsub1) | hsub2
+    · exact absurd hmatch (is_empty_sound r1 hempty path)
+    · rw [regexBeq_eq r1 _ hbeq] at hmatch; exact hmatch
+    · exact Or.inl (ih1 hsub1 path hmatch)
+    · exact Or.inr (ih2 hsub2 path hmatch)
+  | _ =>
+    intro h path hmatch
+    simp only [regexSubsumedBy, Bool.or_eq_true] at h
+    rcases h with hempty | hbeq
+    · exact absurd hmatch (is_empty_sound r1 hempty path)
+    · rw [regexBeq_eq r1 _ hbeq] at hmatch; exact hmatch
+
+/-- Soundness of subsumes_bool: if it returns true, the semantic subsumption holds. -/
+theorem subsumes_bool_implies_subsumes (envL env : TypeEnv) :
+    TypeEnv.subsumes_bool envL env = true → TypeEnv.subsumes envL env := by
+  intro h
+  simp only [TypeEnv.subsumes_bool, Bool.and_eq_true, List.all_eq_true] at h
+  obtain ⟨⟨⟨hse, hve⟩, hrefs⟩, hpaths⟩ := h
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact beq_iff_eq.mp hse
+  · exact beq_iff_eq.mp hve
+  · exact beq_iff_eq.mp hrefs
+  · intro u v hu hv path hmatch
+    have hu' := hpaths u hu
+    have huv := hu' v hv
+    exact regexSubsumedBy_sound _ _ huv path hmatch
+
+/- ---------------------------------------------------- -/
 /-       Statement type checking soundness               -/
 /- ---------------------------------------------------- -/
 
@@ -1728,41 +1798,38 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
     | none => simp [hlookup] at h
     | some envL =>
       simp only [hlookup] at h
-      by_cases hequiv : TypeEnv.equiv_bool env envL = true
-      · exact typecheck_stmt.jump lenv env L envL retType hlookup
-          (TypeEnv.equiv_bool_implies_equiv _ _ hequiv)
-      · simp [hequiv] at h
+      split at h
+      · apply typecheck_stmt.jump lenv env L envL retType hlookup
+        exact subsumes_bool_implies_subsumes envL env (by assumption)
+      · simp at h
 
   | branch a L1 L2 =>
     intro h
     simp only [check_stmt] at h
-    cases hbool : lookup env.siteEnv a with
-    | none => simp [hbool] at h
+    cases ha : lookup env.siteEnv a with
+    | none => simp [ha] at h
     | some τ =>
+      simp only [ha] at h
       cases τ with
+      | ref _ _ _ => simp at h
       | basic bt =>
         cases bt with
         | tbool =>
-          simp only [hbool] at h
-          cases hlookup1 : lookup lenv L1 with
-          | none => simp [hlookup1] at h
+          cases hl1 : lookup lenv L1 with
+          | none => simp [hl1] at h
           | some envL1 =>
-            cases hlookup2 : lookup lenv L2 with
-            | none => simp [hlookup1, hlookup2] at h
+            cases hl2 : lookup lenv L2 with
+            | none => simp [hl1, hl2] at h
             | some envL2 =>
-              simp only [hlookup1, hlookup2] at h
-              by_cases hequivs : TypeEnv.equiv_bool {env with siteEnv := delete env.siteEnv a} envL1 = true ∧
-                                 TypeEnv.equiv_bool {env with siteEnv := delete env.siteEnv a} envL2 = true
-              · exact typecheck_stmt.branch lenv env a L1 L2 envL1 envL2 retType
-                  hbool hlookup1 hlookup2
-                  (TypeEnv.equiv_bool_implies_equiv _ _ hequivs.1)
-                  (TypeEnv.equiv_bool_implies_equiv _ _ hequivs.2)
-              · simp only [not_and_or] at hequivs
-                cases hequivs with
-                | inl h1 => simp [h1] at h
-                | inr h2 => simp [h2] at h
-        | _ => simp [hbool] at h
-      | ref _ _ _ => simp [hbool] at h
+              simp only [hl1, hl2] at h
+              split at h
+              · rename_i hcond
+                simp only [Bool.and_eq_true] at hcond
+                apply typecheck_stmt.branch lenv env a L1 L2 envL1 envL2 retType ha hl1 hl2
+                · exact subsumes_bool_implies_subsumes envL1 _ hcond.1
+                · exact subsumes_bool_implies_subsumes envL2 _ hcond.2
+              · simp at h
+        | _ => simp at h
 
   | ret as =>
     intro h
@@ -1998,17 +2065,16 @@ theorem check_stmt_complete (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTyp
   | skip => simp [check_stmt]
 
   | jump =>
-    rename_i env' L envL hlookup hequiv
+    rename_i env' L envL hlookup hsubsumes
     simp only [check_stmt, hlookup]
-    have hequiv_bool := TypeEnv.equiv_implies_equiv_bool _ _ hequiv
-    simp [hequiv_bool]
+    -- TODO: need subsumes_implies_subsumes_bool lemma
+    sorry
 
   | branch =>
-    rename_i env' a L1 L2 envL1 envL2 hbool hlookup1 hlookup2 hequiv1 hequiv2
+    rename_i env' a L1 L2 envL1 envL2 hbool hlookup1 hlookup2 hsubsumes1 hsubsumes2
     simp only [check_stmt, hbool, hlookup1, hlookup2]
-    have hequiv1_bool := TypeEnv.equiv_implies_equiv_bool _ _ hequiv1
-    have hequiv2_bool := TypeEnv.equiv_implies_equiv_bool _ _ hequiv2
-    simp [hequiv1_bool, hequiv2_bool]
+    -- TODO: need subsumes_implies_subsumes_bool lemma
+    sorry
 
   | ret =>
     simp only [check_stmt]

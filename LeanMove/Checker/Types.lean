@@ -266,6 +266,17 @@ def TypeEnv.equiv (env1 env2 : TypeEnv) : Prop :=
   (∀ u v, u ∈ env1.pathEnv.refs → v ∈ env1.pathEnv.refs →
     env1.pathEnv.paths (u, v) = env2.pathEnv.paths (u, v))
 
+/-- `envL.subsumes env` means envL's paths are at least as wide as env's paths:
+    every path in env is also a path in envL.
+    Used at jump/branch targets where envL may be a join of multiple predecessors. -/
+def TypeEnv.subsumes (envL env : TypeEnv) : Prop :=
+  env.siteEnv = envL.siteEnv ∧
+  env.varEnv = envL.varEnv ∧
+  env.pathEnv.refs = envL.pathEnv.refs ∧
+  (∀ u v, u ∈ env.pathEnv.refs → v ∈ env.pathEnv.refs →
+    ∀ path, interpret_regex (env.pathEnv.paths (u, v)) path →
+            interpret_regex (envL.pathEnv.paths (u, v)) path)
+
 /- ---------------------------------------------------- -/
 /-       Well-formedness of the environments            -/
 /- ---------------------------------------------------- -/

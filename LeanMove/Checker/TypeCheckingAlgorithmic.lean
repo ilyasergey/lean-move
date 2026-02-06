@@ -61,6 +61,25 @@ def TypeEnv.equiv_bool (env1 env2 : TypeEnv) : Bool :=
     env1.pathEnv.refs.all fun v =>
       regexBeq (env1.pathEnv.paths (u, v)) (env2.pathEnv.paths (u, v))
 
+/-- Conservative check: is L(r1) ⊆ L(r2)?
+    Checks if r1 is syntactically equal to r2, or appears as an arm of r2's union tree,
+    or r1 has an empty language. -/
+def regexSubsumedBy [BEq α] : Regex α → Regex α → Bool
+  | r1, .union s1 s2 => is_empty r1 || regexBeq r1 (.union s1 s2) ||
+      regexSubsumedBy r1 s1 || regexSubsumedBy r1 s2
+  | r1, r2 => is_empty r1 || regexBeq r1 r2
+
+/-- Check that envL subsumes env: same siteEnv/varEnv/refs, and every path regex
+    in env is subsumed by the corresponding regex in envL.
+    Used at jump/branch targets where envL may be a join of multiple predecessors. -/
+def TypeEnv.subsumes_bool (envL env : TypeEnv) : Bool :=
+  env.siteEnv == envL.siteEnv &&
+  env.varEnv == envL.varEnv &&
+  env.pathEnv.refs == envL.pathEnv.refs &&
+  env.pathEnv.refs.all fun u =>
+    env.pathEnv.refs.all fun v =>
+      regexSubsumedBy (env.pathEnv.paths (u, v)) (envL.pathEnv.paths (u, v))
+
 /-- Boolean check for all_fresh_sites -/
 def all_fresh_sites_bool (env: TypeEnv) (as: List Site) : Bool :=
   as.all (fun a => notIn env.siteEnv a)
@@ -116,12 +135,12 @@ def check_mutable_inputs_have_outbound_bool (env: TypeEnv) (bs: List Site) : Boo
 def no_locals_borrowed_bool (env: TypeEnv) : Bool :=
   env.varEnv.entries.all fun (x, _) => not_borrowed_bool x env
 
-/-- Boolean check for check_outbound -/
+/-- Boolean check for check_outbound.
+    Simplifies regexes (computing stored Brzozowski derivatives) before checking,
+    so that derivative-wrapped regexes are correctly recognized as ε/empty. -/
 def check_outbound_bool (penv: PathEnv) (s: Aref) : Bool :=
   penv.refs.all fun s' =>
-    match penv.paths (s, s') with
-    | .ε | .empty => true
-    | _ => false
+    only_matches_empty (simplify (penv.paths (s, s')))
 
 /-- Check field names and sites are both distinct -/
 def check_fields_distinct (fields : List (Field × Site)) : Bool :=
@@ -149,7 +168,7 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType : MoveType)
 
   | .jump L =>
     match lookup lenv L with
-    | some envL => if TypeEnv.equiv_bool env envL then some env else none
+    | some envL => if TypeEnv.subsumes_bool envL env then some env else none
     | none => none
 
   | .branch a L1 L2 =>
@@ -158,7 +177,7 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType : MoveType)
       match lookup lenv L1, lookup lenv L2 with
       | some envL1, some envL2 =>
         let env' := {env with siteEnv := delete env.siteEnv a}
-        if TypeEnv.equiv_bool env' envL1 && TypeEnv.equiv_bool env' envL2
+        if TypeEnv.subsumes_bool envL1 env' && TypeEnv.subsumes_bool envL2 env'
         then some env
         else none
       | _, _ => none

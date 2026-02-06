@@ -226,6 +226,45 @@ example : ⟦ ∂[1] ⌜1⌝★ ⟧ [1] := by
 
 end TestLemmas
 
+/-! ## Brzozowski Derivative Simplification -/
+
+/-- Check if a regex is nullable (matches the empty string). -/
+def nullable : Regex α → Bool
+  | .empty => false
+  | .ε => true
+  | .char _ => false
+  | .dot => false
+  | .union r1 r2 => nullable r1 || nullable r2
+  | .concat r1 r2 => nullable r1 && nullable r2
+  | .star _ => true
+  | .deriv _ _ => false  -- conservative
+
+/-- Compute one step of Brzozowski derivative ∂_a(r).
+    Assumes no .deriv constructors in input. -/
+def brzozowski_step [DecidableEq α] (a : α) : Regex α → Regex α
+  | .empty => .empty
+  | .ε => .empty
+  | .char b => if a == b then .ε else .empty
+  | .dot => .ε
+  | .union r1 r2 => .union (brzozowski_step a r1) (brzozowski_step a r2)
+  | .concat r1 r2 =>
+    let d1 := Regex.concat (brzozowski_step a r1) r2
+    if nullable r1 then .union d1 (brzozowski_step a r2) else d1
+  | .star r => Regex.concat (brzozowski_step a r) (Regex.star r)
+  | .deriv _ _ => .empty  -- shouldn't happen after simplification; safe default
+
+/-- Simplify a regex by computing all stored Brzozowski derivatives.
+    The result contains no .deriv constructors. -/
+def simplify [DecidableEq α] : Regex α → Regex α
+  | .empty => .empty
+  | .ε => .ε
+  | .char a => .char a
+  | .dot => .dot
+  | .union r1 r2 => .union (simplify r1) (simplify r2)
+  | .concat r1 r2 => .concat (simplify r1) (simplify r2)
+  | .star r => .star (simplify r)
+  | .deriv r a => brzozowski_step a (simplify r)
+
 /-! ## Emptiness and Only-Matches-Empty Checks -/
 
 /-- Check if a regex's language is empty (matches nothing at all).

@@ -258,18 +258,21 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       typecheck_stmt lenv env .skip retType
 
   -- jump L // Unconditional jump to label L
+  -- The target label's environment subsumes the current environment
+  -- (envL may be a join of multiple predecessors with wider paths)
   | jump : ∀ (lenv : LabelEnv) (env : TypeEnv) (L : Label) (envL : TypeEnv) retType,
       AssocMap.lookup lenv L = some envL →
-      TypeEnv.equiv env envL →
+      TypeEnv.subsumes envL env →
       typecheck_stmt lenv env (.jump L) retType
 
   -- branch a L1 L2 // If (a) goto L1 else goto L2
+  -- Each target label's environment subsumes the post-branch environment
   | branch : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) (L1 L2 : Label) (envL1 envL2 : TypeEnv) retType,
       AssocMap.lookup env.siteEnv a = some (.basic .tbool) →
       AssocMap.lookup lenv L1 = some envL1 →
       AssocMap.lookup lenv L2 = some envL2 →
-      TypeEnv.equiv {env with siteEnv := delete env.siteEnv a} envL1 →
-      TypeEnv.equiv {env with siteEnv := delete env.siteEnv a} envL2 →
+      TypeEnv.subsumes envL1 {env with siteEnv := delete env.siteEnv a} →
+      TypeEnv.subsumes envL2 {env with siteEnv := delete env.siteEnv a} →
       typecheck_stmt lenv env (.branch a L1 L2) retType
 
   -- return (a1, ..., an) // Return from function
@@ -424,7 +427,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
   | write_ref : ∀ (lenv : LabelEnv) (env : TypeEnv) a b τ (r: Aref) cont retType,
       AssocMap.lookup env.siteEnv a = some (.ref τ r .siteBorrowMut) →
       AssocMap.lookup env.siteEnv b = some (.basic τ) →
-      check_outbound env.pathEnv r (λ r ↦ r = .ε ∨ r = .empty) →
+      check_outbound env.pathEnv r (λ r ↦ only_matches_empty r) →
       typecheck_stmt lenv
         {env with siteEnv := delete (delete env.siteEnv b) a
                   pathEnv := garbage_collect env.pathEnv r}
