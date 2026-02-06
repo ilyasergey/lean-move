@@ -1115,23 +1115,231 @@ lemma all_fresh_sites_bool_complete (env : TypeEnv) (as : List Site) :
   exact h
 
 /- ---------------------------------------------------- -/
+/-       eraseDups / Nodup helper lemmas                 -/
+/- ---------------------------------------------------- -/
+
+/-- eraseDups.length ≤ length for any list -/
+private lemma eraseDups_length_le {α : Type} [BEq α] [LawfulBEq α] (l : List α) :
+    l.eraseDups.length ≤ l.length := by
+  suffices ∀ n (l : List α), l.length ≤ n → l.eraseDups.length ≤ l.length from
+    this l.length l (Nat.le_refl _)
+  intro n
+  induction n with
+  | zero =>
+    intro l hlen
+    match l with
+    | [] => simp
+    | _ :: _ => simp [List.length_cons] at hlen
+  | succ n ih =>
+    intro l hlen
+    match l with
+    | [] => simp
+    | a :: as =>
+      simp only [List.eraseDups_cons, List.length_cons]
+      have hfilt_le : (as.filter fun b => !(b == a)).length ≤ n := by
+        have h := List.length_filter_le (fun b => !(b == a)) as
+        simp only [List.length_cons] at hlen
+        omega
+      have h1 := ih (as.filter fun b => !(b == a)) hfilt_le
+      have h2 := List.length_filter_le (fun b => !(b == a)) as
+      omega
+
+/-- If filter p preserves list length, then all elements satisfy p -/
+private lemma filter_length_eq_implies {α : Type} [BEq α] [LawfulBEq α]
+    (p : α → Bool) (l : List α) (hlen : (l.filter p).length = l.length)
+    (a : α) (hmem : a ∈ l) : p a = true := by
+  induction l with
+  | nil => nomatch hmem
+  | cons b bs ih =>
+    simp only [List.filter_cons] at hlen
+    split at hlen
+    · rename_i hpb
+      simp only [List.length_cons] at hlen
+      cases hmem with
+      | head => exact hpb
+      | tail _ hmem' => exact ih (by omega) hmem'
+    · simp only [List.length_cons] at hlen
+      have := List.length_filter_le p bs
+      omega
+
+/-- If length = eraseDups.length, then the list has no duplicates -/
+private lemma nodup_of_length_eraseDups {α : Type} [BEq α] [LawfulBEq α] (l : List α)
+    (h : l.length = l.eraseDups.length) : l.Nodup := by
+  induction l with
+  | nil => exact List.nodup_nil
+  | cons a as ih =>
+    simp only [List.eraseDups_cons, List.length_cons] at h
+    have h1 := eraseDups_length_le (as.filter fun b => !(b == a))
+    have h2 := List.length_filter_le (fun b => !(b == a)) as
+    have hflen : (as.filter fun b => !(b == a)).length = as.length := by omega
+    have hnotmem : a ∉ as := by
+      intro hmem
+      have := filter_length_eq_implies (fun b => !(b == a)) as hflen a hmem
+      simp at this
+    have hfilter_eq : as.filter (fun b => !(b == a)) = as := by
+      rw [List.filter_eq_self]
+      intro b hmem
+      have hne : b ≠ a := fun heq => hnotmem (heq ▸ hmem)
+      simp [beq_eq_false_iff_ne.mpr hne]
+    rw [hfilter_eq] at h
+    exact List.nodup_cons.mpr ⟨hnotmem, ih (by omega)⟩
+
+/-- If map Prod.snd has no duplicates, two pairs with same second component
+    but different first components can't both be in the list -/
+private lemma nodup_snd_pair_absurd {α β : Type} (l : List (α × β))
+    (hnodup : (l.map Prod.snd).Nodup)
+    {a₁ a₂ : α} {b : β}
+    (h₁ : (a₁, b) ∈ l) (h₂ : (a₂, b) ∈ l) (hne : a₁ ≠ a₂) : False := by
+  induction l with
+  | nil => nomatch h₁
+  | cons hd tl ih =>
+    simp only [List.map_cons, List.nodup_cons] at hnodup
+    obtain ⟨hnotmem, htl_nodup⟩ := hnodup
+    cases h₁ with
+    | head =>
+      cases h₂ with
+      | head => exact hne rfl
+      | tail _ h₂' =>
+        exact absurd (List.mem_map_of_mem (f := Prod.snd) h₂') hnotmem
+    | tail _ h₁' =>
+      cases h₂ with
+      | head =>
+        exact absurd (List.mem_map_of_mem (f := Prod.snd) h₁') hnotmem
+      | tail _ h₂' =>
+        exact ih htl_nodup h₁' h₂'
+
+/- ---------------------------------------------------- -/
+/-       AssocMap lookup/insert lemmas                   -/
+/- ---------------------------------------------------- -/
+
+/-- List.lookup through a filter that removes key k preserves lookup of other keys -/
+private lemma list_lookup_filter_ne {K V : Type} [DecidableEq K]
+    (k k' : K) (entries : List (K × V)) (hne : k' ≠ k) :
+    List.lookup k' (entries.filter (fun p => p.fst != k)) = List.lookup k' entries := by
+  induction entries with
+  | nil => rfl
+  | cons hd tl ih =>
+    simp only [List.filter]
+    split
+    · -- hd.fst != k matched true (filter keeps hd)
+      simp only [List.lookup]
+      split
+      · rfl  -- k' == hd.fst matched true
+      · exact ih  -- k' == hd.fst matched false
+    · -- hd.fst != k matched false, so hd.fst = k (filter removes hd)
+      rename_i h
+      have hk : hd.fst = k := by
+        by_contra hne_k
+        have : (hd.fst != k) = true := by simp [bne, beq_eq_false_iff_ne.mpr hne_k]
+        rw [this] at h; exact absurd h (by decide)
+      simp only [List.lookup]
+      have hne' : (k' == hd.fst) = false := beq_eq_false_iff_ne.mpr (by rw [hk]; exact hne)
+      split
+      · rename_i h'; rw [hne'] at h'; exact absurd h' (by decide)
+      · exact ih
+
+/-- Looking up a different key after insert returns the original value -/
+private lemma lookup_insert_ne {K V : Type} [DecidableEq K]
+    (m : AssocMap K V) (k k' : K) (v : V) (hne : k' ≠ k) :
+    AssocMap.lookup (AssocMap.insert m k v) k' = AssocMap.lookup m k' := by
+  simp only [AssocMap.lookup, AssocMap.insert]
+  simp only [List.lookup]
+  split
+  · rename_i h; exact absurd (beq_iff_eq.mp h) hne
+  · exact list_lookup_filter_ne k k' m.entries hne
+
+/-- Looking up the key just inserted returns the inserted value -/
+private lemma lookup_insert_eq {K V : Type} [DecidableEq K]
+    (m : AssocMap K V) (k : K) (v : V) :
+    AssocMap.lookup (AssocMap.insert m k v) k = some v := by
+  simp only [AssocMap.lookup, AssocMap.insert, List.lookup, beq_self_eq_true]
+
+/- ---------------------------------------------------- -/
+/-       Pack fold helper lemmas                         -/
+/- ---------------------------------------------------- -/
+
+/-- The pack fold preserves entries for keys not in the field list -/
+private lemma foldlM_pack_preserves
+    (siteEnv : SiteEnv) (fields : List (Field × Site))
+    (init result : AssocMap Field BasicMoveType) (f : Field) (v : BasicMoveType)
+    (hfold : fields.foldlM (fun acc (p : Field × Site) =>
+      match AssocMap.lookup siteEnv p.2 with
+      | some (.basic bt) => some (AssocMap.insert acc p.1 bt)
+      | _ => none) init = some result)
+    (hnotmem : f ∉ fields.map Prod.fst)
+    (hlookup : AssocMap.lookup init f = some v) :
+    AssocMap.lookup result f = some v := by
+  induction fields generalizing init with
+  | nil =>
+    simp only [List.foldlM, pure] at hfold
+    simp only [Option.some.injEq] at hfold; subst hfold; exact hlookup
+  | cons hd tl ih =>
+    simp only [List.foldlM, bind, Option.bind] at hfold
+    simp only [List.map_cons, List.mem_cons, not_or] at hnotmem
+    obtain ⟨hne, hnotmem_tl⟩ := hnotmem
+    cases hlk : lookup siteEnv hd.snd with
+    | none => simp [hlk] at hfold
+    | some mt =>
+      cases mt with
+      | basic bt =>
+        simp [hlk] at hfold
+        exact ih _ hfold hnotmem_tl
+          (by rw [lookup_insert_ne _ hd.fst f bt hne]; exact hlookup)
+      | ref _ _ _ => simp [hlk] at hfold
+
+/-- If the pack fold succeeds with distinct field names, each entry is correctly mapped -/
+private lemma foldlM_pack_sound
+    (siteEnv : SiteEnv) (fields : List (Field × Site))
+    (init fentries : AssocMap Field BasicMoveType)
+    (hfold : fields.foldlM (fun acc (p : Field × Site) =>
+      match AssocMap.lookup siteEnv p.2 with
+      | some (.basic bt) => some (AssocMap.insert acc p.1 bt)
+      | _ => none) init = some fentries)
+    (hnodup : (fields.map Prod.fst).Nodup)
+    {f : Field} {a : Site} (hmem : (f, a) ∈ fields) :
+    ∃ bt, AssocMap.lookup siteEnv a = some (.basic bt) ∧
+          AssocMap.lookup fentries f = some bt := by
+  induction fields generalizing init with
+  | nil => nomatch hmem
+  | cons hd tl ih =>
+    simp only [List.foldlM, bind, Option.bind] at hfold
+    simp only [List.nodup_cons, List.map_cons] at hnodup
+    obtain ⟨hd_not_in_tl, tl_nodup⟩ := hnodup
+    cases hlk : lookup siteEnv hd.snd with
+    | none => simp [hlk] at hfold
+    | some mt =>
+      cases mt with
+      | basic bt =>
+        simp [hlk] at hfold
+        cases hmem with
+        | head =>
+          -- After head match, hd is substituted with (f, a), so hd.fst = f, hd.snd = a
+          exact ⟨bt, hlk, foldlM_pack_preserves siteEnv tl _ fentries f bt hfold hd_not_in_tl
+            (lookup_insert_eq _ f bt)⟩
+        | tail _ hmem' =>
+          exact ih _ hfold tl_nodup hmem'
+      | ref _ _ _ => simp [hlk] at hfold
+
+/- ---------------------------------------------------- -/
 /-       Field distinctness lemma                        -/
 /- ---------------------------------------------------- -/
 
-/-- If check_fields_distinct returns true, all sites in fields are pairwise distinct.
-    Proof: length = eraseDups.length means no duplicates. Two pairs with different
-    fields but same site would create a duplicate, contradiction. -/
+/-- If check_fields_distinct returns true, all sites in fields are pairwise distinct -/
 lemma check_fields_distinct_implies_sites_distinct (fields : List (Field × Site)) :
     check_fields_distinct fields = true →
     ∀ a₁ a₂, (∃ f₁ f₂, (f₁, a₁) ∈ fields ∧ (f₂, a₂) ∈ fields ∧ f₁ ≠ f₂) → a₁ ≠ a₂ := by
   intro hdistinct a₁ a₂ ⟨f₁, f₂, hf₁, hf₂, hfne⟩
-  simp only [check_fields_distinct, beq_iff_eq] at hdistinct
-  intro heq
-  subst heq
-  -- (f₁, a₁) and (f₂, a₁) are in fields with f₁ ≠ f₂
-  -- This means a₁ appears twice in fields.map Prod.snd
-  -- But hdistinct says length = eraseDups.length (no duplicates) - contradiction
-  sorry
+  simp only [check_fields_distinct, beq_iff_eq, Bool.and_eq_true] at hdistinct
+  obtain ⟨hsites, _⟩ := hdistinct
+  intro heq; subst heq
+  exact nodup_snd_pair_absurd fields (nodup_of_length_eraseDups _ hsites) hf₁ hf₂ hfne
+
+/-- If check_fields_distinct returns true, field names are Nodup -/
+private lemma check_fields_distinct_implies_fnames_nodup (fields : List (Field × Site)) :
+    check_fields_distinct fields = true → (fields.map Prod.fst).Nodup := by
+  intro h
+  simp only [check_fields_distinct, beq_iff_eq, Bool.and_eq_true] at h
+  exact nodup_of_length_eraseDups _ h.2
 
 /- ---------------------------------------------------- -/
 /-       letBind soundness helper lemma                  -/
@@ -1474,8 +1682,10 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
       · rename_i fentries hfold
         apply typecheck_stmt.let_bind_pack (fentries := fentries)
         · exact hfresh
-        · -- Need to show fields have basic types and exist in fentries
-          sorry
+        · -- Each field has a basic type in siteEnv and its entry in fentries
+          intro f a' hmem
+          exact foldlM_pack_sound env.siteEnv fields AssocMap.empty fentries hfold
+            (check_fields_distinct_implies_fnames_nodup fields hdistinct) hmem
         · exact check_fields_distinct_implies_sites_distinct fields hdistinct
         · have hwf' := TypeEnv.deleteAll_insert_wf env (fields.map Prod.snd) a (.basic (.trecord fentries)) hwf trivial
           exact ih_cont _ hwf' h

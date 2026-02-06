@@ -15,3 +15,5 @@
 -/
 
 import LeanMove.Checker.TypeChecking
+import LeanMove.Checker.TypeCheckingAlgorithmic
+import LeanMove.Checker.TypeCheckingProofs
