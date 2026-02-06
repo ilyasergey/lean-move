@@ -19,11 +19,11 @@ import Ssreflect.Lang
 import Aesop
 import Mathlib.Tactic.Convert
 
-namespace AssocMap
-
 /-- Represents an associative map based on lists of pairs -/
 structure AssocMap (K V : Type) where
   entries : List (K × V)
+
+namespace AssocMap
 
 /-- Create an empty associative map -/
 def empty {K V : Type} : AssocMap K V := {
@@ -98,9 +98,9 @@ theorem notIn_uniqueKeys_insert {K V : Type} [DecidableEq K] (m : AssocMap K V) 
   uniqueKeys m → notIn m k → uniqueKeys (insert m k v) := by
   unfold AssocMap.uniqueKeys;
   unfold AssocMap.notIn at * ; simp;
-  unfold AssocMap.insert at * ; aesop;
+  unfold AssocMap.insert at * ; aesop (config := { warnOnNonterminal := false })
   rw [ List.countP_cons ] ; simp;
-  rw [ List.countP_filter ] ; aesop;
+  rw [ List.countP_filter ] ; aesop (config := { warnOnNonterminal := false })
   convert a a_2 b left using 1;
   exact List.countP_congr fun x hx => by aesop;
 
