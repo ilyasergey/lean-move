@@ -886,9 +886,61 @@ lemma garbage_collect_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFo
 
 /-- consume_ref_transfer preserves WellFormed.
     Transfers edges from r to r' and removes r. -/
-lemma consume_ref_transfer_wellformed (pe : PathEnv) (r r' : Aref) (hwf : PathEnv.WellFormed pe) :
+lemma consume_ref_transfer_wellformed (pe : PathEnv) (r r' : Aref) (hwf : PathEnv.WellFormed pe)
+    (hr_not_root : r ≠ Aref.root)
+    (hr'_fresh : r' ∉ pe.refs) (hr'_not_varRef : ∀ v, r' ≠ Aref.varRef v) :
     PathEnv.WellFormed (consume_ref_transfer pe r r') := by
-  sorry
+  constructor
+  · -- refs_complete: refs not in new list have empty paths from root
+    intro v hv
+    simp only [consume_ref_transfer] at hv ⊢
+    -- Determine if root = r ∨ v = r
+    by_cases hvr : Aref.root = r ∨ v = r
+    · -- Path is empty
+      simp only [hvr, ↓reduceIte]
+    · -- root ≠ r and v ≠ r
+      have hroot_ne_r : Aref.root ≠ r := fun h => hvr (Or.inl h)
+      have hv_ne_r : v ≠ r := fun h => hvr (Or.inr h)
+      simp only [hvr, ↓reduceIte]
+      by_cases hvr' : v = r'
+      · -- v = r': r' should be in new refs, contradiction with hv
+        exfalso
+        apply hv
+        simp only [hr'_fresh, not_false_eq_true, ↓reduceIte, List.mem_filter, decide_eq_true_eq,
+                    List.mem_cons]
+        exact ⟨Or.inl hvr', hv_ne_r⟩
+      · -- v ≠ r': path is G(root, v)
+        simp only [hvr', ↓reduceIte]
+        have hv_notin : v ∉ pe.refs := by
+          intro hcontra
+          apply hv
+          simp only [hr'_fresh, not_false_eq_true, ↓reduceIte, List.mem_filter, decide_eq_true_eq,
+                      List.mem_cons]
+          exact ⟨Or.inr hcontra, hv_ne_r⟩
+        exact hwf.refs_complete v hv_notin
+  · -- varref_tracked: varRef x in new refs implies borrow path
+    intro x hx
+    simp only [consume_ref_transfer] at hx ⊢
+    simp only [hr'_fresh, not_false_eq_true, ↓reduceIte, List.mem_filter, decide_eq_true_eq,
+                List.mem_cons] at hx
+    obtain ⟨hxin, hx_ne_r⟩ := hx
+    -- varRef x ≠ r and (varRef x = r' ∨ varRef x ∈ pe.refs)
+    -- But r' is not a varRef, so varRef x ≠ r'
+    have hvx_ne_r' : Aref.varRef x ≠ r' := fun h => absurd h.symm (hr'_not_varRef x)
+    have hxin_orig : Aref.varRef x ∈ pe.refs := by
+      cases hxin with
+      | inl h => exact absurd h hvx_ne_r'
+      | inr h => exact h
+    -- root ≠ r and varRef x ≠ r, so condition is false
+    have hcond : ¬(Aref.root = r ∨ Aref.varRef x = r) := by
+      intro hcontra
+      cases hcontra with
+      | inl h => exact hr_not_root h.symm
+      | inr h => exact hx_ne_r h
+    simp only [hcond, ↓reduceIte]
+    -- varRef x ≠ r', so path is G(root, varRef x)
+    simp only [hvx_ne_r', ↓reduceIte]
+    exact hwf.varref_tracked x hxin_orig
 
 /- ---------------------------------------------------- -/
 /-       TypeEnv.equiv lemmas                            -/
@@ -1357,7 +1409,11 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
           · exact hlookup
           · exact hfresh
           · exact freshRefBool_implies_freshRef r' env.pathEnv (nextFreshRef_fresh env.pathEnv)
-          · have hpe' := consume_ref_transfer_wellformed env.pathEnv r r' hwf.pathEnv_wf
+          · have hr_not_root : r ≠ Aref.root := hwf.siteEnv_wf src (.ref bt r isBor) hlookup
+            have hr'_fresh : r' ∉ env.pathEnv.refs := nextFreshRef_fresh_prop env.pathEnv
+            have hr'_not_varRef : ∀ v, r' ≠ Aref.varRef v := nextFreshRef_not_varRef env.pathEnv
+            have hpe' := consume_ref_transfer_wellformed env.pathEnv r r' hwf.pathEnv_wf
+              hr_not_root hr'_fresh hr'_not_varRef
             have hτ : match (MoveType.ref bt r' .siteBorrowImm) with | .ref _ r'' _ => r'' ≠ Aref.root | .basic _ => True :=
               nextFreshRef_not_root env.pathEnv
             have hwf' := TypeEnv.delete_insert_pathEnv_wf env src a (.ref bt r' .siteBorrowImm) _ hwf hpe' hτ
