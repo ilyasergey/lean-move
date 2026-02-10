@@ -169,7 +169,7 @@ theorem M_new_welltyped : ∃ lenv, typecheck_fun M_new lenv := by
     injection hlookup with heq
     rw [← heq]
     unfold TypeEnv.equiv
-    refine ⟨rfl, rfl, rfl, ?_⟩
+    refine ⟨LookupEquiv.refl _, LookupEquiv.refl _, rfl, ?_⟩
     intros; rfl
   · -- Every block must type check
     intro block hmem blockEnv hlookup
@@ -294,7 +294,7 @@ theorem M_t_welltyped : ∃ lenv, typecheck_fun M_t lenv := by
     injection hlookup with heq
     rw [← heq]
     unfold TypeEnv.equiv
-    refine ⟨rfl, rfl, rfl, ?_⟩
+    refine ⟨LookupEquiv.refl _, LookupEquiv.refl _, rfl, ?_⟩
     intros; rfl
   · -- Every block must type check
     intro block hmem blockEnv hlookup
@@ -427,7 +427,7 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
     injection hlookup with heq
     rw [← heq]
     unfold TypeEnv.equiv
-    refine ⟨rfl, rfl, rfl, ?_⟩
+    refine ⟨LookupEquiv.refl _, LookupEquiv.refl _, rfl, ?_⟩
     intros; rfl
   · -- Every block must type check
     intro block hmem blockEnv hlookup

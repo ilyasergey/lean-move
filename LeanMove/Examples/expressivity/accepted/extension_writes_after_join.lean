@@ -18,6 +18,8 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
+import LeanMove.Checker.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Checker.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
 
 /-!
@@ -56,6 +58,10 @@ label l3:
 
 }
 ```
+
+The algorithmic checker uses lookup-based (order-independent) AssocMap equivalence
+to compare VarEnvs at jump targets. This allows l1 and l2 to perform moves in
+different orders while still passing the subsumption check at `jump l3`.
 -/
 
 open LeanMove.Lang
@@ -96,23 +102,30 @@ def s11 : Site := .site 11
 def s12 : Site := .site 12 -- move(y) for return
 def s13 : Site := .site 13 -- integer literal 0 for write
 
+-- Ref abbreviation: both params a and b use the same abstract ref
+-- (needed because x is assigned from either a or b in different branches,
+-- and the algorithmic checker requires exact type equality in assigns)
+def r0 : Aref := .refid 0
+
 /-
   Translation notes:
-  - move(cond) consumes the boolean condition
-  - Both branches assign x AND y (swapped assignments)
+  - Both a and b have type &mut S with the same abstract ref .refid 0
+    (needed because x is assigned from either a or b depending on branch)
+  - l1: x = move(a), y = move(b) (original Move IR order)
+  - l2: x = move(b), y = move(a) (original Move IR order)
   - l3: borrows x.f, writes to y (a struct pack), writes to f, returns y
 -/
 def t : FunDef := {
   params := [
     (var_cond, .basic .tbool),
-    (var_a, .ref (.trecord s_entries) (.varRef var_a) .siteBorrowMut),
-    (var_b, .ref (.trecord s_entries) (.varRef var_b) .siteBorrowMut)
+    (var_a, .ref (.trecord s_entries) r0 .siteBorrowMut),
+    (var_b, .ref (.trecord s_entries) r0 .siteBorrowMut)
   ]
-  returnType := .ref (.trecord s_entries) (.varRef var_a) .siteBorrowMut
+  returnType := .ref (.trecord s_entries) r0 .siteBorrowMut
   locals := [
-    { name := var_x, type := .ref (.trecord s_entries) (.varRef var_a) .siteBorrowMut },
-    { name := var_y, type := .ref (.trecord s_entries) (.varRef var_b) .siteBorrowMut },
-    { name := var_f, type := .ref .u64 (.varRef var_a) .siteBorrowMut }
+    { name := var_x, type := .ref (.trecord s_entries) r0 .siteBorrowMut },
+    { name := var_y, type := .ref (.trecord s_entries) r0 .siteBorrowMut },
+    { name := var_f, type := .ref .u64 (.refid 1) .siteBorrowMut }
   ]
   blocks := [
     -- l0: jump_if (move(cond)) l2;
@@ -164,8 +177,160 @@ def t : FunDef := {
   ]
 }
 
--- Theorem: t is well-typed
-theorem t_welltyped : ∃ lenv, typecheck_fun t lenv := by
-  sorry
+-- -----------------------------------------------------
+-- -           Algorithmic Type Checking Tests        --
+-- -----------------------------------------------------
+
+-- VarEnv at l1/l2 entry (after l0: cond consumed)
+def t_branch_varEnv : VarEnv :=
+  let ve := init_fun_varEnv t
+  update ve var_cond (.invalidVar, .basic .tbool, .mutable)
+
+-- Environment at l1/l2 entry
+def t_branch_env : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := t_branch_varEnv
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+-- VarEnv at l3 entry (a,b moved/invalid, x,y valid)
+-- Order of updates must match checker's execution in l1: move a, assign x, move b, assign y
+def t_l3_varEnv : VarEnv :=
+  let ve := t_branch_varEnv
+  let ve := update ve var_a (.invalidVar, .ref (.trecord s_entries) r0 .siteBorrowMut, .mutable)
+  let ve := update ve var_x (.validVar, .ref (.trecord s_entries) r0 .siteBorrowMut, .mutable)
+  let ve := update ve var_b (.invalidVar, .ref (.trecord s_entries) r0 .siteBorrowMut, .mutable)
+  update ve var_y (.validVar, .ref (.trecord s_entries) r0 .siteBorrowMut, .mutable)
+
+-- Environment at l3 entry (no borrows in branches, so PathEnv.init)
+def t_l3_env : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := t_l3_varEnv
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+-- Initial environment (for entry block)
+def t_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := init_fun_varEnv t
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+-- Label environment
+def t_lenv : LabelEnv :=
+  insert (insert (insert (insert AssocMap.empty
+    "l0" t_initEnv)
+    "l1" t_branch_env)
+    "l2" t_branch_env)
+    "l3" t_l3_env
+
+-- Debug: per-block check
+#eval t.blocks.map fun block =>
+  (block.label, match lookup t_lenv block.label with
+  | some blockEnv => check_block t_lenv block blockEnv t.returnType
+  | none => false)
+
+-- Full function check
+#eval check_fun t t_lenv
+
+-- Theorem: t is well-typed (algorithmic)
+theorem t_check : check_fun t t_lenv = true := by rfl
+
+-- -----------------------------------------------------
+-- -           Relational Type Checking Theorems      --
+-- -----------------------------------------------------
+
+-- Helper: init_fun_varEnv for t has fresh refs
+private lemma t_varEnv_fresh :
+    VarEnv.RefsAreFresh (init_fun_varEnv t) := by
+  unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
+  simp only [t, List.foldl]
+  apply VarEnv.insert_refs_are_fresh
+  · apply VarEnv.insert_refs_are_fresh
+    · apply VarEnv.insert_refs_are_fresh
+      · apply VarEnv.insert_refs_are_fresh
+        · apply VarEnv.insert_refs_are_fresh
+          · apply VarEnv.insert_refs_are_fresh
+            · exact VarEnv.empty_refs_are_fresh
+            · trivial
+          · exact ⟨0, rfl⟩
+        · exact ⟨0, rfl⟩
+      · exact ⟨0, rfl⟩
+    · exact ⟨0, rfl⟩
+  · exact ⟨1, rfl⟩
+
+-- Helper: t_branch_varEnv has fresh refs
+private lemma t_branch_varEnv_fresh :
+    VarEnv.RefsAreFresh t_branch_varEnv := by
+  unfold t_branch_varEnv
+  apply VarEnv.insert_refs_are_fresh
+  · exact t_varEnv_fresh
+  · trivial
+
+-- Helper: t_l3_varEnv has fresh refs
+private lemma t_l3_varEnv_fresh :
+    VarEnv.RefsAreFresh t_l3_varEnv := by
+  unfold t_l3_varEnv r0
+  apply VarEnv.insert_refs_are_fresh
+  · apply VarEnv.insert_refs_are_fresh
+    · apply VarEnv.insert_refs_are_fresh
+      · apply VarEnv.insert_refs_are_fresh
+        · exact t_branch_varEnv_fresh
+        · exact ⟨0, rfl⟩
+      · exact ⟨0, rfl⟩
+    · exact ⟨0, rfl⟩
+  · exact ⟨0, rfl⟩
+
+-- All envs in t_lenv are well-formed
+private lemma t_lenv_wf :
+    ∀ l env, lookup t_lenv l = some env → TypeEnv.WellFormed env := by
+  intro l env hlookup
+  by_cases hl3 : l = "l3"
+  · subst hl3
+    have h : lookup t_lenv "l3" = some t_l3_env := by rfl
+    rw [h] at hlookup; injection hlookup with heq; subst heq
+    exact TypeEnv.init_wellformed _ _ t_l3_varEnv_fresh
+  · by_cases hl2 : l = "l2"
+    · subst hl2
+      have h : lookup t_lenv "l2" = some t_branch_env := by rfl
+      rw [h] at hlookup; injection hlookup with heq; subst heq
+      exact TypeEnv.init_wellformed _ _ t_branch_varEnv_fresh
+    · by_cases hl1 : l = "l1"
+      · subst hl1
+        have h : lookup t_lenv "l1" = some t_branch_env := by rfl
+        rw [h] at hlookup; injection hlookup with heq; subst heq
+        exact TypeEnv.init_wellformed _ _ t_branch_varEnv_fresh
+      · by_cases hl0 : l = "l0"
+        · subst hl0
+          have h : lookup t_lenv "l0" = some t_initEnv := by rfl
+          rw [h] at hlookup; injection hlookup with heq; subst heq
+          exact TypeEnv.init_wellformed _ _ t_varEnv_fresh
+        · exfalso
+          simp only [t_lenv, AssocMap.insert, AssocMap.empty, AssocMap.lookup,
+                     List.filter, List.lookup] at hlookup
+          have h3 : (l == "l3") = false := by
+            cases h : l == "l3"
+            · rfl
+            · exact absurd (eq_of_beq h) hl3
+          have h2 : (l == "l2") = false := by
+            cases h : l == "l2"
+            · rfl
+            · exact absurd (eq_of_beq h) hl2
+          have h1 : (l == "l1") = false := by
+            cases h : l == "l1"
+            · rfl
+            · exact absurd (eq_of_beq h) hl1
+          have h0 : (l == "l0") = false := by
+            cases h : l == "l0"
+            · rfl
+            · exact absurd (eq_of_beq h) hl0
+          simp [h3, h2, h1, h0, List.lookup] at hlookup
+
+-- Main theorem: t is well-typed (relational)
+theorem t_welltyped : ∃ lenv, typecheck_fun t lenv :=
+  ⟨_, check_fun_sound _ _ t_lenv_wf t_check⟩
 
 end LeanMove.Examples.Expressivity.ExtensionWritesAfterJoin

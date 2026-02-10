@@ -130,4 +130,83 @@ theorem notIn_implies_lookup_none {K V : Type} [DecidableEq K] (m : AssocMap K V
       simp only [List.lookup, h2]
       exact ih h
 
+/- ---------------------------------------------------- -/
+/-       Lookup-based equivalence (order-independent)    -/
+/- ---------------------------------------------------- -/
+
+/-- Two maps are lookup-equivalent if every key maps to the same value in both.
+    Unlike structural equality (`=`), this is insensitive to entry ordering. -/
+def LookupEquiv {K V : Type} [DecidableEq K] (m1 m2 : AssocMap K V) : Prop :=
+  ∀ k, lookup m1 k = lookup m2 k
+
+/-- Boolean check for lookup equivalence: checks all keys from both maps. -/
+def lookup_equiv_bool {K V : Type} [DecidableEq K] [DecidableEq V]
+    (m1 m2 : AssocMap K V) : Bool :=
+  m1.entries.all (fun p => decide (lookup m1 p.1 = lookup m2 p.1)) &&
+  m2.entries.all (fun p => decide (lookup m1 p.1 = lookup m2 p.1))
+
+theorem LookupEquiv.refl {K V : Type} [DecidableEq K] (m : AssocMap K V) :
+    LookupEquiv m m :=
+  fun _ => rfl
+
+/-- If a key does not appear as a first component in the entries list,
+    then lookup returns none. -/
+theorem lookup_none_of_not_mem_keys {K V : Type} [DecidableEq K]
+    (m : AssocMap K V) (k : K)
+    (h : ∀ p ∈ m.entries, p.1 ≠ k) : lookup m k = none := by
+  rcases m with ⟨entries⟩
+  simp only [lookup]
+  induction entries with
+  | nil => simp [List.lookup]
+  | cons hd rest ih =>
+    simp only [List.lookup]
+    have hne : hd.1 ≠ k := h hd (by simp)
+    have hbeq : (k == hd.1) = false := by
+      cases hb : k == hd.1
+      · rfl
+      · exact absurd (beq_iff_eq.mp hb).symm hne
+    simp only [hbeq]
+    exact ih (fun p hp => h p (by simp [hp]))
+
+/-- Soundness: if the boolean check passes, lookup equivalence holds. -/
+theorem lookup_equiv_bool_sound {K V : Type} [DecidableEq K] [DecidableEq V]
+    (m1 m2 : AssocMap K V) :
+    lookup_equiv_bool m1 m2 = true → LookupEquiv m1 m2 := by
+  intro h
+  simp only [lookup_equiv_bool, Bool.and_eq_true, List.all_eq_true] at h
+  obtain ⟨h1, h2⟩ := h
+  intro k
+  by_cases hk1 : ∃ v, (k, v) ∈ m1.entries
+  · -- k appears in m1: use h1
+    obtain ⟨v, hv⟩ := hk1
+    have := h1 (k, v) hv
+    simp only [decide_eq_true_eq] at this
+    exact this
+  · by_cases hk2 : ∃ v, (k, v) ∈ m2.entries
+    · -- k appears in m2 but not m1: use h2
+      obtain ⟨v, hv⟩ := hk2
+      have := h2 (k, v) hv
+      simp only [decide_eq_true_eq] at this
+      exact this
+    · -- k in neither: both lookups are none
+      have hk1' : ∀ p ∈ m1.entries, p.1 ≠ k := by
+        intro ⟨k', v'⟩ hp heq; exact hk1 ⟨v', heq ▸ hp⟩
+      have hk2' : ∀ p ∈ m2.entries, p.1 ≠ k := by
+        intro ⟨k', v'⟩ hp heq; exact hk2 ⟨v', heq ▸ hp⟩
+      rw [lookup_none_of_not_mem_keys m1 k hk1', lookup_none_of_not_mem_keys m2 k hk2']
+
+/-- Completeness: if lookup equivalence holds, the boolean check passes. -/
+theorem lookup_equiv_bool_complete {K V : Type} [DecidableEq K] [DecidableEq V]
+    (m1 m2 : AssocMap K V) :
+    LookupEquiv m1 m2 → lookup_equiv_bool m1 m2 = true := by
+  intro h
+  simp only [lookup_equiv_bool, Bool.and_eq_true, List.all_eq_true]
+  constructor
+  · intro p hp
+    simp only [decide_eq_true_eq]
+    exact h p.1
+  · intro p hp
+    simp only [decide_eq_true_eq]
+    exact h p.1
+
 end AssocMap

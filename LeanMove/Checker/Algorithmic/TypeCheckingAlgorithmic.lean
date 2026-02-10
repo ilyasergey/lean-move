@@ -54,8 +54,8 @@ def regexBeq [BEq α] : Regex α → Regex α → Bool
 
 /-- Boolean check for TypeEnv.equiv -/
 def TypeEnv.equiv_bool (env1 env2 : TypeEnv) : Bool :=
-  env1.siteEnv == env2.siteEnv &&
-  env1.varEnv == env2.varEnv &&
+  lookup_equiv_bool env1.siteEnv env2.siteEnv &&
+  lookup_equiv_bool env1.varEnv env2.varEnv &&
   env1.pathEnv.refs == env2.pathEnv.refs &&
   env1.pathEnv.refs.all fun u =>
     env1.pathEnv.refs.all fun v =>
@@ -73,8 +73,8 @@ def regexSubsumedBy [BEq α] : Regex α → Regex α → Bool
     in env is subsumed by the corresponding regex in envL.
     Used at jump/branch targets where envL may be a join of multiple predecessors. -/
 def TypeEnv.subsumes_bool (envL env : TypeEnv) : Bool :=
-  env.siteEnv == envL.siteEnv &&
-  env.varEnv == envL.varEnv &&
+  lookup_equiv_bool env.siteEnv envL.siteEnv &&
+  lookup_equiv_bool env.varEnv envL.varEnv &&
   env.pathEnv.refs == envL.pathEnv.refs &&
   env.pathEnv.refs.all fun u =>
     env.pathEnv.refs.all fun v =>

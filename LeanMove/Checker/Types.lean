@@ -260,8 +260,8 @@ abbrev LabelEnv := AssocMap Label TypeEnv
   in `refs`, the environment is still equivalent to the loop entry environment.
 -/
 def TypeEnv.equiv (env1 env2 : TypeEnv) : Prop :=
-  env1.siteEnv = env2.siteEnv ∧
-  env1.varEnv = env2.varEnv ∧
+  LookupEquiv env1.siteEnv env2.siteEnv ∧
+  LookupEquiv env1.varEnv env2.varEnv ∧
   env1.pathEnv.refs = env2.pathEnv.refs ∧
   (∀ u v, u ∈ env1.pathEnv.refs → v ∈ env1.pathEnv.refs →
     env1.pathEnv.paths (u, v) = env2.pathEnv.paths (u, v))
@@ -270,8 +270,8 @@ def TypeEnv.equiv (env1 env2 : TypeEnv) : Prop :=
     every path in env is also a path in envL.
     Used at jump/branch targets where envL may be a join of multiple predecessors. -/
 def TypeEnv.subsumes (envL env : TypeEnv) : Prop :=
-  env.siteEnv = envL.siteEnv ∧
-  env.varEnv = envL.varEnv ∧
+  LookupEquiv env.siteEnv envL.siteEnv ∧
+  LookupEquiv env.varEnv envL.varEnv ∧
   env.pathEnv.refs = envL.pathEnv.refs ∧
   (∀ u v, u ∈ env.pathEnv.refs → v ∈ env.pathEnv.refs →
     ∀ path, interpret_regex (env.pathEnv.paths (u, v)) path →

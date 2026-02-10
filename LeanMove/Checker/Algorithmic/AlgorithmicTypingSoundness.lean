@@ -918,14 +918,14 @@ lemma consume_ref_transfer_wellformed (pe : PathEnv) (r r' : Aref) (hwf : PathEn
 /- ---------------------------------------------------- -/
 
 lemma TypeEnv.equiv_refl (env : TypeEnv) : TypeEnv.equiv env env := by
-  exact ⟨rfl, rfl, rfl, fun _ _ _ _ => rfl⟩
+  exact ⟨LookupEquiv.refl _, LookupEquiv.refl _, rfl, fun _ _ _ _ => rfl⟩
 
 lemma TypeEnv.equiv_bool_implies_equiv (env1 env2 : TypeEnv) :
     TypeEnv.equiv_bool env1 env2 = true → TypeEnv.equiv env1 env2 := by
   intro h
   simp only [TypeEnv.equiv_bool, Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at h
   obtain ⟨⟨⟨hsite, hvar⟩, hrefs⟩, hpaths⟩ := h
-  refine ⟨hsite, hvar, hrefs, ?_⟩
+  refine ⟨lookup_equiv_bool_sound _ _ hsite, lookup_equiv_bool_sound _ _ hvar, hrefs, ?_⟩
   intro u v hu hv
   have h1 := hpaths u hu
   have h2 := h1 v hv
@@ -935,7 +935,7 @@ lemma TypeEnv.equiv_implies_equiv_bool (env1 env2 : TypeEnv) :
     TypeEnv.equiv env1 env2 → TypeEnv.equiv_bool env1 env2 = true := by
   intro ⟨hsite, hvar, hrefs, hpaths⟩
   simp only [TypeEnv.equiv_bool, Bool.and_eq_true, beq_iff_eq, List.all_eq_true]
-  refine ⟨⟨⟨hsite, hvar⟩, hrefs⟩, ?_⟩
+  refine ⟨⟨⟨lookup_equiv_bool_complete _ _ hsite, lookup_equiv_bool_complete _ _ hvar⟩, hrefs⟩, ?_⟩
   intro u hu v hv
   have heq := hpaths u v hu hv
   exact eq_regexBeq _ _ heq
@@ -1845,8 +1845,8 @@ theorem subsumes_bool_implies_subsumes (envL env : TypeEnv) :
   simp only [TypeEnv.subsumes_bool, Bool.and_eq_true, List.all_eq_true] at h
   obtain ⟨⟨⟨hse, hve⟩, hrefs⟩, hpaths⟩ := h
   refine ⟨?_, ?_, ?_, ?_⟩
-  · exact beq_iff_eq.mp hse
-  · exact beq_iff_eq.mp hve
+  · exact lookup_equiv_bool_sound _ _ hse
+  · exact lookup_equiv_bool_sound _ _ hve
   · exact beq_iff_eq.mp hrefs
   · intro u v hu hv path hmatch
     have hu' := hpaths u hu
