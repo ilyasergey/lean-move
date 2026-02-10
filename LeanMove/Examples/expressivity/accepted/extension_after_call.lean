@@ -18,8 +18,8 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
-import LeanMove.Checker.TypeCheckingAlgorithmic
-import LeanMove.Checker.AlgorithmicTypingSoundness
+import LeanMove.Checker.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Checker.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
 
 /-!

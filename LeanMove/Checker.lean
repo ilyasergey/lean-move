@@ -15,6 +15,6 @@
 -/
 
 import LeanMove.Checker.TypeChecking
-import LeanMove.Checker.TypeCheckingAlgorithmic
-import LeanMove.Checker.AlgorithmicTypingSoundness
-import LeanMove.Checker.AlgorithmicTypingCompleteness
+import LeanMove.Checker.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Checker.Algorithmic.AlgorithmicTypingSoundness
+import LeanMove.Checker.Algorithmic.AlgorithmicTypingCompleteness

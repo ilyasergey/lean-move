@@ -130,9 +130,9 @@ def PathEnv.init : PathEnv :=
   { refs := [.root],
     paths := fun (u, v) => if u = v then Regex.ε else Regex.empty }
 
--- Check that the property p holds for all paths from s in penv
+-- Check that the property p holds for all paths from s to tracked refs in penv
 def check_outbound (penv: PathEnv) (s: Aref) (p: Regex PathElement → Prop) :=
-  forall s', p (penv.paths  (s, s'))
+  forall s', s' ∈ penv.refs → p (penv.paths  (s, s'))
 
 -- Garbage collect the reference from penv
 def garbage_collect (penv: PathEnv) (r: Aref) : PathEnv :=

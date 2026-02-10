@@ -105,4 +105,29 @@ theorem notIn_uniqueKeys_insert {K V : Type} [DecidableEq K] (m : AssocMap K V) 
   exact List.countP_congr fun x hx => by aesop;
 
 
+/-- If a key is not in the map (via `notIn`), then `lookup` returns `none` -/
+theorem notIn_implies_lookup_none {K V : Type} [DecidableEq K] (m : AssocMap K V) (k : K) :
+    notIn m k = true → lookup m k = none := by
+  rcases m with ⟨entries⟩
+  simp only [notIn, lookup]
+  induction entries with
+  | nil => simp [List.find?, List.lookup]
+  | cons hd rest ih =>
+    intro h
+    simp only [List.find?] at h
+    by_cases hkk : hd.1 = k
+    · subst hkk; simp at h
+    · have h1 : (hd.1 == k) = false := by
+        cases hb : hd.1 == k
+        · rfl
+        · exact absurd (beq_iff_eq.mp hb) hkk
+      simp only [h1] at h
+      have h2 : (k == hd.1) = false := by
+        cases hb : k == hd.1
+        · rfl
+        · exact absurd (beq_iff_eq.mp hb).symm hkk
+      show List.lookup k (hd :: rest) = none
+      simp only [List.lookup, h2]
+      exact ih h
+
 end AssocMap

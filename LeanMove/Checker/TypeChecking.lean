@@ -427,7 +427,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
   | write_ref : ∀ (lenv : LabelEnv) (env : TypeEnv) a b τ (r: Aref) cont retType,
       AssocMap.lookup env.siteEnv a = some (.ref τ r .siteBorrowMut) →
       AssocMap.lookup env.siteEnv b = some (.basic τ) →
-      check_outbound env.pathEnv r (λ r ↦ only_matches_empty r) →
+      check_outbound env.pathEnv r (λ re ↦ only_matches_empty (simplify re)) →
       typecheck_stmt lenv
         {env with siteEnv := delete (delete env.siteEnv b) a
                   pathEnv := garbage_collect env.pathEnv r}

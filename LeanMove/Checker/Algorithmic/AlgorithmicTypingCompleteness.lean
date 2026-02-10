@@ -14,7 +14,7 @@
  limitations under the License.
 -/
 
-import LeanMove.Checker.AlgorithmicTypingSoundness
+import LeanMove.Checker.Algorithmic.AlgorithmicTypingSoundness
 
 /-!
 # Algorithmic Typing Completeness for MoveLight

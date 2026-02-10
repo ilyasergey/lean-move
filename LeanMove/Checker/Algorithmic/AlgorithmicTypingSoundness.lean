@@ -14,7 +14,7 @@
  limitations under the License.
 -/
 
-import LeanMove.Checker.TypeCheckingAlgorithmic
+import LeanMove.Checker.Algorithmic.TypeCheckingAlgorithmic
 
 /-!
 # Algorithmic Typing Soundness for MoveLight
@@ -1129,6 +1129,83 @@ lemma all_fresh_sites_bool_complete (env : TypeEnv) (as : List Site) :
   exact h
 
 /- ---------------------------------------------------- -/
+/-       check_mutable_inputs bridge lemmas              -/
+/- ---------------------------------------------------- -/
+
+/-- Soundness: Boolean isolation check implies relational isolation -/
+lemma check_mutable_inputs_isolated_bool_sound (env : TypeEnv) (bs : List Site) :
+    check_mutable_inputs_isolated_bool env bs = true →
+    check_mutable_inputs_isolated env bs := by
+  intro h
+  simp only [check_mutable_inputs_isolated_bool, List.all_eq_true] at h
+  intro mi_site hmi mi_bt mi_ref hlookup_mi other_site hother other_bt other_ref bk hlookup_other hne
+  have h1 := h mi_site hmi
+  simp only [hlookup_mi] at h1
+  simp only [List.all_eq_true] at h1
+  have h2 := h1 other_site hother
+  have hne_bool : (mi_site != other_site) = true := by
+    simp only [bne_iff_ne]
+    exact hne
+  simp only [hne_bool, ite_true] at h2
+  simp only [hlookup_other] at h2
+  exact h2
+
+/-- Soundness: Boolean outbound check implies relational outbound -/
+lemma check_mutable_inputs_have_outbound_bool_sound (env : TypeEnv) (bs : List Site) :
+    check_mutable_inputs_have_outbound_bool env bs = true →
+    check_mutable_inputs_have_outbound env bs := by
+  intro h
+  simp only [check_mutable_inputs_have_outbound_bool, List.all_eq_true] at h
+  intro mi_site hmi mi_bt mi_ref hlookup_mi
+  have h1 := h mi_site hmi
+  simp only [hlookup_mi] at h1
+  simp only [List.any_eq_true] at h1
+  obtain ⟨target, htarget_in, hcond⟩ := h1
+  simp only [Bool.and_eq_true, bne_iff_ne] at hcond
+  obtain ⟨hne, hmatch⟩ := hcond
+  exact ⟨target, htarget_in, hne, hmatch⟩
+
+/- ---------------------------------------------------- -/
+/-       call_connect_inputs_outputs WellFormed          -/
+/- ---------------------------------------------------- -/
+
+/-- When all elements map to none, filterMap gives [] -/
+private lemma filterMap_all_none {α β : Type} (as : List α) (f : α → Option β)
+    (hf : ∀ a ∈ as, f a = none) :
+    as.filterMap f = [] := by
+  induction as with
+  | nil => simp
+  | cons a as' ih =>
+    have ha := hf a (List.Mem.head as')
+    simp only [List.filterMap]
+    rw [ha]
+    exact ih (fun a' ha' => hf a' (List.mem_cons_of_mem a ha'))
+
+/-- call_connect_inputs_outputs preserves WellFormed when outputs are fresh -/
+lemma call_connect_inputs_outputs_wf (env : TypeEnv) (as bs : List Site)
+    (hwf : TypeEnv.WellFormed env)
+    (hfresh : all_fresh_sites env as) :
+    TypeEnv.WellFormed (call_connect_inputs_outputs env as bs) := by
+  -- All output sites have lookup = none
+  simp only [all_fresh_sites] at hfresh
+  rw [List.all_eq_true] at hfresh
+  have hlookup_none : ∀ a ∈ as, lookup env.siteEnv a = none :=
+    fun a ha => notIn_implies_lookup_none env.siteEnv a (hfresh a ha)
+  -- call_connect_inputs_outputs only changes pathEnv; siteEnv and varEnv are unchanged
+  constructor
+  · -- pathEnv_wf: show pathEnv is unchanged because io=[] and mo=[]
+    show PathEnv.WellFormed (call_connect_inputs_outputs env as bs).pathEnv
+    unfold call_connect_inputs_outputs
+    -- When all outputs are fresh, io and mo filterMaps over `as` give [].
+    -- Use rw with _ for f to let Lean's unifier match the exact lambda.
+    rw [filterMap_all_none as _ (fun a ha => by simp [hlookup_none a ha])]
+    rw [filterMap_all_none as _ (fun a ha => by simp [hlookup_none a ha])]
+    -- Now io=[] and mo=[], so foldls over [] are identity, pathEnv = env.pathEnv
+    exact hwf.pathEnv_wf
+  · exact hwf.siteEnv_wf
+  · exact hwf.varEnv_wf
+
+/- ---------------------------------------------------- -/
 /-       eraseDups / Nodup helper lemmas                 -/
 /- ---------------------------------------------------- -/
 
@@ -1992,9 +2069,76 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
         | _ => simp [hlookup] at h
       | ref _ _ _ => simp [hlookup] at h
 
-  | writeRef a b cont ih_cont => sorry
+  | writeRef a b cont ih_cont =>
+    intro h
+    simp only [check_stmt] at h
+    cases hlookup_a : lookup env.siteEnv a with
+    | none => simp [hlookup_a] at h
+    | some ta =>
+      cases ta with
+      | basic bt => simp [hlookup_a] at h
+      | ref bt r isBor =>
+        cases isBor with
+        | siteBorrowImm => simp [hlookup_a] at h
+        | siteBorrowMut =>
+          simp only [hlookup_a] at h
+          cases hlookup_b : lookup env.siteEnv b with
+          | none => simp [hlookup_b] at h
+          | some tb =>
+            cases tb with
+            | ref _ _ _ => simp [hlookup_b] at h
+            | basic bt' =>
+              simp only [hlookup_b] at h
+              split at h
+              · rename_i hcond
+                simp only [Bool.and_eq_true] at hcond
+                obtain ⟨hbeq, hcob⟩ := hcond
+                have hτeq := BasicMoveType.eq_of_beq bt bt' hbeq
+                subst hτeq
+                -- Bridge check_outbound_bool to check_outbound
+                have hout : check_outbound env.pathEnv r (fun re => only_matches_empty (simplify re)) := by
+                  intro s' hs'
+                  simp only [check_outbound_bool, List.all_eq_true] at hcob
+                  exact hcob s' hs'
+                -- Get r ≠ .root from SiteEnv.RefsNotRoot
+                have hr_not_root : r ≠ Aref.root := hwf.siteEnv_wf a (.ref bt r .siteBorrowMut) hlookup_a
+                -- Build WellFormed for new env
+                have hpe' := garbage_collect_wellformed env.pathEnv r hwf.pathEnv_wf hr_not_root
+                have hsenv_del1 := SiteEnv.delete_refs_not_root env.siteEnv b hwf.siteEnv_wf
+                have hsenv_del2 := SiteEnv.delete_refs_not_root _ a hsenv_del1
+                let env' := {env with siteEnv := delete (delete env.siteEnv b) a
+                                      pathEnv := garbage_collect env.pathEnv r}
+                have hwf' : TypeEnv.WellFormed env' := ⟨hpe', hsenv_del2, hwf.varEnv_wf⟩
+                -- Apply relational rule and IH
+                apply typecheck_stmt.write_ref lenv env a b bt r cont retType hlookup_a hlookup_b hout
+                exact ih_cont env' hwf' h
+              · simp at h
 
-  | call as fnName bs cont ih_cont => sorry
+  | call as fnName bs cont ih_cont =>
+    intro h
+    simp only [check_stmt] at h
+    split at h
+    · rename_i hfresh_bool
+      cases hlookup_fn : lookup env.funEnv fnName with
+      | none => simp [hlookup_fn] at h
+      | some sig =>
+        obtain ⟨params, rets⟩ := sig
+        simp only [hlookup_fn] at h
+        split at h
+        · rename_i hcond
+          simp only [Bool.and_eq_true] at hcond
+          obtain ⟨⟨⟨htc_bs, htc_as⟩, hiso⟩, houtbound⟩ := hcond
+          have hfresh' := all_fresh_sites_bool_sound env as hfresh_bool
+          have htc_bs' := types_conform_bool_sound env.siteEnv bs params htc_bs
+          have htc_as' := types_conform_bool_sound env.siteEnv as rets htc_as
+          have hiso' := check_mutable_inputs_isolated_bool_sound env bs hiso
+          have houtbound' := check_mutable_inputs_have_outbound_bool_sound env bs houtbound
+          have hwf' := call_connect_inputs_outputs_wf env as bs hwf hfresh'
+          apply typecheck_stmt.call lenv env fnName as bs params rets cont retType
+            hfresh' hlookup_fn htc_bs' htc_as' hiso' houtbound'
+          exact ih_cont _ hwf' h
+        · simp at h
+    · simp at h
 
 
 /- ---------------------------------------------------- -/
