@@ -215,7 +215,7 @@ theorem call_and_write_invalid_check_fails : check_fun call_and_write_invalid ca
 -- Theorem: call_and_write_invalid is ILL-typed (REJECTED by type checker)
 -- Note: proving this formally requires the completeness theorem (check_fun_complete),
 -- which is not yet fully proven. The algorithmic rejection above demonstrates the result.
-theorem call_and_write_invalid_illtyped : ¬ (∃ lenv, typecheck_fun call_and_write_invalid lenv) := by
-  sorry
+-- theorem call_and_write_invalid_illtyped : ¬ (∃ lenv, typecheck_fun call_and_write_invalid lenv) := by
+--   sorry
 
 end LeanMove.Examples.Expressivity.MutableBorrowsNotUniqueCallsInvalid
