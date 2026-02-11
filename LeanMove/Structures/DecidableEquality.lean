@@ -191,4 +191,66 @@ instance : DecidableEq MoveType := fun t1 t2 =>
   else
     isFalse (fun heq => h (MoveType.beq_of_eq t1 t2 heq))
 
+/-- Two Arefs are compatible if they have the same kind.
+    In particular, any `.refid n` is compatible with any `.refid m` (ignoring the numeric value).
+    This allows the checker to be agnostic to the exact refid values in declared types. -/
+def Aref.compatible : Aref → Aref → Bool
+  | .refid _, .refid _ => true
+  | .root, .root => true
+  | .varRef x, .varRef y => x == y
+  | _, _ => false
+
+def Aref.Compatible : Aref → Aref → Prop
+  | .refid _, .refid _ => True
+  | .root, .root => True
+  | .varRef x, .varRef y => x = y
+  | _, _ => False
+
+theorem Aref.compatible_sound (a1 a2 : Aref) : a1.compatible a2 = true → a1.Compatible a2 := by
+  cases a1 <;> cases a2 <;> simp [compatible, Compatible]
+
+/-- Compatible MoveTypes: same structure but Arefs need only be kind-compatible.
+    For basic types, requires equal BasicMoveType.
+    For ref types, requires equal BasicMoveType, kind-compatible Arefs, and equal BorrowingKind. -/
+def MoveType.compatible : MoveType → MoveType → Prop
+  | .basic bt1, .basic bt2 => bt1 = bt2
+  | .ref bt1 r1 bk1, .ref bt2 r2 bk2 => bt1 = bt2 ∧ Aref.Compatible r1 r2 ∧ bk1 = bk2
+  | _, _ => False
+
+def MoveType.compatible_bool : MoveType → MoveType → Bool
+  | .basic bt1, .basic bt2 => bt1.beq bt2
+  | .ref bt1 r1 bk1, .ref bt2 r2 bk2 => bt1.beq bt2 && Aref.compatible r1 r2 && bk1 == bk2
+  | _, _ => false
+
+theorem MoveType.compatible_bool_sound (t1 t2 : MoveType) :
+    t1.compatible_bool t2 = true → t1.compatible t2 := by
+  cases t1 with
+  | basic bt1 =>
+    cases t2 with
+    | basic bt2 =>
+      simp only [compatible_bool, compatible]
+      exact BasicMoveType.eq_of_beq bt1 bt2
+    | ref _ _ _ => simp [compatible_bool]
+  | ref bt1 r1 bk1 =>
+    cases t2 with
+    | basic _ => simp [compatible_bool]
+    | ref bt2 r2 bk2 =>
+      simp only [compatible_bool, Bool.and_eq_true, beq_iff_eq, compatible]
+      intro ⟨⟨hbt, hcompat⟩, hbk⟩
+      exact ⟨BasicMoveType.eq_of_beq bt1 bt2 hbt, Aref.compatible_sound r1 r2 hcompat, hbk⟩
+
+theorem MoveType.compatible_of_beq (t1 t2 : MoveType) :
+    t1.beq t2 = true → t1.compatible t2 := by
+  intro h
+  have heq := MoveType.eq_of_beq t1 t2 h
+  subst heq
+  cases t1 with
+  | basic bt => exact rfl
+  | ref bt r bk =>
+    refine ⟨rfl, ?_, rfl⟩
+    cases r with
+    | root => exact trivial
+    | refid n => exact trivial
+    | varRef x => exact rfl
+
 end LeanMove.Lang.MoveLight

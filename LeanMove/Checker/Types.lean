@@ -107,6 +107,27 @@ abbrev SiteEnv := AssocMap Site MoveType
 -- Environment mapping variables to their site, types, mutability, abstract references, and borrow status
 abbrev VarEnv := AssocMap Var (IsValid × MoveType × Mut)
 
+/-- Two VarEnv entries are compatible if IsValid and Mut match exactly,
+    and MoveType is compatible (ignoring Aref values for `.refid`). -/
+def VarEntryCompatible : (IsValid × MoveType × Mut) → (IsValid × MoveType × Mut) → Prop
+  | (v1, t1, m1), (v2, t2, m2) => v1 = v2 ∧ MoveType.compatible t1 t2 ∧ m1 = m2
+
+/-- Two VarEnvs are lookup-compatible if for every key, the looked-up entries are compatible.
+    This is like LookupEquiv but uses MoveType.compatible instead of exact equality for types. -/
+def VarEnvLookupCompatible (m1 m2 : VarEnv) : Prop :=
+  ∀ k, match AssocMap.lookup m1 k, AssocMap.lookup m2 k with
+    | some e1, some e2 => VarEntryCompatible e1 e2
+    | none, none => True
+    | _, _ => False
+
+theorem VarEnvLookupCompatible.refl (m : VarEnv) : VarEnvLookupCompatible m m := by
+  intro k
+  cases AssocMap.lookup m k with
+  | none => trivial
+  | some e =>
+    obtain ⟨v, t, mu⟩ := e
+    exact ⟨rfl, MoveType.compatible_of_beq t t (MoveType.beq_of_eq t t rfl), rfl⟩
+
 -- Either a root or a field access
 inductive PathElement where
   | field : Field → PathElement
@@ -261,7 +282,7 @@ abbrev LabelEnv := AssocMap Label TypeEnv
 -/
 def TypeEnv.equiv (env1 env2 : TypeEnv) : Prop :=
   LookupEquiv env1.siteEnv env2.siteEnv ∧
-  LookupEquiv env1.varEnv env2.varEnv ∧
+  VarEnvLookupCompatible env1.varEnv env2.varEnv ∧
   env1.pathEnv.refs = env2.pathEnv.refs ∧
   (∀ u v, u ∈ env1.pathEnv.refs → v ∈ env1.pathEnv.refs →
     env1.pathEnv.paths (u, v) = env2.pathEnv.paths (u, v))
@@ -271,7 +292,7 @@ def TypeEnv.equiv (env1 env2 : TypeEnv) : Prop :=
     Used at jump/branch targets where envL may be a join of multiple predecessors. -/
 def TypeEnv.subsumes (envL env : TypeEnv) : Prop :=
   LookupEquiv env.siteEnv envL.siteEnv ∧
-  LookupEquiv env.varEnv envL.varEnv ∧
+  VarEnvLookupCompatible env.varEnv envL.varEnv ∧
   env.pathEnv.refs = envL.pathEnv.refs ∧
   (∀ u v, u ∈ env.pathEnv.refs → v ∈ env.pathEnv.refs →
     ∀ path, interpret_regex (env.pathEnv.paths (u, v)) path →

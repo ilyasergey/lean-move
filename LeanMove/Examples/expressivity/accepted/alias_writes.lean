@@ -195,7 +195,7 @@ def borrow_local_and_copy_ref_reverse : FunDef := {
   locals := [
     { name := var_a, type := .basic .u64 },
     { name := var_x, type := .ref .u64 (.refid 1) .siteBorrowMut },
-    { name := var_y, type := .ref .u64 (.refid 2) .siteBorrowMut }
+    { name := var_y, type := .ref .u64 (.refid 52) .siteBorrowMut }
   ]
   blocks := [
     { label := "l0"
@@ -469,7 +469,7 @@ theorem borrow_local_and_copy_ref_reverse_welltyped : ∃ lenv, typecheck_fun bo
             · exact VarEnv.empty_refs_are_fresh
             · trivial
           · exact ⟨1, rfl⟩
-        · exact ⟨2, rfl⟩)
+        · exact ⟨_, rfl⟩)
     · exact absurd hlookup (by simp)) borrow_local_and_copy_ref_reverse_check⟩
 
 end LeanMove.Examples.Expressivity.AliasWrites

@@ -52,10 +52,25 @@ def regexBeq [BEq α] : Regex α → Regex α → Bool
   | .deriv r a, .deriv s b => regexBeq r s && a == b
   | _, _ => false
 
+/-- Boolean check for VarEntry compatibility: same IsValid/Mut, compatible MoveType. -/
+def varentry_compatible_bool : (IsValid × MoveType × Mut) → (IsValid × MoveType × Mut) → Bool
+  | (v1, t1, m1), (v2, t2, m2) => v1 == v2 && MoveType.compatible_bool t1 t2 && m1 == m2
+
+/-- Check compatibility of two optional VarEnv entries. -/
+def varenv_entry_compatible_opt : Option (IsValid × MoveType × Mut) → Option (IsValid × MoveType × Mut) → Bool
+  | some e1, some e2 => varentry_compatible_bool e1 e2
+  | none, none => true
+  | _, _ => false
+
+/-- Boolean check for VarEnvLookupCompatible. -/
+def varenv_lookup_compatible_bool (m1 m2 : VarEnv) : Bool :=
+  m1.entries.all (fun p => varenv_entry_compatible_opt (lookup m1 p.1) (lookup m2 p.1)) &&
+  m2.entries.all (fun p => varenv_entry_compatible_opt (lookup m1 p.1) (lookup m2 p.1))
+
 /-- Boolean check for TypeEnv.equiv -/
 def TypeEnv.equiv_bool (env1 env2 : TypeEnv) : Bool :=
   lookup_equiv_bool env1.siteEnv env2.siteEnv &&
-  lookup_equiv_bool env1.varEnv env2.varEnv &&
+  varenv_lookup_compatible_bool env1.varEnv env2.varEnv &&
   env1.pathEnv.refs == env2.pathEnv.refs &&
   env1.pathEnv.refs.all fun u =>
     env1.pathEnv.refs.all fun v =>
@@ -74,7 +89,7 @@ def regexSubsumedBy [BEq α] : Regex α → Regex α → Bool
     Used at jump/branch targets where envL may be a join of multiple predecessors. -/
 def TypeEnv.subsumes_bool (envL env : TypeEnv) : Bool :=
   lookup_equiv_bool env.siteEnv envL.siteEnv &&
-  lookup_equiv_bool env.varEnv envL.varEnv &&
+  varenv_lookup_compatible_bool env.varEnv envL.varEnv &&
   env.pathEnv.refs == envL.pathEnv.refs &&
   env.pathEnv.refs.all fun u =>
     env.pathEnv.refs.all fun v =>
@@ -363,8 +378,8 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType : MoveType)
     | some (.invalidVar, τ, .mutable) =>
       match lookup env.siteEnv a with
       | some τ' =>
-        if τ == τ' then
-          let env' := {env with varEnv := update env.varEnv x (.validVar, τ, .mutable)
+        if MoveType.compatible_bool τ τ' then
+          let env' := {env with varEnv := update env.varEnv x (.validVar, τ', .mutable)
                                 siteEnv := delete env.siteEnv a}
           check_stmt lenv env' cont retType
         else none

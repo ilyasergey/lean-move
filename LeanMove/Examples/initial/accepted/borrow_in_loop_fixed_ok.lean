@@ -222,7 +222,7 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
     rw [← heq]
     -- Prove reflexivity of equiv
     unfold TypeEnv.equiv
-    refine ⟨LookupEquiv.refl _, LookupEquiv.refl _, rfl, ?_⟩
+    refine ⟨LookupEquiv.refl _, VarEnvLookupCompatible.refl _, rfl, ?_⟩
     intros; rfl
   · -- Every block must type check
     intro block hmem blockEnv hlookup
@@ -276,7 +276,7 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
     -- TypeEnv.subsumes foo_initEnv env2
     have hsubsumes : TypeEnv.subsumes foo_initEnv env2 := by
       unfold TypeEnv.subsumes
-      refine ⟨LookupEquiv.refl _, LookupEquiv.refl _, hrefs_eq, ?_⟩
+      refine ⟨LookupEquiv.refl _, VarEnvLookupCompatible.refl _, hrefs_eq, ?_⟩
       intro u v hu hv path hinterp
       rw [hrefs] at hu hv
       simp only [List.mem_singleton] at hu hv

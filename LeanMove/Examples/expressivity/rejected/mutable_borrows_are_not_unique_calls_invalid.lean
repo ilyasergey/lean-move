@@ -107,6 +107,7 @@ module 0x6.call_and_write_valid {
         *move(call) = 0; // the move frees the value
         f = &mut copy(s).S::f;
         *copy(f) = 0;
+
         return;
     }
 
@@ -209,7 +210,7 @@ def call_and_write_invalid_lenv : LabelEnv :=
 #eval check_fun call_and_write_invalid call_and_write_invalid_lenv
 
 -- Theorem: algorithmic checker rejects call_and_write_invalid
-theorem call_and_write_invalid_check_fails : check_fun call_and_write_invalid call_and_write_invalid_lenv = false := by native_decide
+theorem call_and_write_invalid_check_fails : check_fun call_and_write_invalid call_and_write_invalid_lenv = false := by rfl
 
 -- Theorem: call_and_write_invalid is ILL-typed (REJECTED by type checker)
 -- Note: proving this formally requires the completeness theorem (check_fun_complete),

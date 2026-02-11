@@ -169,7 +169,7 @@ theorem M_new_welltyped : ∃ lenv, typecheck_fun M_new lenv := by
     injection hlookup with heq
     rw [← heq]
     unfold TypeEnv.equiv
-    refine ⟨LookupEquiv.refl _, LookupEquiv.refl _, rfl, ?_⟩
+    refine ⟨LookupEquiv.refl _, VarEnvLookupCompatible.refl _, rfl, ?_⟩
     intros; rfl
   · -- Every block must type check
     intro block hmem blockEnv hlookup
@@ -294,7 +294,7 @@ theorem M_t_welltyped : ∃ lenv, typecheck_fun M_t lenv := by
     injection hlookup with heq
     rw [← heq]
     unfold TypeEnv.equiv
-    refine ⟨LookupEquiv.refl _, LookupEquiv.refl _, rfl, ?_⟩
+    refine ⟨LookupEquiv.refl _, VarEnvLookupCompatible.refl _, rfl, ?_⟩
     intros; rfl
   · -- Every block must type check
     intro block hmem blockEnv hlookup
@@ -333,6 +333,7 @@ theorem M_t_welltyped : ∃ lenv, typecheck_fun M_t lenv := by
           apply typecheck_stmt.var_assign_invalid
           · rfl  -- lookup varEnv var_y
           · rfl  -- lookup siteEnv s2
+          · rfl  -- MoveType.compatible (basic type)
           · -- Step 5: ret []
             apply typecheck_stmt.ret
             · -- All return sites have correct type (vacuous)
@@ -427,7 +428,7 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
     injection hlookup with heq
     rw [← heq]
     unfold TypeEnv.equiv
-    refine ⟨LookupEquiv.refl _, LookupEquiv.refl _, rfl, ?_⟩
+    refine ⟨LookupEquiv.refl _, VarEnvLookupCompatible.refl _, rfl, ?_⟩
     intros; rfl
   · -- Every block must type check
     intro block hmem blockEnv hlookup
@@ -462,6 +463,7 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
         apply typecheck_stmt.var_assign_invalid
         · rfl  -- lookup varEnv var_x
         · rfl  -- lookup siteEnv s0 = some M_T
+        · rfl  -- MoveType.compatible (basic type)
         · -- Step 4: let s1 = &var_x
           apply typecheck_stmt.let_bind_borrowImm (r := .refid 1)
           · rfl  -- lookup varEnv var_x = some (.validVar, .basic M_T_basic, .mutable)
@@ -471,6 +473,7 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
             apply typecheck_stmt.var_assign_invalid
             · rfl  -- lookup varEnv var_x_ref
             · rfl  -- lookup siteEnv s1
+            · exact MoveType.compatible_of_beq _ _ rfl  -- MoveType.compatible (ref type)
             · -- Step 6: let s2 = move(var_x_ref)
               apply typecheck_stmt.let_bind_move
               · rfl  -- lookup varEnv var_x_ref = some (.validVar, .ref ..., .mutable)

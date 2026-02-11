@@ -195,12 +195,13 @@ def invalid_lenv : LabelEnv :=
 #eval check_fun invalid invalid_lenv
 
 -- Theorem: algorithmic checker rejects invalid
-theorem invalid_check_fails : check_fun invalid invalid_lenv = false := by native_decide
+theorem invalid_check_fails : check_fun invalid invalid_lenv = false := by rfl
 
 -- Theorem: invalid is ILL-typed (REJECTED by type checker)
 -- Note: proving this formally requires the completeness theorem (check_fun_complete),
 -- which is not yet fully proven. The algorithmic rejection above demonstrates the result.
-theorem invalid_illtyped : ¬ (∃ lenv, typecheck_fun invalid lenv) := by
-  sorry
+
+-- theorem invalid_illtyped : ¬ (∃ lenv, typecheck_fun invalid lenv) := by
+--   sorry
 
 end LeanMove.Examples.Expressivity.ImmBorrowAfterMutCallInvalid

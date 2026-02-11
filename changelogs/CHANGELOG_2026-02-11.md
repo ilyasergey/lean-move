@@ -69,3 +69,48 @@ The `_illtyped` theorems (`¬ ∃ lenv, typecheck_fun f lenv`) remain as `sorry`
 ### EXAMPLES-TODO.md
 - Updated to reflect all accepted examples complete (no sorrys)
 - Updated rejected examples status (algorithmic rejection proven, relational proofs pending completeness)
+
+## Make Type Checker Aref-Agnostic
+
+Made the algorithmic and relational type checkers agnostic to the exact `.refid` values
+in local variable type declarations. Previously, swapping e.g. `.refid 2` and `.refid 3`
+in `locals` would cause `check_fun` to return `false`. Now, Aref comparisons in
+`var_assign_invalid` and at block boundaries (`TypeEnv.equiv`/`subsumes`) use
+kind-compatible matching (any `.refid n` is compatible with any `.refid m`).
+
+### DecidableEquality.lean — New Aref/MoveType compatibility definitions
+- Added `Aref.compatible` (Bool) / `Aref.Compatible` (Prop): kind-aware Aref comparison
+- Added `MoveType.compatible` / `compatible_bool`: compare MoveTypes ignoring exact Aref values
+- Bridge lemmas: `compatible_bool_sound`, `compatible_of_beq`
+
+### Types.lean — VarEnv compatible comparison
+- Added `VarEntryCompatible`: compatible comparison for `(IsValid × MoveType × Mut)` tuples
+- Added `VarEnvLookupCompatible`: like `LookupEquiv` but uses `MoveType.compatible` for types
+- Added `VarEnvLookupCompatible.refl` theorem
+- Changed `TypeEnv.equiv` and `TypeEnv.subsumes` to use `VarEnvLookupCompatible` for varEnv
+
+### TypeChecking.lean — Relational rule update
+- `var_assign_invalid` now takes both τ (declared) and τ' (computed from siteEnv)
+- Requires `MoveType.compatible τ τ'` instead of `τ = τ'`
+- Stores τ' (computed type) in varEnv instead of τ (declared type)
+
+### TypeCheckingAlgorithmic.lean — Algorithmic rule update
+- Added `varentry_compatible_bool`, `varenv_entry_compatible_opt`, `varenv_lookup_compatible_bool`
+- `var_assign_invalid` uses `MoveType.compatible_bool` instead of `==`
+- Stores τ' (computed type) in varEnv
+- `equiv_bool` and `subsumes_bool` use `varenv_lookup_compatible_bool` for varEnv
+
+### AlgorithmicTypingSoundness.lean — Soundness proof update
+- Added `Aref.Compatible_preserves_freshRef` and `MoveType.compatible_preserves_freshRef` bridge lemmas
+- Added `varentry_compatible_bool_sound`, `varenv_entry_compatible_opt_sound`, `varenv_lookup_compatible_bool_sound`
+- Updated `TypeEnv.equiv_refl`, `equiv_bool_implies_equiv`, `subsumes_bool_implies_subsumes`
+- Updated `var_assign_invalid` soundness case to use compatible instead of equal types
+- `equiv_implies_equiv_bool` (completeness direction) left as `sorry`
+
+### Example files updated
+- `borrow_in_loop_fixed_ok.lean`: `LookupEquiv.refl _` → `VarEnvLookupCompatible.refl _` (2 occurrences)
+- `deref_borrow_field_ok.lean`: same (3 occurrences), added `· rfl` / `· exact MoveType.compatible_of_beq _ _ rfl` for new `compatible` premises in `var_assign_invalid`
+- `alias_write_after_join.lean`: changed var_y refid to `.refid 42` to demonstrate agnosticism; freshness proofs use wildcards `⟨_, rfl⟩`
+- `alias_writes.lean`: changed var_y refid to `.refid 52` in `borrow_local_and_copy_ref_reverse`; freshness proof uses wildcard
+- `imm_borrow_after_mut_call_invalid.lean`: `native_decide` → `rfl`, commented out `sorry` theorem
+- `mutable_borrows_are_not_unique_calls_invalid.lean`: `native_decide` → `rfl`

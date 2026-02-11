@@ -102,7 +102,7 @@ def t : FunDef := {
     { name := var_a, type := .basic .u64 },
     { name := var_b, type := .basic .u64 },
     { name := var_x, type := .ref .u64 (.refid 1) .siteBorrowMut },
-    { name := var_y, type := .ref .u64 (.refid 2) .siteBorrowMut },
+    { name := var_y, type := .ref .u64 (.refid 42) .siteBorrowMut },
     { name := var_z, type := .ref .u64 (.refid 3) .siteBorrowMut }
   ]
   blocks := [
@@ -283,8 +283,8 @@ private lemma t_varEnv_fresh :
           · trivial
         · trivial
       · exact ⟨1, rfl⟩
-    · exact ⟨2, rfl⟩
-  · exact ⟨3, rfl⟩
+    · exact ⟨_, rfl⟩
+  · exact ⟨_, rfl⟩
 
 -- Helper: t_branch_varEnv has fresh refs (updates only basic types)
 private lemma t_branch_varEnv_fresh :

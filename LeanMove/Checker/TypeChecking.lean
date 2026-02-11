@@ -454,11 +454,12 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       typecheck_stmt lenv env (.assign x a cont) retType
 
   -- x = a; cont // x is an invalid variable
-  | var_assign_invalid : ∀ (lenv : LabelEnv) (env : TypeEnv) x a τ cont retType,
+  | var_assign_invalid : ∀ (lenv : LabelEnv) (env : TypeEnv) x a τ τ' cont retType,
       AssocMap.lookup env.varEnv x = some (.invalidVar, τ, .mutable) →
-      AssocMap.lookup env.siteEnv a = some τ →
+      AssocMap.lookup env.siteEnv a = some τ' →
+      MoveType.compatible τ τ' →
       typecheck_stmt lenv
-        {env with varEnv := update env.varEnv x (.validVar, τ, .mutable)
+        {env with varEnv := update env.varEnv x (.validVar, τ', .mutable)
                   siteEnv := delete env.siteEnv a}
         cont retType →
       typecheck_stmt lenv env (.assign x a cont) retType
