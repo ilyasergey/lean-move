@@ -37,7 +37,7 @@ lean_lib «expressivity» where
              `accepted.mutable_borrows_are_not_unique, `accepted.subtree_writes_release,
              `rejected.simple_dangling, `rejected.imm_borrow_after_mut_call_invalid,
              `rejected.imm_borrow_after_mut_fields_invalid,
-             `rejected.mutable_borrows_not_unique_calls_invalid]
+             `rejected.mutable_borrows_are_not_unique_calls_invalid]
 
 -- Build all examples
 -- Build with: lake build examples
@@ -51,4 +51,4 @@ lean_lib «examples» where
              `expressivity.accepted.mutable_borrows_are_not_unique, `expressivity.accepted.subtree_writes_release,
              `expressivity.rejected.simple_dangling, `expressivity.rejected.imm_borrow_after_mut_call_invalid,
              `expressivity.rejected.imm_borrow_after_mut_fields_invalid,
-             `expressivity.rejected.mutable_borrows_not_unique_calls_invalid]
+             `expressivity.rejected.mutable_borrows_are_not_unique_calls_invalid]

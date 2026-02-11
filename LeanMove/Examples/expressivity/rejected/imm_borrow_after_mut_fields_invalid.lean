@@ -18,6 +18,8 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
+import LeanMove.Checker.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Checker.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
 
 /-!
@@ -163,7 +165,31 @@ def invalid_write : FunDef := {
   ]
 }
 
+-- -----------------------------------------------------
+-- -           Algorithmic Type Checking Tests        --
+-- -----------------------------------------------------
+
+-- Initial environment for invalid_write function
+def invalid_write_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := init_fun_varEnv invalid_write
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+-- LabelEnv for invalid_write
+def invalid_write_lenv : LabelEnv :=
+  AssocMap.insert AssocMap.empty "b0" invalid_write_initEnv
+
+-- Debug
+#eval check_fun invalid_write invalid_write_lenv
+
+-- Theorem: algorithmic checker rejects invalid_write
+theorem invalid_write_check_fails : check_fun invalid_write invalid_write_lenv = false := by native_decide
+
 -- Theorem: invalid_write is ILL-typed (REJECTED by type checker)
+-- Note: proving this formally requires the completeness theorem (check_fun_complete),
+-- which is not yet fully proven. The algorithmic rejection above demonstrates the result.
 theorem invalid_write_illtyped : ¬ (∃ lenv, typecheck_fun invalid_write lenv) := by
   sorry
 

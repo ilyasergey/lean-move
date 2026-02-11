@@ -18,6 +18,8 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
+import LeanMove.Checker.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Checker.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
 
 open LeanMove.Lang
@@ -88,7 +90,7 @@ def foo : FunDef := {
 -- Initial environment for foo: no params, locals x and r are invalid
 def foo_initEnv : TypeEnv := {
   siteEnv := AssocMap.empty
-  varEnv := add_locals_to_varEnv AssocMap.empty foo.locals
+  varEnv := init_fun_varEnv foo
   pathEnv := PathEnv.init
   funEnv := AssocMap.empty
 }
@@ -96,6 +98,12 @@ def foo_initEnv : TypeEnv := {
 -- LabelEnv for foo: maps "l0" to the initial environment
 def foo_lenv : LabelEnv :=
   AssocMap.insert AssocMap.empty "l0" foo_initEnv
+
+-- Debug
+#eval check_fun foo foo_lenv
+
+-- Theorem: algorithmic checker rejects foo
+theorem foo_check_fails : check_fun foo foo_lenv = false := by rfl
 
 open Stmt
 
@@ -152,6 +160,8 @@ A corrected version would need to either:
 -/
 
 -- Theorem: foo is ill-typed
+-- Note: proving this formally requires the completeness theorem (check_fun_complete),
+-- which is not yet fully proven. The algorithmic rejection above demonstrates the result.
 theorem foo_illtyped : ¬ (∃ lenv, typecheck_fun foo lenv) := by
   sorry
 

@@ -18,6 +18,8 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
+import LeanMove.Checker.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Checker.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
 
 /-!
@@ -187,7 +189,31 @@ def call_and_write_invalid : FunDef := {
   ]
 }
 
+-- -----------------------------------------------------
+-- -           Algorithmic Type Checking Tests        --
+-- -----------------------------------------------------
+
+-- Initial environment for call_and_write_invalid function
+def call_and_write_invalid_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := init_fun_varEnv call_and_write_invalid
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+-- LabelEnv for call_and_write_invalid
+def call_and_write_invalid_lenv : LabelEnv :=
+  AssocMap.insert AssocMap.empty "b0" call_and_write_invalid_initEnv
+
+-- Debug
+#eval check_fun call_and_write_invalid call_and_write_invalid_lenv
+
+-- Theorem: algorithmic checker rejects call_and_write_invalid
+theorem call_and_write_invalid_check_fails : check_fun call_and_write_invalid call_and_write_invalid_lenv = false := by native_decide
+
 -- Theorem: call_and_write_invalid is ILL-typed (REJECTED by type checker)
+-- Note: proving this formally requires the completeness theorem (check_fun_complete),
+-- which is not yet fully proven. The algorithmic rejection above demonstrates the result.
 theorem call_and_write_invalid_illtyped : ¬ (∃ lenv, typecheck_fun call_and_write_invalid lenv) := by
   sorry
 

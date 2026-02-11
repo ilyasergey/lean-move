@@ -18,6 +18,8 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
+import LeanMove.Checker.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Checker.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
 
 /-!
@@ -83,6 +85,9 @@ def sub1_entries : AssocMap Field BasicMoveType :=
 def tree_entries : AssocMap Field BasicMoveType :=
   insert (insert empty field_l (.trecord sub1_entries)) field_r (.trecord sub1_entries)
 
+-- Abstract reference for the parameter
+def r0 : Aref := .refid 0
+
 -- Variables
 def var_cond : Var := ⟨"cond"⟩
 def var_root : Var := ⟨"root"⟩
@@ -123,12 +128,14 @@ def s16 : Site := .site 16 -- integer literal 0 for *move(y)
 def t : FunDef := {
   params := [
     (var_cond, .basic .tbool),
-    (var_root, .ref (.trecord tree_entries) (.varRef var_root) .siteBorrowMut)
+    (var_root, .ref (.trecord tree_entries) r0 .siteBorrowMut)
   ]
   returnType := .basic .tunit
   locals := [
-    { name := var_x, type := .ref (.trecord sub1_entries) (.varRef var_root) .siteBorrowMut },
-    { name := var_y, type := .ref .u64 (.varRef var_root) .siteBorrowMut }
+    -- Algorithmic checker assigns .refid 1 for borrowMutField of copy(root) (first borrow in body)
+    { name := var_x, type := .ref (.trecord sub1_entries) (.refid 1) .siteBorrowMut },
+    -- Algorithmic checker assigns .refid 3 for second borrowMutField chain (Sub2.field → u64)
+    { name := var_y, type := .ref .u64 (.refid 3) .siteBorrowMut }
   ]
   blocks := [
     -- l0: branch on condition
@@ -189,8 +196,209 @@ def t : FunDef := {
   ]
 }
 
--- Theorem: t is well-typed
-theorem t_welltyped : ∃ lenv, typecheck_fun t lenv := by
-  sorry
+-- -----------------------------------------------------
+-- -           Algorithmic Type Checking Tests        --
+-- -----------------------------------------------------
+
+-- Initial environment for l0 (entry block)
+def t_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := init_fun_varEnv t
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+-- VarEnv at l1/l2 entry (after l0: cond consumed by move)
+def t_branch_varEnv : VarEnv :=
+  let ve := init_fun_varEnv t
+  update ve var_cond (.invalidVar, .basic .tbool, .mutable)
+
+-- Environment at l1/l2 entry
+def t_branch_env : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := t_branch_varEnv
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+-- VarEnv at l3 entry (x,y assigned/valid; cond still invalid)
+def t_l3_varEnv : VarEnv :=
+  let ve := t_branch_varEnv
+  let ve := update ve var_x (.validVar, .ref (.trecord sub1_entries) (.refid 1) .siteBorrowMut, .mutable)
+  update ve var_y (.validVar, .ref .u64 (.refid 3) .siteBorrowMut, .mutable)
+
+-- PathEnv at l3 entry: union of paths from l1 (field_l) and l2 (field_r)
+-- l1: root →[field_l]→ Sub1 →[field_l]→ Sub2 →[field_l]→ u64
+-- l2: root →[field_r]→ Sub1 →[field_r]→ Sub2 →[field_r]→ u64
+-- Refs: .refid 1 = Sub1 borrow, .refid 2 = intermediate Sub2, .refid 3 = u64 borrow
+--
+-- The checker also produces "reverse" derivative paths via `der` in update_with_extension.
+-- These are `Regex.deriv ε (.field f)` values that are semantically empty but not recognized
+-- as such by `is_empty` (since is_empty(.deriv r _) = is_empty r, and is_empty ε = false).
+-- We must include them in the l3 PathEnv so that regexSubsumedBy can match them exactly.
+def t_l3_pathEnv : PathEnv :=
+  -- Forward paths: concat ε (char (.field f))
+  let fl := Regex.concat Regex.ε (Regex.char (PathElement.field field_l))
+  let fr := Regex.concat Regex.ε (Regex.char (PathElement.field field_r))
+  let fl2 := Regex.concat fl (Regex.char (PathElement.field field_l))
+  let fr2 := Regex.concat fr (Regex.char (PathElement.field field_r))
+  -- Reverse derivative paths: deriv ε (.field f)
+  let dfl := Regex.deriv Regex.ε (PathElement.field field_l)
+  let dfr := Regex.deriv Regex.ε (PathElement.field field_r)
+  let dfl2 := Regex.deriv dfl (PathElement.field field_l)
+  let dfr2 := Regex.deriv dfr (PathElement.field field_r)
+  { refs := [.refid 3, .refid 2, .refid 1, .refid 0, .root]
+    paths := fun (u, v) =>
+      if u = v then Regex.ε
+      -- Forward paths (from field borrows: parent → child)
+      else if u = .refid 1 ∧ v = .refid 2 then Regex.union fl fr
+      else if u = .refid 2 ∧ v = .refid 3 then Regex.union fl fr
+      else if u = .refid 1 ∧ v = .refid 3 then Regex.union fl2 fr2
+      -- Reverse derivative paths (child → parent, from der in update_with_extension)
+      else if u = .refid 2 ∧ v = .refid 1 then Regex.union dfl dfr
+      else if u = .refid 3 ∧ v = .refid 2 then Regex.union dfl dfr
+      else if u = .refid 3 ∧ v = .refid 1 then Regex.union dfl2 dfr2
+      else Regex.empty }
+
+-- Environment at l3 entry
+def t_l3_env : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := t_l3_varEnv
+  pathEnv := t_l3_pathEnv
+  funEnv := AssocMap.empty
+}
+
+-- Label environment: maps each label to its entry environment
+def t_lenv : LabelEnv :=
+  insert (insert (insert (insert AssocMap.empty
+    "l0" t_initEnv)
+    "l1" t_branch_env)
+    "l2" t_branch_env)
+    "l3" t_l3_env
+
+-- Debug: per-block check
+#eval t.blocks.map fun block =>
+  (block.label, match lookup t_lenv block.label with
+  | some blockEnv => check_block t_lenv block blockEnv t.returnType
+  | none => false)
+
+-- Full function check
+#eval check_fun t t_lenv
+
+-- Theorem: t type checks algorithmically
+theorem t_check : check_fun t t_lenv = true := by rfl
+
+-- -----------------------------------------------------
+-- -           Relational Type Checking Theorems      --
+-- -----------------------------------------------------
+
+-- Helper: init_fun_varEnv for t has fresh refs
+private lemma t_varEnv_fresh :
+    VarEnv.RefsAreFresh (init_fun_varEnv t) := by
+  unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
+  simp only [t, List.foldl]
+  apply VarEnv.insert_refs_are_fresh
+  · apply VarEnv.insert_refs_are_fresh
+    · apply VarEnv.insert_refs_are_fresh
+      · apply VarEnv.insert_refs_are_fresh
+        · exact VarEnv.empty_refs_are_fresh
+        · trivial
+      · exact ⟨0, rfl⟩
+    · exact ⟨1, rfl⟩
+  · exact ⟨3, rfl⟩
+
+-- Helper: t_branch_varEnv has fresh refs
+private lemma t_branch_varEnv_fresh :
+    VarEnv.RefsAreFresh t_branch_varEnv := by
+  unfold t_branch_varEnv
+  apply VarEnv.insert_refs_are_fresh
+  · exact t_varEnv_fresh
+  · trivial
+
+-- Helper: t_l3_varEnv has fresh refs
+private lemma t_l3_varEnv_fresh :
+    VarEnv.RefsAreFresh t_l3_varEnv := by
+  unfold t_l3_varEnv
+  apply VarEnv.insert_refs_are_fresh
+  · apply VarEnv.insert_refs_are_fresh
+    · exact t_branch_varEnv_fresh
+    · exact ⟨1, rfl⟩
+  · exact ⟨3, rfl⟩
+
+-- Helper: t_l3_pathEnv is well-formed
+private lemma t_l3_pathEnv_wf : PathEnv.WellFormed t_l3_pathEnv := by
+  constructor
+  · -- refs_complete: for r ∉ refs, paths (.root, r) = .empty
+    intro r hr
+    simp only [t_l3_pathEnv]
+    -- Since u = .root, none of the refid conditions (u = .refid N) can be true
+    -- The function falls through all conditions to Regex.empty
+    have hne : Aref.root ≠ r := by
+      intro heq; subst heq
+      exact hr (List.mem_cons.mpr (Or.inr (List.mem_cons.mpr
+        (Or.inr (List.mem_cons.mpr (Or.inr (List.mem_cons.mpr
+          (Or.inr (List.mem_cons.mpr (Or.inl rfl))))))))))
+    simp [hne]
+  · -- varref_tracked: vacuously true (no .varRef in refs)
+    intro x hx
+    simp only [t_l3_pathEnv, List.mem_cons] at hx
+    rcases hx with h | h | h | h | h
+    all_goals (first | exact absurd h Aref.noConfusion | simp at h)
+
+-- Helper: t_l3_env is well-formed
+private lemma t_l3_env_wf : TypeEnv.WellFormed t_l3_env := by
+  constructor
+  · exact t_l3_pathEnv_wf
+  · exact SiteEnv.empty_refs_not_root
+  · exact t_l3_varEnv_fresh
+
+-- All envs in t_lenv are well-formed
+private lemma t_lenv_wf :
+    ∀ l env, lookup t_lenv l = some env → TypeEnv.WellFormed env := by
+  intro l env hlookup
+  by_cases hl3 : l = "l3"
+  · subst hl3
+    have h : lookup t_lenv "l3" = some t_l3_env := by rfl
+    rw [h] at hlookup; injection hlookup with heq; subst heq
+    exact t_l3_env_wf
+  · by_cases hl2 : l = "l2"
+    · subst hl2
+      have h : lookup t_lenv "l2" = some t_branch_env := by rfl
+      rw [h] at hlookup; injection hlookup with heq; subst heq
+      exact TypeEnv.init_wellformed _ _ t_branch_varEnv_fresh
+    · by_cases hl1 : l = "l1"
+      · subst hl1
+        have h : lookup t_lenv "l1" = some t_branch_env := by rfl
+        rw [h] at hlookup; injection hlookup with heq; subst heq
+        exact TypeEnv.init_wellformed _ _ t_branch_varEnv_fresh
+      · by_cases hl0 : l = "l0"
+        · subst hl0
+          have h : lookup t_lenv "l0" = some t_initEnv := by rfl
+          rw [h] at hlookup; injection hlookup with heq; subst heq
+          exact TypeEnv.init_wellformed _ _ t_varEnv_fresh
+        · exfalso
+          simp only [t_lenv, AssocMap.insert, AssocMap.empty, AssocMap.lookup,
+                     List.filter, List.lookup] at hlookup
+          have h3 : (l == "l3") = false := by
+            cases h : l == "l3"
+            · rfl
+            · exact absurd (eq_of_beq h) hl3
+          have h2 : (l == "l2") = false := by
+            cases h : l == "l2"
+            · rfl
+            · exact absurd (eq_of_beq h) hl2
+          have h1 : (l == "l1") = false := by
+            cases h : l == "l1"
+            · rfl
+            · exact absurd (eq_of_beq h) hl1
+          have h0 : (l == "l0") = false := by
+            cases h : l == "l0"
+            · rfl
+            · exact absurd (eq_of_beq h) hl0
+          simp [h3, h2, h1, h0, List.lookup] at hlookup
+
+-- Main theorem: t is well-typed (relational)
+theorem t_welltyped : ∃ lenv, typecheck_fun t lenv :=
+  ⟨_, check_fun_sound _ _ t_lenv_wf t_check⟩
 
 end LeanMove.Examples.Expressivity.SubtreeWritesRelease

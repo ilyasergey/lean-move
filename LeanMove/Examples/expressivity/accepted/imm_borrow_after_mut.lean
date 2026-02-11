@@ -19,6 +19,7 @@ import Ssreflect.Lang
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
 import LeanMove.Checker.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Checker.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
 
 /-!
@@ -125,7 +126,7 @@ def copy_and_freeze : FunDef := {
   locals := [
     { name := var_a, type := .basic .u64 },
     { name := var_rmut, type := .ref .u64 (.refid 1) .siteBorrowMut },
-    { name := var_rimm, type := .ref .u64 (.refid 3) .siteBorrowImm }
+    { name := var_rimm, type := .ref .u64 (.refid 2) .siteBorrowImm }
   ]
   blocks := [
     { label := "l0"
@@ -163,8 +164,17 @@ def direct_initEnv : TypeEnv := {
 def direct_lenv : LabelEnv :=
   AssocMap.insert AssocMap.empty "l0" direct_initEnv
 
+-- Debug: per-block check
+#eval direct.blocks.map fun block =>
+  (block.label, match lookup direct_lenv block.label with
+  | some blockEnv => check_block direct_lenv block blockEnv direct.returnType
+  | none => false)
+
+-- Full function check
+#eval check_fun direct direct_lenv
+
 -- Test theorem: direct type checks algorithmically
-theorem direct_check : check_fun direct direct_lenv := by sorry
+theorem direct_check : check_fun direct direct_lenv = true := by rfl
 
 -- Initial environment for copy_and_freeze
 def copy_and_freeze_initEnv : TypeEnv := {
@@ -178,18 +188,89 @@ def copy_and_freeze_initEnv : TypeEnv := {
 def copy_and_freeze_lenv : LabelEnv :=
   AssocMap.insert AssocMap.empty "l0" copy_and_freeze_initEnv
 
+-- Debug: per-block check
+#eval copy_and_freeze.blocks.map fun block =>
+  (block.label, match lookup copy_and_freeze_lenv block.label with
+  | some blockEnv => check_block copy_and_freeze_lenv block blockEnv copy_and_freeze.returnType
+  | none => false)
+
+-- Full function check
+#eval check_fun copy_and_freeze copy_and_freeze_lenv
+
 -- Test theorem: copy_and_freeze type checks algorithmically
-theorem copy_and_freeze_check : check_fun copy_and_freeze copy_and_freeze_lenv := by sorry
+theorem copy_and_freeze_check : check_fun copy_and_freeze copy_and_freeze_lenv = true := by rfl
 
 -- -----------------------------------------------------
 -- -           Relational Type Checking Theorems      --
 -- -----------------------------------------------------
 
--- Theorems: both functions are well-typed
-theorem direct_welltyped : ∃ lenv, typecheck_fun direct lenv := by
-  sorry
+-- Helper: init_fun_varEnv for direct has fresh refs
+private lemma direct_varEnv_fresh :
+    VarEnv.RefsAreFresh (init_fun_varEnv direct) := by
+  unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
+  simp only [direct, List.foldl]
+  apply VarEnv.insert_refs_are_fresh
+  · apply VarEnv.insert_refs_are_fresh
+    · apply VarEnv.insert_refs_are_fresh
+      · exact VarEnv.empty_refs_are_fresh
+      · trivial
+    · exact ⟨1, rfl⟩
+  · exact ⟨2, rfl⟩
 
-theorem copy_and_freeze_welltyped : ∃ lenv, typecheck_fun copy_and_freeze lenv := by
-  sorry
+-- All envs in direct_lenv are well-formed
+private lemma direct_lenv_wf :
+    ∀ l env, lookup direct_lenv l = some env → TypeEnv.WellFormed env := by
+  intro l env hlookup
+  by_cases hl0 : l = "l0"
+  · subst hl0
+    have h : lookup direct_lenv "l0" = some direct_initEnv := by rfl
+    rw [h] at hlookup; injection hlookup with heq; subst heq
+    exact TypeEnv.init_wellformed _ _ direct_varEnv_fresh
+  · exfalso
+    simp only [direct_lenv, AssocMap.insert, AssocMap.empty, AssocMap.lookup,
+               List.filter, List.lookup] at hlookup
+    have h0 : (l == "l0") = false := by
+      cases h : l == "l0"
+      · rfl
+      · exact absurd (eq_of_beq h) hl0
+    simp [h0] at hlookup
+
+-- Theorems: both functions are well-typed
+theorem direct_welltyped : ∃ lenv, typecheck_fun direct lenv :=
+  ⟨_, check_fun_sound _ _ direct_lenv_wf direct_check⟩
+
+-- Helper: init_fun_varEnv for copy_and_freeze has fresh refs
+private lemma copy_and_freeze_varEnv_fresh :
+    VarEnv.RefsAreFresh (init_fun_varEnv copy_and_freeze) := by
+  unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
+  simp only [copy_and_freeze, List.foldl]
+  apply VarEnv.insert_refs_are_fresh
+  · apply VarEnv.insert_refs_are_fresh
+    · apply VarEnv.insert_refs_are_fresh
+      · exact VarEnv.empty_refs_are_fresh
+      · trivial
+    · exact ⟨1, rfl⟩
+  · exact ⟨2, rfl⟩
+
+-- All envs in copy_and_freeze_lenv are well-formed
+private lemma copy_and_freeze_lenv_wf :
+    ∀ l env, lookup copy_and_freeze_lenv l = some env → TypeEnv.WellFormed env := by
+  intro l env hlookup
+  by_cases hl0 : l = "l0"
+  · subst hl0
+    have h : lookup copy_and_freeze_lenv "l0" = some copy_and_freeze_initEnv := by rfl
+    rw [h] at hlookup; injection hlookup with heq; subst heq
+    exact TypeEnv.init_wellformed _ _ copy_and_freeze_varEnv_fresh
+  · exfalso
+    simp only [copy_and_freeze_lenv, AssocMap.insert, AssocMap.empty, AssocMap.lookup,
+               List.filter, List.lookup] at hlookup
+    have h0 : (l == "l0") = false := by
+      cases h : l == "l0"
+      · rfl
+      · exact absurd (eq_of_beq h) hl0
+    simp [h0] at hlookup
+
+theorem copy_and_freeze_welltyped : ∃ lenv, typecheck_fun copy_and_freeze lenv :=
+  ⟨_, check_fun_sound _ _ copy_and_freeze_lenv_wf copy_and_freeze_check⟩
 
 end LeanMove.Examples.Expressivity.ImmBorrowAfterMut

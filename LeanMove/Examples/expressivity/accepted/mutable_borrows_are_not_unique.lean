@@ -18,6 +18,8 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
+import LeanMove.Checker.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Checker.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
 
 /-!
@@ -98,6 +100,10 @@ label b0:
     return;
 }
 ```
+
+The local variable types must use `.refid N` Arefs matching the order in which
+`nextFreshRef` generates them during algorithmic type checking. The assignment
+order in the body determines the refid values, not the declaration order.
 -/
 
 open LeanMove.Lang
@@ -120,6 +126,9 @@ def s_entries : AssocMap Field BasicMoveType := insert empty field_f .u64
 -- Pair { s1: S, s2: S }
 def pair_entries : AssocMap Field BasicMoveType :=
   insert (insert empty field_s1 (.trecord s_entries)) field_s2 (.trecord s_entries)
+
+-- Abstract reference for the parameter
+def r0 : Aref := .refid 0
 
 -- Variables (matching MVIR naming)
 def var_p : Var := ⟨"p"⟩
@@ -176,20 +185,31 @@ def s36 : Site := .site 36 -- packed S for s2_2 write
 /-
   Module 1: fields
   Creates multiple mutable references to nested fields without writing.
+
+  Refid assignment order (determined by nextFreshRef during body execution):
+    1: s1_1 = &mut copy(p).Pair::s1
+    2: s2_1 = &mut copy(p).Pair::s2
+    3: f_1_1 = &mut copy(s1_1).S::f
+    4: f_2_1 = &mut copy(s2_1).S::f
+    5: p2 = copy(p)  (ref copy creates a fresh ref)
+    6: s1_2 = &mut copy(p2).Pair::s1
+    7: s2_2 = &mut copy(p2).Pair::s2
+    8: f_1_2 = &mut copy(s1_2).S::f
+    9: f_2_2 = &mut copy(s2_2).S::f
 -/
 def fields : FunDef := {
-  params := [(var_p, .ref (.trecord pair_entries) (.varRef var_p) .siteBorrowMut)]
+  params := [(var_p, .ref (.trecord pair_entries) r0 .siteBorrowMut)]
   returnType := .basic .tunit
   locals := [
-    { name := var_p2, type := .ref (.trecord pair_entries) (.varRef var_p) .siteBorrowMut },
-    { name := var_s1_1, type := .ref (.trecord s_entries) (.varRef var_p) .siteBorrowMut },
-    { name := var_s1_2, type := .ref (.trecord s_entries) (.varRef var_p) .siteBorrowMut },
-    { name := var_s2_1, type := .ref (.trecord s_entries) (.varRef var_p) .siteBorrowMut },
-    { name := var_s2_2, type := .ref (.trecord s_entries) (.varRef var_p) .siteBorrowMut },
-    { name := var_f_1_1, type := .ref .u64 (.varRef var_p) .siteBorrowMut },
-    { name := var_f_1_2, type := .ref .u64 (.varRef var_p) .siteBorrowMut },
-    { name := var_f_2_1, type := .ref .u64 (.varRef var_p) .siteBorrowMut },
-    { name := var_f_2_2, type := .ref .u64 (.varRef var_p) .siteBorrowMut }
+    { name := var_p2, type := .ref (.trecord pair_entries) (.refid 5) .siteBorrowMut },
+    { name := var_s1_1, type := .ref (.trecord s_entries) (.refid 1) .siteBorrowMut },
+    { name := var_s1_2, type := .ref (.trecord s_entries) (.refid 6) .siteBorrowMut },
+    { name := var_s2_1, type := .ref (.trecord s_entries) (.refid 2) .siteBorrowMut },
+    { name := var_s2_2, type := .ref (.trecord s_entries) (.refid 7) .siteBorrowMut },
+    { name := var_f_1_1, type := .ref .u64 (.refid 3) .siteBorrowMut },
+    { name := var_f_1_2, type := .ref .u64 (.refid 8) .siteBorrowMut },
+    { name := var_f_2_1, type := .ref .u64 (.refid 4) .siteBorrowMut },
+    { name := var_f_2_2, type := .ref .u64 (.refid 9) .siteBorrowMut }
   ]
   blocks := [
     { label := "b0"
@@ -240,18 +260,18 @@ def fields : FunDef := {
   The writes are safe because "order does not matter as long as the reference has no extensions."
 -/
 def fields_write : FunDef := {
-  params := [(var_p, .ref (.trecord pair_entries) (.varRef var_p) .siteBorrowMut)]
+  params := [(var_p, .ref (.trecord pair_entries) r0 .siteBorrowMut)]
   returnType := .basic .tunit
   locals := [
-    { name := var_p2, type := .ref (.trecord pair_entries) (.varRef var_p) .siteBorrowMut },
-    { name := var_s1_1, type := .ref (.trecord s_entries) (.varRef var_p) .siteBorrowMut },
-    { name := var_s1_2, type := .ref (.trecord s_entries) (.varRef var_p) .siteBorrowMut },
-    { name := var_s2_1, type := .ref (.trecord s_entries) (.varRef var_p) .siteBorrowMut },
-    { name := var_s2_2, type := .ref (.trecord s_entries) (.varRef var_p) .siteBorrowMut },
-    { name := var_f_1_1, type := .ref .u64 (.varRef var_p) .siteBorrowMut },
-    { name := var_f_1_2, type := .ref .u64 (.varRef var_p) .siteBorrowMut },
-    { name := var_f_2_1, type := .ref .u64 (.varRef var_p) .siteBorrowMut },
-    { name := var_f_2_2, type := .ref .u64 (.varRef var_p) .siteBorrowMut }
+    { name := var_p2, type := .ref (.trecord pair_entries) (.refid 5) .siteBorrowMut },
+    { name := var_s1_1, type := .ref (.trecord s_entries) (.refid 1) .siteBorrowMut },
+    { name := var_s1_2, type := .ref (.trecord s_entries) (.refid 6) .siteBorrowMut },
+    { name := var_s2_1, type := .ref (.trecord s_entries) (.refid 2) .siteBorrowMut },
+    { name := var_s2_2, type := .ref (.trecord s_entries) (.refid 7) .siteBorrowMut },
+    { name := var_f_1_1, type := .ref .u64 (.refid 3) .siteBorrowMut },
+    { name := var_f_1_2, type := .ref .u64 (.refid 8) .siteBorrowMut },
+    { name := var_f_2_1, type := .ref .u64 (.refid 4) .siteBorrowMut },
+    { name := var_f_2_2, type := .ref .u64 (.refid 9) .siteBorrowMut }
   ]
   blocks := [
     { label := "b0"
@@ -333,11 +353,159 @@ def fields_write : FunDef := {
   ]
 }
 
--- Theorems: both functions are well-typed
-theorem fields_welltyped : ∃ lenv, typecheck_fun fields lenv := by
-  sorry
+-- -----------------------------------------------------
+-- -           Algorithmic Type Checking Tests        --
+-- -----------------------------------------------------
 
-theorem fields_write_welltyped : ∃ lenv, typecheck_fun fields_write lenv := by
-  sorry
+-- Initial environment for fields function
+def fields_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := init_fun_varEnv fields
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+-- LabelEnv for fields
+def fields_lenv : LabelEnv :=
+  AssocMap.insert AssocMap.empty "b0" fields_initEnv
+
+-- Debug: per-block check
+#eval fields.blocks.map fun block =>
+  (block.label, match lookup fields_lenv block.label with
+  | some blockEnv => check_block fields_lenv block blockEnv fields.returnType
+  | none => false)
+
+-- Full function check
+#eval check_fun fields fields_lenv
+
+-- Theorem: fields type checks algorithmically
+theorem fields_check : check_fun fields fields_lenv = true := by rfl
+
+-- Initial environment for fields_write function
+def fields_write_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := init_fun_varEnv fields_write
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+-- LabelEnv for fields_write
+def fields_write_lenv : LabelEnv :=
+  AssocMap.insert AssocMap.empty "b0" fields_write_initEnv
+
+-- Debug: per-block check
+#eval fields_write.blocks.map fun block =>
+  (block.label, match lookup fields_write_lenv block.label with
+  | some blockEnv => check_block fields_write_lenv block blockEnv fields_write.returnType
+  | none => false)
+
+-- Full function check
+#eval check_fun fields_write fields_write_lenv
+
+-- Theorem: fields_write type checks algorithmically
+theorem fields_write_check : check_fun fields_write fields_write_lenv = true := by rfl
+
+-- -----------------------------------------------------
+-- -           Relational Type Checking Theorems      --
+-- -----------------------------------------------------
+
+-- Helper: init_fun_varEnv for fields has fresh refs
+private lemma fields_varEnv_fresh :
+    VarEnv.RefsAreFresh (init_fun_varEnv fields) := by
+  unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
+  simp only [fields, List.foldl]
+  apply VarEnv.insert_refs_are_fresh
+  · apply VarEnv.insert_refs_are_fresh
+    · apply VarEnv.insert_refs_are_fresh
+      · apply VarEnv.insert_refs_are_fresh
+        · apply VarEnv.insert_refs_are_fresh
+          · apply VarEnv.insert_refs_are_fresh
+            · apply VarEnv.insert_refs_are_fresh
+              · apply VarEnv.insert_refs_are_fresh
+                · apply VarEnv.insert_refs_are_fresh
+                  · apply VarEnv.insert_refs_are_fresh
+                    · exact VarEnv.empty_refs_are_fresh
+                    · exact ⟨0, rfl⟩
+                  · exact ⟨5, rfl⟩
+                · exact ⟨1, rfl⟩
+              · exact ⟨6, rfl⟩
+            · exact ⟨2, rfl⟩
+          · exact ⟨7, rfl⟩
+        · exact ⟨3, rfl⟩
+      · exact ⟨8, rfl⟩
+    · exact ⟨4, rfl⟩
+  · exact ⟨9, rfl⟩
+
+-- All envs in fields_lenv are well-formed
+private lemma fields_lenv_wf :
+    ∀ l env, lookup fields_lenv l = some env → TypeEnv.WellFormed env := by
+  intro l env hlookup
+  by_cases hl0 : l = "b0"
+  · subst hl0
+    have h : lookup fields_lenv "b0" = some fields_initEnv := by rfl
+    rw [h] at hlookup; injection hlookup with heq; subst heq
+    exact TypeEnv.init_wellformed _ _ fields_varEnv_fresh
+  · exfalso
+    simp only [fields_lenv, AssocMap.insert, AssocMap.empty, AssocMap.lookup,
+               List.filter, List.lookup] at hlookup
+    have h0 : (l == "b0") = false := by
+      cases h : l == "b0"
+      · rfl
+      · exact absurd (eq_of_beq h) hl0
+    simp [h0] at hlookup
+
+-- Theorem: fields is well-typed (relational)
+theorem fields_welltyped : ∃ lenv, typecheck_fun fields lenv :=
+  ⟨_, check_fun_sound _ _ fields_lenv_wf fields_check⟩
+
+-- Helper: init_fun_varEnv for fields_write has fresh refs
+-- (Same varEnv as fields since the function definitions have identical params+locals)
+private lemma fields_write_varEnv_fresh :
+    VarEnv.RefsAreFresh (init_fun_varEnv fields_write) := by
+  unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
+  simp only [fields_write, List.foldl]
+  apply VarEnv.insert_refs_are_fresh
+  · apply VarEnv.insert_refs_are_fresh
+    · apply VarEnv.insert_refs_are_fresh
+      · apply VarEnv.insert_refs_are_fresh
+        · apply VarEnv.insert_refs_are_fresh
+          · apply VarEnv.insert_refs_are_fresh
+            · apply VarEnv.insert_refs_are_fresh
+              · apply VarEnv.insert_refs_are_fresh
+                · apply VarEnv.insert_refs_are_fresh
+                  · apply VarEnv.insert_refs_are_fresh
+                    · exact VarEnv.empty_refs_are_fresh
+                    · exact ⟨0, rfl⟩
+                  · exact ⟨5, rfl⟩
+                · exact ⟨1, rfl⟩
+              · exact ⟨6, rfl⟩
+            · exact ⟨2, rfl⟩
+          · exact ⟨7, rfl⟩
+        · exact ⟨3, rfl⟩
+      · exact ⟨8, rfl⟩
+    · exact ⟨4, rfl⟩
+  · exact ⟨9, rfl⟩
+
+-- All envs in fields_write_lenv are well-formed
+private lemma fields_write_lenv_wf :
+    ∀ l env, lookup fields_write_lenv l = some env → TypeEnv.WellFormed env := by
+  intro l env hlookup
+  by_cases hl0 : l = "b0"
+  · subst hl0
+    have h : lookup fields_write_lenv "b0" = some fields_write_initEnv := by rfl
+    rw [h] at hlookup; injection hlookup with heq; subst heq
+    exact TypeEnv.init_wellformed _ _ fields_write_varEnv_fresh
+  · exfalso
+    simp only [fields_write_lenv, AssocMap.insert, AssocMap.empty, AssocMap.lookup,
+               List.filter, List.lookup] at hlookup
+    have h0 : (l == "b0") = false := by
+      cases h : l == "b0"
+      · rfl
+      · exact absurd (eq_of_beq h) hl0
+    simp [h0] at hlookup
+
+-- Theorem: fields_write is well-typed (relational)
+theorem fields_write_welltyped : ∃ lenv, typecheck_fun fields_write lenv :=
+  ⟨_, check_fun_sound _ _ fields_write_lenv_wf fields_write_check⟩
 
 end LeanMove.Examples.Expressivity.MutableBorrowsNotUnique

@@ -18,6 +18,8 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
+import LeanMove.Checker.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Checker.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
 
 /-!
@@ -56,6 +58,9 @@ def field_y : Field := ⟨"y"⟩
 def point_entries : AssocMap Field BasicMoveType :=
   insert (insert empty field_x .u64) field_y .u64
 
+-- Abstract reference for the parameter
+def r0 : Aref := .refid 0
+
 -- Variables
 def var_p : Var := ⟨"p"⟩
 def var_x : Var := ⟨"x"⟩
@@ -90,7 +95,7 @@ def s11 : Site := .site 11 -- integer literal 0 for fourth write
   simultaneously. We create both borrows, then release them and return unit.
 -/
 def borrow : FunDef := {
-  params := [(var_p, .ref (.trecord point_entries) (.varRef var_p) .siteBorrowMut)]
+  params := [(var_p, .ref (.trecord point_entries) r0 .siteBorrowMut)]
   returnType := .basic .tunit
   locals := []  -- No local variables needed for this simplified version
   blocks := [
@@ -122,11 +127,13 @@ def borrow : FunDef := {
       return;
 -/
 def write : FunDef := {
-  params := [(var_p, .ref (.trecord point_entries) (.varRef var_p) .siteBorrowMut)]
+  params := [(var_p, .ref (.trecord point_entries) r0 .siteBorrowMut)]
   returnType := .basic .tunit
   locals := [
-    { name := var_x, type := .ref .u64 (.varRef var_p) .siteBorrowMut },
-    { name := var_y, type := .ref .u64 (.varRef var_p) .siteBorrowMut }
+    -- Algorithmic checker generates .refid 1 for first borrowMutField (x = &mut p.x)
+    { name := var_x, type := .ref .u64 (.refid 1) .siteBorrowMut },
+    -- Algorithmic checker generates .refid 2 for second borrowMutField (y = &mut p.y)
+    { name := var_y, type := .ref .u64 (.refid 2) .siteBorrowMut }
   ]
   blocks := [
     { label := "l0"
@@ -158,9 +165,26 @@ def write : FunDef := {
 }
 
 -- -----------------------------------------------------
--- -           Type Checking Verification             --
+-- -           Algorithmic Type Checking Tests        --
 -- -----------------------------------------------------
 
+-- Initial environment for borrow function
+def borrow_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := init_fun_varEnv borrow
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+-- LabelEnv for borrow
+def borrow_lenv : LabelEnv :=
+  AssocMap.insert AssocMap.empty "l0" borrow_initEnv
+
+-- Debug
+#eval check_fun borrow borrow_lenv
+
+-- Theorem: borrow type checks algorithmically
+theorem borrow_check : check_fun borrow borrow_lenv = true := by rfl
 
 -- Initial environment for write function
 def write_initEnv : TypeEnv := {
@@ -170,12 +194,84 @@ def write_initEnv : TypeEnv := {
   funEnv := AssocMap.empty
 }
 
--- LabelEnv for write: maps "l0" to initial environment
+-- LabelEnv for write
 def write_lenv : LabelEnv :=
   AssocMap.insert AssocMap.empty "l0" write_initEnv
 
--- Theorem: write is well-typed
-theorem write_welltyped : ∃ lenv, typecheck_fun write lenv := by
-  sorry
+-- Debug
+#eval check_fun write write_lenv
+
+-- Theorem: write type checks algorithmically
+theorem write_check : check_fun write write_lenv = true := by rfl
+
+-- -----------------------------------------------------
+-- -           Relational Type Checking Theorems      --
+-- -----------------------------------------------------
+
+-- Helper: init_fun_varEnv for borrow has fresh refs
+private lemma borrow_varEnv_fresh :
+    VarEnv.RefsAreFresh (init_fun_varEnv borrow) := by
+  unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
+  simp only [borrow, List.foldl]
+  apply VarEnv.insert_refs_are_fresh
+  · exact VarEnv.empty_refs_are_fresh
+  · exact ⟨0, rfl⟩
+
+-- All envs in borrow_lenv are well-formed
+private lemma borrow_lenv_wf :
+    ∀ l env, lookup borrow_lenv l = some env → TypeEnv.WellFormed env := by
+  intro l env hlookup
+  by_cases hl0 : l = "l0"
+  · subst hl0
+    have h : lookup borrow_lenv "l0" = some borrow_initEnv := by rfl
+    rw [h] at hlookup; injection hlookup with heq; subst heq
+    exact TypeEnv.init_wellformed _ _ borrow_varEnv_fresh
+  · exfalso
+    simp only [borrow_lenv, AssocMap.insert, AssocMap.empty, AssocMap.lookup,
+               List.filter, List.lookup] at hlookup
+    have h0 : (l == "l0") = false := by
+      cases h : l == "l0"
+      · rfl
+      · exact absurd (eq_of_beq h) hl0
+    simp [h0] at hlookup
+
+-- Theorem: borrow is well-typed (relational)
+theorem borrow_welltyped : ∃ lenv, typecheck_fun borrow lenv :=
+  ⟨_, check_fun_sound _ _ borrow_lenv_wf borrow_check⟩
+
+-- Helper: init_fun_varEnv for write has fresh refs
+private lemma write_varEnv_fresh :
+    VarEnv.RefsAreFresh (init_fun_varEnv write) := by
+  unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
+  simp only [write, List.foldl]
+  apply VarEnv.insert_refs_are_fresh
+  · apply VarEnv.insert_refs_are_fresh
+    · apply VarEnv.insert_refs_are_fresh
+      · exact VarEnv.empty_refs_are_fresh
+      · exact ⟨0, rfl⟩
+    · exact ⟨1, rfl⟩
+  · exact ⟨2, rfl⟩
+
+-- All envs in write_lenv are well-formed
+private lemma write_lenv_wf :
+    ∀ l env, lookup write_lenv l = some env → TypeEnv.WellFormed env := by
+  intro l env hlookup
+  by_cases hl0 : l = "l0"
+  · subst hl0
+    have h : lookup write_lenv "l0" = some write_initEnv := by rfl
+    rw [h] at hlookup; injection hlookup with heq; subst heq
+    exact TypeEnv.init_wellformed _ _ write_varEnv_fresh
+  · exfalso
+    simp only [write_lenv, AssocMap.insert, AssocMap.empty, AssocMap.lookup,
+               List.filter, List.lookup] at hlookup
+    have h0 : (l == "l0") = false := by
+      cases h : l == "l0"
+      · rfl
+      · exact absurd (eq_of_beq h) hl0
+    simp [h0] at hlookup
+
+-- Theorem: write is well-typed (relational)
+theorem write_welltyped : ∃ lenv, typecheck_fun write lenv :=
+  ⟨_, check_fun_sound _ _ write_lenv_wf write_check⟩
 
 end LeanMove.Examples.Expressivity.MultipleMutableReturnValues

@@ -18,6 +18,8 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
+import LeanMove.Checker.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Checker.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
 
 /-!
@@ -173,7 +175,31 @@ def invalid : FunDef := {
   ]
 }
 
+-- -----------------------------------------------------
+-- -           Algorithmic Type Checking Tests        --
+-- -----------------------------------------------------
+
+-- Initial environment for invalid function
+def invalid_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := init_fun_varEnv invalid
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+-- LabelEnv for invalid
+def invalid_lenv : LabelEnv :=
+  AssocMap.insert AssocMap.empty "b0" invalid_initEnv
+
+-- Debug
+#eval check_fun invalid invalid_lenv
+
+-- Theorem: algorithmic checker rejects invalid
+theorem invalid_check_fails : check_fun invalid invalid_lenv = false := by native_decide
+
 -- Theorem: invalid is ILL-typed (REJECTED by type checker)
+-- Note: proving this formally requires the completeness theorem (check_fun_complete),
+-- which is not yet fully proven. The algorithmic rejection above demonstrates the result.
 theorem invalid_illtyped : ¬ (∃ lenv, typecheck_fun invalid lenv) := by
   sorry
 

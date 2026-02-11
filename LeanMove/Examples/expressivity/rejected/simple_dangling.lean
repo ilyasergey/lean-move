@@ -18,6 +18,8 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Checker.TypeChecking
+import LeanMove.Checker.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Checker.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
 
 /-!
@@ -316,7 +318,77 @@ def field_call_dangling : FunDef := {
   ]
 }
 
--- Theorems: all functions are ILL-typed (rejected by type checker)
+-- -----------------------------------------------------
+-- -           Algorithmic Type Checking Tests        --
+-- -----------------------------------------------------
+
+-- Initial environment for field_dangling
+def field_dangling_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := init_fun_varEnv field_dangling
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+def field_dangling_lenv : LabelEnv :=
+  AssocMap.insert AssocMap.empty "b0" field_dangling_initEnv
+
+#eval check_fun field_dangling field_dangling_lenv
+
+theorem field_dangling_check_fails : check_fun field_dangling field_dangling_lenv = false := by rfl
+
+-- Initial environment for nested_field_dangling
+def nested_field_dangling_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := init_fun_varEnv nested_field_dangling
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+def nested_field_dangling_lenv : LabelEnv :=
+  AssocMap.insert AssocMap.empty "b0" nested_field_dangling_initEnv
+
+#eval check_fun nested_field_dangling nested_field_dangling_lenv
+
+theorem nested_field_dangling_check_fails : check_fun nested_field_dangling nested_field_dangling_lenv = false := by rfl
+
+-- Initial environment for simple_call_dangling
+def simple_call_dangling_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := init_fun_varEnv simple_call_dangling
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+def simple_call_dangling_lenv : LabelEnv :=
+  AssocMap.insert AssocMap.empty "b0" simple_call_dangling_initEnv
+
+#eval check_fun simple_call_dangling simple_call_dangling_lenv
+
+theorem simple_call_dangling_check_fails : check_fun simple_call_dangling simple_call_dangling_lenv = false := by rfl
+
+-- Initial environment for field_call_dangling
+def field_call_dangling_initEnv : TypeEnv := {
+  siteEnv := AssocMap.empty
+  varEnv := init_fun_varEnv field_call_dangling
+  pathEnv := PathEnv.init
+  funEnv := AssocMap.empty
+}
+
+def field_call_dangling_lenv : LabelEnv :=
+  AssocMap.insert AssocMap.empty "b0" field_call_dangling_initEnv
+
+#eval check_fun field_call_dangling field_call_dangling_lenv
+
+theorem field_call_dangling_check_fails : check_fun field_call_dangling field_call_dangling_lenv = false := by rfl
+
+-- -----------------------------------------------------
+-- -           Relational Ill-Typedness Theorems      --
+-- -----------------------------------------------------
+
+-- Note: proving these formally requires the completeness theorem (check_fun_complete),
+-- which is not yet fully proven. The algorithmic rejection above demonstrates the results.
+
 theorem field_dangling_illtyped : ¬ (∃ lenv, typecheck_fun field_dangling lenv) := by
   sorry
 
