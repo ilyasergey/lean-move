@@ -35,7 +35,7 @@ used by the MoveLight type checker. The typing rules themselves are in
 - Lemmas about PathEnv operations
 -/
 
-namespace LeanMove.Checker
+namespace LeanMove.Typing
 
 open Lang
 open Lang.MoveLight
@@ -310,4 +310,4 @@ structure WellFormedEnv (typeEnv : TypeEnv) where
   -- TODO: say that for all pairs in pathEnv there is either
   -- a variable in varEnv or a site in siteEnv
 
-end LeanMove.Checker
+end LeanMove.Typing

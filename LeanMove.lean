@@ -20,4 +20,4 @@
 import LeanMove.Structures.AssocMap
 import LeanMove.Structures.Regex
 import LeanMove.Lang
-import LeanMove.Checker
+import LeanMove.Typing

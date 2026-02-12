@@ -14,6 +14,6 @@
  limitations under the License.
 -/
 
-import LeanMove.Checker.TypeChecking
-import LeanMove.Checker.Algorithmic.TypeCheckingAlgorithmic
-import LeanMove.Checker.Algorithmic.AlgorithmicTypingSoundness
+import LeanMove.Typing.TypeChecking
+import LeanMove.Typing.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Typing.Algorithmic.AlgorithmicTypingSoundness

@@ -13,7 +13,7 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 -/
-import LeanMove.Checker.TypeChecking
+import LeanMove.Typing.TypeChecking
 
 /-!
 # Algorithmic Type Checking for MoveLight
@@ -26,7 +26,7 @@ the relational specification in `TypeChecking.lean`.
 - `check_fun` - Algorithmic function type checking, returns `Bool`
 -/
 
-namespace LeanMove.Checker
+namespace LeanMove.Typing
 
 open Lang
 open Lang.MoveLight
@@ -424,4 +424,4 @@ def check_fun (f : FunDef) (lenv : LabelEnv) : Bool :=
         | none => false
     | none => false
 
-end LeanMove.Checker
+end LeanMove.Typing

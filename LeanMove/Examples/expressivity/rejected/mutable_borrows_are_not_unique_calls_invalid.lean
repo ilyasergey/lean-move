@@ -17,9 +17,9 @@
 import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
-import LeanMove.Checker.TypeChecking
-import LeanMove.Checker.Algorithmic.TypeCheckingAlgorithmic
-import LeanMove.Checker.Algorithmic.AlgorithmicTypingSoundness
+import LeanMove.Typing.TypeChecking
+import LeanMove.Typing.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Typing.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
 
 /-!
@@ -117,7 +117,7 @@ module 0x6.call_and_write_valid {
 
 open LeanMove.Lang
 open LeanMove.Lang.MoveLight
-open LeanMove.Checker
+open LeanMove.Typing
 open AssocMap
 open Regex
 

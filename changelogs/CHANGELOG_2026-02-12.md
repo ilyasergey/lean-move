@@ -71,3 +71,18 @@ Import: `import LeanMove.Checker.TypeChecking`
 - Removed ~800 lines of generic definitions and lemmas (now in TypesUtils.lean)
 - Reduced from ~1900 to ~1097 lines
 - Remaining: all `*_bool_sound/complete` bridge lemmas, private helpers, core soundness theorems (`check_letBind_sound`, `check_stmt_sound`, `check_fun_sound`)
+
+## Rename: `LeanMove/Checker` → `LeanMove/Typing`
+
+Renamed the `Checker` directory and namespace to `Typing` throughout the project.
+
+### Files moved
+- `LeanMove/Checker.lean` → `LeanMove/Typing.lean`
+- `LeanMove/Checker/` → `LeanMove/Typing/` (5 files including `Algorithmic/` subfolder)
+
+### Namespace/import updates (22 files)
+- All `import LeanMove.Checker.*` → `import LeanMove.Typing.*`
+- All `namespace LeanMove.Checker` → `namespace LeanMove.Typing`
+- All `end LeanMove.Checker` → `end LeanMove.Typing`
+- All `open LeanMove.Checker` → `open LeanMove.Typing`
+- Affected: root `LeanMove.lean`, aggregator `Typing.lean`, 5 source files in `Typing/`, 15 example files

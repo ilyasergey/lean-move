@@ -14,7 +14,7 @@
  limitations under the License.
 -/
 
-import LeanMove.Checker.TypeChecking
+import LeanMove.Typing.TypeChecking
 
 /-!
 # Type Environment Properties and Invariants
@@ -33,7 +33,7 @@ and can be reused for semantic soundness proofs.
 - `call_connect_inputs_outputs_wf` — WellFormed preservation for call connections
 -/
 
-namespace LeanMove.Checker
+namespace LeanMove.Typing
 
 open Lang
 open Lang.MoveLight
@@ -845,4 +845,4 @@ lemma call_connect_inputs_outputs_wf (env : TypeEnv) (as bs : List Site)
   · exact hwf.siteEnv_wf
   · exact hwf.varEnv_wf
 
-end LeanMove.Checker
+end LeanMove.Typing

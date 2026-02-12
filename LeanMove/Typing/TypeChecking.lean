@@ -20,7 +20,7 @@ import Aesop
 import LeanMove.Structures.AssocMap
 import LeanMove.Structures.Regex
 import LeanMove.Lang
-import LeanMove.Checker.Types
+import LeanMove.Typing.Types
 
 /-!
 # Type Checking Rules for MoveLight
@@ -29,7 +29,7 @@ This file contains the typing relations for the MoveLight language.
 Type environment definitions and auxiliary lemmas are in `Types.lean`.
 -/
 
-namespace LeanMove.Checker
+namespace LeanMove.Typing
 
 open Lang
 open Lang.MoveLight
@@ -588,4 +588,4 @@ macro " ⊢ᶠ " f:term " : " lenv:term : term =>
 
 
 
-end LeanMove.Checker
+end LeanMove.Typing

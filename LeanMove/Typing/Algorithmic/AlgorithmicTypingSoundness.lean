@@ -14,8 +14,8 @@
  limitations under the License.
 -/
 
-import LeanMove.Checker.Algorithmic.TypeCheckingAlgorithmic
-import LeanMove.Checker.TypesUtils
+import LeanMove.Typing.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Typing.TypesUtils
 
 /-!
 # Algorithmic Typing Soundness for MoveLight
@@ -37,7 +37,7 @@ specification in `TypeChecking.lean`.
 Bridge lemmas connect boolean checker functions to their relational specifications.
 Type environment invariant definitions and preservation lemmas are in `TypesUtils.lean`.
 -/
-namespace LeanMove.Checker
+namespace LeanMove.Typing
 
 open Lang
 open Lang.MoveLight
@@ -1093,4 +1093,4 @@ theorem check_fun_sound (f : FunDef) (lenv : LabelEnv)
         exact check_stmt_sound lenv blockEnv block.body f.returnType
           (hlenv_wf _ _ hblockLookup) hcheck
 
-end LeanMove.Checker
+end LeanMove.Typing

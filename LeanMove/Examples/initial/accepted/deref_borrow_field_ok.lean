@@ -18,8 +18,8 @@
 import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
-import LeanMove.Checker.TypeChecking
-import LeanMove.Checker.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Typing.TypeChecking
+import LeanMove.Typing.Algorithmic.TypeCheckingAlgorithmic
 import LeanMove.Lang.Macros
 
 -- -----------------------------------------------------
@@ -37,7 +37,7 @@ namespace LeanMove.Examples
 
 open LeanMove.Lang
 open LeanMove.Lang.MoveLight
-open LeanMove.Checker
+open LeanMove.Typing
 open AssocMap
 
 /-

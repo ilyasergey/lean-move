@@ -17,9 +17,9 @@
 import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
-import LeanMove.Checker.TypeChecking
-import LeanMove.Checker.Algorithmic.TypeCheckingAlgorithmic
-import LeanMove.Checker.Algorithmic.AlgorithmicTypingSoundness
+import LeanMove.Typing.TypeChecking
+import LeanMove.Typing.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Typing.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
 
 /-!
@@ -92,7 +92,7 @@ module 0x4.invalid_write {
 
 open LeanMove.Lang
 open LeanMove.Lang.MoveLight
-open LeanMove.Checker
+open LeanMove.Typing
 open AssocMap
 open Regex
 
