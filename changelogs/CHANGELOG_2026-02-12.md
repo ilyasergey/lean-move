@@ -34,6 +34,17 @@ violations (dangling refs, conflicting borrows) are purely static; the interpret
 - **LeanMove.lean** — added `import LeanMove.Semantics`
 - **lakefile.lean** — added `runtime` build target
 
+## New: Genuine dangling pointer example
+
+### LeanMove/Examples/Typechecking/initial/rejected/dangling_ref.lean (new)
+A program that creates a genuine dangling pointer at runtime — unlike the `simple_dangling`
+examples where overwrites preserve field structure, this one replaces `S{f:42}` with `T{g:0}`
+(different fields), so the field reference `f_ref` with path `[field "f"]` becomes invalid.
+
+- **Type checker rejects** via `check_outbound_bool`: `f_ref` borrows from `r`, blocking `writeRef`
+- **Runtime produces `danglingRef` error**: `readPath` on `{g:0}` can't find field `"f"`
+- Runtime test in AllTests.lean asserts specifically `danglingRef` (not just any error)
+
 ## Change: Use `#guard` for failing type-checking tests
 
 Converted standalone `_check_fails` theorems in rejected examples from `theorem ... := by rfl`

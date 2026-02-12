@@ -31,6 +31,7 @@ import LeanMove.Examples.Typechecking.expressivity.accepted.subtree_writes_relea
 
 -- Import rejected example definitions
 import LeanMove.Examples.Typechecking.initial.rejected.borrow_in_loop
+import LeanMove.Examples.Typechecking.initial.rejected.dangling_ref
 import LeanMove.Examples.Typechecking.expressivity.rejected.simple_dangling
 import LeanMove.Examples.Typechecking.expressivity.rejected.imm_borrow_after_mut_call_invalid
 import LeanMove.Examples.Typechecking.expressivity.rejected.imm_borrow_after_mut_fields_invalid
@@ -263,5 +264,23 @@ private def sHeap2 : Heap × Loc :=
   Heap.empty.alloc (.record [(⟨"f"⟩, .int 42)])
 
 #eval run 200 (initState call_and_write_invalid AssocMap.empty [.ref sHeap2.2 []] sHeap2.1)
+
+end
+
+-- ============================================================
+-- R6. dangling_ref — genuine dangling pointer (runtime error!)
+--     Field path becomes invalid when parent struct is
+--     overwritten with a struct that has different fields.
+-- ============================================================
+section
+open LeanMove.Examples.DanglingRef
+
+-- foo() fails at runtime: readPath on {g:0} with path [field "f"] → none → danglingRef
+#eval run 200 (initState foo AssocMap.empty [])
+
+-- Assert it is specifically a danglingRef error
+#guard match run 200 (initState foo AssocMap.empty []) with
+  | .error (.danglingRef _) => true
+  | _ => false
 
 end
