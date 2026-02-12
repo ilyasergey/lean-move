@@ -44,70 +44,6 @@ open AssocMap
 open Regex
 
 /- ---------------------------------------------------- -/
-/-       Regex equality lemmas                           -/
-/- ---------------------------------------------------- -/
-
-lemma regexBeq_refl [BEq α] [LawfulBEq α] : ∀ (r : Regex α), regexBeq r r = true
-  | .empty => rfl
-  | .ε => rfl
-  | .char a => beq_self_eq_true a
-  | .dot => rfl
-  | .union r1 r2 => by simp only [regexBeq, regexBeq_refl r1, regexBeq_refl r2, Bool.and_self]
-  | .concat r1 r2 => by simp only [regexBeq, regexBeq_refl r1, regexBeq_refl r2, Bool.and_self]
-  | .star r => regexBeq_refl r
-  | .deriv r a => by simp only [regexBeq, regexBeq_refl r, beq_self_eq_true, Bool.and_self]
-
-lemma regexBeq_eq [DecidableEq α] : ∀ (r1 r2 : Regex α), regexBeq r1 r2 = true → r1 = r2 := by
-  intro r1
-  induction r1 with
-  | empty =>
-    intro r2 h
-    cases r2 <;> simp only [regexBeq, Bool.false_eq_true] at h
-    rfl
-  | ε =>
-    intro r2 h
-    cases r2 <;> simp only [regexBeq, Bool.false_eq_true] at h
-    rfl
-  | char a =>
-    intro r2 h
-    cases r2 <;> simp only [regexBeq, Bool.false_eq_true] at h
-    simp only [beq_iff_eq] at h
-    subst h
-    rfl
-  | dot =>
-    intro r2 h
-    cases r2 <;> simp only [regexBeq, Bool.false_eq_true] at h
-    rfl
-  | union r1a r1b ih1 ih2 =>
-    intro r2 h
-    cases r2 <;> simp only [regexBeq, Bool.false_eq_true] at h
-    rename_i r2a r2b
-    simp only [Bool.and_eq_true] at h
-    rw [ih1 r2a h.1, ih2 r2b h.2]
-  | concat r1a r1b ih1 ih2 =>
-    intro r2 h
-    cases r2 <;> simp only [regexBeq, Bool.false_eq_true] at h
-    rename_i r2a r2b
-    simp only [Bool.and_eq_true] at h
-    rw [ih1 r2a h.1, ih2 r2b h.2]
-  | star r1 ih =>
-    intro r2 h
-    cases r2 <;> simp only [regexBeq, Bool.false_eq_true] at h
-    rename_i r2
-    rw [ih r2 h]
-  | deriv r1 a ih =>
-    intro r2 h
-    cases r2 <;> simp only [regexBeq, Bool.false_eq_true] at h
-    rename_i r2 b
-    simp only [Bool.and_eq_true, beq_iff_eq] at h
-    rw [ih r2 h.1, h.2]
-
-lemma eq_regexBeq [DecidableEq α] : ∀ (r1 r2 : Regex α), r1 = r2 → regexBeq r1 r2 = true := by
-  intro r1 r2 h
-  subst h
-  exact regexBeq_refl r1
-
-/- ---------------------------------------------------- -/
 /-       Theorems about freshRef and nextFreshRef        -/
 /- ---------------------------------------------------- -/
 
@@ -1855,61 +1791,6 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
           exact ih_cont _ hwf' h
       · simp at h
     · simp at h
-
-/- ---------------------------------------------------- -/
-/-       Subsumption soundness lemmas                    -/
-/- ---------------------------------------------------- -/
-
-/-- Soundness of is_empty: if is_empty returns true, the language is empty. -/
-theorem is_empty_sound [DecidableEq α] : ∀ (r : Regex α), is_empty r = true → ∀ s, ¬ interpret_regex r s := by
-  intro r
-  induction r with
-  | empty => intro _ s h; exact h
-  | ε => intro h; simp [is_empty] at h
-  | char _ => intro h; simp [is_empty] at h
-  | dot => intro h; simp [is_empty] at h
-  | union r1 r2 ih1 ih2 =>
-    intro h s hmatch
-    simp only [is_empty, Bool.and_eq_true] at h
-    simp only [interpret_regex] at hmatch
-    cases hmatch with
-    | inl h1 => exact ih1 h.1 s h1
-    | inr h2 => exact ih2 h.2 s h2
-  | concat r1 r2 ih1 ih2 =>
-    intro h s hmatch
-    simp only [is_empty, Bool.or_eq_true] at h
-    simp only [interpret_regex] at hmatch
-    obtain ⟨s1, s2, _, h1, h2⟩ := hmatch
-    cases h with
-    | inl h1e => exact ih1 h1e s1 h1
-    | inr h2e => exact ih2 h2e s2 h2
-  | star _ => intro h; simp [is_empty] at h
-  | deriv r _ ih =>
-    intro h s hmatch
-    simp only [is_empty] at h
-    simp only [interpret_regex] at hmatch
-    exact ih h _ hmatch
-
-/-- Soundness of regexSubsumedBy: if it returns true, L(r1) ⊆ L(r2). -/
-theorem regexSubsumedBy_sound [DecidableEq α] (r1 : Regex α) :
-    ∀ (r2 : Regex α), regexSubsumedBy r1 r2 = true →
-    ∀ path, interpret_regex r1 path → interpret_regex r2 path := by
-  intro r2
-  induction r2 with
-  | union s1 s2 ih1 ih2 =>
-    intro h path hmatch
-    simp only [regexSubsumedBy, Bool.or_eq_true] at h
-    rcases h with ((hempty | hbeq) | hsub1) | hsub2
-    · exact absurd hmatch (is_empty_sound r1 hempty path)
-    · rw [regexBeq_eq r1 _ hbeq] at hmatch; exact hmatch
-    · exact Or.inl (ih1 hsub1 path hmatch)
-    · exact Or.inr (ih2 hsub2 path hmatch)
-  | _ =>
-    intro h path hmatch
-    simp only [regexSubsumedBy, Bool.or_eq_true] at h
-    rcases h with hempty | hbeq
-    · exact absurd hmatch (is_empty_sound r1 hempty path)
-    · rw [regexBeq_eq r1 _ hbeq] at hmatch; exact hmatch
 
 /-- Soundness of subsumes_bool: if it returns true, the semantic subsumption holds. -/
 theorem subsumes_bool_implies_subsumes (envL env : TypeEnv) :

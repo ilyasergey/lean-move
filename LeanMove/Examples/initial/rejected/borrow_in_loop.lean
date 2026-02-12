@@ -162,8 +162,9 @@ A corrected version would need to either:
 -- Theorem: foo is ill-typed
 -- Note: proving this formally requires the completeness theorem (check_fun_complete),
 -- which is not yet fully proven. The algorithmic rejection above demonstrates the result.
-theorem foo_illtyped : ¬ (∃ lenv, typecheck_fun foo lenv) := by
-  sorry
+
+-- theorem foo_illtyped : ¬ (∃ lenv, typecheck_fun foo lenv) := by
+--   sorry
 
 
 end LeanMove.Examples.BorrowInLoop

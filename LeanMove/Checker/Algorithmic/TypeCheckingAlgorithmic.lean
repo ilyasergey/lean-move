@@ -40,18 +40,6 @@ def not_borrowed_bool (x: Var) (env: TypeEnv) : Bool :=
     let regex := env.pathEnv.paths (.root, r)
     !match_bool regex [.root_to_var x]
 
-/-- Boolean equality for Regex -/
-def regexBeq [BEq α] : Regex α → Regex α → Bool
-  | .empty, .empty => true
-  | .ε, .ε => true
-  | .char a, .char b => a == b
-  | .dot, .dot => true
-  | .union r1 r2, .union s1 s2 => regexBeq r1 s1 && regexBeq r2 s2
-  | .concat r1 r2, .concat s1 s2 => regexBeq r1 s1 && regexBeq r2 s2
-  | .star r, .star s => regexBeq r s
-  | .deriv r a, .deriv s b => regexBeq r s && a == b
-  | _, _ => false
-
 /-- Boolean check for VarEntry compatibility: same IsValid/Mut, compatible MoveType. -/
 def varentry_compatible_bool : (IsValid × MoveType × Mut) → (IsValid × MoveType × Mut) → Bool
   | (v1, t1, m1), (v2, t2, m2) => v1 == v2 && MoveType.compatible_bool t1 t2 && m1 == m2
@@ -75,14 +63,6 @@ def TypeEnv.equiv_bool (env1 env2 : TypeEnv) : Bool :=
   env1.pathEnv.refs.all fun u =>
     env1.pathEnv.refs.all fun v =>
       regexBeq (env1.pathEnv.paths (u, v)) (env2.pathEnv.paths (u, v))
-
-/-- Conservative check: is L(r1) ⊆ L(r2)?
-    Checks if r1 is syntactically equal to r2, or appears as an arm of r2's union tree,
-    or r1 has an empty language. -/
-def regexSubsumedBy [BEq α] : Regex α → Regex α → Bool
-  | r1, .union s1 s2 => is_empty r1 || regexBeq r1 (.union s1 s2) ||
-      regexSubsumedBy r1 s1 || regexSubsumedBy r1 s2
-  | r1, r2 => is_empty r1 || regexBeq r1 r2
 
 /-- Check that envL subsumes env: same siteEnv/varEnv/refs, and every path regex
     in env is subsumed by the corresponding regex in envL.
