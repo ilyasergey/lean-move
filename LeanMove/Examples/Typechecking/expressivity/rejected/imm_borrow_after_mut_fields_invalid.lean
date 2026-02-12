@@ -184,8 +184,8 @@ def invalid_write_lenv : LabelEnv :=
 -- Debug
 #eval check_fun invalid_write invalid_write_lenv
 
--- Theorem: algorithmic checker rejects invalid_write
-theorem invalid_write_check_fails : check_fun invalid_write invalid_write_lenv = false := by native_decide
+-- Test: algorithmic checker rejects invalid_write
+#guard !check_fun invalid_write invalid_write_lenv
 
 -- Theorem: invalid_write is ILL-typed (REJECTED by type checker)
 -- Note: proving this formally requires the completeness theorem (check_fun_complete),

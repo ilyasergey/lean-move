@@ -102,8 +102,8 @@ def foo_lenv : LabelEnv :=
 -- Debug
 #eval check_fun foo foo_lenv
 
--- Theorem: algorithmic checker rejects foo
-theorem foo_check_fails : check_fun foo foo_lenv = false := by rfl
+-- Test: algorithmic checker rejects foo
+#guard !check_fun foo foo_lenv
 
 open Stmt
 

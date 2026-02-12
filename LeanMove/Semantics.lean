@@ -14,11 +14,4 @@
  limitations under the License.
 -/
 
--- This module serves as the root of the `LeanMove` library.
--- Import modules here that should be built as part of the library.
-
-import LeanMove.Structures.AssocMap
-import LeanMove.Structures.Regex
-import LeanMove.Lang
-import LeanMove.Typing
-import LeanMove.Semantics
+import LeanMove.Semantics.Smallstep

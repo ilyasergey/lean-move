@@ -209,8 +209,8 @@ def call_and_write_invalid_lenv : LabelEnv :=
 -- Debug
 #eval check_fun call_and_write_invalid call_and_write_invalid_lenv
 
--- Theorem: algorithmic checker rejects call_and_write_invalid
-theorem call_and_write_invalid_check_fails : check_fun call_and_write_invalid call_and_write_invalid_lenv = false := by rfl
+-- Test: algorithmic checker rejects call_and_write_invalid
+#guard !check_fun call_and_write_invalid call_and_write_invalid_lenv
 
 -- Theorem: call_and_write_invalid is ILL-typed (REJECTED by type checker)
 -- Note: proving this formally requires the completeness theorem (check_fun_complete),

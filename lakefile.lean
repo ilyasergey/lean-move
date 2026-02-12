@@ -52,3 +52,9 @@ lean_lib «examples» where
              `expressivity.rejected.simple_dangling, `expressivity.rejected.imm_borrow_after_mut_call_invalid,
              `expressivity.rejected.imm_borrow_after_mut_fields_invalid,
              `expressivity.rejected.mutable_borrows_are_not_unique_calls_invalid]
+
+-- Build target for runtime tests (small-step interpreter)
+-- Build with: lake build runtime
+lean_lib «runtime» where
+  srcDir := "LeanMove/Examples/Runtime"
+  roots := #[`AllTests]

@@ -194,8 +194,8 @@ def invalid_lenv : LabelEnv :=
 -- Debug
 #eval check_fun invalid invalid_lenv
 
--- Theorem: algorithmic checker rejects invalid
-theorem invalid_check_fails : check_fun invalid invalid_lenv = false := by rfl
+-- Test: algorithmic checker rejects invalid
+#guard !check_fun invalid invalid_lenv
 
 -- Theorem: invalid is ILL-typed (REJECTED by type checker)
 -- Note: proving this formally requires the completeness theorem (check_fun_complete),

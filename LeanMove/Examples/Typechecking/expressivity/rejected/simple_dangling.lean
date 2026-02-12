@@ -335,7 +335,7 @@ def field_dangling_lenv : LabelEnv :=
 
 #eval check_fun field_dangling field_dangling_lenv
 
-theorem field_dangling_check_fails : check_fun field_dangling field_dangling_lenv = false := by rfl
+#guard !check_fun field_dangling field_dangling_lenv
 
 -- Initial environment for nested_field_dangling
 def nested_field_dangling_initEnv : TypeEnv := {
@@ -350,7 +350,7 @@ def nested_field_dangling_lenv : LabelEnv :=
 
 #eval check_fun nested_field_dangling nested_field_dangling_lenv
 
-theorem nested_field_dangling_check_fails : check_fun nested_field_dangling nested_field_dangling_lenv = false := by rfl
+#guard !check_fun nested_field_dangling nested_field_dangling_lenv
 
 -- Initial environment for simple_call_dangling
 def simple_call_dangling_initEnv : TypeEnv := {
@@ -365,7 +365,7 @@ def simple_call_dangling_lenv : LabelEnv :=
 
 #eval check_fun simple_call_dangling simple_call_dangling_lenv
 
-theorem simple_call_dangling_check_fails : check_fun simple_call_dangling simple_call_dangling_lenv = false := by rfl
+#guard !check_fun simple_call_dangling simple_call_dangling_lenv
 
 -- Initial environment for field_call_dangling
 def field_call_dangling_initEnv : TypeEnv := {
@@ -380,7 +380,7 @@ def field_call_dangling_lenv : LabelEnv :=
 
 #eval check_fun field_call_dangling field_call_dangling_lenv
 
-theorem field_call_dangling_check_fails : check_fun field_call_dangling field_call_dangling_lenv = false := by rfl
+#guard !check_fun field_call_dangling field_call_dangling_lenv
 
 -- -----------------------------------------------------
 -- -           Relational Ill-Typedness Theorems      --

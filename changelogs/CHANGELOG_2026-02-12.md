@@ -1,5 +1,52 @@
 # Changes Made on 2026-02-12
 
+## New: Small-step operational semantics and runtime tests
+
+### LeanMove/Semantics/Smallstep.lean (new, ~430 lines)
+Executable small-step interpreter for MoveLight programs.
+
+- **Runtime values:** `Value` — `int`, `bool`, `unit`, `record` (nested), `ref` (heap location + field path)
+- **Global heap:** `Heap` with `alloc`, `read`, `write`, `readRef`, `writeRef`; nested field navigation via `readPath`/`writePath`
+- **Call stack:** `Frame` (varStore, siteStore, current stmt, blocks, funEnv, returnInfo) + `Machine` (frame, stack, heap)
+- **Error model:** `RuntimeError` — uninitialized var/site, type mismatch, unknown function/label, dangling ref, etc.
+- **`step : ExecState → ExecState`** — handles all 16 Stmt/Expr cases (CPS-style continuations)
+- **`run : Nat → ExecState → ExecState`** — fuel-bounded driver
+- **`initState`** — creates initial execution state from FunDef, funEnv, args, and optional heap
+- **Design:** `release` is no-op at runtime; `freeze` copies ref value; borrow tracking is purely static/type-level
+
+### LeanMove/Semantics.lean (new)
+Aggregator: `import LeanMove.Semantics.Smallstep`
+
+### LeanMove/Examples/Runtime/AllTests.lean (new)
+Runtime tests for all example programs using `#guard` (accepted) and `#eval` (rejected).
+
+**Accepted programs (21 `#guard` tests):** All 10 accepted programs execute correctly:
+- `borrow_in_loop_fixed_ok`: infinite loop exhausts fuel (`isError`)
+- `deref_borrow_field_ok`: inter-procedural calls (M.new returns `{f: 2}`, foo halts)
+- `alias_writes`, `alias_write_after_join`, `extension_after_call`, `extension_writes_after_join`,
+  `imm_borrow_after_mut`, `multible_mutable_return_values`, `mutable_borrows_are_not_unique`,
+  `subtree_writes_release`: all halt successfully
+
+**Rejected programs (8 `#eval` tests):** All rejected programs succeed at runtime — borrow-checking
+violations (dangling refs, conflicting borrows) are purely static; the interpreter does not enforce them.
+
+### Modified files
+- **LeanMove.lean** — added `import LeanMove.Semantics`
+- **lakefile.lean** — added `runtime` build target
+
+## Change: Use `#guard` for failing type-checking tests
+
+Converted standalone `_check_fails` theorems in rejected examples from `theorem ... := by rfl`
+(or `by native_decide`) to idiomatic `#guard !check_fun ...` tests. These theorems are not
+referenced by downstream proofs, so the conversion is safe.
+
+**Files changed (6):**
+- `initial/rejected/borrow_in_loop.lean`
+- `expressivity/rejected/imm_borrow_after_mut_call_invalid.lean`
+- `expressivity/rejected/imm_borrow_after_mut_fields_invalid.lean`
+- `expressivity/rejected/simple_dangling.lean` (4 tests)
+- `expressivity/rejected/mutable_borrows_are_not_unique_calls_invalid.lean`
+
 ## Refactor: Move regex definitions and lemmas to Regex.lean
 
 Moved all regex-related definitions and soundness lemmas from the algorithmic
