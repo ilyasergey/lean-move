@@ -272,6 +272,35 @@ structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     lookup env.siteEnv s = some (.ref bt r bk) →
     r ∈ env.pathEnv.refs
 
+  -- 8. All blocks in the current frame type-check in their lenv environments
+  blocks_typed : ∀ b, b ∈ m.frame.blocks → ∀ blockEnv,
+    lookup lenv b.label = some blockEnv →
+    typecheck_stmt lenv blockEnv b.body retType
+
+  -- 9. lenv entries have empty siteEnv (sites are block-local, reset on jump)
+  lenv_empty_siteEnv : ∀ L envL, lookup lenv L = some envL →
+    ∀ s, lookup envL.siteEnv s = none
+
+  -- 10. All functions in funEnv are well-typed
+  funEnv_typed : ∀ fname fdef,
+    lookup m.frame.funEnv fname = some fdef →
+    ∃ lenv', typecheck_fun fdef lenv'
+
+/-- Stack safety: each frame on the stack can be safely restored after ret.
+    Defined by structural recursion on the stack. -/
+def StackSafe : List Frame → Option ReturnInfo → Heap → Prop
+  | [], _, _ => True
+  | _, none, _ => True
+  | callerFrame :: rest, some ri, heap =>
+    (∀ vals newSiteStore,
+      bindReturnValues callerFrame.siteStore ri.resultSites vals = some newSiteStore →
+      ∃ env' lenv' retType' rmap',
+        WellTypedState
+          ⟨{callerFrame with siteStore := newSiteStore, stmt := ri.callerStmt}, rest, heap⟩
+          env' lenv' retType' rmap' ∧
+        StackSafe rest callerFrame.returnInfo heap) ∧
+    StackSafe rest callerFrame.returnInfo heap
+
 -- ============================================================
 -- Part 6: Key Bridge Lemma (check_outbound → paths are trivial)
 -- ============================================================
@@ -528,19 +557,24 @@ theorem no_danglingRef_progress (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
 theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retType : MoveType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retType rmap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
     (hstep : step (.running m) = .running m') :
-    ∃ env' rmap', WellTypedState m' env' lenv retType rmap' := by
+    ∃ env' lenv' retType' rmap',
+      WellTypedState m' env' lenv' retType' rmap' ∧
+      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
   sorry
 
 -- ============================================================
 -- Part 9: Safe Execution State
 -- ============================================================
 
-/-- An exec state is "safe" if running states are well-typed
+/-- An exec state is "safe" if running states are well-typed (with stack safety)
     and error states are not danglingRef errors. -/
-def SafeExecState (state : ExecState) (lenv : LabelEnv) (retType : MoveType) : Prop :=
+def SafeExecState (state : ExecState) : Prop :=
   match state with
-  | .running m => ∃ env rmap, WellTypedState m env lenv retType rmap
+  | .running m => ∃ env lenv retType rmap,
+      WellTypedState m env lenv retType rmap ∧
+      StackSafe m.stack m.frame.returnInfo m.heap
   | .halted _ => True
   | .error (.danglingRef _) => False
   | .error _ => True
@@ -548,20 +582,20 @@ def SafeExecState (state : ExecState) (lenv : LabelEnv) (retType : MoveType) : P
 /-- A safe exec state steps to a safe exec state.
     Uses no_danglingRef_progress (to rule out danglingRef errors)
     and preservation (to maintain WellTypedState for running states). -/
-theorem safe_step (state : ExecState) (lenv : LabelEnv) (retType : MoveType)
-    (hsafe : SafeExecState state lenv retType) :
-    SafeExecState (step state) lenv retType := by
+theorem safe_step (state : ExecState)
+    (hsafe : SafeExecState state) :
+    SafeExecState (step state) := by
   cases state with
   | halted v => simp [step, SafeExecState]
   | error e => simp only [step]; exact hsafe
   | running m =>
-    obtain ⟨env, rmap, hwt⟩ := hsafe
-    show SafeExecState (step (.running m)) lenv retType
+    obtain ⟨env, lenv, retType, rmap, hwt, hss⟩ := hsafe
+    show SafeExecState (step (.running m))
     generalize hres : step (.running m) = result
     cases result with
     | running m' =>
       simp only [SafeExecState]
-      exact preservation m m' env lenv retType rmap hwt hres
+      exact preservation m m' env lenv retType rmap hwt hss hres
     | halted v => simp [SafeExecState]
     | error e =>
       cases e with
@@ -578,8 +612,8 @@ theorem safe_step (state : ExecState) (lenv : LabelEnv) (retType : MoveType)
       | arityMismatch _ => simp [SafeExecState]
 
 /-- A SafeExecState is never a danglingRef error -/
-theorem SafeExecState.not_danglingRef {state : ExecState} {lenv : LabelEnv} {retType : MoveType}
-    (hsafe : SafeExecState state lenv retType) :
+theorem SafeExecState.not_danglingRef {state : ExecState}
+    (hsafe : SafeExecState state) :
     ∀ loc, state ≠ .error (.danglingRef loc) := by
   intro loc h; subst h; exact hsafe
 
@@ -589,31 +623,25 @@ theorem SafeExecState.not_danglingRef {state : ExecState} {lenv : LabelEnv} {ret
 
 /-- A safe exec state remains danglingRef-free after any number of steps.
     By induction on fuel, using safe_step at each iteration. -/
-theorem safe_run_no_danglingRef (state : ExecState) (lenv : LabelEnv)
-    (retType : MoveType) (hsafe : SafeExecState state lenv retType) :
+theorem safe_run_no_danglingRef (state : ExecState)
+    (hsafe : SafeExecState state) :
     ∀ n loc, Semantics.run n state ≠ .error (.danglingRef loc) := by
   intro n
   induction n generalizing state with
   | zero =>
     intro loc h
-    -- run 0 state = .error .outOfFuel, which is not .danglingRef
     unfold Semantics.run at h
     injection h with h'
     exact nomatch h'
   | succ n ih =>
     intro loc h
-    -- run (n+1) state = match state with | .running m => run n (step state) | other => other
     unfold Semantics.run at h
-    -- Case-analyze state
     match state, hsafe with
     | .running m, hsafe =>
-      -- h : run n (step (.running m)) = .error (.danglingRef loc)
-      exact ih (step (.running m)) (safe_step (.running m) lenv retType hsafe) loc h
+      exact ih (step (.running m)) (safe_step (.running m) hsafe) loc h
     | .halted _, _ =>
       exact absurd h (by intro h'; cases h')
     | .error _, hsafe =>
-      -- h : .error _ = .error (.danglingRef loc)
-      -- But SafeExecState (.error _) means it's not danglingRef
       exact SafeExecState.not_danglingRef hsafe loc h
 
 -- ============================================================
@@ -625,8 +653,9 @@ theorem safe_run_no_danglingRef (state : ExecState) (lenv : LabelEnv)
     it is well-typed; if it produces an error, it is not danglingRef. -/
 theorem initState_safe (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunDef)
     (args : List Value) (heap : Heap)
-    (htyped : typecheck_fun f lenv) :
-    SafeExecState (initState f funEnv args heap) lenv f.returnType := by
+    (htyped : typecheck_fun f lenv)
+    (hfunEnv : ∀ fname fdef, lookup funEnv fname = some fdef → ∃ lenv', typecheck_fun fdef lenv') :
+    SafeExecState (initState f funEnv args heap) := by
   sorry
 
 -- ============================================================
@@ -637,9 +666,10 @@ theorem initState_safe (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunD
     a danglingRef error at runtime, regardless of fuel. -/
 theorem type_soundness (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunDef)
     (args : List Value) (heap : Heap)
-    (htyped : typecheck_fun f lenv) :
+    (htyped : typecheck_fun f lenv)
+    (hfunEnv : ∀ fname fdef, lookup funEnv fname = some fdef → ∃ lenv', typecheck_fun fdef lenv') :
     ∀ n loc, Semantics.run n (initState f funEnv args heap) ≠ .error (.danglingRef loc) :=
-  safe_run_no_danglingRef (initState f funEnv args heap) lenv f.returnType
-    (initState_safe f lenv funEnv args heap htyped)
+  safe_run_no_danglingRef (initState f funEnv args heap)
+    (initState_safe f lenv funEnv args heap htyped hfunEnv)
 
 end LeanMove.Typing.TypeSoundness
