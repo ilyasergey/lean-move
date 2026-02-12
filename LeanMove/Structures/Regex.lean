@@ -15,6 +15,7 @@
 -/
 
 import Ssreflect.Lang
+import LeanMove.Structures.ListUtils
 
 namespace Regex
 
@@ -328,50 +329,6 @@ def has_nonempty_match : Regex α → Bool
   | .deriv _ _ => false
 
 /-! ## Boolean Regex Matcher -/
-
-/-- All ways to split a list into two parts whose concatenation equals the original list.
-    For example, `splits [1,2]` returns `[([],[1,2]), ([1],[2]), ([1,2],[])]`. -/
-def List.splits {α : Type} : List α → List (List α × List α)
-  | [] => [([], [])]
-  | a :: as => ([], a :: as) :: (List.splits as |>.map fun (l, r) => (a :: l, r))
-
-/-- Every pair in `splits s` is a valid split of `s` -/
-theorem List.splits_sound {α : Type} (s s1 s2 : List α) :
-    (s1, s2) ∈ List.splits s → s = s1 ++ s2 := by
-  induction s generalizing s1 s2 with
-  | nil =>
-    simp only [List.splits, List.mem_singleton, Prod.mk.injEq]
-    intro ⟨h1, h2⟩; subst h1; subst h2; rfl
-  | cons a as ih =>
-    simp only [List.splits, List.mem_cons, Prod.mk.injEq, List.mem_map, Prod.exists]
-    intro h
-    cases h with
-    | inl h =>
-      obtain ⟨h1, h2⟩ := h; subst h1; subst h2; rfl
-    | inr h =>
-      obtain ⟨l, r, hmem, h1, h2⟩ := h
-      subst h1; subst h2
-      have := ih l r hmem
-      simp only [this, List.cons_append]
-
-/-- Every valid split of `s` appears in `splits s` -/
-theorem List.splits_complete {α : Type} (s s1 s2 : List α) :
-    s = s1 ++ s2 → (s1, s2) ∈ List.splits s := by
-  intro h
-  induction s1 generalizing s with
-  | nil =>
-    simp only [List.nil_append] at h; subst h
-    -- Goal: ([], s) ∈ List.splits s
-    cases s with
-    | nil => simp [List.splits]
-    | cons b bs => simp [List.splits]
-  | cons a s1' ih =>
-    simp only [List.cons_append] at h; subst h
-    -- Goal: (a :: s1', s2) ∈ List.splits (a :: (s1' ++ s2))
-    simp only [List.splits, List.mem_cons, List.mem_map, Prod.exists]
-    right
-    refine ⟨s1', s2, ih (s1' ++ s2) rfl, ?_⟩
-    simp
 
 /-- Boolean regex matcher. Returns `true` if the regex accepts the given string.
     Conservative for `star` and `deriv` (returns `true`), which is safe for completeness. -/

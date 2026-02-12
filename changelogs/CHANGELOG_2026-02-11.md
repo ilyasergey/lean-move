@@ -1,5 +1,23 @@
 # Changes Made on 2026-02-11
 
+## Extract generic list utility lemmas into ListUtils.lean
+
+Created `LeanMove/Structures/ListUtils.lean` consolidating 13 generic list manipulation lemmas from across the project into one file.
+
+### Structures/ListUtils.lean (new)
+- `List.splits`, `List.splits_sound`, `List.splits_complete` — moved from Regex.lean
+- `List.lookup_filter_of_lookup`, `List.lookup_filter_self_none`, `List.lookup_filter_mem_none`, `List.lookup_filter_ne`, `List.lookup_filter_notin` — moved from AlgorithmicTypingSoundness.lean
+- `List.filterMap_all_none`, `List.eraseDups_length_le`, `List.filter_length_eq_implies`, `List.nodup_of_length_eraseDups`, `List.nodup_snd_pair_absurd` — moved from AlgorithmicTypingSoundness.lean (made non-private, added `List.` prefix)
+- Uses `Classical.not_not` (core Lean 4) instead of `not_not` (Mathlib) to keep imports minimal
+
+### Structures/Regex.lean
+- Added `import LeanMove.Structures.ListUtils`
+- Removed `List.splits`, `List.splits_sound`, `List.splits_complete` (now in ListUtils)
+
+### AlgorithmicTypingSoundness.lean
+- Removed 13 list lemmas (5 `List.lookup_filter_*`, `filterMap_all_none`, `eraseDups_length_le`, `filter_length_eq_implies`, `nodup_of_length_eraseDups`, `nodup_snd_pair_absurd`, `list_lookup_filter_ne`) — net reduction of ~300 lines
+- Updated call sites to use `List.`-prefixed names from ListUtils
+
 ## Summary
 1. Completed all accepted example proofs: added algorithmic check theorems and relational well-typedness proofs for the 4 remaining accepted examples.
 2. Added algorithmic check-fails theorems for all 5 rejected examples (8 functions total).

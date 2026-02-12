@@ -235,31 +235,6 @@ lemma SiteEnv.empty_refs_not_root : SiteEnv.RefsNotRoot AssocMap.empty := by
   simp only [AssocMap.lookup, AssocMap.empty, List.lookup] at h
   cases h
 
-/-- Helper: lookup in filtered list implies lookup in original list (for keys not filtered) -/
-lemma List.lookup_filter_of_lookup {K V : Type} [DecidableEq K] (entries : List (K × V))
-    (k k' : K) (v : V) (hne : k ≠ k') :
-    List.lookup k (entries.filter (fun p => p.1 != k')) = some v →
-    List.lookup k entries = some v := by
-  induction entries with
-  | nil => simp [List.lookup]
-  | cons hd tl ih =>
-    intro h
-    simp only [List.filter] at h
-    simp only [List.lookup]
-    by_cases hfilt : hd.1 != k'
-    · simp only [hfilt, List.lookup] at h
-      by_cases hhd : k == hd.1
-      · simp only [hhd] at h ⊢; exact h
-      · simp only [hhd] at h ⊢; exact ih h
-    · simp only [bne_iff_ne, ne_eq, not_not] at hfilt
-      simp only [hfilt, bne_self_eq_false] at h
-      by_cases hhd : k == hd.1
-      · simp only [beq_iff_eq] at hhd
-        subst hhd
-        exact absurd hfilt hne
-      · simp only [hhd]
-        exact ih h
-
 /-- Inserting a non-root ref preserves RefsNotRoot -/
 lemma SiteEnv.insert_refs_not_root (senv : SiteEnv) (s : Site) (τ : MoveType)
     (hwf : SiteEnv.RefsNotRoot senv)
@@ -279,92 +254,6 @@ lemma SiteEnv.insert_refs_not_root (senv : SiteEnv) (s : Site) (τ : MoveType)
       simp only [AssocMap.lookup]
       exact List.lookup_filter_of_lookup senv.entries s' s τ' hne hlookup
     exact hwf s' τ' hlookup'
-
-/-- Looking up a key in a list filtered to remove that key returns none -/
-lemma List.lookup_filter_self_none {K V : Type} [DecidableEq K] (entries : List (K × V)) (k : K) :
-    List.lookup k (entries.filter (fun p => p.1 != k)) = none := by
-  induction entries with
-  | nil => rfl
-  | cons hd tl ih =>
-    simp only [List.filter]
-    by_cases hfilt : hd.1 != k
-    · simp only [hfilt, List.lookup]
-      by_cases hhd : k == hd.1
-      · simp only [beq_iff_eq] at hhd
-        simp only [bne_iff_ne] at hfilt
-        exact absurd hhd.symm hfilt
-      · simp only [hhd]
-        exact ih
-    · simp only [bne_iff_ne, ne_eq, not_not] at hfilt
-      have hfilt' : (hd.1 != k) = false := by simp [hfilt]
-      simp only [hfilt']
-      exact ih
-
-/-- Looking up a key that's in the filter list returns none -/
-lemma List.lookup_filter_mem_none {K V : Type} [DecidableEq K] (entries : List (K × V)) (k : K) (ks : List K) :
-    k ∈ ks → List.lookup k (entries.filter (fun p => p.1 ∉ ks)) = none := by
-  intro hmem
-  induction entries with
-  | nil => rfl
-  | cons hd tl ih =>
-    simp only [List.filter]
-    by_cases hfilt : hd.1 ∉ ks
-    · have hfilt' : decide (hd.1 ∉ ks) = true := decide_eq_true hfilt
-      simp only [hfilt', List.lookup]
-      by_cases hhd : k == hd.1
-      · simp only [beq_iff_eq] at hhd
-        exact absurd (hhd ▸ hmem) hfilt
-      · simp only [hhd]
-        exact ih
-    · simp only [not_not] at hfilt
-      have hfilt' : decide (hd.1 ∉ ks) = false := decide_eq_false (not_not.mpr hfilt)
-      simp only [hfilt']
-      exact ih
-
-/-- Lookup in filtered list (key not filtered) gives same result as original -/
-lemma List.lookup_filter_ne {K V : Type} [DecidableEq K] (entries : List (K × V)) (k k' : K) (hne : k ≠ k') :
-    List.lookup k (entries.filter (fun p => p.1 != k')) = List.lookup k entries := by
-  induction entries with
-  | nil => rfl
-  | cons hd tl ih =>
-    simp only [List.filter, List.lookup]
-    by_cases hfilt : hd.1 != k'
-    · simp only [hfilt, List.lookup]
-      by_cases hhd : k == hd.1
-      · simp only [hhd]
-      · simp only [hhd]
-        exact ih
-    · simp only [bne_iff_ne, ne_eq, not_not] at hfilt
-      have hfilt' : (hd.1 != k') = false := by simp [hfilt]
-      simp only [hfilt']
-      by_cases hhd : k == hd.1
-      · simp only [beq_iff_eq] at hhd
-        exact absurd (hfilt ▸ hhd) hne
-      · simp only [hhd]
-        exact ih
-
-/-- Lookup in filtered list (key not in filter list) gives same result as original -/
-lemma List.lookup_filter_notin {K V : Type} [DecidableEq K] (entries : List (K × V)) (k : K) (ks : List K) (hnotin : k ∉ ks) :
-    List.lookup k (entries.filter (fun p => p.1 ∉ ks)) = List.lookup k entries := by
-  induction entries with
-  | nil => rfl
-  | cons hd tl ih =>
-    simp only [List.filter, List.lookup]
-    by_cases hfilt : hd.1 ∉ ks
-    · have hfilt' : decide (hd.1 ∉ ks) = true := decide_eq_true hfilt
-      simp only [hfilt', List.lookup]
-      by_cases hhd : k == hd.1
-      · simp only [hhd]
-      · simp only [hhd]
-        exact ih
-    · simp only [not_not] at hfilt
-      have hfilt' : decide (hd.1 ∉ ks) = false := decide_eq_false (not_not.mpr hfilt)
-      simp only [hfilt']
-      by_cases hhd : k == hd.1
-      · simp only [beq_iff_eq] at hhd
-        exact absurd (hhd ▸ hfilt) hnotin
-      · simp only [hhd]
-        exact ih
 
 /-- Deleting from siteEnv preserves RefsNotRoot.
     The key insight: any value in the filtered siteEnv was also in the original,
@@ -944,11 +833,6 @@ lemma TypeEnv.equiv_bool_implies_equiv (env1 env2 : TypeEnv) :
   have h2 := h1 v hv
   exact regexBeq_eq _ _ h2
 
-lemma TypeEnv.equiv_implies_equiv_bool (env1 env2 : TypeEnv) :
-    TypeEnv.equiv env1 env2 → TypeEnv.equiv_bool env1 env2 = true := by
-  -- Completeness direction: not needed for soundness theorem
-  sorry
-
 /- ---------------------------------------------------- -/
 /-       not_borrowed soundness (WellFormed → Bool → Prop)   -/
 /- ---------------------------------------------------- -/
@@ -1178,18 +1062,6 @@ lemma check_mutable_inputs_have_outbound_bool_sound (env : TypeEnv) (bs : List S
 /-       call_connect_inputs_outputs WellFormed          -/
 /- ---------------------------------------------------- -/
 
-/-- When all elements map to none, filterMap gives [] -/
-private lemma filterMap_all_none {α β : Type} (as : List α) (f : α → Option β)
-    (hf : ∀ a ∈ as, f a = none) :
-    as.filterMap f = [] := by
-  induction as with
-  | nil => simp
-  | cons a as' ih =>
-    have ha := hf a (List.Mem.head as')
-    simp only [List.filterMap]
-    rw [ha]
-    exact ih (fun a' ha' => hf a' (List.mem_cons_of_mem a ha'))
-
 /-- call_connect_inputs_outputs preserves WellFormed when outputs are fresh -/
 lemma call_connect_inputs_outputs_wf (env : TypeEnv) (as bs : List Site)
     (hwf : TypeEnv.WellFormed env)
@@ -1207,136 +1079,12 @@ lemma call_connect_inputs_outputs_wf (env : TypeEnv) (as bs : List Site)
     unfold call_connect_inputs_outputs
     -- When all outputs are fresh, io and mo filterMaps over `as` give [].
     -- Use rw with _ for f to let Lean's unifier match the exact lambda.
-    rw [filterMap_all_none as _ (fun a ha => by simp [hlookup_none a ha])]
-    rw [filterMap_all_none as _ (fun a ha => by simp [hlookup_none a ha])]
+    rw [List.filterMap_all_none as _ (fun a ha => by simp [hlookup_none a ha])]
+    rw [List.filterMap_all_none as _ (fun a ha => by simp [hlookup_none a ha])]
     -- Now io=[] and mo=[], so foldls over [] are identity, pathEnv = env.pathEnv
     exact hwf.pathEnv_wf
   · exact hwf.siteEnv_wf
   · exact hwf.varEnv_wf
-
-/- ---------------------------------------------------- -/
-/-       eraseDups / Nodup helper lemmas                 -/
-/- ---------------------------------------------------- -/
-
-/-- eraseDups.length ≤ length for any list -/
-private lemma eraseDups_length_le {α : Type} [BEq α] [LawfulBEq α] (l : List α) :
-    l.eraseDups.length ≤ l.length := by
-  suffices ∀ n (l : List α), l.length ≤ n → l.eraseDups.length ≤ l.length from
-    this l.length l (Nat.le_refl _)
-  intro n
-  induction n with
-  | zero =>
-    intro l hlen
-    match l with
-    | [] => simp
-    | _ :: _ => simp [List.length_cons] at hlen
-  | succ n ih =>
-    intro l hlen
-    match l with
-    | [] => simp
-    | a :: as =>
-      simp only [List.eraseDups_cons, List.length_cons]
-      have hfilt_le : (as.filter fun b => !(b == a)).length ≤ n := by
-        have h := List.length_filter_le (fun b => !(b == a)) as
-        simp only [List.length_cons] at hlen
-        omega
-      have h1 := ih (as.filter fun b => !(b == a)) hfilt_le
-      have h2 := List.length_filter_le (fun b => !(b == a)) as
-      omega
-
-/-- If filter p preserves list length, then all elements satisfy p -/
-private lemma filter_length_eq_implies {α : Type} [BEq α] [LawfulBEq α]
-    (p : α → Bool) (l : List α) (hlen : (l.filter p).length = l.length)
-    (a : α) (hmem : a ∈ l) : p a = true := by
-  induction l with
-  | nil => nomatch hmem
-  | cons b bs ih =>
-    simp only [List.filter_cons] at hlen
-    split at hlen
-    · rename_i hpb
-      simp only [List.length_cons] at hlen
-      cases hmem with
-      | head => exact hpb
-      | tail _ hmem' => exact ih (by omega) hmem'
-    · simp only [List.length_cons] at hlen
-      have := List.length_filter_le p bs
-      omega
-
-/-- If length = eraseDups.length, then the list has no duplicates -/
-private lemma nodup_of_length_eraseDups {α : Type} [BEq α] [LawfulBEq α] (l : List α)
-    (h : l.length = l.eraseDups.length) : l.Nodup := by
-  induction l with
-  | nil => exact List.nodup_nil
-  | cons a as ih =>
-    simp only [List.eraseDups_cons, List.length_cons] at h
-    have h1 := eraseDups_length_le (as.filter fun b => !(b == a))
-    have h2 := List.length_filter_le (fun b => !(b == a)) as
-    have hflen : (as.filter fun b => !(b == a)).length = as.length := by omega
-    have hnotmem : a ∉ as := by
-      intro hmem
-      have := filter_length_eq_implies (fun b => !(b == a)) as hflen a hmem
-      simp at this
-    have hfilter_eq : as.filter (fun b => !(b == a)) = as := by
-      rw [List.filter_eq_self]
-      intro b hmem
-      have hne : b ≠ a := fun heq => hnotmem (heq ▸ hmem)
-      simp [beq_eq_false_iff_ne.mpr hne]
-    rw [hfilter_eq] at h
-    exact List.nodup_cons.mpr ⟨hnotmem, ih (by omega)⟩
-
-/-- If map Prod.snd has no duplicates, two pairs with same second component
-    but different first components can't both be in the list -/
-private lemma nodup_snd_pair_absurd {α β : Type} (l : List (α × β))
-    (hnodup : (l.map Prod.snd).Nodup)
-    {a₁ a₂ : α} {b : β}
-    (h₁ : (a₁, b) ∈ l) (h₂ : (a₂, b) ∈ l) (hne : a₁ ≠ a₂) : False := by
-  induction l with
-  | nil => nomatch h₁
-  | cons hd tl ih =>
-    simp only [List.map_cons, List.nodup_cons] at hnodup
-    obtain ⟨hnotmem, htl_nodup⟩ := hnodup
-    cases h₁ with
-    | head =>
-      cases h₂ with
-      | head => exact hne rfl
-      | tail _ h₂' =>
-        exact absurd (List.mem_map_of_mem (f := Prod.snd) h₂') hnotmem
-    | tail _ h₁' =>
-      cases h₂ with
-      | head =>
-        exact absurd (List.mem_map_of_mem (f := Prod.snd) h₁') hnotmem
-      | tail _ h₂' =>
-        exact ih htl_nodup h₁' h₂'
-
-/- ---------------------------------------------------- -/
-/-       AssocMap lookup/insert lemmas                   -/
-/- ---------------------------------------------------- -/
-
-/-- List.lookup through a filter that removes key k preserves lookup of other keys -/
-private lemma list_lookup_filter_ne {K V : Type} [DecidableEq K]
-    (k k' : K) (entries : List (K × V)) (hne : k' ≠ k) :
-    List.lookup k' (entries.filter (fun p => p.fst != k)) = List.lookup k' entries := by
-  induction entries with
-  | nil => rfl
-  | cons hd tl ih =>
-    simp only [List.filter]
-    split
-    · -- hd.fst != k matched true (filter keeps hd)
-      simp only [List.lookup]
-      split
-      · rfl  -- k' == hd.fst matched true
-      · exact ih  -- k' == hd.fst matched false
-    · -- hd.fst != k matched false, so hd.fst = k (filter removes hd)
-      rename_i h
-      have hk : hd.fst = k := by
-        by_contra hne_k
-        have : (hd.fst != k) = true := by simp [bne, beq_eq_false_iff_ne.mpr hne_k]
-        rw [this] at h; exact absurd h (by decide)
-      simp only [List.lookup]
-      have hne' : (k' == hd.fst) = false := beq_eq_false_iff_ne.mpr (by rw [hk]; exact hne)
-      split
-      · rename_i h'; rw [hne'] at h'; exact absurd h' (by decide)
-      · exact ih
 
 /-- Looking up a different key after insert returns the original value -/
 private lemma lookup_insert_ne {K V : Type} [DecidableEq K]
@@ -1346,7 +1094,7 @@ private lemma lookup_insert_ne {K V : Type} [DecidableEq K]
   simp only [List.lookup]
   split
   · rename_i h; exact absurd (beq_iff_eq.mp h) hne
-  · exact list_lookup_filter_ne k k' m.entries hne
+  · exact List.lookup_filter_ne m.entries k' k hne
 
 /-- Looking up the key just inserted returns the inserted value -/
 private lemma lookup_insert_eq {K V : Type} [DecidableEq K]
@@ -1432,14 +1180,14 @@ lemma check_fields_distinct_implies_sites_distinct (fields : List (Field × Site
   simp only [check_fields_distinct, beq_iff_eq, Bool.and_eq_true] at hdistinct
   obtain ⟨hsites, _⟩ := hdistinct
   intro heq; subst heq
-  exact nodup_snd_pair_absurd fields (nodup_of_length_eraseDups _ hsites) hf₁ hf₂ hfne
+  exact List.nodup_snd_pair_absurd fields (List.nodup_of_length_eraseDups _ hsites) hf₁ hf₂ hfne
 
 /-- If check_fields_distinct returns true, field names are Nodup -/
 private lemma check_fields_distinct_implies_fnames_nodup (fields : List (Field × Site)) :
     check_fields_distinct fields = true → (fields.map Prod.fst).Nodup := by
   intro h
   simp only [check_fields_distinct, beq_iff_eq, Bool.and_eq_true] at h
-  exact nodup_of_length_eraseDups _ h.2
+  exact List.nodup_of_length_eraseDups _ h.2
 
 /- ---------------------------------------------------- -/
 /-       letBind soundness helper lemma                  -/
