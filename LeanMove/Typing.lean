@@ -15,5 +15,6 @@
 -/
 
 import LeanMove.Typing.TypeChecking
+import LeanMove.Typing.TypeSoundness
 import LeanMove.Typing.Algorithmic.TypeCheckingAlgorithmic
 import LeanMove.Typing.Algorithmic.AlgorithmicTypingSoundness

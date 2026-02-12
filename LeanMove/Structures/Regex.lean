@@ -456,6 +456,252 @@ def regexSubsumedBy [BEq α] : Regex α → Regex α → Bool
       regexSubsumedBy r1 s1 || regexSubsumedBy r1 s2
   | r1, r2 => is_empty r1 || regexBeq r1 r2
 
+/-! ## Soundness Lemmas for Brzozowski Derivatives -/
+
+/-- A regex is deriv-free if it contains no .deriv constructors -/
+def DerivFree : Regex α → Prop
+  | .empty => True
+  | .ε => True
+  | .char _ => True
+  | .dot => True
+  | .union r1 r2 => DerivFree r1 ∧ DerivFree r2
+  | .concat r1 r2 => DerivFree r1 ∧ DerivFree r2
+  | .star r => DerivFree r
+  | .deriv _ _ => False
+
+/-- Soundness of nullable: nullable r = true iff r matches [] -/
+theorem nullable_sound [DecidableEq α] : ∀ (r : Regex α),
+    nullable r = true → interpret_regex r [] := by
+  intro r
+  induction r with
+  | empty => intro h; simp [nullable] at h
+  | ε => intro _; simp [interpret_regex]
+  | char _ => intro h; simp [nullable] at h
+  | dot => intro h; simp [nullable] at h
+  | union r1 r2 ih1 ih2 =>
+    intro h
+    simp only [nullable, Bool.or_eq_true] at h
+    simp only [interpret_regex]
+    cases h with
+    | inl h => exact Or.inl (ih1 h)
+    | inr h => exact Or.inr (ih2 h)
+  | concat r1 r2 ih1 ih2 =>
+    intro h
+    simp only [nullable, Bool.and_eq_true] at h
+    simp only [interpret_regex]
+    exact ⟨[], [], rfl, ih1 h.1, ih2 h.2⟩
+  | star _ => intro _; exact star_matches.nil
+  | deriv _ _ => intro h; simp [nullable] at h
+
+/-- Completeness of nullable for deriv-free regexes: if r matches [], then nullable r = true -/
+theorem nullable_complete [DecidableEq α] : ∀ (r : Regex α),
+    DerivFree r → interpret_regex r [] → nullable r = true := by
+  intro r hdf
+  induction r with
+  | empty => intro h; exact absurd h id
+  | ε => intro _; rfl
+  | char _ => intro h; simp [interpret_regex] at h
+  | dot => intro h; simp [interpret_regex] at h
+  | union r1 r2 ih1 ih2 =>
+    intro h
+    simp only [interpret_regex] at h
+    simp only [nullable, Bool.or_eq_true]
+    cases h with
+    | inl h => exact Or.inl (ih1 hdf.1 h)
+    | inr h => exact Or.inr (ih2 hdf.2 h)
+  | concat r1 r2 ih1 ih2 =>
+    intro h
+    simp only [interpret_regex] at h
+    obtain ⟨s1, s2, heq, h1, h2⟩ := h
+    have : s1 = [] ∧ s2 = [] := by
+      cases s1 with
+      | nil => exact ⟨rfl, heq.symm⟩
+      | cons _ _ => simp at heq
+    simp only [nullable, Bool.and_eq_true]
+    exact ⟨ih1 hdf.1 (this.1 ▸ h1), ih2 hdf.2 (this.2 ▸ h2)⟩
+  | star _ => intro _; rfl
+  | deriv => exact absurd hdf id
+
+/-- simplify always produces a deriv-free regex -/
+theorem simplify_deriv_free [DecidableEq α] : ∀ (r : Regex α), DerivFree (simplify r) := by
+  intro r
+  induction r with
+  | empty => exact trivial
+  | ε => exact trivial
+  | char _ => exact trivial
+  | dot => exact trivial
+  | union _ _ ih1 ih2 => exact ⟨ih1, ih2⟩
+  | concat _ _ ih1 ih2 => exact ⟨ih1, ih2⟩
+  | star _ ih => exact ih
+  | deriv r a ih =>
+    simp only [simplify]
+    exact brzozowski_step_deriv_free a (simplify r) ih
+where
+  brzozowski_step_deriv_free [DecidableEq α] (a : α) : ∀ (r : Regex α),
+      DerivFree r → DerivFree (brzozowski_step a r)
+    | .empty, _ => trivial
+    | .ε, _ => trivial
+    | .char _, _ => by simp only [brzozowski_step]; split <;> exact trivial
+    | .dot, _ => trivial
+    | .union r1 r2, ⟨h1, h2⟩ => ⟨brzozowski_step_deriv_free a r1 h1, brzozowski_step_deriv_free a r2 h2⟩
+    | .concat r1 r2, ⟨h1, h2⟩ => by
+        simp only [brzozowski_step]
+        split
+        · exact ⟨⟨brzozowski_step_deriv_free a r1 h1, h2⟩, brzozowski_step_deriv_free a r2 h2⟩
+        · exact ⟨brzozowski_step_deriv_free a r1 h1, h2⟩
+    | .star r, h => ⟨brzozowski_step_deriv_free a r h, h⟩
+    | .deriv _ _, h => absurd h id
+
+/-- Soundness of brzozowski_step: brzozowski_step a r matches s iff r matches a::s.
+    Requires r to be deriv-free. -/
+theorem brzozowski_step_sound [DecidableEq α] (a : α) : ∀ (r : Regex α),
+    DerivFree r → ∀ (s : List α),
+    interpret_regex (brzozowski_step a r) s ↔ interpret_regex r (a :: s) := by
+  intro r hdf
+  induction r with
+  | empty => intro s; simp [brzozowski_step, interpret_regex]
+  | ε => intro s; simp [brzozowski_step, interpret_regex]
+  | char b =>
+    intro s
+    simp only [brzozowski_step]
+    by_cases hab : a = b
+    · subst hab; simp [interpret_regex]
+    · have hbeq : (a == b) = false := by
+        cases h : (a == b)
+        · rfl
+        · exact absurd (beq_iff_eq.mp h) hab
+      simp only [hbeq, interpret_regex]
+      exact ⟨False.elim, fun h => absurd (List.cons.inj h).1 hab⟩
+  | dot =>
+    intro s
+    simp only [brzozowski_step, interpret_regex]
+    constructor
+    · intro h; subst h; simp
+    · intro h; simp at h; exact h
+  | union r1 r2 ih1 ih2 =>
+    have ⟨hdf1, hdf2⟩ := hdf
+    intro s
+    simp only [brzozowski_step, interpret_regex]
+    exact ⟨fun h => h.elim (fun h => Or.inl ((ih1 hdf1 s).mp h)) (fun h => Or.inr ((ih2 hdf2 s).mp h)),
+           fun h => h.elim (fun h => Or.inl ((ih1 hdf1 s).mpr h)) (fun h => Or.inr ((ih2 hdf2 s).mpr h))⟩
+  | concat r1 r2 ih1 ih2 =>
+    have ⟨hdf1, hdf2⟩ := hdf
+    intro s
+    simp only [brzozowski_step]
+    constructor
+    · -- Forward: brzozowski result matches s → r1 ⬝ r2 matches a::s
+      intro h
+      split at h
+      · -- nullable r1 case: union of (brz r1 ⬝ r2) and (brz r2)
+        rename_i hnull
+        simp only [interpret_regex] at h
+        cases h with
+        | inl h =>
+          obtain ⟨s1, s2, heq, h1, h2⟩ := h
+          simp only [interpret_regex]
+          exact ⟨a :: s1, s2, by rw [heq]; simp, (ih1 hdf1 s1).mp h1, h2⟩
+        | inr h =>
+          simp only [interpret_regex]
+          have hn := nullable_sound r1 hnull
+          exact ⟨[], a :: s, rfl, hn, (ih2 hdf2 s).mp h⟩
+      · -- ¬nullable r1 case: just brz r1 ⬝ r2
+        simp only [interpret_regex] at h
+        obtain ⟨s1, s2, heq, h1, h2⟩ := h
+        simp only [interpret_regex]
+        exact ⟨a :: s1, s2, by rw [heq]; simp, (ih1 hdf1 s1).mp h1, h2⟩
+    · -- Backward: r1 ⬝ r2 matches a::s → brzozowski result matches s
+      intro h
+      simp only [interpret_regex] at h
+      obtain ⟨s1, s2, heq, h1, h2⟩ := h
+      split
+      · -- nullable r1 case
+        rename_i hnull
+        simp only [interpret_regex]
+        cases s1 with
+        | nil =>
+          simp at heq
+          right
+          exact (ih2 hdf2 s).mpr (heq ▸ h2)
+        | cons a' s1' =>
+          left
+          simp at heq
+          exact ⟨s1', s2, heq.2, (ih1 hdf1 s1').mpr (heq.1 ▸ h1), h2⟩
+      · -- ¬nullable r1 case
+        rename_i hnull
+        simp only [interpret_regex]
+        cases s1 with
+        | nil =>
+          exfalso
+          have := nullable_complete r1 hdf1 h1
+          simp [this] at hnull
+        | cons a' s1' =>
+          simp at heq
+          exact ⟨s1', s2, heq.2, (ih1 hdf1 s1').mpr (heq.1 ▸ h1), h2⟩
+  | star r ih =>
+    intro s
+    simp only [brzozowski_step, interpret_regex]
+    constructor
+    · intro ⟨s1, s2, heq, h1, h2⟩
+      rw [heq]
+      exact star_matches.cons (a :: s1) s2 (by simp) ((ih hdf s1).mp h1) h2
+    · intro h
+      -- Need to invert star_matches on (a :: s)
+      generalize hls : a :: s = ls at h
+      induction h with
+      | nil => simp at hls
+      | cons ax1 ax2 hne h1 h2 ih_star =>
+        cases ax1 with
+        | nil => exact absurd rfl hne
+        | cons a' ax1' =>
+          have hls' := hls
+          simp only [List.cons_append, List.cons.injEq] at hls'
+          obtain ⟨rfl, rfl⟩ := hls'
+          exact ⟨ax1', ax2, rfl, (ih hdf ax1').mpr h1, h2⟩
+  | deriv => exact absurd hdf id
+
+/-- Soundness of simplify: simplification preserves the language -/
+theorem simplify_preserves_semantics [DecidableEq α] : ∀ (r : Regex α) (s : List α),
+    interpret_regex (simplify r) s ↔ interpret_regex r s := by
+  intro r
+  induction r with
+  | empty => intro s; simp [simplify, interpret_regex]
+  | ε => intro s; simp [simplify, interpret_regex]
+  | char _ => intro s; simp [simplify, interpret_regex]
+  | dot => intro s; simp [simplify, interpret_regex]
+  | union r1 r2 ih1 ih2 =>
+    intro s
+    simp only [simplify, interpret_regex]
+    exact ⟨fun h => h.elim (fun h => Or.inl ((ih1 s).mp h)) (fun h => Or.inr ((ih2 s).mp h)),
+           fun h => h.elim (fun h => Or.inl ((ih1 s).mpr h)) (fun h => Or.inr ((ih2 s).mpr h))⟩
+  | concat r1 r2 ih1 ih2 =>
+    intro s
+    simp only [simplify, interpret_regex]
+    constructor
+    · intro ⟨s1, s2, heq, h1, h2⟩
+      exact ⟨s1, s2, heq, (ih1 s1).mp h1, (ih2 s2).mp h2⟩
+    · intro ⟨s1, s2, heq, h1, h2⟩
+      exact ⟨s1, s2, heq, (ih1 s1).mpr h1, (ih2 s2).mpr h2⟩
+  | star r ih =>
+    intro s
+    simp only [simplify, interpret_regex]
+    constructor
+    · intro h
+      induction h with
+      | nil => exact star_matches.nil
+      | cons ax1 ax2 hne h1 _ ih_star =>
+        exact star_matches.cons ax1 ax2 hne ((ih ax1).mp h1) ih_star
+    · intro h
+      induction h with
+      | nil => exact star_matches.nil
+      | cons ax1 ax2 hne h1 _ ih_star =>
+        exact star_matches.cons ax1 ax2 hne ((ih ax1).mpr h1) ih_star
+  | deriv r a ih =>
+    intro s
+    simp only [simplify, interpret_regex]
+    have hdf := simplify_deriv_free r
+    exact ⟨fun h => (ih (a :: s)).mp ((brzozowski_step_sound a (simplify r) hdf s).mp h),
+           fun h => (brzozowski_step_sound a (simplify r) hdf s).mpr ((ih (a :: s)).mpr h)⟩
+
 /-- Soundness of is_empty: if is_empty returns true, the language is empty. -/
 theorem is_empty_sound [DecidableEq α] : ∀ (r : Regex α), is_empty r = true → ∀ s, ¬ interpret_regex r s := by
   intro r
@@ -506,5 +752,47 @@ theorem regexSubsumedBy_sound [DecidableEq α] (r1 : Regex α) :
     rcases h with hempty | hbeq
     · exact absurd hmatch (is_empty_sound r1 hempty path)
     · rw [regexBeq_eq r1 _ hbeq] at hmatch; exact hmatch
+
+/-- Soundness of only_matches_empty: if it returns true, all matches are [] -/
+theorem only_matches_empty_sound [DecidableEq α] : ∀ (r : Regex α),
+    only_matches_empty r = true → ∀ s, interpret_regex r s → s = [] := by
+  intro r
+  induction r with
+  | empty => intro _ s h; exact absurd h id
+  | ε => intro _ s h; simp only [interpret_regex] at h; exact h
+  | char _ => intro h; simp [only_matches_empty] at h
+  | dot => intro h; simp [only_matches_empty] at h
+  | union r1 r2 ih1 ih2 =>
+    intro h s hmatch
+    simp only [only_matches_empty, Bool.and_eq_true] at h
+    simp only [interpret_regex] at hmatch
+    cases hmatch with
+    | inl h1 => exact ih1 h.1 s h1
+    | inr h2 => exact ih2 h.2 s h2
+  | concat r1 r2 ih1 ih2 =>
+    intro h s hmatch
+    simp only [only_matches_empty, Bool.or_eq_true, Bool.and_eq_true] at h
+    simp only [interpret_regex] at hmatch
+    obtain ⟨s1, s2, heq, h1, h2⟩ := hmatch
+    rcases h with (he1 | he2) | ⟨ho1, ho2⟩
+    · exact absurd h1 (is_empty_sound r1 he1 s1)
+    · exact absurd h2 (is_empty_sound r2 he2 s2)
+    · have hs1 := ih1 ho1 s1 h1
+      have hs2 := ih2 ho2 s2 h2
+      subst hs1; subst hs2; simp at heq; exact heq
+  | star r ih =>
+    intro h s hmatch
+    simp only [only_matches_empty] at h
+    induction hmatch with
+    | nil => rfl
+    | cons ax1 ax2 hne h1 _ ih_star =>
+      exfalso
+      exact hne (ih h ax1 h1)
+  | deriv r _ ih =>
+    intro h s hmatch
+    simp only [only_matches_empty] at h
+    simp only [interpret_regex] at hmatch
+    have := ih h _ hmatch
+    simp at this
 
 end Regex

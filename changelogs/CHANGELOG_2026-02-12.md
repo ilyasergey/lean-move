@@ -149,6 +149,46 @@ Import: `import LeanMove.Checker.TypeChecking`
 - Reduced from ~1900 to ~1097 lines
 - Remaining: all `*_bool_sound/complete` bridge lemmas, private helpers, core soundness theorems (`check_letBind_sound`, `check_stmt_sound`, `check_fun_sound`)
 
+## New: Type soundness proof scaffold and regex infrastructure
+
+### LeanMove/Typing/TypeSoundness.lean (new, ~265 lines)
+Scaffold for proving that well-typed MoveLight functions never produce
+`danglingRef` errors at runtime. Contains core definitions and theorem
+statements with `sorry` proof bodies.
+
+**Core definitions:**
+- `HasType` — shape-compatibility between runtime `Value` and static `BasicMoveType`
+- `RefMap` — bridge between abstract `Aref` and concrete `(Loc × List Field)` pairs
+- `ValueMatchesType` — relates runtime values to `MoveType` via `RefMap`
+- `PathReflectedInHeap` — connects PathEnv paths to concrete heap field structure
+- `WellTypedState` — central invariant relating `Machine` to `TypeEnv`:
+  env well-formed, stmt typed, variable/site consistency, rmap liveness, path coherence
+
+**Proven lemmas:**
+- `readPath_append` — readPath distributes over path concatenation
+- `readPath_prefix_succeeds` — longer path success implies prefix success
+- `check_outbound_only_empty` — `check_outbound` with `only_matches_empty ∘ simplify`
+  implies all outbound paths match only `[]` (uses new regex lemmas)
+
+**Theorem statements (with `sorry`):**
+- `heap_write_preserves_read` — writes at different locations don't interfere
+- `heap_writeRef_preserves_readRef_diff_loc` — writeRef at different locs preserves readRef
+- `no_danglingRef_progress` — well-typed state never produces danglingRef
+- `preservation` — each step preserves WellTypedState
+- `type_soundness` — main theorem: `typecheck_fun f lenv → ∀ n loc, run n ... ≠ .error (.danglingRef loc)`
+
+### LeanMove/Structures/Regex.lean — New soundness lemmas (~250 lines added)
+- `DerivFree` — predicate: regex has no `.deriv` constructors
+- `nullable_sound` — `nullable r = true → interpret_regex r []`
+- `nullable_complete` — `DerivFree r → interpret_regex r [] → nullable r = true`
+- `simplify_deriv_free` — `simplify` always produces deriv-free regexes
+- `brzozowski_step_sound` — `DerivFree r → (⟦brzozowski_step a r⟧ s ↔ ⟦r⟧ (a :: s))`
+- `simplify_preserves_semantics` — `⟦simplify r⟧ s ↔ ⟦r⟧ s`
+- `only_matches_empty_sound` — `only_matches_empty r = true → ⟦r⟧ s → s = []`
+
+### Modified files
+- **LeanMove/Typing.lean** — added `import LeanMove.Typing.TypeSoundness`
+
 ## Rename: `LeanMove/Checker` → `LeanMove/Typing`
 
 Renamed the `Checker` directory and namespace to `Typing` throughout the project.
