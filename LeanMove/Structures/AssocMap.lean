@@ -209,4 +209,81 @@ theorem lookup_equiv_bool_complete {K V : Type} [DecidableEq K] [DecidableEq V]
     simp only [decide_eq_true_eq]
     exact h p.1
 
+/-- Helper: Bool.not / bne facts -/
+private theorem beq_false_of_ne {K : Type} [DecidableEq K] {a b : K} (h : a ≠ b) :
+    (a == b) = false := by
+  cases hb : a == b
+  · rfl
+  · exact absurd (beq_iff_eq.mp hb) h
+
+/-- Helper: filtering out entries with key `k` preserves lookup for key `k'` when `k' ≠ k` -/
+private theorem list_lookup_filter_ne {K V : Type} [DecidableEq K]
+    (entries : List (K × V)) (k k' : K) (hne : k' ≠ k) :
+    List.lookup k' (entries.filter (fun p => p.1 != k)) = List.lookup k' entries := by
+  induction entries with
+  | nil => rfl
+  | cons hd rest ih =>
+    rcases hd with ⟨hk, hv⟩
+    by_cases h : hk = k
+    · -- filter removes (hk, hv) since hk = k and k != k = false
+      rw [h]
+      have hbne : (k != k) = false := by simp [bne]
+      have hfilt : ((k, hv) :: rest).filter (fun p => p.fst != k)
+          = rest.filter (fun p => p.fst != k) := by simp [List.filter]
+      rw [hfilt, ih]
+      simp only [List.lookup, beq_false_of_ne hne]
+    · -- filter keeps (hk, hv) since hk ≠ k and hk != k = true
+      have hbne : (hk != k) = true := by simp [bne, beq_false_of_ne h]
+      have hfilt : ((hk, hv) :: rest).filter (fun p => p.fst != k)
+          = (hk, hv) :: rest.filter (fun p => p.fst != k) := by simp [List.filter, hbne]
+      rw [hfilt]; simp only [List.lookup]
+      split <;> [rfl; exact ih]
+
+/-- Helper: filtering out all entries with key `k` makes lookup `k` return none -/
+private theorem list_lookup_filter_self {K V : Type} [DecidableEq K]
+    (entries : List (K × V)) (k : K) :
+    List.lookup k (entries.filter (fun p => p.1 != k)) = none := by
+  induction entries with
+  | nil => rfl
+  | cons hd rest ih =>
+    rcases hd with ⟨hk, hv⟩
+    by_cases h : hk = k
+    · rw [h]
+      have hbne : (k != k) = false := by simp [bne]
+      have hfilt : ((k, hv) :: rest).filter (fun p => p.fst != k)
+          = rest.filter (fun p => p.fst != k) := by simp [List.filter]
+      rw [hfilt]; exact ih
+    · have hbne : (hk != k) = true := by simp [bne, beq_false_of_ne h]
+      have hfilt : ((hk, hv) :: rest).filter (fun p => p.fst != k)
+          = (hk, hv) :: rest.filter (fun p => p.fst != k) := by simp [List.filter, hbne]
+      rw [hfilt]; simp only [List.lookup, beq_false_of_ne (Ne.symm h)]
+      exact ih
+
+/-- Looking up the inserted key returns the inserted value -/
+theorem lookup_insert_same {K V : Type} [DecidableEq K] (m : AssocMap K V) (k : K) (v : V) :
+    lookup (insert m k v) k = some v := by
+  simp [lookup, insert]
+
+/-- Looking up a different key is unaffected by insert -/
+theorem lookup_insert_ne {K V : Type} [DecidableEq K] (m : AssocMap K V) (k k' : K) (v : V)
+    (hne : k' ≠ k) : lookup (insert m k v) k' = lookup m k' := by
+  simp only [lookup, insert, List.lookup]
+  have hbeq : (k' == k) = false := by
+    cases hb : k' == k; · rfl
+    · exact absurd (beq_iff_eq.mp hb) hne
+  simp only [hbeq]
+  exact list_lookup_filter_ne m.entries k k' hne
+
+/-- Looking up a deleted key returns none -/
+theorem lookup_delete_same {K V : Type} [DecidableEq K] (m : AssocMap K V) (k : K) :
+    lookup (delete m k) k = none := by
+  simp only [lookup, delete]
+  exact list_lookup_filter_self m.entries k
+
+/-- Looking up a different key is unaffected by delete -/
+theorem lookup_delete_ne {K V : Type} [DecidableEq K] (m : AssocMap K V) (k k' : K)
+    (hne : k' ≠ k) : lookup (delete m k) k' = lookup m k' := by
+  simp only [lookup, delete]
+  exact list_lookup_filter_ne m.entries k k' hne
+
 end AssocMap

@@ -116,15 +116,63 @@ theorem readPath_prefix_succeeds (v : Value) (p1 p2 : List Field) (w : Value) :
   | none => simp [hbind, Option.bind] at h
   | some v' => exact ⟨v', rfl⟩
 
+/-- If readPath succeeds, writePath also succeeds with any new value.
+    This is because both navigate the same structure: both fail exactly when
+    a field lookup fails on a non-record value. -/
+theorem readPath_some_implies_writePath_some (v : Value) (path : List Field)
+    (w newVal : Value) :
+    readPath v path = some w →
+    ∃ v', writePath v path newVal = some v' := by
+  intro hread
+  induction path generalizing v with
+  | nil =>
+    -- readPath v [] = some v, writePath v [] newVal = some newVal
+    exact ⟨newVal, by simp [writePath]⟩
+  | cons f rest ih =>
+    cases v with
+    | record fields =>
+      simp only [readPath] at hread
+      cases hf : fields.lookup f with
+      | none => simp [hf] at hread
+      | some oldFieldVal =>
+        simp [hf] at hread
+        obtain ⟨v', hv'⟩ := ih oldFieldVal hread
+        exact ⟨.record (fields.map fun (k, fv) => if k == f then (k, v') else (k, fv)),
+               by simp [writePath, hf, hv']⟩
+    | int n => simp [readPath] at hread
+    | bool b => simp [readPath] at hread
+    | unit => simp [readPath] at hread
+    | ref l p => simp [readPath] at hread
+
+/-- If readRef succeeds on a heap, writeRef also succeeds with any new value.
+    Follows from readPath_some_implies_writePath_some since both operations
+    require the same heap read and path navigation to succeed. -/
+theorem readRef_ne_none_implies_writeRef_ne_none (h : Heap) (loc : Loc)
+    (path : List Field) (newVal : Value) :
+    h.readRef loc path ≠ none →
+    ∃ h', h.writeRef loc path newVal = some h' := by
+  intro hne
+  -- readRef h loc path = do { let v ← h.read loc; readPath v path }
+  -- Extract that h.read loc and readPath succeed
+  simp only [Heap.readRef, bind, Option.bind] at hne
+  cases hread : h.read loc with
+  | none => simp [hread] at hne
+  | some oldVal =>
+    simp [hread] at hne
+    -- hne : readPath oldVal path ≠ none
+    cases hrp : readPath oldVal path with
+    | none => exact absurd hrp hne
+    | some w =>
+      obtain ⟨v', hv'⟩ := readPath_some_implies_writePath_some oldVal path w newVal hrp
+      exact ⟨h.write loc v', by simp [Heap.writeRef, bind, Option.bind, hread, hv']⟩
+
 /-- Writing to a heap location preserves reads at different locations -/
 theorem heap_write_preserves_read (h : Heap) (wloc rloc : Loc) (v : Value) :
     wloc ≠ rloc →
     (h.write wloc v).read rloc = h.read rloc := by
   intro hne
   simp only [Heap.write, Heap.read]
-  simp only [AssocMap.lookup, AssocMap.insert]
-  simp only [List.lookup]
-  sorry -- requires properties of AssocMap.insert/lookup interaction
+  exact AssocMap.lookup_insert_ne h.store wloc rloc v (Ne.symm hne)
 
 /-- Writing through writeRef at one location preserves readRef at a different location -/
 theorem heap_writeRef_preserves_readRef_diff_loc (h : Heap) (wloc rloc : Loc)
@@ -133,8 +181,19 @@ theorem heap_writeRef_preserves_readRef_diff_loc (h : Heap) (wloc rloc : Loc)
     h.writeRef wloc wp v = some h' →
     h'.readRef rloc rp = h.readRef rloc rp := by
   intro hne hwrite
-  simp only [Heap.writeRef, Heap.readRef] at *
-  sorry -- follows from heap_write_preserves_read
+  simp only [Heap.writeRef, bind, Option.bind] at hwrite
+  cases hread : h.read wloc with
+  | none => simp [hread] at hwrite
+  | some oldVal =>
+    simp [hread] at hwrite
+    cases hwp : writePath oldVal wp v with
+    | none => simp [hwp] at hwrite
+    | some newVal =>
+      simp [hwp] at hwrite
+      -- hwrite : h.write wloc newVal = h'
+      rw [← hwrite]
+      simp only [Heap.readRef, bind, Option.bind]
+      rw [heap_write_preserves_read h wloc rloc newVal hne]
 
 -- ============================================================
 -- Part 4: PathEnv–Heap Coherence
@@ -207,6 +266,12 @@ structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     ∀ p, interpret_regex (env.pathEnv.paths (r1, r2)) p →
     PathReflectedInHeap rmap m.heap r1 r2 p
 
+  -- 7. SiteEnv references are tracked in PathEnv:
+  --    Every abstract ref mentioned in a reference type in SiteEnv is in pathEnv.refs
+  siteEnv_refs_tracked : ∀ s bt r bk,
+    lookup env.siteEnv s = some (.ref bt r bk) →
+    r ∈ env.pathEnv.refs
+
 -- ============================================================
 -- Part 6: Key Bridge Lemma (check_outbound → paths are trivial)
 -- ============================================================
@@ -229,22 +294,237 @@ theorem check_outbound_only_empty (penv : PathEnv) (r : Aref) :
 -- Part 7: Progress — no danglingRef errors
 -- ============================================================
 
+/-- danglingRef errors in step only arise from readRef and writeRef.
+    This is a mechanical case analysis on the step function. -/
+theorem step_danglingRef_source (m : Machine) (loc : Loc) :
+    step (.running m) = .error (.danglingRef loc) →
+    (∃ s src cont, m.frame.stmt = .letBind s (.readRef src) cont ∧
+      ∃ path, readSite m src = some (.ref loc path) ∧
+              m.heap.readRef loc path = none) ∨
+    (∃ dst val cont, m.frame.stmt = .writeRef dst val cont ∧
+      ∃ path v, readSite m dst = some (.ref loc path) ∧
+                readSite m val = some v ∧
+                m.heap.writeRef loc path v = none) := by
+  intro hstep
+  cases hs : m.frame.stmt with
+  | skip =>
+    exfalso; simp only [step, hs] at hstep
+    revert hstep; split <;> (intro h; simp at h)
+  | ret sites =>
+    exfalso; simp only [step, hs] at hstep
+    revert hstep; split <;> try split <;> try split <;> try split
+    all_goals (intro h; simp at h)
+  | jump label =>
+    exfalso; simp only [step, hs] at hstep
+    revert hstep; split <;> (intro h; simp at h)
+  | branch c l1 l2 =>
+    exfalso; simp only [step, hs] at hstep
+    revert hstep; split <;> try split <;> try split
+    all_goals (intro h; simp at h)
+  | abort msg =>
+    exfalso; simp only [step, hs] at hstep; simp at hstep
+  | release site cont =>
+    exfalso; simp only [step, hs] at hstep; cases hstep
+  | assign x site cont =>
+    exfalso; simp only [step, hs] at hstep
+    revert hstep; split <;> (intro h; simp at h)
+  | unpack fields src cont =>
+    exfalso; simp only [step, hs] at hstep
+    revert hstep; split <;> try split
+    all_goals (intro h; simp at h)
+  | call results fname args cont =>
+    exfalso; simp only [step, hs] at hstep
+    revert hstep; split <;> try split <;> try split <;> try split <;> try split
+    all_goals (intro h; simp at h)
+  | writeRef dst val cont =>
+    simp only [step, hs] at hstep
+    right
+    cases h1 : readSite m dst with
+    | none => exfalso; simp [h1] at hstep
+    | some v1 =>
+      cases v1 with
+      | ref l p =>
+        cases h3 : readSite m val with
+        | none => exfalso; simp [h1, h3] at hstep
+        | some v2 =>
+          simp only [h1, h3] at hstep
+          cases h4 : m.heap.writeRef l p v2 with
+          | none =>
+            simp only [h4] at hstep
+            have heq : l = loc := by
+              have h' := hstep
+              simp only [ExecState.error.injEq, RuntimeError.danglingRef.injEq] at h'
+              exact h'
+            rw [heq] at h1 h4
+            exact ⟨dst, val, cont, rfl, p, v2, h1, h3, h4⟩
+          | some h' => exfalso; simp [h4] at hstep
+      | int n => exfalso; simp [h1] at hstep
+      | bool b => exfalso; simp [h1] at hstep
+      | unit => exfalso; simp [h1] at hstep
+      | record fields => exfalso; simp [h1] at hstep
+  | letBind s expr cont =>
+    cases expr with
+    | intLit n =>
+      exfalso; simp only [step, hs] at hstep; cases hstep
+    | usage u =>
+      exfalso; simp only [step, hs] at hstep
+      revert hstep; cases u <;> simp only [] <;> split <;> (intro h; simp at h)
+    | borrowField src bt field =>
+      exfalso; simp only [step, hs] at hstep
+      revert hstep; split <;> try split
+      all_goals (intro h; simp at h)
+    | borrowMutField src bt field =>
+      exfalso; simp only [step, hs] at hstep
+      revert hstep; split <;> try split
+      all_goals (intro h; simp at h)
+    | readRef src =>
+      simp only [step, hs] at hstep
+      left
+      cases h1 : readSite m src with
+      | none => exfalso; simp [h1] at hstep
+      | some v1 =>
+        cases v1 with
+        | ref l p =>
+          simp only [h1] at hstep
+          cases h2 : m.heap.readRef l p with
+          | none =>
+            simp only [h2] at hstep
+            have heq : l = loc := by
+              have h' := hstep
+              simp only [ExecState.error.injEq, RuntimeError.danglingRef.injEq] at h'
+              exact h'
+            rw [heq] at h1 h2
+            exact ⟨s, src, cont, rfl, p, h1, h2⟩
+          | some v => exfalso; simp [h2] at hstep
+        | int n => exfalso; simp [h1] at hstep
+        | bool b => exfalso; simp [h1] at hstep
+        | unit => exfalso; simp [h1] at hstep
+        | record fields => exfalso; simp [h1] at hstep
+    | freeze src =>
+      exfalso; simp only [step, hs] at hstep
+      revert hstep; split <;> (intro h; simp at h)
+    | pack name fields =>
+      exfalso; simp only [step, hs] at hstep
+      revert hstep; split <;> (intro h; simp at h)
+    | binop op a b =>
+      exfalso; simp only [step, hs] at hstep
+      revert hstep; split <;> try split <;> try split
+      all_goals (intro h; simp at h)
+
+/-- A readRef that is well-typed always succeeds (heap access exists).
+    Uses site_consistent to get the concrete reference, siteEnv_refs_tracked
+    to connect to pathEnv, and rmap_live to show the heap read succeeds. -/
+theorem no_danglingRef_readRef (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retType : MoveType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retType rmap)
+    (s src : Site) (cont : Stmt)
+    (hstmt : m.frame.stmt = .letBind s (.readRef src) cont)
+    (loc : Loc) (path : List Field)
+    (hsrc : readSite m src = some (.ref loc path)) :
+    m.heap.readRef loc path ≠ none := by
+  -- From stmt_typed + hstmt: the typing derivation is let_bind_readRef
+  have hst := hwt.stmt_typed
+  rw [hstmt] at hst
+  -- Invert the typing derivation (lenv is auto-parameter, so 11 names)
+  cases hst with
+  | let_bind_readRef _ _ _ r τ isBor _ _ hlookup _ _ =>
+    -- hlookup : lookup env.siteEnv src = some (.ref τ r isBor)
+    -- From site_consistent: siteStore has a matching value
+    have ⟨v, hv, hmatch⟩ := hwt.site_consistent src (.ref τ r isBor) hlookup
+    obtain ⟨loc', path', hveq, hrmap⟩ := hmatch
+    -- Show rmap.map r = some (loc, path) by connecting hsrc with site_consistent
+    have hrmap_concrete : rmap.map r = some (loc, path) := by
+      have hloc_eq : loc' = loc ∧ path' = path := by
+        simp only [readSite] at hsrc
+        rw [hv, hveq] at hsrc
+        simp only [Option.some.injEq, Value.ref.injEq] at hsrc
+        exact hsrc
+      rw [hloc_eq.1, hloc_eq.2] at hrmap; exact hrmap
+    -- From siteEnv_refs_tracked + env_wf + rmap_live: heap.readRef loc path ≠ none
+    have hr_tracked := hwt.siteEnv_refs_tracked src τ r isBor hlookup
+    have hr_not_root := hwt.env_wf.siteEnv_wf src (.ref τ r isBor) hlookup
+    have ⟨_, _, hrmap', hheap⟩ := hwt.rmap_live r hr_tracked hr_not_root
+    rw [hrmap_concrete] at hrmap'
+    simp only [Option.some.injEq, Prod.mk.injEq] at hrmap'
+    rw [← hrmap'.1, ← hrmap'.2] at hheap
+    exact hheap
+
+/-- A writeRef that is well-typed always succeeds (heap write exists).
+    Uses the same chain as readRef, plus readRef_ne_none_implies_writeRef_ne_none. -/
+theorem no_danglingRef_writeRef (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retType : MoveType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retType rmap)
+    (dst val : Site) (cont : Stmt)
+    (hstmt : m.frame.stmt = .writeRef dst val cont)
+    (loc : Loc) (path : List Field) (v : Value)
+    (hdst : readSite m dst = some (.ref loc path))
+    (_hval : readSite m val = some v) :
+    m.heap.writeRef loc path v ≠ none := by
+  -- From stmt_typed + hstmt: the typing derivation is write_ref
+  have hst := hwt.stmt_typed
+  rw [hstmt] at hst
+  -- Invert: lenv is auto-parameter, so 11 names
+  cases hst with
+  | write_ref _ _ _ τ r _ _ hlookup_dst hlookup_val _ _ =>
+    -- hlookup_dst : lookup env.siteEnv dst = some (.ref τ r .siteBorrowMut)
+    -- From site_consistent for dst: get rmap.map r = some (loc', path')
+    have ⟨v_dst, hv_dst, hmatch_dst⟩ := hwt.site_consistent dst (.ref τ r .siteBorrowMut) hlookup_dst
+    obtain ⟨loc', path', hveq, hrmap⟩ := hmatch_dst
+    -- Show rmap.map r = some (loc, path) by connecting with hdst
+    have hrmap_concrete : rmap.map r = some (loc, path) := by
+      have hloc_eq : loc' = loc ∧ path' = path := by
+        simp only [readSite] at hdst
+        rw [hv_dst, hveq] at hdst
+        simp only [Option.some.injEq, Value.ref.injEq] at hdst
+        exact hdst
+      rw [hloc_eq.1, hloc_eq.2] at hrmap; exact hrmap
+    -- From siteEnv_refs_tracked and rmap_live: heap.readRef loc path ≠ none
+    have hr_tracked := hwt.siteEnv_refs_tracked dst τ r .siteBorrowMut hlookup_dst
+    have hr_not_root := hwt.env_wf.siteEnv_wf dst (.ref τ r .siteBorrowMut) hlookup_dst
+    have ⟨_, _, hrmap', hheap⟩ := hwt.rmap_live r hr_tracked hr_not_root
+    rw [hrmap_concrete] at hrmap'
+    simp only [Option.some.injEq, Prod.mk.injEq] at hrmap'
+    rw [← hrmap'.1, ← hrmap'.2] at hheap
+    -- hheap : m.heap.readRef loc path ≠ none
+    -- By bridge lemma, writeRef also succeeds
+    have ⟨h', hwrite⟩ := readRef_ne_none_implies_writeRef_ne_none m.heap loc path v hheap
+    rw [hwrite]
+    exact Option.some_ne_none h'
+
 /-- A well-typed running state never produces a danglingRef error.
     This is the key progress lemma — it only needs the readRef and writeRef cases. -/
 theorem no_danglingRef_progress (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retType : MoveType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retType rmap) :
     ∀ loc, step (.running m) ≠ .error (.danglingRef loc) := by
-  sorry
+  intro loc habs
+  -- Extract which case of step produced the danglingRef
+  have hcases := step_danglingRef_source m loc habs
+  cases hcases with
+  | inl hread =>
+    obtain ⟨s, src, cont, hstmt, path, hsrc, hheap⟩ := hread
+    exact no_danglingRef_readRef m env lenv retType rmap hwt s src cont hstmt loc path hsrc hheap
+  | inr hwrite =>
+    obtain ⟨dst, val, cont, hstmt, path, v, hdst, hval, hheap⟩ := hwrite
+    exact no_danglingRef_writeRef m env lenv retType rmap hwt dst val cont hstmt loc path v hdst hval hheap
 
 -- ============================================================
--- Part 8: Preservation (sketch)
+-- Part 8: Preservation
 -- ============================================================
 
 /-- Each step of execution preserves the well-typed state invariant.
     If a well-typed running state steps to another running state,
     then the new state is also well-typed (possibly with a different
-    type environment and reference map). -/
+    type environment and reference map).
+
+    This requires case analysis on each typecheck_stmt constructor,
+    showing the post-step machine matches the continuation's type env.
+    Key cases:
+    - readRef: new site gets basic type, ref node deleted from PathEnv
+    - writeRef: both sites deleted, ref garbage-collected from PathEnv
+    - assign: heap alloc preserves other refs, varEnv updated
+    - borrowImm/borrowMut: rmap extended with new ref
+    - call/ret: frame push/pop with return info -/
 theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retType : MoveType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retType rmap)
@@ -253,7 +533,80 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
   sorry
 
 -- ============================================================
--- Part 9: Main Theorem
+-- Part 9: Safe Execution State
+-- ============================================================
+
+/-- An exec state is "safe" if running states are well-typed
+    and error states are not danglingRef errors. -/
+def SafeExecState (state : ExecState) (lenv : LabelEnv) (retType : MoveType) : Prop :=
+  match state with
+  | .running m => ∃ env rmap, WellTypedState m env lenv retType rmap
+  | .halted _ => True
+  | .error (.danglingRef _) => False
+  | .error _ => True
+
+/-- A safe exec state steps to a safe exec state.
+    Uses no_danglingRef_progress (to rule out danglingRef errors)
+    and preservation (to maintain WellTypedState for running states). -/
+theorem safe_step (state : ExecState) (lenv : LabelEnv) (retType : MoveType)
+    (hsafe : SafeExecState state lenv retType) :
+    SafeExecState (step state) lenv retType := by
+  sorry -- uses no_danglingRef_progress + preservation per case of step
+
+/-- A SafeExecState is never a danglingRef error -/
+theorem SafeExecState.not_danglingRef {state : ExecState} {lenv : LabelEnv} {retType : MoveType}
+    (hsafe : SafeExecState state lenv retType) :
+    ∀ loc, state ≠ .error (.danglingRef loc) := by
+  intro loc h; subst h; exact hsafe
+
+-- ============================================================
+-- Part 10: Iterated Safety
+-- ============================================================
+
+/-- A safe exec state remains danglingRef-free after any number of steps.
+    By induction on fuel, using safe_step at each iteration. -/
+theorem safe_run_no_danglingRef (state : ExecState) (lenv : LabelEnv)
+    (retType : MoveType) (hsafe : SafeExecState state lenv retType) :
+    ∀ n loc, Semantics.run n state ≠ .error (.danglingRef loc) := by
+  intro n
+  induction n generalizing state with
+  | zero =>
+    intro loc h
+    -- run 0 state = .error .outOfFuel, which is not .danglingRef
+    unfold Semantics.run at h
+    injection h with h'
+    exact nomatch h'
+  | succ n ih =>
+    intro loc h
+    -- run (n+1) state = match state with | .running m => run n (step state) | other => other
+    unfold Semantics.run at h
+    -- Case-analyze state
+    match state, hsafe with
+    | .running m, hsafe =>
+      -- h : run n (step (.running m)) = .error (.danglingRef loc)
+      exact ih (step (.running m)) (safe_step (.running m) lenv retType hsafe) loc h
+    | .halted _, _ =>
+      exact absurd h (by intro h'; cases h')
+    | .error _, hsafe =>
+      -- h : .error _ = .error (.danglingRef loc)
+      -- But SafeExecState (.error _) means it's not danglingRef
+      exact SafeExecState.not_danglingRef hsafe loc h
+
+-- ============================================================
+-- Part 11: Initial State is Well-Typed
+-- ============================================================
+
+/-- The initial state of a well-typed function is safe.
+    Requires that the function type-checks. If initState produces a .running state,
+    it is well-typed; if it produces an error, it is not danglingRef. -/
+theorem initState_safe (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunDef)
+    (args : List Value) (heap : Heap)
+    (htyped : typecheck_fun f lenv) :
+    SafeExecState (initState f funEnv args heap) lenv f.returnType := by
+  sorry
+
+-- ============================================================
+-- Part 12: Main Theorem
 -- ============================================================
 
 /-- The main type soundness theorem: a well-typed function never produces
@@ -261,8 +614,8 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
 theorem type_soundness (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunDef)
     (args : List Value) (heap : Heap)
     (htyped : typecheck_fun f lenv) :
-    -- TODO: add hypothesis that args match f.params types
-    ∀ n loc, run n (initState f funEnv args heap) ≠ .error (.danglingRef loc) := by
-  sorry
+    ∀ n loc, Semantics.run n (initState f funEnv args heap) ≠ .error (.danglingRef loc) :=
+  safe_run_no_danglingRef (initState f funEnv args heap) lenv f.returnType
+    (initState_safe f lenv funEnv args heap htyped)
 
 end LeanMove.Typing.TypeSoundness
