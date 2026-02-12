@@ -34,9 +34,23 @@ violations (dangling refs, conflicting borrows) are purely static; the interpret
 - **LeanMove.lean** — added `import LeanMove.Semantics`
 - **lakefile.lean** — added `runtime` build target
 
+## New: Runtime safety litmus tests
+
+### LeanMove/Examples/Typechecking/litmus/rejected/ (5 new files)
+Programs that are rejected by the type checker AND fail at runtime with specific errors.
+Each test asserts the exact `RuntimeError` variant via `#guard match`.
+
+| File | Runtime error | What it demonstrates |
+|------|--------------|---------------------|
+| `use_after_move.lean` | `uninitializedVar` | Move consumes variable; subsequent copy fails |
+| `uninitialized_var.lean` | `uninitializedVar` | Reading local before assignment |
+| `deref_non_ref.lean` | `typeMismatch "readRef on non-ref"` | Dereferencing an integer |
+| `unpack_non_record.lean` | `typeMismatch "unpack on non-record"` | Unpacking an integer |
+| `borrow_field_non_ref.lean` | `typeMismatch "borrowField on non-ref"` | Borrowing field from record value (not ref) |
+
 ## New: Genuine dangling pointer example
 
-### LeanMove/Examples/Typechecking/initial/rejected/dangling_ref.lean (new)
+### LeanMove/Examples/Typechecking/litmus/rejected/dangling_ref.lean (new)
 A program that creates a genuine dangling pointer at runtime — unlike the `simple_dangling`
 examples where overwrites preserve field structure, this one replaces `S{f:42}` with `T{g:0}`
 (different fields), so the field reference `f_ref` with path `[field "f"]` becomes invalid.
@@ -45,6 +59,11 @@ examples where overwrites preserve field structure, this one replaces `S{f:42}` 
 - **Runtime produces `danglingRef` error**: `readPath` on `{g:0}` can't find field `"f"`
 - Runtime test in AllTests.lean asserts specifically `danglingRef` (not just any error)
 
+## Rename: `initial` → `litmus` in Examples/Typechecking
+
+Renamed `LeanMove/Examples/Typechecking/initial/` to `LeanMove/Examples/Typechecking/litmus/`.
+Updated lakefile build targets (`initial` → `litmus`), AllTests.lean imports, and changelog references.
+
 ## Change: Use `#guard` for failing type-checking tests
 
 Converted standalone `_check_fails` theorems in rejected examples from `theorem ... := by rfl`
@@ -52,7 +71,7 @@ Converted standalone `_check_fails` theorems in rejected examples from `theorem 
 referenced by downstream proofs, so the conversion is safe.
 
 **Files changed (6):**
-- `initial/rejected/borrow_in_loop.lean`
+- `litmus/rejected/borrow_in_loop.lean`
 - `expressivity/rejected/imm_borrow_after_mut_call_invalid.lean`
 - `expressivity/rejected/imm_borrow_after_mut_fields_invalid.lean`
 - `expressivity/rejected/simple_dangling.lean` (4 tests)

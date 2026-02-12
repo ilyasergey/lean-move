@@ -20,10 +20,10 @@ require ssreflect from
 lean_lib «LeanMove» where
   -- add any library configuration options here
 
--- Build target for initial examples
--- Build with: lake build initial
-lean_lib «initial» where
-  srcDir := "LeanMove/Examples/Typechecking/initial"
+-- Build target for litmus examples
+-- Build with: lake build litmus
+lean_lib «litmus» where
+  srcDir := "LeanMove/Examples/Typechecking/litmus"
   roots := #[`accepted.borrow_in_loop_fixed_ok, `accepted.deref_borrow_field_ok,
              `rejected.borrow_in_loop]
 
@@ -43,8 +43,8 @@ lean_lib «expressivity» where
 -- Build with: lake build examples
 lean_lib «examples» where
   srcDir := "LeanMove/Examples/Typechecking"
-  roots := #[`initial.accepted.borrow_in_loop_fixed_ok, `initial.accepted.deref_borrow_field_ok,
-             `initial.rejected.borrow_in_loop,
+  roots := #[`litmus.accepted.borrow_in_loop_fixed_ok, `litmus.accepted.deref_borrow_field_ok,
+             `litmus.rejected.borrow_in_loop,
              `expressivity.accepted.alias_write_after_join, `expressivity.accepted.alias_writes,
              `expressivity.accepted.extension_after_call, `expressivity.accepted.extension_writes_after_join,
              `expressivity.accepted.imm_borrow_after_mut, `expressivity.accepted.multible_mutable_return_values,

@@ -18,8 +18,8 @@ import LeanMove.Semantics.Smallstep
 import LeanMove.Lang.Macros
 
 -- Import example definitions
-import LeanMove.Examples.Typechecking.initial.accepted.borrow_in_loop_fixed_ok
-import LeanMove.Examples.Typechecking.initial.accepted.deref_borrow_field_ok
+import LeanMove.Examples.Typechecking.litmus.accepted.borrow_in_loop_fixed_ok
+import LeanMove.Examples.Typechecking.litmus.accepted.deref_borrow_field_ok
 import LeanMove.Examples.Typechecking.expressivity.accepted.alias_writes
 import LeanMove.Examples.Typechecking.expressivity.accepted.alias_write_after_join
 import LeanMove.Examples.Typechecking.expressivity.accepted.extension_after_call
@@ -30,8 +30,13 @@ import LeanMove.Examples.Typechecking.expressivity.accepted.mutable_borrows_are_
 import LeanMove.Examples.Typechecking.expressivity.accepted.subtree_writes_release
 
 -- Import rejected example definitions
-import LeanMove.Examples.Typechecking.initial.rejected.borrow_in_loop
-import LeanMove.Examples.Typechecking.initial.rejected.dangling_ref
+import LeanMove.Examples.Typechecking.litmus.rejected.borrow_in_loop
+import LeanMove.Examples.Typechecking.litmus.rejected.dangling_ref
+import LeanMove.Examples.Typechecking.litmus.rejected.use_after_move
+import LeanMove.Examples.Typechecking.litmus.rejected.uninitialized_var
+import LeanMove.Examples.Typechecking.litmus.rejected.deref_non_ref
+import LeanMove.Examples.Typechecking.litmus.rejected.unpack_non_record
+import LeanMove.Examples.Typechecking.litmus.rejected.borrow_field_non_ref
 import LeanMove.Examples.Typechecking.expressivity.rejected.simple_dangling
 import LeanMove.Examples.Typechecking.expressivity.rejected.imm_borrow_after_mut_call_invalid
 import LeanMove.Examples.Typechecking.expressivity.rejected.imm_borrow_after_mut_fields_invalid
@@ -281,6 +286,77 @@ open LeanMove.Examples.DanglingRef
 -- Assert it is specifically a danglingRef error
 #guard match run 200 (initState foo AssocMap.empty []) with
   | .error (.danglingRef _) => true
+  | _ => false
+
+end
+
+-- ============================================================
+-- R7. use_after_move — ownership violation (uninitializedVar)
+-- ============================================================
+section
+open LeanMove.Examples.UseAfterMove
+
+#eval run 200 (initState foo AssocMap.empty [])
+
+#guard match run 200 (initState foo AssocMap.empty []) with
+  | .error (.uninitializedVar _) => true
+  | _ => false
+
+end
+
+-- ============================================================
+-- R8. uninitialized_var — read before assign (uninitializedVar)
+-- ============================================================
+section
+open LeanMove.Examples.UninitializedVar
+
+#eval run 200 (initState foo AssocMap.empty [])
+
+#guard match run 200 (initState foo AssocMap.empty []) with
+  | .error (.uninitializedVar _) => true
+  | _ => false
+
+end
+
+-- ============================================================
+-- R9. deref_non_ref — dereference integer (typeMismatch)
+-- ============================================================
+section
+open LeanMove.Examples.DerefNonRef
+
+#eval run 200 (initState foo AssocMap.empty [])
+
+#guard match run 200 (initState foo AssocMap.empty []) with
+  | .error (.typeMismatch _) => true
+  | _ => false
+
+end
+
+-- ============================================================
+-- R10. unpack_non_record — unpack integer (typeMismatch)
+-- ============================================================
+section
+open LeanMove.Examples.UnpackNonRecord
+
+#eval run 200 (initState foo AssocMap.empty [])
+
+#guard match run 200 (initState foo AssocMap.empty []) with
+  | .error (.typeMismatch _) => true
+  | _ => false
+
+end
+
+-- ============================================================
+-- R11. borrow_field_non_ref — borrow field from record value
+--      (typeMismatch)
+-- ============================================================
+section
+open LeanMove.Examples.BorrowFieldNonRef
+
+#eval run 200 (initState foo AssocMap.empty [])
+
+#guard match run 200 (initState foo AssocMap.empty []) with
+  | .error (.typeMismatch _) => true
   | _ => false
 
 end
