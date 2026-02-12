@@ -24,3 +24,50 @@ infrastructure. All call sites resolve via `open Regex`.
 
 ### Checker.lean
 - Removed dead import of deleted `AlgorithmicTypingCompleteness`
+
+## Refactor: Extract generic type/environment lemmas into TypesUtils.lean
+
+Extracted ~590 lines of generic type and environment invariant definitions and
+preservation lemmas from `AlgorithmicTypingSoundness.lean` into a new
+`LeanMove/Checker/TypesUtils.lean`. These lemmas depend only on `Types.lean` and
+`TypeChecking.lean` (not on the algorithmic checker), making them available for
+future semantic type soundness proofs.
+
+### TypesUtils.lean (new)
+Import: `import LeanMove.Checker.TypeChecking`
+
+**freshRef / nextFreshRef properties:**
+- `freshRef_iff_freshRefBool`, `nextFreshRef_fresh`, `freshRefBool_implies_freshRef`, `nextFreshRef_fresh_prop`
+- `nextFreshRef_not_root`, `nextFreshRef_is_refid`, `nextFreshRef_not_varRef`
+
+**PathEnv definitions and preservation:**
+- `delete_ref_node_refs`, `delete_ref_node_paths_involving_r`, `delete_ref_node_paths_not_involving_r`
+- `isBorrowPath` (def), `PathEnv.WellFormed` (structure), `PathEnv.init_wellformed`
+- `delete_ref_node_wellformed`
+
+**SiteEnv.RefsNotRoot + preservation:**
+- `SiteEnv.RefsNotRoot` (def), `empty_refs_not_root`, `insert_refs_not_root`
+- `delete_refs_not_root`, `deleteAll_refs_not_root`, `addFieldSites_refs_not_root`
+
+**VarEnv.RefsNotRoot / RefsAreFresh + preservation:**
+- `VarEnv.RefsNotRoot`, `VarEnv.RefsAreFresh` definitions
+- Insert/update/lookup preservation lemmas for both invariants
+- `moveTypeRefsNotRoot`, `moveTypeIsFreshRef`, `Aref.isFreshRef` definitions
+- `Aref.Compatible_preserves_freshRef`, `MoveType.compatible_preserves_freshRef`
+
+**TypeEnv.WellFormed + operation preservation:**
+- `TypeEnv.WellFormed` (structure), `init_wellformed`
+- Preservation for: `insert_siteEnv`, `delete_siteEnv`, `deleteAll_siteEnv`, `update_varEnv`, `insert_update`, `insert_pathEnv`, `delete_insert_pathEnv`, `delete_delete_insert`, `deleteAll_insert`
+- `update_with_extension_wellformed`, `update_with_epsilon_wellformed`
+- `garbage_collect_wellformed`, `consume_ref_transfer_wellformed`
+- `TypeEnv.equiv_refl`
+
+**Standalone generic lemmas:**
+- `varRef_fresh_when_not_borrowed` — uses relational `not_borrowed`, pure env property
+- `call_connect_inputs_outputs_wf` — uses relational `call_connect_inputs_outputs`
+
+### AlgorithmicTypingSoundness.lean
+- Added `import LeanMove.Checker.TypesUtils`
+- Removed ~800 lines of generic definitions and lemmas (now in TypesUtils.lean)
+- Reduced from ~1900 to ~1097 lines
+- Remaining: all `*_bool_sound/complete` bridge lemmas, private helpers, core soundness theorems (`check_letBind_sound`, `check_stmt_sound`, `check_fun_sound`)
