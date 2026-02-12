@@ -23,14 +23,14 @@ lean_lib «LeanMove» where
 -- Build target for initial examples
 -- Build with: lake build initial
 lean_lib «initial» where
-  srcDir := "LeanMove/Examples/initial"
+  srcDir := "LeanMove/Examples/Typechecking/initial"
   roots := #[`accepted.borrow_in_loop_fixed_ok, `accepted.deref_borrow_field_ok,
              `rejected.borrow_in_loop]
 
 -- Build target for expressivity examples
 -- Build with: lake build expressivity
 lean_lib «expressivity» where
-  srcDir := "LeanMove/Examples/expressivity"
+  srcDir := "LeanMove/Examples/Typechecking/expressivity"
   roots := #[`accepted.alias_write_after_join, `accepted.alias_writes,
              `accepted.extension_after_call, `accepted.extension_writes_after_join,
              `accepted.imm_borrow_after_mut, `accepted.multible_mutable_return_values,
@@ -42,7 +42,7 @@ lean_lib «expressivity» where
 -- Build all examples
 -- Build with: lake build examples
 lean_lib «examples» where
-  srcDir := "LeanMove/Examples"
+  srcDir := "LeanMove/Examples/Typechecking"
   roots := #[`initial.accepted.borrow_in_loop_fixed_ok, `initial.accepted.deref_borrow_field_ok,
              `initial.rejected.borrow_in_loop,
              `expressivity.accepted.alias_write_after_join, `expressivity.accepted.alias_writes,
