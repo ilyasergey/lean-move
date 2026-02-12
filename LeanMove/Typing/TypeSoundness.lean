@@ -551,7 +551,31 @@ def SafeExecState (state : ExecState) (lenv : LabelEnv) (retType : MoveType) : P
 theorem safe_step (state : ExecState) (lenv : LabelEnv) (retType : MoveType)
     (hsafe : SafeExecState state lenv retType) :
     SafeExecState (step state) lenv retType := by
-  sorry -- uses no_danglingRef_progress + preservation per case of step
+  cases state with
+  | halted v => simp [step, SafeExecState]
+  | error e => simp only [step]; exact hsafe
+  | running m =>
+    obtain ⟨env, rmap, hwt⟩ := hsafe
+    show SafeExecState (step (.running m)) lenv retType
+    generalize hres : step (.running m) = result
+    cases result with
+    | running m' =>
+      simp only [SafeExecState]
+      exact preservation m m' env lenv retType rmap hwt hres
+    | halted v => simp [SafeExecState]
+    | error e =>
+      cases e with
+      | danglingRef loc =>
+        exact absurd hres (no_danglingRef_progress m env lenv retType rmap hwt loc)
+      | uninitializedVar _ => simp [SafeExecState]
+      | uninitializedSite _ => simp [SafeExecState]
+      | typeMismatch _ => simp [SafeExecState]
+      | unknownFunction _ => simp [SafeExecState]
+      | unknownLabel _ => simp [SafeExecState]
+      | invalidFieldAccess _ => simp [SafeExecState]
+      | divisionByZero => simp [SafeExecState]
+      | outOfFuel => simp [SafeExecState]
+      | arityMismatch _ => simp [SafeExecState]
 
 /-- A SafeExecState is never a danglingRef error -/
 theorem SafeExecState.not_danglingRef {state : ExecState} {lenv : LabelEnv} {retType : MoveType}
