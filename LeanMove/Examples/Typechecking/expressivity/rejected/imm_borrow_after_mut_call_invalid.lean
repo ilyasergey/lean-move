@@ -175,6 +175,22 @@ def invalid : FunDef := {
   ]
 }
 
+/-!
+## Why this is rejected
+
+After `imm1 = &a`, the PathEnv records a path from `.root` (via variable `a`) to `imm1`'s
+reference. When `writeRef` on `copy(mut1)` is checked, `mut1`'s reference traces back to
+variable `a`, which also has the immutable borrow `imm1`. `check_outbound_bool` finds
+the path from `mut1`'s reference (through `a`) to `imm1`'s reference and rejects the
+write — you cannot write through a mutable ref when an immutable ref to the same root exists.
+
+## Runtime behavior
+
+The interpreter writes `0` to the heap location. Both `mut1` and `imm1` point to the same
+location, and the write goes through. In a real Move VM, this would violate the immutability
+guarantee of `imm1`. The small-step semantics intentionally does not enforce borrow rules.
+-/
+
 -- -----------------------------------------------------
 -- -           Algorithmic Type Checking Tests        --
 -- -----------------------------------------------------

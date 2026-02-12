@@ -318,6 +318,37 @@ def field_call_dangling : FunDef := {
   ]
 }
 
+/-!
+## Why these are rejected
+
+All four functions are rejected at `writeRef` by `check_outbound_bool`, which checks
+whether the written-through reference has any outbound edges in the PathEnv. In each case,
+a field borrow (or freeze-derived immutable ref) creates a non-empty path from the
+write target's reference to another live reference, so the write is rejected:
+
+- **field_dangling:** After `f = &copy(s).S::f`, the PathEnv records that `f`'s reference
+  extends `s`'s reference via `[.field "f"]`. The `writeRef` through `move(s)` fails because
+  `check_outbound_bool` finds this outbound edge.
+
+- **nested_field_dangling:** After `s = &mut copy(p).P::s` and `f = &copy(s).S::f`, `p`'s
+  reference has outbound paths to both `s`'s and (transitively) `f`'s references. The
+  `writeRef` through `move(p)` fails.
+
+- **simple_call_dangling:** After `i = freeze(copy(m))`, `consume_ref_transfer` transfers
+  `m`'s borrow paths to `i`'s new immutable reference. The PathEnv shows outbound edges
+  from `m`'s reference to `i`'s reference, so `writeRef` through `copy(m)` is rejected.
+
+- **field_call_dangling:** Same mechanism as `field_dangling` — borrows field via `s`,
+  then tries to write through `s` while the field borrow is live.
+
+## Runtime behavior
+
+All four functions halt successfully. The interpreter performs heap writes without checking
+reference aliasing. The "dangling" references still point to valid heap locations (just with
+updated values). No runtime error occurs because borrow tracking is purely a static safety
+mechanism — the small-step semantics intentionally does not enforce it.
+-/
+
 -- -----------------------------------------------------
 -- -           Algorithmic Type Checking Tests        --
 -- -----------------------------------------------------

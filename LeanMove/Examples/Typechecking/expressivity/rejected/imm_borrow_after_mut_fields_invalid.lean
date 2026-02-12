@@ -165,6 +165,25 @@ def invalid_write : FunDef := {
   ]
 }
 
+/-!
+## Why this is rejected
+
+After `f_imm = &copy(s_imm).S::f`, the PathEnv records that `f_imm`'s reference extends
+`s_imm`, which in turn borrows from `s`. When `writeRef` on `copy(s_mut)` is checked,
+`check_outbound_bool` detects that `s_mut`'s reference has outbound paths (through `s`)
+to `f_imm`'s reference. The write is rejected because it would invalidate the immutable
+borrow `f_imm`.
+
+Note: This example requires `native_decide` instead of `rfl` for the algorithmic check —
+the PathEnv computation involves Brzozowski derivatives that need deeper kernel reduction.
+
+## Runtime behavior
+
+The interpreter writes `S{f:0}` to the heap location without checking alias validity.
+The function halts successfully. The small-step semantics intentionally does not enforce
+borrow rules.
+-/
+
 -- -----------------------------------------------------
 -- -           Algorithmic Type Checking Tests        --
 -- -----------------------------------------------------

@@ -190,6 +190,23 @@ def call_and_write_invalid : FunDef := {
   ]
 }
 
+/-!
+## Why this is rejected
+
+Both `call` and `f` are mutable borrows of `s.f`, created from separate `copy(s)` operations.
+The PathEnv records that `call`'s ref extends `s`'s ref via `[.field "f"]`, and `f`'s ref
+also extends `s`'s ref via `[.field "f"]`. When either `writeRef` is checked,
+`check_outbound_bool` finds outbound paths from the written reference to the other reference
+(both trace back to `s`). Since the type checker cannot determine the exact relationship
+between `call` and `f` (they could overlap), it conservatively rejects both writes.
+
+## Runtime behavior
+
+Both `call` and `f` point to the same heap field (`s.f`). The writes to `0` are sequential
+and valid — each overwrites the same location. The function halts successfully. The
+small-step semantics intentionally does not enforce borrow rules.
+-/
+
 -- -----------------------------------------------------
 -- -           Algorithmic Type Checking Tests        --
 -- -----------------------------------------------------

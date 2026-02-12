@@ -83,6 +83,22 @@ def foo : FunDef := {
   ]
 }
 
+/-!
+## Why this is rejected
+
+The loop back-edge (`jump l0`) requires the environment at `l0` to be subsumed by the
+initial label environment. After executing the body, `r` holds a borrow of `x` — the
+PathEnv has a non-empty path from `.root` through `x` to `r`'s reference. But the initial
+environment at `l0` has `PathEnv.init` (no borrows). The post-body environment is **not**
+subsumed by the initial one because of the extra borrow, so the `jump` check fails.
+
+## Runtime behavior
+
+The interpreter loops forever (exhausts fuel). There is no runtime safety violation —
+the borrow is re-created each iteration and the old one is overwritten. The type checker
+rejects it because it cannot prove the loop invariant is maintained.
+-/
+
 /- -----------------------------------------------------/
 /- -           Type Checking Verification             --/
 /- -----------------------------------------------------/
