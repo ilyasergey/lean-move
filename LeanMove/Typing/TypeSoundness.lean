@@ -749,7 +749,314 @@ private theorem inv_assign
     .inr ⟨τ, τ', hlookup_var, hlookup_site, hcont⟩
 
 -- ============================================================
--- Part 8: Preservation
+-- Part 8: Preservation — extracted case lemmas
+-- ============================================================
+
+/-- Reusable helper: inserting one site into siteStore preserves site_consistent
+    for the new env where that site maps to a basic type matching the inserted value. -/
+private theorem site_consistent_insert_basic (m : Machine) (env : TypeEnv)
+    (rmap : RefMap) (s : Site) (v : Value) (τ : MoveType)
+    (hwt_sc : ∀ s' τ', lookup env.siteEnv s' = some τ' →
+        ∃ v, lookup m.frame.siteStore s' = some v ∧ ValueMatchesType v τ' rmap)
+    (hmatch : ValueMatchesType v τ rmap) :
+    ∀ s' τ', lookup (insert env.siteEnv s τ) s' = some τ' →
+      ∃ v', lookup (insert m.frame.siteStore s v) s' = some v' ∧ ValueMatchesType v' τ' rmap := by
+  intro s' τ' hl
+  by_cases heq : s' = s
+  · subst heq; simp only [lookup_insert_same, Option.some.injEq] at hl; subst hl
+    exact ⟨v, lookup_insert_same _ _ _, hmatch⟩
+  · rw [lookup_insert_ne _ s s' _ heq] at hl
+    obtain ⟨v', hv', hm⟩ := hwt_sc s' τ' hl
+    exact ⟨v', by rw [lookup_insert_ne _ s s' _ heq]; exact hv', hm⟩
+
+private theorem preservation_intLit (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retType : MoveType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retType rmap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (s : Site) (n : Nat) (cont : Stmt)
+    (hstmt : m.frame.stmt = .letBind s (.intLit n) cont)
+    (hstep : step (.running m) = .running m') :
+    ∃ env' lenv' retType' rmap',
+      WellTypedState m' env' lenv' retType' rmap' ∧
+      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+  simp only [step, hstmt, ExecState.running.injEq] at hstep; subst hstep
+  have hcont := inv_intLit (by rw [← hstmt]; exact hwt.stmt_typed)
+  refine ⟨{env with siteEnv := insert env.siteEnv s (.basic .u64)},
+          lenv, retType, rmap, ?_, hss⟩
+  exact {
+    env_wf := TypeEnv.insert_siteEnv_wf env s (.basic .u64) hwt.env_wf trivial
+    stmt_typed := hcont
+    var_consistent := hwt.var_consistent
+    site_consistent := site_consistent_insert_basic m env rmap s (.int n)
+        (.basic .u64) hwt.site_consistent trivial
+    rmap_live := hwt.rmap_live
+    rmap_paths := hwt.rmap_paths
+    blocks_typed := hwt.blocks_typed
+    lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
+    funEnv_typed := hwt.funEnv_typed
+  }
+
+private theorem preservation_copy_val (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retType : MoveType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retType rmap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (s : Site) (x : Var) (cont : Stmt) (bt : BasicMoveType) (ms : Mut)
+    (hstmt : m.frame.stmt = .letBind s (.usage (.copy x)) cont)
+    (hvar : lookup env.varEnv x = some (.validVar, .basic bt, ms))
+    (hcont : typecheck_stmt lenv {env with siteEnv := insert env.siteEnv s (.basic bt)} cont retType)
+    (hstep : step (.running m) = .running m') :
+    ∃ env' lenv' retType' rmap',
+      WellTypedState m' env' lenv' retType' rmap' ∧
+      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+  obtain ⟨loc, val, hloc, hread, _⟩ := hwt.var_consistent x .validVar (.basic bt) ms hvar
+  have hrv : readVar m x = some val := by unfold readVar; simp [hloc, hread]
+  simp only [step, hstmt, hrv, ExecState.running.injEq] at hstep; subst hstep
+  refine ⟨{env with siteEnv := insert env.siteEnv s (.basic bt)},
+          lenv, retType, rmap, ?_, hss⟩
+  exact {
+    env_wf := TypeEnv.insert_siteEnv_wf env s (.basic bt) hwt.env_wf trivial
+    stmt_typed := hcont
+    var_consistent := hwt.var_consistent
+    site_consistent := site_consistent_insert_basic m env rmap s val
+        (.basic bt) hwt.site_consistent trivial
+    rmap_live := hwt.rmap_live
+    rmap_paths := hwt.rmap_paths
+    blocks_typed := hwt.blocks_typed
+    lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
+    funEnv_typed := hwt.funEnv_typed
+  }
+
+private theorem preservation_move (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retType : MoveType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retType rmap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (s : Site) (x : Var) (cont : Stmt)
+    (hstmt : m.frame.stmt = .letBind s (.usage (.move x)) cont)
+    (hstep : step (.running m) = .running m') :
+    ∃ env' lenv' retType' rmap',
+      WellTypedState m' env' lenv' retType' rmap' ∧
+      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+  obtain ⟨τ, ms, hvar, hcont⟩ := inv_move (by rw [← hstmt]; exact hwt.stmt_typed)
+  obtain ⟨loc, val, hloc, hread, hmatch⟩ := hwt.var_consistent x .validVar τ ms hvar
+  have hrv : readVar m x = some val := by unfold readVar; simp [hloc, hread]
+  simp only [step, hstmt, hrv, ExecState.running.injEq] at hstep; subst hstep
+  have hfresh : moveTypeIsFreshRef τ := hwt.env_wf.varEnv_wf x (.validVar, τ, ms) hvar
+  refine ⟨{env with varEnv := update env.varEnv x (.invalidVar, τ, ms),
+                     siteEnv := insert env.siteEnv s τ},
+          lenv, retType, rmap, ?_, hss⟩
+  exact {
+    env_wf := by
+      constructor
+      · exact hwt.env_wf.pathEnv_wf
+      · apply SiteEnv.insert_refs_not_root _ _ _ hwt.env_wf.siteEnv_wf
+        cases τ with
+        | basic _ => trivial
+        | ref _ r _ => exact Aref.isFreshRef_not_root r hfresh
+      · exact VarEnv.update_refs_are_fresh env.varEnv x (.invalidVar, τ, ms)
+                hwt.env_wf.varEnv_wf hfresh
+    stmt_typed := hcont
+    var_consistent := by
+      intro y isv τ' ms' hvy
+      have hvy' : lookup (insert env.varEnv x (.invalidVar, τ, ms)) y =
+          some (isv, τ', ms') := hvy
+      by_cases heq : y = x
+      · subst heq
+        rw [lookup_insert_same] at hvy'
+        have hisv : isv = .invalidVar := (congrArg Prod.fst (Option.some.inj hvy')).symm
+        subst hisv
+        exact .inl (lookup_insert_same _ _ _)
+      · rw [lookup_insert_ne _ x y _ heq] at hvy'
+        have hold := hwt.var_consistent y isv τ' ms' hvy'
+        have hne_vs : lookup (insert m.frame.varStore x none) y =
+            lookup m.frame.varStore y := lookup_insert_ne _ x y _ heq
+        cases isv with
+        | validVar =>
+          obtain ⟨l, v, hl, hr, hm⟩ := hold
+          exact ⟨l, v, hne_vs.trans hl, hr, hm⟩
+        | invalidVar =>
+          simp only at hold ⊢
+          cases hold with
+          | inl h => exact .inl (hne_vs.trans h)
+          | inr h =>
+            obtain ⟨l, hl⟩ := h
+            exact .inr ⟨l, hne_vs.trans hl⟩
+    site_consistent := site_consistent_insert_basic m env rmap s val τ
+        hwt.site_consistent hmatch
+    rmap_live := hwt.rmap_live
+    rmap_paths := hwt.rmap_paths
+    blocks_typed := hwt.blocks_typed
+    lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
+    funEnv_typed := hwt.funEnv_typed
+  }
+
+/-- Reusable helper: delete_ref_node preserves rmap_paths. -/
+private theorem rmap_paths_delete_ref_node (env : TypeEnv) (m : Machine) (rmap : RefMap)
+    (r : Aref)
+    (hrp : ∀ r1 r2, r1 ∈ env.pathEnv.refs → r2 ∈ env.pathEnv.refs →
+        ∀ p, interpret_regex (env.pathEnv.paths (r1, r2)) p →
+        PathReflectedInHeap rmap m.heap r1 r2 p) :
+    ∀ r1 r2, r1 ∈ (delete_ref_node env.pathEnv r).refs →
+        r2 ∈ (delete_ref_node env.pathEnv r).refs →
+        ∀ p, interpret_regex ((delete_ref_node env.pathEnv r).paths (r1, r2)) p →
+        PathReflectedInHeap rmap m.heap r1 r2 p := by
+  intro r1 r2 hr1 hr2 p hp
+  have hr1f : r1 ∈ (delete_ref_node env.pathEnv r).refs := hr1
+  have hr2f : r2 ∈ (delete_ref_node env.pathEnv r).refs := hr2
+  have hpf : interpret_regex ((delete_ref_node env.pathEnv r).paths (r1, r2)) p := hp
+  simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hr1f hr2f
+  obtain ⟨hr1_mem, hr1_ne⟩ := hr1f
+  obtain ⟨hr2_mem, hr2_ne⟩ := hr2f
+  rw [delete_ref_node_paths_not_involving_r env.pathEnv r r1 r2 hr1_ne hr2_ne] at hpf
+  exact hrp r1 r2 hr1_mem hr2_mem p hpf
+
+private theorem preservation_readRef (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retType : MoveType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retType rmap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (s : Site) (src : Site) (cont : Stmt)
+    (hstmt : m.frame.stmt = .letBind s (.readRef src) cont)
+    (hstep : step (.running m) = .running m') :
+    ∃ env' lenv' retType' rmap',
+      WellTypedState m' env' lenv' retType' rmap' ∧
+      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+  obtain ⟨r, τ, isBor, hlookup, hcont⟩ := inv_readRef (by rw [← hstmt]; exact hwt.stmt_typed)
+  obtain ⟨vref, hvref, hmatch⟩ := hwt.site_consistent src (.ref τ r isBor) hlookup
+  obtain ⟨loc, path, hveq, hrmap⟩ := hmatch
+  have hheap := hwt.rmap_live r loc path hrmap
+  cases hrd : m.heap.readRef loc path with
+  | none => exact absurd hrd hheap
+  | some val =>
+    have hrs : readSite m src = some (.ref loc path) := by rw [readSite, hvref, hveq]
+    simp only [step, hstmt, hrs, hrd, ExecState.running.injEq] at hstep; subst hstep
+    have hr_not_root : r ≠ .root := hwt.env_wf.siteEnv_wf src (.ref τ r isBor) hlookup
+    refine ⟨{env with siteEnv := insert (delete env.siteEnv src) s (.basic τ),
+                       pathEnv := delete_ref_node env.pathEnv r},
+            lenv, retType, rmap, ?_, hss⟩
+    exact {
+      env_wf := ⟨delete_ref_node_wellformed env.pathEnv r hwt.env_wf.pathEnv_wf hr_not_root,
+                 SiteEnv.insert_refs_not_root (delete env.siteEnv src) s (.basic τ)
+                   (SiteEnv.delete_refs_not_root env.siteEnv src hwt.env_wf.siteEnv_wf) trivial,
+                 hwt.env_wf.varEnv_wf⟩
+      stmt_typed := hcont
+      var_consistent := hwt.var_consistent
+      site_consistent := by
+        intro s' τ' hl
+        by_cases heq : s' = s
+        · subst heq; simp only [lookup_insert_same, Option.some.injEq] at hl; subst hl
+          exact ⟨val, lookup_insert_same _ _ _, trivial⟩
+        · rw [lookup_insert_ne _ s s' _ heq] at hl
+          have hne_src : s' ≠ src := by
+            intro h; subst h; rw [lookup_delete_same] at hl; simp at hl
+          rw [lookup_delete_ne _ src s' hne_src] at hl
+          obtain ⟨v, hv, hm⟩ := hwt.site_consistent s' τ' hl
+          exact ⟨v, by rw [lookup_insert_ne _ s s' _ heq]; exact hv, hm⟩
+      rmap_live := hwt.rmap_live
+      rmap_paths := rmap_paths_delete_ref_node env m rmap r hwt.rmap_paths
+      blocks_typed := hwt.blocks_typed
+      lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
+      funEnv_typed := hwt.funEnv_typed
+    }
+
+private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retType : MoveType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retType rmap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (s : Site) (op : Binop) (sA sB : Site) (cont : Stmt)
+    (hstmt : m.frame.stmt = .letBind s (.binop op sA sB) cont)
+    (hstep : step (.running m) = .running m') :
+    ∃ env' lenv' retType' rmap',
+      WellTypedState m' env' lenv' retType' rmap' ∧
+      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+  obtain ⟨bt1, bt2, bt3, ha, hb, hbt, hcont⟩ := inv_binop (by rw [← hstmt]; exact hwt.stmt_typed)
+  obtain ⟨va, hva, hma⟩ := hwt.site_consistent sA (.basic bt1) ha
+  obtain ⟨vb, hvb, hmb⟩ := hwt.site_consistent sB (.basic bt2) hb
+  have hrsa : readSite m sA = some va := hva
+  have hrsb : readSite m sB = some vb := hvb
+  -- Prove site_consistent before destructive case analysis (sA/sB go out of scope)
+  have hsc : ∀ result, ∀ s' τ',
+      lookup (insert (delete (delete env.siteEnv sA) sB) s (.basic bt3)) s' = some τ' →
+      ∃ v', lookup (insert m.frame.siteStore s result) s' = some v' ∧
+            ValueMatchesType v' τ' rmap := by
+    intro result s' τ' hl
+    by_cases heq : s' = s
+    · subst heq; simp only [lookup_insert_same, Option.some.injEq] at hl; subst hl
+      exact ⟨result, lookup_insert_same _ _ _, trivial⟩
+    · rw [lookup_insert_ne _ s s' _ heq] at hl
+      have hne_b : s' ≠ sB := by
+        intro h; rw [h, lookup_delete_same] at hl; simp at hl
+      rw [lookup_delete_ne _ sB s' hne_b] at hl
+      have hne_a : s' ≠ sA := by
+        intro h; rw [h, lookup_delete_same] at hl; simp at hl
+      rw [lookup_delete_ne _ sA s' hne_a] at hl
+      obtain ⟨v, hvs, hm⟩ := hwt.site_consistent s' τ' hl
+      exact ⟨v, by rw [lookup_insert_ne _ s s' _ heq]; exact hvs, hm⟩
+  simp only [step, hstmt, hrsa, hrsb] at hstep
+  have hva_int : ∃ n, va = .int n := by
+    cases va with
+    | int n => exact ⟨n, rfl⟩
+    | _ => exfalso; simp at hstep
+  have hvb_int : ∃ n, vb = .int n := by
+    obtain ⟨n, rfl⟩ := hva_int
+    cases vb with
+    | int n => exact ⟨n, rfl⟩
+    | _ => exfalso; simp at hstep
+  obtain ⟨na, rfl⟩ := hva_int
+  obtain ⟨nb, rfl⟩ := hvb_int
+  simp only [] at hstep
+  cases heval : evalBinop op na nb <;> simp [heval] at hstep
+  rename_i result
+  subst hstep
+  refine ⟨{env with siteEnv := insert (delete (delete env.siteEnv sA) sB) s (.basic bt3)},
+          lenv, retType, rmap, ?_, hss⟩
+  exact {
+    env_wf := TypeEnv.delete_delete_insert_wf env sA sB s (.basic bt3) hwt.env_wf trivial
+    stmt_typed := hcont
+    var_consistent := hwt.var_consistent
+    site_consistent := hsc result
+    rmap_live := hwt.rmap_live
+    rmap_paths := hwt.rmap_paths
+    blocks_typed := hwt.blocks_typed
+    lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
+    funEnv_typed := hwt.funEnv_typed
+  }
+
+private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retType : MoveType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retType rmap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (site : Site) (cont : Stmt)
+    (hstmt : m.frame.stmt = .release site cont)
+    (hstep : step (.running m) = .running m') :
+    ∃ env' lenv' retType' rmap',
+      WellTypedState m' env' lenv' retType' rmap' ∧
+      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+  simp only [step, hstmt, ExecState.running.injEq] at hstep; subst hstep
+  obtain ⟨τ, r, isBor, hlookup, hcont⟩ := inv_release (by rw [← hstmt]; exact hwt.stmt_typed)
+  have hr_not_root : r ≠ .root := hwt.env_wf.siteEnv_wf site (.ref τ r isBor) hlookup
+  refine ⟨{env with siteEnv := delete env.siteEnv site,
+                     pathEnv := delete_ref_node env.pathEnv r},
+          lenv, retType, rmap, ?_, hss⟩
+  exact {
+    env_wf := ⟨delete_ref_node_wellformed env.pathEnv r hwt.env_wf.pathEnv_wf hr_not_root,
+               SiteEnv.delete_refs_not_root env.siteEnv site hwt.env_wf.siteEnv_wf,
+               hwt.env_wf.varEnv_wf⟩
+    stmt_typed := hcont
+    var_consistent := hwt.var_consistent
+    site_consistent := by
+      intro s' τ' hl
+      have hne : s' ≠ site := by
+        intro heq; subst heq; rw [lookup_delete_same] at hl; simp at hl
+      rw [lookup_delete_ne env.siteEnv site s' hne] at hl
+      exact hwt.site_consistent s' τ' hl
+    rmap_live := hwt.rmap_live
+    rmap_paths := rmap_paths_delete_ref_node env m rmap r hwt.rmap_paths
+    blocks_typed := hwt.blocks_typed
+    lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
+    funEnv_typed := hwt.funEnv_typed
+  }
+
+-- ============================================================
+-- Part 8b: Main Preservation Theorem (dispatches to case lemmas)
 -- ============================================================
 
 theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -760,87 +1067,32 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     ∃ env' lenv' retType' rmap',
       WellTypedState m' env' lenv' retType' rmap' ∧
       StackSafe m'.stack m'.frame.returnInfo m'.heap := by
-  -- Case analysis on the statement form
   cases hstmt : m.frame.stmt with
   | skip =>
-    -- skip steps to halted or error, never .running
     exfalso; simp only [step, hstmt] at hstep
     split at hstep <;> simp at hstep
   | abort msg =>
-    -- abort steps to error, never .running
     exfalso; simp only [step, hstmt] at hstep; contradiction
   | letBind s expr cont =>
     cases expr with
-    | intLit n =>
-      -- step inserts (.int n) into siteStore, advances to cont
-      simp only [step, hstmt, ExecState.running.injEq] at hstep; subst hstep
-      -- Extract continuation typing from the derivation
-      have hcont := inv_intLit (by rw [← hstmt]; exact hwt.stmt_typed)
-      refine ⟨{env with siteEnv := insert env.siteEnv s (.basic .u64)},
-              lenv, retType, rmap, ?_, hss⟩
-      exact {
-        env_wf := TypeEnv.insert_siteEnv_wf env s (.basic .u64) hwt.env_wf trivial
-        stmt_typed := hcont
-        var_consistent := hwt.var_consistent
-        site_consistent := by
-          intro s' τ hl
-          by_cases heq : s' = s
-          · subst heq
-            simp only [lookup_insert_same, Option.some.injEq] at hl; subst hl
-            exact ⟨.int n, lookup_insert_same _ _ _, trivial⟩
-          · rw [lookup_insert_ne _ s s' _ heq] at hl
-            obtain ⟨v, hv, hm⟩ := hwt.site_consistent s' τ hl
-            refine ⟨v, ?_, hm⟩
-            rw [lookup_insert_ne _ s s' _ heq]; exact hv
-        rmap_live := hwt.rmap_live
-        rmap_paths := hwt.rmap_paths
-        blocks_typed := hwt.blocks_typed
-        lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
-        funEnv_typed := hwt.funEnv_typed
-      }
-    | usage u => sorry
+    | intLit n => exact preservation_intLit m m' env lenv retType rmap hwt hss s n cont hstmt hstep
+    | usage u =>
+      cases u with
+      | copy x =>
+        rcases inv_copy (by rw [← hstmt]; exact hwt.stmt_typed) with
+          ⟨bt, ms, hvar, hcont⟩ | ⟨τ_ref, ms, s_orig, t, isBor, hvar, hcont⟩
+        · exact preservation_copy_val m m' env lenv retType rmap hwt hss s x cont bt ms hstmt hvar hcont hstep
+        · sorry -- copy_ref
+      | move x => exact preservation_move m m' env lenv retType rmap hwt hss s x cont hstmt hstep
+      | borrowImm x => sorry
+      | borrowMut x => sorry
     | borrowField src bt field => sorry
     | borrowMutField src bt field => sorry
-    | readRef src => sorry
+    | readRef src => exact preservation_readRef m m' env lenv retType rmap hwt hss s src cont hstmt hstep
     | freeze src => sorry
     | pack name fieldSites => sorry
-    | binop op a b => sorry
-  | release site cont =>
-    -- step is a no-op: just advances to cont
-    simp only [step, hstmt, ExecState.running.injEq] at hstep; subst hstep
-    obtain ⟨τ, r, isBor, hlookup, hcont⟩ := inv_release (by rw [← hstmt]; exact hwt.stmt_typed)
-    have hr_not_root : r ≠ .root := hwt.env_wf.siteEnv_wf site (.ref τ r isBor) hlookup
-    refine ⟨{env with siteEnv := delete env.siteEnv site,
-                       pathEnv := delete_ref_node env.pathEnv r},
-            lenv, retType, rmap, ?_, hss⟩
-    exact {
-      env_wf := ⟨delete_ref_node_wellformed env.pathEnv r hwt.env_wf.pathEnv_wf hr_not_root,
-                 SiteEnv.delete_refs_not_root env.siteEnv site hwt.env_wf.siteEnv_wf,
-                 hwt.env_wf.varEnv_wf⟩
-      stmt_typed := hcont
-      var_consistent := hwt.var_consistent
-      site_consistent := by
-        intro s' τ' hl
-        have hne : s' ≠ site := by
-          intro heq; subst heq; rw [lookup_delete_same] at hl; simp at hl
-        rw [lookup_delete_ne env.siteEnv site s' hne] at hl
-        exact hwt.site_consistent s' τ' hl
-      rmap_live := hwt.rmap_live
-      rmap_paths := by
-        intro r1 r2 hr1 hr2 p hp
-        -- Normalize struct projections so rw can match
-        have hr1f : r1 ∈ (delete_ref_node env.pathEnv r).refs := hr1
-        have hr2f : r2 ∈ (delete_ref_node env.pathEnv r).refs := hr2
-        have hpf : interpret_regex ((delete_ref_node env.pathEnv r).paths (r1, r2)) p := hp
-        simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hr1f hr2f
-        obtain ⟨hr1_mem, hr1_ne⟩ := hr1f
-        obtain ⟨hr2_mem, hr2_ne⟩ := hr2f
-        rw [delete_ref_node_paths_not_involving_r env.pathEnv r r1 r2 hr1_ne hr2_ne] at hpf
-        exact hwt.rmap_paths r1 r2 hr1_mem hr2_mem p hpf
-      blocks_typed := hwt.blocks_typed
-      lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
-      funEnv_typed := hwt.funEnv_typed
-    }
+    | binop op a b => exact preservation_binop m m' env lenv retType rmap hwt hss s op a b cont hstmt hstep
+  | release site cont => exact preservation_release m m' env lenv retType rmap hwt hss site cont hstmt hstep
   | assign x site cont => sorry
   | writeRef dst val cont => sorry
   | jump label => sorry
