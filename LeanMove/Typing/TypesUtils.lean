@@ -137,10 +137,12 @@ def isBorrowPath (x : Var) (regex : Regex PathElement) : Prop :=
 
 /-- A path environment is well-formed if:
     1. Refs not in the refs list have empty paths from root
-    2. VarRef x is in refs only if the path from root is a borrow path for x -/
+    2. VarRef x is in refs only if the path from root is a borrow path for x
+    3. The root reference is always in the refs list -/
 structure PathEnv.WellFormed (pe : PathEnv) : Prop where
   refs_complete : ∀ r, r ∉ pe.refs → pe.paths (.root, r) = .empty
   varref_tracked : ∀ x, Aref.varRef x ∈ pe.refs → isBorrowPath x (pe.paths (.root, Aref.varRef x))
+  root_in_refs : Aref.root ∈ pe.refs
 
 lemma PathEnv.init_wellformed : PathEnv.WellFormed PathEnv.init := by
   constructor
@@ -155,6 +157,8 @@ lemma PathEnv.init_wellformed : PathEnv.WellFormed PathEnv.init := by
     simp only [PathEnv.init, List.mem_singleton] at hx
     -- hx says Aref.varRef x = Aref.root, which is false
     cases hx
+  · -- root_in_refs: .root ∈ [.root]
+    simp only [PathEnv.init, List.mem_singleton]
 
 /-- delete_ref_node preserves WellFormed when r ≠ root.
     In practice, we never delete root - it's only used for borrow references. -/
@@ -197,6 +201,9 @@ lemma delete_ref_node_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFo
     have := delete_ref_node_paths_not_involving_r pe r .root (Aref.varRef x) hroot_ne hxne
     simp only [this]
     exact hborrow
+  · -- root_in_refs: .root survives filter since r ≠ .root
+    simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq]
+    exact ⟨hwf.root_in_refs, fun h => hr_not_root h.symm⟩
 
 /-- nextFreshRef always returns a .refid, never .root or .varRef -/
 lemma nextFreshRef_not_root (pe : PathEnv) : nextFreshRef pe ≠ Aref.root := by
@@ -658,6 +665,13 @@ lemma update_with_extension_wellformed (z x : Aref) (path : List PathElement) (p
         · have hnotboth : ¬(Aref.root = z ∧ Aref.varRef x' = z) := fun h => hz_not_root h.1.symm
           simp only [hvz, hnotz, ↓reduceIte]
           exact hborrow
+  · -- root_in_refs: .root stays in refs (z ≠ .root so root was already there)
+    simp only [update_with_extension]
+    by_cases hzin : z ∈ pe.refs
+    · simp only [hzin, not_true_eq_false, ↓reduceIte]
+      exact hwf.root_in_refs
+    · simp only [hzin, not_false_eq_true, ↓reduceIte, List.mem_cons]
+      exact Or.inr hwf.root_in_refs
 
 /-- update_with_epsilon preserves WellFormed -/
 lemma update_with_epsilon_wellformed (s t : Aref) (pe : PathEnv) (hwf : PathEnv.WellFormed pe)
@@ -707,6 +721,9 @@ lemma garbage_collect_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFo
       | inr h => exact hxne h
     simp only [hcond, ↓reduceIte]
     exact hwf.varref_tracked x hxin
+  · -- root_in_refs: .root survives filter since r ≠ .root
+    simp only [garbage_collect, List.mem_filter, decide_eq_true_eq]
+    exact ⟨hwf.root_in_refs, fun h => hr_not_root h.symm⟩
 
 /-- consume_ref_transfer preserves WellFormed.
     Transfers edges from r to r' and removes r. -/
@@ -765,6 +782,15 @@ lemma consume_ref_transfer_wellformed (pe : PathEnv) (r r' : Aref) (hwf : PathEn
     -- varRef x ≠ r', so path is G(root, varRef x)
     simp only [hvx_ne_r', ↓reduceIte]
     exact hwf.varref_tracked x hxin_orig
+  · -- root_in_refs: .root survives filter since r ≠ .root
+    simp only [consume_ref_transfer]
+    have hroot_ne_r : Aref.root ≠ r := fun h => hr_not_root h.symm
+    by_cases hr'in : r' ∈ pe.refs
+    · simp only [hr'in, not_true_eq_false, ↓reduceIte, List.mem_filter, decide_eq_true_eq]
+      exact ⟨hwf.root_in_refs, hroot_ne_r⟩
+    · simp only [hr'in, not_false_eq_true, ↓reduceIte, List.mem_filter, decide_eq_true_eq,
+                  List.mem_cons]
+      exact ⟨Or.inr hwf.root_in_refs, hroot_ne_r⟩
 
 /- ---------------------------------------------------- -/
 /-       TypeEnv.equiv lemmas                            -/
