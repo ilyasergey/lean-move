@@ -482,6 +482,7 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
             · simp only [hlookup]
             · exact hfresh
             · exact nextFreshRef_fresh env.pathEnv
+            · exact nextFreshRef_not_varRef env.pathEnv
             · have hs_fresh := VarEnv.lookup_type_is_fresh env.varEnv x .validVar (.ref τ s isBor) ms hwf.varEnv_wf hlookup
               simp only [moveTypeIsFreshRef] at hs_fresh
               have hs_not_root : s ≠ Aref.root := Aref.isFreshRef_not_root s hs_fresh
@@ -510,6 +511,7 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
             · simp only [hlookup]
             · exact hfresh
             · exact nextFreshRef_fresh env.pathEnv
+            · exact nextFreshRef_not_varRef env.pathEnv
             · have hr_not_root : r ≠ Aref.root := nextFreshRef_not_root env.pathEnv
               have hr_not_varRef : ∀ v, r ≠ Aref.varRef v := nextFreshRef_not_varRef env.pathEnv
               have hpe' := update_with_extension_wellformed r .root [.root_to_var x] _
@@ -541,6 +543,7 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
             · simp only [hlookup]
             · exact hfresh
             · exact nextFreshRef_fresh env.pathEnv
+            · exact nextFreshRef_not_varRef env.pathEnv
             · have hr_not_root : r ≠ Aref.root := nextFreshRef_not_root env.pathEnv
               have hr_not_varRef : ∀ v, r ≠ Aref.varRef v := nextFreshRef_not_varRef env.pathEnv
               have hpe' := update_with_extension_wellformed r .root [.root_to_var x] _
@@ -623,6 +626,7 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
           · exact hlookup
           · exact hfresh
           · exact freshRefBool_implies_freshRef r' env.pathEnv (nextFreshRef_fresh env.pathEnv)
+          · exact nextFreshRef_not_varRef env.pathEnv
           · have hr_not_root : r ≠ Aref.root := hwf.siteEnv_wf src (.ref bt r isBor) hlookup
             have hr'_fresh : r' ∉ env.pathEnv.refs := nextFreshRef_fresh_prop env.pathEnv
             have hr'_not_varRef : ∀ v, r' ≠ Aref.varRef v := nextFreshRef_not_varRef env.pathEnv
@@ -664,6 +668,7 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
                 · exact hlookupf
                 · exact hfresh
                 · exact freshRefBool_implies_freshRef rf env.pathEnv (nextFreshRef_fresh env.pathEnv)
+                · exact nextFreshRef_not_varRef env.pathEnv
                 · have hrf_not_root : rf ≠ Aref.root := nextFreshRef_not_root env.pathEnv
                   have hrf_not_varRef : ∀ v, rf ≠ Aref.varRef v := nextFreshRef_not_varRef env.pathEnv
                   have hpe' := update_with_extension_wellformed rf s [.field f] env.pathEnv hwf.pathEnv_wf hrf_not_root hrf_not_varRef
@@ -708,6 +713,7 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
                   · exact hlookupf
                   · exact hfresh
                   · exact freshRefBool_implies_freshRef rf env.pathEnv (nextFreshRef_fresh env.pathEnv)
+                  · exact nextFreshRef_not_varRef env.pathEnv
                   · have hrf_not_root : rf ≠ Aref.root := nextFreshRef_not_root env.pathEnv
                     have hrf_not_varRef : ∀ v, rf ≠ Aref.varRef v := nextFreshRef_not_varRef env.pathEnv
                     have hpe' := update_with_extension_wellformed rf s [.field f] env.pathEnv hwf.pathEnv_wf hrf_not_root hrf_not_varRef
@@ -889,6 +895,7 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
             · exact hlookup
             · exact hfresh_ax
             · exact nextFreshRef_fresh env.pathEnv
+            · exact nextFreshRef_not_varRef env.pathEnv
             · have hr_not_root : r ≠ Aref.root := nextFreshRef_not_root env.pathEnv
               have hr_not_varRef : ∀ v, r ≠ Aref.varRef v := nextFreshRef_not_varRef env.pathEnv
               have hpe' := update_with_extension_wellformed r .root [.root_to_var x] _

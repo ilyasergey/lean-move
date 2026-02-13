@@ -313,6 +313,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       lookup env.varEnv x = some (.validVar, .ref τ s isBor, ms) →
       notIn env.siteEnv a →
       freshRefBool t env.pathEnv →
+      (∀ v, t ≠ .varRef v) →
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.ref τ t isBor)
                   pathEnv := update_with_epsilon s t env.pathEnv}
@@ -324,6 +325,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       lookup env.varEnv x = some (.validVar, .basic τ, ms) →
       notIn env.siteEnv a →
       freshRefBool r env.pathEnv →
+      (∀ v, r ≠ .varRef v) →
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowImm)
                   pathEnv := update_with_epsilon r r env.pathEnv |>
@@ -337,6 +339,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       lookup env.varEnv x = some (.validVar, .basic τ, ms) →
       notIn env.siteEnv a →
       freshRefBool r env.pathEnv →
+      (∀ v, r ≠ .varRef v) →
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowMut)
                   pathEnv := update_with_epsilon r r env.pathEnv |>
@@ -359,6 +362,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       lookup fentries f = some bt' →
       notIn env.siteEnv af →
       freshRef rf env.pathEnv →
+      (∀ v, rf ≠ .varRef v) →
       typecheck_stmt lenv
         {env with siteEnv := insert (delete env.siteEnv a) af (.ref bt' rf isBor)
                   pathEnv := update_with_extension rf s [.field f] env.pathEnv}
@@ -372,6 +376,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       lookup fentries f = some btf →
       notIn env.siteEnv af →
       freshRef rf env.pathEnv →
+      (∀ v, rf ≠ .varRef v) →
       typecheck_stmt lenv
         {env with siteEnv := insert (delete env.siteEnv a) af (.ref btf rf .siteBorrowMut)
                   pathEnv := update_with_extension rf s [.field f] env.pathEnv}
@@ -404,6 +409,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       lookup env.siteEnv a = some (.ref τ r isBor) →
       notIn env.siteEnv c →
       freshRef r' env.pathEnv →
+      (∀ v, r' ≠ .varRef v) →
       typecheck_stmt lenv
         {env with siteEnv := insert (delete env.siteEnv a) c (.ref τ r' .siteBorrowImm)
                   pathEnv := consume_ref_transfer env.pathEnv r r'}
@@ -443,6 +449,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       lookup env.varEnv x = some (.validVar, .basic τ, ms) →
       notIn env.siteEnv ax →
       freshRefBool r env.pathEnv →
+      (∀ v, r ≠ .varRef v) →
       -- After writeRef: both ax and a are consumed, r is garbage collected
       -- The intermediate pathEnv is: update_with_extension r .root [.root_to_var x] (update_with_epsilon r r env.pathEnv)
       -- The intermediate siteEnv has ax with the mutable borrow

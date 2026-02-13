@@ -565,6 +565,7 @@ private theorem inv_copy
         cont retType) ∨
     (∃ τ ms s t isBor,
       lookup env.varEnv x = some (.validVar, .ref τ s isBor, ms) ∧
+      (∀ v, t ≠ .varRef v) ∧
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.ref τ t isBor)
                   pathEnv := update_with_epsilon s t env.pathEnv}
@@ -572,8 +573,8 @@ private theorem inv_copy
   match h with
   | .let_bind_copy_val _ _ _ _ bt ms _ _ hlookup _ hcont =>
     .inl ⟨bt, ms, hlookup, hcont⟩
-  | .let_bind_copy_ref _ _ _ _ τ ms s t isBor _ _ hlookup _ _ hcont =>
-    .inr ⟨τ, ms, s, t, isBor, hlookup, hcont⟩
+  | .let_bind_copy_ref _ _ _ _ τ ms s t isBor _ _ hlookup _ _ hnv hcont =>
+    .inr ⟨τ, ms, s, t, isBor, hlookup, hnv, hcont⟩
 
 private theorem inv_move
     (h : typecheck_stmt lenv env (.letBind a (.usage (.move x)) cont) retType) :
@@ -590,25 +591,27 @@ private theorem inv_borrowImm
     (h : typecheck_stmt lenv env (.letBind a (.usage (.borrowImm x)) cont) retType) :
     ∃ τ ms r,
       lookup env.varEnv x = some (.validVar, .basic τ, ms) ∧
+      (∀ v, r ≠ .varRef v) ∧
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowImm)
                   pathEnv := update_with_extension r .root [.root_to_var x]
                               (update_with_epsilon r r env.pathEnv)}
         cont retType :=
   match h with
-  | .let_bind_borrowImm _ _ _ _ τ ms r _ _ hlookup _ _ hcont => ⟨τ, ms, r, hlookup, hcont⟩
+  | .let_bind_borrowImm _ _ _ _ τ ms r _ _ hlookup _ _ hnv hcont => ⟨τ, ms, r, hlookup, hnv, hcont⟩
 
 private theorem inv_borrowMut
     (h : typecheck_stmt lenv env (.letBind a (.usage (.borrowMut x)) cont) retType) :
     ∃ τ ms r,
       lookup env.varEnv x = some (.validVar, .basic τ, ms) ∧
+      (∀ v, r ≠ .varRef v) ∧
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowMut)
                   pathEnv := update_with_extension r .root [.root_to_var x]
                               (update_with_epsilon r r env.pathEnv)}
         cont retType :=
   match h with
-  | .let_bind_borrowMut _ _ _ _ τ ms r _ _ _ hlookup _ _ hcont => ⟨τ, ms, r, hlookup, hcont⟩
+  | .let_bind_borrowMut _ _ _ _ τ ms r _ _ _ hlookup _ _ hnv hcont => ⟨τ, ms, r, hlookup, hnv, hcont⟩
 
 private theorem inv_readRef
     (h : typecheck_stmt lenv env (.letBind c (.readRef src) cont) retType) :
@@ -625,13 +628,15 @@ private theorem inv_freeze
     (h : typecheck_stmt lenv env (.letBind c (.freeze src) cont) retType) :
     ∃ τ r r' isBor,
       lookup env.siteEnv src = some (.ref τ r isBor) ∧
+      (∀ v, r' ≠ .varRef v) ∧
+      freshRef r' env.pathEnv ∧
       typecheck_stmt lenv
         {env with siteEnv := insert (delete env.siteEnv src) c (.ref τ r' .siteBorrowImm)
                   pathEnv := consume_ref_transfer env.pathEnv r r'}
         cont retType :=
   match h with
-  | .let_bind_freeze _ _ _ _ τ r r' isBor _ _ hlookup _ _ hcont =>
-    ⟨τ, r, r', isBor, hlookup, hcont⟩
+  | .let_bind_freeze _ _ _ _ τ r r' isBor _ _ hlookup _ hfresh hnv hcont =>
+    ⟨τ, r, r', isBor, hlookup, hnv, hfresh, hcont⟩
 
 private theorem inv_pack
     (h : typecheck_stmt lenv env (.letBind b (.pack recName fieldSites) cont) retType) :
@@ -649,13 +654,14 @@ private theorem inv_borrowField
       lookup env.siteEnv src = some (.ref bt s isBor) ∧
       bt = .trecord fentries ∧
       lookup fentries field = some bt' ∧
+      (∀ v, rf ≠ .varRef v) ∧
       typecheck_stmt lenv
         {env with siteEnv := insert (delete env.siteEnv src) af (.ref bt' rf isBor)
                   pathEnv := update_with_extension rf s [.field field] env.pathEnv}
         cont retType :=
   match h with
-  | .let_bind_borrowField _ _ _ _ _ _ bt' isBor fentries s rf _ _ hlookup hbt hf _ _ hcont =>
-    ⟨bt', isBor, fentries, s, rf, hlookup, hbt, hf, hcont⟩
+  | .let_bind_borrowField _ _ _ _ _ _ bt' isBor fentries s rf _ _ hlookup hbt hf _ _ hnv hcont =>
+    ⟨bt', isBor, fentries, s, rf, hlookup, hbt, hf, hnv, hcont⟩
 
 private theorem inv_borrowMutField
     (h : typecheck_stmt lenv env (.letBind af (.borrowMutField src bt field) cont) retType) :
@@ -663,13 +669,14 @@ private theorem inv_borrowMutField
       lookup env.siteEnv src = some (.ref bt s .siteBorrowMut) ∧
       bt = .trecord fentries ∧
       lookup fentries field = some btf ∧
+      (∀ v, rf ≠ .varRef v) ∧
       typecheck_stmt lenv
         {env with siteEnv := insert (delete env.siteEnv src) af (.ref btf rf .siteBorrowMut)
                   pathEnv := update_with_extension rf s [.field field] env.pathEnv}
         cont retType :=
   match h with
-  | .let_bind_borrowMutField _ _ _ _ _ _ btf fentries s rf _ _ hlookup hbt hf _ _ hcont =>
-    ⟨btf, fentries, s, rf, hlookup, hbt, hf, hcont⟩
+  | .let_bind_borrowMutField _ _ _ _ _ _ btf fentries s rf _ _ hlookup hbt hf _ _ hnv hcont =>
+    ⟨btf, fentries, s, rf, hlookup, hbt, hf, hnv, hcont⟩
 
 private theorem inv_writeRef
     (h : typecheck_stmt lenv env (.writeRef dst val cont) retType) :
@@ -730,6 +737,7 @@ private theorem inv_assign
     (h : typecheck_stmt lenv env (.assign x a cont) retType) :
     (∃ ax τ ms r,
       lookup env.varEnv x = some (.validVar, .basic τ, ms) ∧
+      (∀ v, r ≠ .varRef v) ∧
       typecheck_stmt lenv
         {env with siteEnv := delete (delete (insert env.siteEnv ax (.ref τ r .siteBorrowMut)) a) ax
                   pathEnv := garbage_collect (update_with_extension r .root [.root_to_var x]
@@ -743,8 +751,8 @@ private theorem inv_assign
                   siteEnv := delete env.siteEnv a}
         cont retType) :=
   match h with
-  | .var_assign_valid _ _ _ _ ax τ ms r _ _ _ hlookup _ _ hcont =>
-    .inl ⟨ax, τ, ms, r, hlookup, hcont⟩
+  | .var_assign_valid _ _ _ _ ax τ ms r _ _ _ hlookup _ _ hnv hcont =>
+    .inl ⟨ax, τ, ms, r, hlookup, hnv, hcont⟩
   | .var_assign_invalid _ _ _ _ τ τ' _ _ hlookup_var hlookup_site _ hcont =>
     .inr ⟨τ, τ', hlookup_var, hlookup_site, hcont⟩
 
@@ -1055,6 +1063,58 @@ private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : La
     funEnv_typed := hwt.funEnv_typed
   }
 
+/-- Helper: lookup on deleteAll returns some → lookup on original returns some -/
+private lemma lookup_deleteAll_some (l : AssocMap Site MoveType) (ks : List Site)
+    (k : Site) (v : MoveType) (h : lookup (deleteAll l ks) k = some v) :
+    lookup l k = some v := by
+  simp only [AssocMap.deleteAll, AssocMap.lookup] at h ⊢
+  have hnotin : k ∉ ks := by
+    intro hmem
+    have := List.lookup_filter_mem_none l.entries k ks hmem
+    rw [this] at h; cases h
+  rw [← List.lookup_filter_notin l.entries k ks hnotin]
+  exact h
+
+private theorem preservation_pack (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retType : MoveType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retType rmap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (s : Site) (name : Id) (fieldSites : List (Field × Site)) (cont : Stmt)
+    (hstmt : m.frame.stmt = .letBind s (.pack name fieldSites) cont)
+    (hstep : step (.running m) = .running m') :
+    ∃ env' lenv' retType' rmap',
+      WellTypedState m' env' lenv' retType' rmap' ∧
+      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+  obtain ⟨fentries, hcont⟩ := inv_pack (by rw [← hstmt]; exact hwt.stmt_typed)
+  simp only [step, hstmt] at hstep
+  split at hstep
+  · simp at hstep
+  · rename_i fieldVals hcpf
+    simp only [ExecState.running.injEq] at hstep; subst hstep
+    refine ⟨{env with siteEnv := insert (deleteAll env.siteEnv (fieldSites.map Prod.snd)) s
+                                    (.basic (.trecord fentries))},
+            lenv, retType, rmap, ?_, hss⟩
+    exact {
+      env_wf := TypeEnv.deleteAll_insert_wf env (fieldSites.map Prod.snd) s
+                  (.basic (.trecord fentries)) hwt.env_wf trivial
+      stmt_typed := hcont
+      var_consistent := hwt.var_consistent
+      site_consistent := by
+        intro s' τ' hl
+        by_cases heq : s' = s
+        · subst heq; simp only [lookup_insert_same, Option.some.injEq] at hl; subst hl
+          exact ⟨.record fieldVals, lookup_insert_same _ _ _, trivial⟩
+        · rw [lookup_insert_ne _ s s' _ heq] at hl
+          have hl_orig := lookup_deleteAll_some env.siteEnv _ s' τ' hl
+          obtain ⟨v, hv, hm⟩ := hwt.site_consistent s' τ' hl_orig
+          exact ⟨v, by rw [lookup_insert_ne _ s s' _ heq]; exact hv, hm⟩
+      rmap_live := hwt.rmap_live
+      rmap_paths := hwt.rmap_paths
+      blocks_typed := hwt.blocks_typed
+      lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
+      funEnv_typed := hwt.funEnv_typed
+    }
+
 -- ============================================================
 -- Part 8b: Main Preservation Theorem (dispatches to case lemmas)
 -- ============================================================
@@ -1090,7 +1150,7 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     | borrowMutField src bt field => sorry
     | readRef src => exact preservation_readRef m m' env lenv retType rmap hwt hss s src cont hstmt hstep
     | freeze src => sorry
-    | pack name fieldSites => sorry
+    | pack name fieldSites => exact preservation_pack m m' env lenv retType rmap hwt hss s name fieldSites cont hstmt hstep
     | binop op a b => exact preservation_binop m m' env lenv retType rmap hwt hss s op a b cont hstmt hstep
   | release site cont => exact preservation_release m m' env lenv retType rmap hwt hss site cont hstmt hstep
   | assign x site cont => sorry
