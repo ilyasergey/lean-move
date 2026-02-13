@@ -285,6 +285,76 @@ def t_lenv : LabelEnv :=
 -- Full function check
 #eval check_fun t t_lenv
 
+-- Debug: step-by-step check of l1 body
+-- Step 1: copy root
+#eval (check_stmt t_lenv t_branch_env
+  ((letsite s1 ← copy var_root) ;;
+   Stmt.jump "l3")
+  t.returnType).isSome
+
+-- Step 2: + borrowMutField (Tree::l)
+#eval (check_stmt t_lenv t_branch_env
+  ((letsite s1 ← copy var_root) ;;
+   Stmt.letBind s2 (Expr.borrowMutField s1 (.trecord tree_entries) field_l) ;;
+   Stmt.jump "l3")
+  t.returnType).isSome
+
+-- Step 3: + assign var_x
+#eval (check_stmt t_lenv t_branch_env
+  ((letsite s1 ← copy var_root) ;;
+   Stmt.letBind s2 (Expr.borrowMutField s1 (.trecord tree_entries) field_l) ;;
+   (var_x ::= s2) ;;
+   Stmt.jump "l3")
+  t.returnType).isSome
+
+-- Step 4: + copy var_x
+#eval (check_stmt t_lenv t_branch_env
+  ((letsite s1 ← copy var_root) ;;
+   Stmt.letBind s2 (Expr.borrowMutField s1 (.trecord tree_entries) field_l) ;;
+   (var_x ::= s2) ;;
+   (letsite s3 ← copy var_x) ;;
+   Stmt.jump "l3")
+  t.returnType).isSome
+
+-- Step 5: + borrowMutField (Sub1::l)
+#eval (check_stmt t_lenv t_branch_env
+  ((letsite s1 ← copy var_root) ;;
+   Stmt.letBind s2 (Expr.borrowMutField s1 (.trecord tree_entries) field_l) ;;
+   (var_x ::= s2) ;;
+   (letsite s3 ← copy var_x) ;;
+   Stmt.letBind s4 (Expr.borrowMutField s3 (.trecord sub1_entries) field_l) ;;
+   Stmt.jump "l3")
+  t.returnType).isSome
+
+-- Step 6: + borrowMutField (Sub2::l)
+#eval (check_stmt t_lenv t_branch_env
+  ((letsite s1 ← copy var_root) ;;
+   Stmt.letBind s2 (Expr.borrowMutField s1 (.trecord tree_entries) field_l) ;;
+   (var_x ::= s2) ;;
+   (letsite s3 ← copy var_x) ;;
+   Stmt.letBind s4 (Expr.borrowMutField s3 (.trecord sub1_entries) field_l) ;;
+   Stmt.letBind s5 (Expr.borrowMutField s4 (.trecord sub2_entries) field_l) ;;
+   Stmt.jump "l3")
+  t.returnType).isSome
+
+-- Step 7: + assign var_y
+#eval (check_stmt t_lenv t_branch_env
+  ((letsite s1 ← copy var_root) ;;
+   Stmt.letBind s2 (Expr.borrowMutField s1 (.trecord tree_entries) field_l) ;;
+   (var_x ::= s2) ;;
+   (letsite s3 ← copy var_x) ;;
+   Stmt.letBind s4 (Expr.borrowMutField s3 (.trecord sub1_entries) field_l) ;;
+   Stmt.letBind s5 (Expr.borrowMutField s4 (.trecord sub2_entries) field_l) ;;
+   (var_y ::= s5) ;;
+   Stmt.jump "l3")
+  t.returnType).isSome
+
+-- Full l1 body (same as step 7 — this IS the full l1)
+-- Should match the per-block check for l1
+
+-- Debug: what nextFreshRefInEnv produces at l1 entry
+#eval nextFreshRefInEnv t_branch_env
+
 -- Theorem: t type checks algorithmically
 theorem t_check : check_fun t t_lenv = true := by rfl
 
