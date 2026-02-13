@@ -162,3 +162,34 @@ copy_ref, move, readRef, release, assign_valid, assign_invalid).
 
 The `s_orig ∈ env.pathEnv.refs` sorry in `preservation_copy_ref` is now resolved via
 `hwt.varEnv_refs_in_pathEnv x τ_ref s_orig isBor ms hvar`.
+
+## Prove `preservation_borrowImm` (except `rmap_paths`)
+
+Added preservation proof for the `borrowImm x` case. When borrowing an immutable
+reference to a basic-typed variable x, the step creates `.ref loc []` in siteStore
+(where loc is x's heap location), and the typing rule creates a fresh abstract ref r
+with `update_with_extension r .root [.root_to_var x] (update_with_epsilon r r pe)`.
+
+### Proven fields
+
+All WellTypedState fields except `rmap_paths`:
+- **env_wf**: chained `update_with_epsilon_wellformed` → `update_with_extension_wellformed` → `TypeEnv.insert_pathEnv_wf`
+- **var_consistent**: varEnv unchanged; freshness of r excludes it from existing entries
+- **site_consistent**: new site matched by `.ref loc []` with `rmap'(r) = some (loc, [])`
+- **rmap_live**: for r, `heap.readRef loc [] = heap.read loc ≠ none`; for old refs, delegates
+- **varEnv/siteEnv_refs_in_pathEnv, live_refs_unique**: same pattern as copy_ref
+
+### Remaining sorry: `rmap_paths`
+
+The hard subcases `(r, old)` and `(old, r)` require knowing how `.root` paths relate
+to concrete variable locations. Since `.root` is not mapped in rmap, the old `rmap_paths`
+for pairs involving `.root` is vacuously True and gives no information for the new ref r.
+A future `root_var_coherence` invariant bridging `.root` paths to concrete variable
+locations would resolve this.
+
+### Key technique: nested pathEnv refs computation
+
+`pe' = update_with_extension r .root [...] (update_with_epsilon r r pe)` has
+`pe'.refs = r :: pe.refs`. Proved via two steps:
+1. `hpe_mid_refs`: inner epsilon adds r to refs (r is fresh)
+2. `hrefs_eq`: outer extension keeps refs unchanged (r already present)
