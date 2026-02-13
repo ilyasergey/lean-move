@@ -785,7 +785,7 @@ private theorem inv_ret
     (h : typecheck_stmt lenv env (.ret sites) retType) :
     (∀ a, a ∈ sites → ∃ τ, lookup env.siteEnv a = some τ ∧ MoveType.compatible τ retType) :=
   match h with
-  | .ret _ _ _ _ hall _ => hall
+  | .ret _ _ _ _ hall => hall
 
 private theorem inv_call
     (h : typecheck_stmt lenv env (.call results fname args cont) retType) :

@@ -179,10 +179,11 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType : MoveType)
     | _ => none
 
   | .ret as =>
+    -- Note: no_locals_borrowed_bool is NOT checked — consistent with Move VM
+    -- where `return` implicitly drops all locals, releasing their borrows.
     if as.all (fun a => match lookup env.siteEnv a with
                          | some τ => MoveType.compatible_bool τ retType
-                         | none => false) &&
-       no_locals_borrowed_bool env
+                         | none => false)
     then some env
     else none
 

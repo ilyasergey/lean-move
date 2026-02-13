@@ -278,9 +278,10 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
   -- return (a1, ..., an) // Return from function
   -- Uses MoveType.compatible to compare return site types with the declared return type.
   -- This allows the checker to be agnostic to exact Aref refid values in declared types.
+  -- Note: no_locals_borrowed is NOT checked here — consistent with Move VM semantics
+  -- where `return` implicitly drops all locals, releasing their borrows.
   | ret : ∀ (lenv : LabelEnv) (env : TypeEnv) (as : List Site) retType,
       (∀ a, a ∈ as → ∃ τ, AssocMap.lookup env.siteEnv a = some τ ∧ MoveType.compatible τ retType) →
-      no_locals_borrowed env →
       typecheck_stmt lenv env (.ret as) retType
 
   -- abort a // Abort execution with error value

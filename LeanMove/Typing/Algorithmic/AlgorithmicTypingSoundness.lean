@@ -821,12 +821,10 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
   | ret as =>
     intro h
     simp only [check_stmt] at h
-    -- The check_stmt for ret tests: all sites have compatible retType AND no_locals_borrowed_bool
-    -- Split the if condition
+    -- The check_stmt for ret tests: all sites have compatible retType
     split at h
     · rename_i hcond
-      simp only [Bool.and_eq_true, List.all_eq_true] at hcond
-      obtain ⟨hall, hnolocals⟩ := hcond
+      have hall := List.all_eq_true.mp hcond
       apply typecheck_stmt.ret lenv env as retType
       · intro a ha
         have hcompat := hall a ha
@@ -836,7 +834,6 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
         | some τ =>
           simp only [hlookup] at hcompat
           exact ⟨τ, rfl, MoveType.compatible_bool_sound τ retType hcompat⟩
-      · exact no_locals_borrowed_bool_sound env hwf.pathEnv_wf hnolocals
     · simp at h
 
   | abort a =>

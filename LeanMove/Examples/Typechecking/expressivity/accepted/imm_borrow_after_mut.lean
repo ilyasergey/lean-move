@@ -173,6 +173,41 @@ def direct_lenv : LabelEnv :=
 -- Full function check
 #eval check_fun direct direct_lenv
 
+-- Debug: step by step prefix checks
+-- Just intLit + assign a
+#eval (check_stmt direct_lenv direct_initEnv
+  ((letsite s0 ← #0) ;;
+   (var_a ::= s0) ;;
+   Stmt.ret [])
+  (.basic .tunit)).isSome  -- just assign a
+
+-- Up to borrowMut
+#eval (check_stmt direct_lenv direct_initEnv
+  ((letsite s0 ← #0) ;;
+   (var_a ::= s0) ;;
+   (letsite s1 ← &mut var_a) ;;
+   Stmt.ret [])
+  (.basic .tunit)).isSome  -- after borrowMut
+
+-- Up to borrowMut + assign rmut
+#eval (check_stmt direct_lenv direct_initEnv
+  ((letsite s0 ← #0) ;;
+   (var_a ::= s0) ;;
+   (letsite s1 ← &mut var_a) ;;
+   (var_rmut ::= s1) ;;
+   Stmt.ret [])
+  (.basic .tunit)).isSome  -- after assign rmut
+
+-- Up to borrowImm
+#eval (check_stmt direct_lenv direct_initEnv
+  ((letsite s0 ← #0) ;;
+   (var_a ::= s0) ;;
+   (letsite s1 ← &mut var_a) ;;
+   (var_rmut ::= s1) ;;
+   (letsite s2 ← &var_a) ;;
+   Stmt.ret [])
+  (.basic .tunit)).isSome  -- after borrowImm (before assign rimm)
+
 -- Debug: check suffixes of direct body to find where check fails
 -- Full body
 #eval (check_stmt direct_lenv direct_initEnv

@@ -236,6 +236,115 @@ def t_lenv : LabelEnv :=
 -- Full function check
 #eval check_fun t t_lenv
 
+-- Debug: step-by-step check of l3 body to find where it fails
+-- Step 1: copy var_x
+#eval (check_stmt t_lenv t_l3_env
+  ((letsite s5 ← copy var_x) ;;
+   Stmt.ret [])
+  t.returnType).isSome  -- after copy(x)
+
+-- Step 2: copy var_x + borrowMutField
+#eval (check_stmt t_lenv t_l3_env
+  ((letsite s5 ← copy var_x) ;;
+   Stmt.letBind s6 (Expr.borrowMutField s5 (.trecord s_entries) field_f) ;;
+   Stmt.ret [])
+  t.returnType).isSome  -- after borrowMutField
+
+-- Step 3: + assign var_f
+#eval (check_stmt t_lenv t_l3_env
+  ((letsite s5 ← copy var_x) ;;
+   Stmt.letBind s6 (Expr.borrowMutField s5 (.trecord s_entries) field_f) ;;
+   (var_f ::= s6) ;;
+   Stmt.ret [])
+  t.returnType).isSome  -- after assign f
+
+-- Step 4: + copy var_f
+#eval (check_stmt t_lenv t_l3_env
+  ((letsite s5 ← copy var_x) ;;
+   Stmt.letBind s6 (Expr.borrowMutField s5 (.trecord s_entries) field_f) ;;
+   (var_f ::= s6) ;;
+   (letsite s7 ← copy var_f) ;;
+   Stmt.ret [])
+  t.returnType).isSome  -- after copy(f)
+
+-- Step 5: + readRef
+#eval (check_stmt t_lenv t_l3_env
+  ((letsite s5 ← copy var_x) ;;
+   Stmt.letBind s6 (Expr.borrowMutField s5 (.trecord s_entries) field_f) ;;
+   (var_f ::= s6) ;;
+   (letsite s7 ← copy var_f) ;;
+   Stmt.letBind s8 (Expr.readRef s7) ;;
+   Stmt.ret [])
+  t.returnType).isSome  -- after readRef
+
+-- Step 6: + pack
+#eval (check_stmt t_lenv t_l3_env
+  ((letsite s5 ← copy var_x) ;;
+   Stmt.letBind s6 (Expr.borrowMutField s5 (.trecord s_entries) field_f) ;;
+   (var_f ::= s6) ;;
+   (letsite s7 ← copy var_f) ;;
+   Stmt.letBind s8 (Expr.readRef s7) ;;
+   Stmt.letBind s9 (Expr.pack "S" [(field_f, s8)]) ;;
+   Stmt.ret [])
+  t.returnType).isSome  -- after pack
+
+-- Step 7: + copy var_y
+#eval (check_stmt t_lenv t_l3_env
+  ((letsite s5 ← copy var_x) ;;
+   Stmt.letBind s6 (Expr.borrowMutField s5 (.trecord s_entries) field_f) ;;
+   (var_f ::= s6) ;;
+   (letsite s7 ← copy var_f) ;;
+   Stmt.letBind s8 (Expr.readRef s7) ;;
+   Stmt.letBind s9 (Expr.pack "S" [(field_f, s8)]) ;;
+   (letsite s10 ← copy var_y) ;;
+   Stmt.ret [])
+  t.returnType).isSome  -- after copy(y)
+
+-- Step 8: + writeRef s10 s9
+#eval (check_stmt t_lenv t_l3_env
+  ((letsite s5 ← copy var_x) ;;
+   Stmt.letBind s6 (Expr.borrowMutField s5 (.trecord s_entries) field_f) ;;
+   (var_f ::= s6) ;;
+   (letsite s7 ← copy var_f) ;;
+   Stmt.letBind s8 (Expr.readRef s7) ;;
+   Stmt.letBind s9 (Expr.pack "S" [(field_f, s8)]) ;;
+   (letsite s10 ← copy var_y) ;;
+   Stmt.writeRef s10 s9 ;;
+   Stmt.ret [])
+  t.returnType).isSome  -- after writeRef y
+
+-- Step 9: + copy var_f + intLit
+#eval (check_stmt t_lenv t_l3_env
+  ((letsite s5 ← copy var_x) ;;
+   Stmt.letBind s6 (Expr.borrowMutField s5 (.trecord s_entries) field_f) ;;
+   (var_f ::= s6) ;;
+   (letsite s7 ← copy var_f) ;;
+   Stmt.letBind s8 (Expr.readRef s7) ;;
+   Stmt.letBind s9 (Expr.pack "S" [(field_f, s8)]) ;;
+   (letsite s10 ← copy var_y) ;;
+   Stmt.writeRef s10 s9 ;;
+   (letsite s11 ← copy var_f) ;;
+   (letsite s13 ← #0) ;;
+   Stmt.ret [])
+  t.returnType).isSome  -- after copy(f) + intLit
+
+-- Full l3 body
+#eval (check_stmt t_lenv t_l3_env
+  ((letsite s5 ← copy var_x) ;;
+   Stmt.letBind s6 (Expr.borrowMutField s5 (.trecord s_entries) field_f) ;;
+   (var_f ::= s6) ;;
+   (letsite s7 ← copy var_f) ;;
+   Stmt.letBind s8 (Expr.readRef s7) ;;
+   Stmt.letBind s9 (Expr.pack "S" [(field_f, s8)]) ;;
+   (letsite s10 ← copy var_y) ;;
+   Stmt.writeRef s10 s9 ;;
+   (letsite s11 ← copy var_f) ;;
+   (letsite s13 ← #0) ;;
+   Stmt.writeRef s11 s13 ;;
+   (letsite s12 ← move var_y) ;;
+   Stmt.ret [s12])
+  t.returnType).isSome  -- full l3 body
+
 -- Theorem: t is well-typed (algorithmic)
 theorem t_check : check_fun t t_lenv = true := by rfl
 

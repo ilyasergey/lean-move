@@ -216,13 +216,6 @@ theorem M_new_welltyped : ∃ lenv, typecheck_fun M_new lenv := by
           simp only [List.mem_singleton] at ha
           subst ha
           exact ⟨_, rfl, rfl⟩
-        · -- no_locals_borrowed
-          unfold no_locals_borrowed not_borrowed
-          intro x v hmem r
-          simp only [M_new_initEnv, PathEnv.init]
-          split
-          · simp only [Regex.interpret_regex]; intro h; cases h
-          · simp only [Regex.interpret_regex]; exact id
 
 -- -----------------------------------------------------
 -- -                     M.t                          --
@@ -344,17 +337,6 @@ theorem M_t_welltyped : ∃ lenv, typecheck_fun M_t lenv := by
             · -- All return sites have correct type (vacuous)
               intro a ha
               cases ha
-            · -- no_locals_borrowed
-              unfold no_locals_borrowed not_borrowed
-              intro x v hmem r
-              simp only [delete_ref_node,
-                          update_with_extension,
-                          Regex.extend, Regex.der, List.foldl]
-              split_ifs <;>
-                simp_all [Regex.interpret_regex, var_this, var_y,
-                          M_t_initEnv, PathEnv.init]
-              -- remaining goal: reversed equality in if-condition
-              split_ifs <;> simp_all [Regex.interpret_regex]
 
 -- -----------------------------------------------------
 -- -                     foo                          --
@@ -532,18 +514,5 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
                     · -- All return sites have correct type (vacuous)
                       intro a ha
                       cases ha
-                    · -- no_locals_borrowed
-                      unfold no_locals_borrowed not_borrowed
-                      intro x v hmem r
-                      simp only [call_connect_inputs_outputs,
-                                  List.filterMap, List.foldl,
-                                  delete_ref_node,
-                                  update_with_extension, update_with_epsilon,
-                                  Regex.extend, Regex.der]
-                      split_ifs <;>
-                        simp_all [Regex.interpret_regex, var_x_ref, var_x,
-                                  foo_initEnv, PathEnv.init]
-                      -- remaining goal: reversed equality in if-condition
-                      split_ifs <;> simp_all [Regex.interpret_regex]
 
 end LeanMove.Examples
