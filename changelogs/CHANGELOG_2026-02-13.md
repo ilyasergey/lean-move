@@ -116,6 +116,49 @@ Extracted the 4-case proof into a standalone lemma parameterized by:
 This lemma is reusable for other preservation cases using `update_with_epsilon`
 (e.g., freeze, borrow without field extension).
 
-### Remaining sorry
-`s_orig ∈ env.pathEnv.refs` — needs a `varEnv_refs_in_pathEnv` invariant
-to be added to `WellTypedState`.
+### Previously remaining sorry (now resolved)
+`s_orig ∈ env.pathEnv.refs` — resolved by adding `varEnv_refs_in_pathEnv` invariant
+to `WellTypedState` (see below).
+
+## Add `varEnv_refs_in_pathEnv`, `siteEnv_refs_in_pathEnv`, `live_refs_unique` to WellTypedState
+
+Added three new invariant fields to `WellTypedState` and proved their preservation
+across all existing preservation cases (intLit, copy_val, binop, pack, heap_alloc,
+copy_ref, move, readRef, release, assign_valid, assign_invalid).
+
+### TypeSoundness.lean — New WellTypedState fields
+
+- **`varEnv_refs_in_pathEnv`**: every ref in a `.validVar` varEnv entry is in `pathEnv.refs`
+- **`siteEnv_refs_in_pathEnv`**: every ref in a siteEnv entry is in `pathEnv.refs`
+- **`live_refs_unique`**: each abstract ref appears at most once across valid varEnv
+  entries and siteEnv entries (3-part conjunction: var-site, site-site, var-var)
+
+### Preservation proof patterns by case
+
+| Case | Pattern | Key technique |
+|------|---------|--------------|
+| intLit, copy_val | insert basic into siteEnv | `simp [lookup_insert_same]` closes `s'=s` since basic ≠ ref |
+| binop | delete+delete+insert basic | Chain of `lookup_delete_ne` reductions |
+| pack | deleteAll+insert basic | `lookup_deleteAll_some` reduces to old env |
+| heap_alloc | env unchanged | Fields pass through directly |
+| copy_ref | insert ref t, update_with_epsilon | Freshness of `t` + `List.mem_cons` for pathEnv |
+| move | invalidate x, insert τ from x | `lookup_insert_same` contradiction for invalidVar; `rw [hs'.2.1] at hvar` for ref equality |
+| readRef | delete src, delete_ref_node r | `live_refs_unique r` proves `r' ≠ r` for surviving entries |
+| release | delete site, delete_ref_node r | Same pattern as readRef |
+| assign_valid | complex siteEnv (insert+delete+delete) | Helper `hse_reduce` reduces all lookups to old env |
+| assign_invalid | update varEnv x, delete siteEnv a | Site-site/var-site contradiction when `x'=x` via `hsite` |
+
+### Key techniques
+
+- **Captured variables before struct literals**: `r`, `hlookup`, etc. from outer `obtain`
+  are not accessible inside `by` blocks within `exact { ... }` struct literals. Fixed by
+  introducing `have hlive_r := hwt.live_refs_unique r` etc. before the struct.
+- **`rw` instead of `subst`**: `subst heq` where `heq : x1 = x` eliminates `x` from
+  scope. Used `rw [heq1, lookup_insert_same]` instead to preserve variable availability.
+- **MoveType injection**: `cases this` on `MoveType.ref a b c = MoveType.ref d e f` fails;
+  use `simp only [Option.some.injEq, MoveType.ref.injEq]` to extract component equalities.
+
+### Sorry eliminated
+
+The `s_orig ∈ env.pathEnv.refs` sorry in `preservation_copy_ref` is now resolved via
+`hwt.varEnv_refs_in_pathEnv x τ_ref s_orig isBor ms hvar`.
