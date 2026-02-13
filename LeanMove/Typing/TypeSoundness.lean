@@ -533,6 +533,16 @@ private theorem inv_intLit
     typecheck_stmt lenv {env with siteEnv := insert env.siteEnv s (.basic .u64)} cont retType :=
   match h with | .let_bind_intLit _ _ _ _ _ _ _ hc => hc
 
+private theorem inv_release
+    (h : typecheck_stmt lenv env (.release site cont) retType) :
+    ∃ τ r isBor,
+      lookup env.siteEnv site = some (.ref τ r isBor) ∧
+      typecheck_stmt lenv
+        {env with siteEnv := delete env.siteEnv site
+                  pathEnv := delete_ref_node env.pathEnv r}
+        cont retType :=
+  match h with | .release _ _ _ τ r isBor _ _ hlookup hcont => ⟨τ, r, isBor, hlookup, hcont⟩
+
 -- ============================================================
 -- Part 8: Preservation
 -- ============================================================
@@ -590,7 +600,42 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     | freeze src => sorry
     | pack name fieldSites => sorry
     | binop op a b => sorry
-  | release site cont => sorry
+  | release site cont =>
+    -- step is a no-op: just advances to cont
+    simp only [step, hstmt, ExecState.running.injEq] at hstep; subst hstep
+    obtain ⟨τ, r, isBor, hlookup, hcont⟩ := inv_release (by rw [← hstmt]; exact hwt.stmt_typed)
+    have hr_not_root : r ≠ .root := hwt.env_wf.siteEnv_wf site (.ref τ r isBor) hlookup
+    refine ⟨{env with siteEnv := delete env.siteEnv site,
+                       pathEnv := delete_ref_node env.pathEnv r},
+            lenv, retType, rmap, ?_, hss⟩
+    exact {
+      env_wf := ⟨delete_ref_node_wellformed env.pathEnv r hwt.env_wf.pathEnv_wf hr_not_root,
+                 SiteEnv.delete_refs_not_root env.siteEnv site hwt.env_wf.siteEnv_wf,
+                 hwt.env_wf.varEnv_wf⟩
+      stmt_typed := hcont
+      var_consistent := hwt.var_consistent
+      site_consistent := by
+        intro s' τ' hl
+        have hne : s' ≠ site := by
+          intro heq; subst heq; rw [lookup_delete_same] at hl; simp at hl
+        rw [lookup_delete_ne env.siteEnv site s' hne] at hl
+        exact hwt.site_consistent s' τ' hl
+      rmap_live := hwt.rmap_live
+      rmap_paths := by
+        intro r1 r2 hr1 hr2 p hp
+        -- Normalize struct projections so rw can match
+        have hr1f : r1 ∈ (delete_ref_node env.pathEnv r).refs := hr1
+        have hr2f : r2 ∈ (delete_ref_node env.pathEnv r).refs := hr2
+        have hpf : interpret_regex ((delete_ref_node env.pathEnv r).paths (r1, r2)) p := hp
+        simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hr1f hr2f
+        obtain ⟨hr1_mem, hr1_ne⟩ := hr1f
+        obtain ⟨hr2_mem, hr2_ne⟩ := hr2f
+        rw [delete_ref_node_paths_not_involving_r env.pathEnv r r1 r2 hr1_ne hr2_ne] at hpf
+        exact hwt.rmap_paths r1 r2 hr1_mem hr2_mem p hpf
+      blocks_typed := hwt.blocks_typed
+      lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
+      funEnv_typed := hwt.funEnv_typed
+    }
   | assign x site cont => sorry
   | writeRef dst val cont => sorry
   | jump label => sorry
