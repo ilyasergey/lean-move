@@ -197,6 +197,20 @@ theorem heap_writeRef_preserves_readRef_diff_loc (h : Heap) (wloc rloc : Loc)
       simp only [Heap.readRef, bind, Option.bind]
       rw [heap_write_preserves_read h wloc rloc newVal hne]
 
+/-- After heap.alloc, readRef at a different location is unchanged -/
+theorem heap_alloc_preserves_readRef (h : Heap) (v : Value) (loc' : Loc) (path : List Field) :
+    loc' ≠ h.nextLoc →
+    (h.alloc v).1.readRef loc' path = h.readRef loc' path := by
+  intro hne
+  simp only [Heap.alloc, Heap.readRef, bind, Option.bind, Heap.read]
+  rw [AssocMap.lookup_insert_ne h.store h.nextLoc loc' v hne]
+
+/-- After heap.alloc, reading the new location returns the allocated value -/
+theorem heap_alloc_read_new (h : Heap) (v : Value) :
+    (h.alloc v).1.read (h.alloc v).2 = some v := by
+  simp only [Heap.alloc, Heap.read]
+  exact AssocMap.lookup_insert_same h.store h.nextLoc v
+
 -- ============================================================
 -- Part 4: PathEnv–Heap Coherence
 -- ============================================================

@@ -325,6 +325,7 @@ theorem M_t_welltyped : ∃ lenv, typecheck_fun M_t lenv := by
       · rfl  -- notIn siteEnv s1
       · -- freshRef (.refid 0) env.pathEnv
         simp [freshRef, M_t_initEnv, PathEnv.init]
+      · intro v h; injection h  -- rf ≠ .varRef v
       · -- Step 3: let s2 = *s1 (readRef)
         apply typecheck_stmt.let_bind_readRef
         · rfl  -- lookup siteEnv s1
@@ -468,7 +469,8 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
           apply typecheck_stmt.let_bind_borrowImm (r := .refid 1)
           · rfl  -- lookup varEnv var_x = some (.validVar, .basic M_T_basic, .mutable)
           · rfl  -- notIn siteEnv s1
-          · rfl  -- freshRef (.refid 0) pathEnv
+          · rfl  -- freshRef (.refid 1) pathEnv
+          · intro v h; injection h  -- r ≠ .varRef v
           · -- Step 5: var_x_ref = s1
             apply typecheck_stmt.var_assign_invalid
             · rfl  -- lookup varEnv var_x_ref

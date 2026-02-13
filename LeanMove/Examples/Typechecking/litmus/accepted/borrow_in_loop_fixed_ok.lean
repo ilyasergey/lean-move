@@ -292,6 +292,7 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
     · rfl  -- lookup varEnv var_x
     · rfl  -- notIn siteEnv s0
     · rfl  -- freshRefBool r0
+    · intro v h; exact absurd h (by simp [r0])  -- r0 ≠ .varRef v
     · -- continuation: release s0 (jump "l0")
       apply typecheck_stmt.release (τ := .u64) (r := r0) (isBor := .siteBorrowImm)
       · rfl  -- lookup siteEnv s0

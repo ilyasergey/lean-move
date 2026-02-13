@@ -174,9 +174,6 @@ After `f_imm = &copy(s_imm).S::f`, the PathEnv records that `f_imm`'s reference 
 to `f_imm`'s reference. The write is rejected because it would invalidate the immutable
 borrow `f_imm`.
 
-Note: This example requires `native_decide` instead of `rfl` for the algorithmic check —
-the PathEnv computation involves Brzozowski derivatives that need deeper kernel reduction.
-
 ## Runtime behavior
 
 The interpreter writes `S{f:0}` to the heap location without checking alias validity.
@@ -209,7 +206,8 @@ def invalid_write_lenv : LabelEnv :=
 -- Theorem: invalid_write is ILL-typed (REJECTED by type checker)
 -- Note: proving this formally requires the completeness theorem (check_fun_complete),
 -- which is not yet fully proven. The algorithmic rejection above demonstrates the result.
-theorem invalid_write_illtyped : ¬ (∃ lenv, typecheck_fun invalid_write lenv) := by
-  sorry
+
+-- theorem invalid_write_illtyped : ¬ (∃ lenv, typecheck_fun invalid_write lenv) := by
+--   sorry
 
 end LeanMove.Examples.Expressivity.ImmBorrowAfterMutFieldsInvalid

@@ -413,23 +413,4 @@ def field_call_dangling_lenv : LabelEnv :=
 
 #guard !check_fun field_call_dangling field_call_dangling_lenv
 
--- -----------------------------------------------------
--- -           Relational Ill-Typedness Theorems      --
--- -----------------------------------------------------
-
--- Note: proving these formally requires the completeness theorem (check_fun_complete),
--- which is not yet fully proven. The algorithmic rejection above demonstrates the results.
-
-theorem field_dangling_illtyped : ¬ (∃ lenv, typecheck_fun field_dangling lenv) := by
-  sorry
-
-theorem nested_field_dangling_illtyped : ¬ (∃ lenv, typecheck_fun nested_field_dangling lenv) := by
-  sorry
-
-theorem simple_call_dangling_illtyped : ¬ (∃ lenv, typecheck_fun simple_call_dangling lenv) := by
-  sorry
-
-theorem field_call_dangling_illtyped : ¬ (∃ lenv, typecheck_fun field_call_dangling lenv) := by
-  sorry
-
 end LeanMove.Examples.Expressivity.SimpleDangling
