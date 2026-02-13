@@ -76,3 +76,46 @@ it produces larger refid values. Updated all affected examples:
 ### imm_borrow_after_mut.lean
 - Added relational well-typedness proof `r_welltyped` with `check_fun_sound` bridge
 - Updated freshness proofs for the new `freshRefInEnv` requirements
+
+## Fix: Swap `update_with_epsilon` argument order in `copy_ref`
+
+The `copy_ref` typing rule was calling `update_with_epsilon s t pe` (z=s_orig,
+x=t_fresh), which resets s_orig's paths using t's empty paths. The correct
+call is `update_with_epsilon t s pe` (z=t_fresh, x=s_orig), which adds t to
+refs and inherits s_orig's existing paths.
+
+### Files changed
+- **TypeChecking.lean**: swapped `update_with_epsilon s t` → `update_with_epsilon t s` in `let_bind_copy_ref`
+- **TypeCheckingAlgorithmic.lean**: same swap in algorithmic copy_ref case
+- **AlgorithmicTypingSoundness.lean**: updated soundness proof to use t's freshness properties
+  (`nextFreshRefInEnv_not_root`, `nextFreshRefInEnv_not_varRef`)
+- **TypeSoundness.lean**: updated `inv_copy`, `preservation_copy_ref` hypothesis and proof
+
+## Prove `rmap_paths` for `preservation_copy_ref`
+
+Proved the `rmap_paths` invariant for the copy_ref preservation case, handling
+the 4-case analysis of `update_with_epsilon t s_orig pe`:
+
+- **(t, t)**: self-loop via ε — trivially reflected since rmap'(t) = rmap(s_orig)
+- **(t, r2)**: paths = G(s_orig, r2) — reduces to old rmap_paths for (s_orig, r2)
+- **(r1, t)**: paths = G(r1, s_orig) — reduces to old rmap_paths for (r1, s_orig)
+- **(r1, r2)**: paths unchanged — directly from old rmap_paths
+
+### Key technique
+Uses `rw` (not `subst`) for case-splitting equalities `r1 = t` / `r2 = t` to
+avoid Lean 4's `subst` eliminating the RHS variable `t` from scope.
+
+### Reusable lemma: `rmap_paths_update_with_epsilon`
+Extracted the 4-case proof into a standalone lemma parameterized by:
+- `ht_fresh : t ∉ pe.refs` — freshness of new ref
+- `hs_in_refs : s_orig ∈ pe.refs` — source ref is in PathEnv
+- `hrmap_s_orig` — rmap maps s_orig to concrete location
+- `hrmap_live` — that location is valid in heap
+- `hold_paths` — old rmap_paths invariant
+
+This lemma is reusable for other preservation cases using `update_with_epsilon`
+(e.g., freeze, borrow without field extension).
+
+### Remaining sorry
+`s_orig ∈ env.pathEnv.refs` — needs a `varEnv_refs_in_pathEnv` invariant
+to be added to `WellTypedState`.
