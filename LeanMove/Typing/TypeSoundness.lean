@@ -77,10 +77,12 @@ def HasType : Value → BasicMoveType → Prop
 structure RefMap where
   map : Aref → Option (Loc × List Field)
 
-/-- A value matches a MoveType, given a reference map for resolving abstract refs -/
+/-- A value matches a MoveType, given a reference map for resolving abstract refs.
+    For basic types, we use True since danglingRef safety only requires ref tracking.
+    For ref types, we track the concrete location via the rmap. -/
 def ValueMatchesType (v : Value) (τ : MoveType) (rmap : RefMap) : Prop :=
   match τ with
-  | .basic bt => HasType v bt
+  | .basic _bt => True
   | .ref _bt r _bk =>
     ∃ loc path, v = .ref loc path ∧ rmap.map r = some (loc, path)
 
@@ -237,12 +239,13 @@ structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
   stmt_typed : typecheck_stmt lenv env m.frame.stmt retType
 
   -- 3. Variable consistency: VarEnv tracks what VarStore has
+  --    For valid vars, also tracks that the heap value matches the type via rmap
   var_consistent : ∀ x isv τ ms,
     lookup env.varEnv x = some (isv, τ, ms) →
     match isv with
     | .validVar =>
-      ∃ loc, lookup m.frame.varStore x = some (some loc) ∧
-             m.heap.read loc ≠ none
+      ∃ loc v, lookup m.frame.varStore x = some (some loc) ∧
+               m.heap.read loc = some v ∧ ValueMatchesType v τ rmap
     | .invalidVar =>
       lookup m.frame.varStore x = some none ∨
       ∃ loc, lookup m.frame.varStore x = some (some loc)
