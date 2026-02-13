@@ -224,13 +224,13 @@ def t_branch_env : TypeEnv := {
 -- VarEnv at l3 entry (x,y assigned/valid; cond still invalid)
 def t_l3_varEnv : VarEnv :=
   let ve := t_branch_varEnv
-  let ve := update ve var_x (.validVar, .ref (.trecord sub1_entries) (.refid 1) .siteBorrowMut, .mutable)
-  update ve var_y (.validVar, .ref .u64 (.refid 3) .siteBorrowMut, .mutable)
+  let ve := update ve var_x (.validVar, .ref (.trecord sub1_entries) (.refid 5) .siteBorrowMut, .mutable)
+  update ve var_y (.validVar, .ref .u64 (.refid 8) .siteBorrowMut, .mutable)
 
 -- PathEnv at l3 entry: union of paths from l1 (field_l) and l2 (field_r)
 -- l1: root →[field_l]→ Sub1 →[field_l]→ Sub2 →[field_l]→ u64
 -- l2: root →[field_r]→ Sub1 →[field_r]→ Sub2 →[field_r]→ u64
--- Refs: .refid 1 = Sub1 borrow, .refid 2 = intermediate Sub2, .refid 3 = u64 borrow
+-- Refs: .refid 5 = Sub1 borrow, .refid 7 = intermediate Sub2, .refid 8 = u64 borrow
 --
 -- The checker also produces "reverse" derivative paths via `der` in update_with_extension.
 -- These are `Regex.deriv ε (.field f)` values that are semantically empty but not recognized
@@ -247,17 +247,17 @@ def t_l3_pathEnv : PathEnv :=
   let dfr := Regex.deriv Regex.ε (PathElement.field field_r)
   let dfl2 := Regex.deriv dfl (PathElement.field field_l)
   let dfr2 := Regex.deriv dfr (PathElement.field field_r)
-  { refs := [.refid 3, .refid 2, .refid 1, .refid 0, .root]
+  { refs := [.refid 8, .refid 7, .refid 5, .refid 0, .root]
     paths := fun (u, v) =>
       if u = v then Regex.ε
       -- Forward paths (from field borrows: parent → child)
-      else if u = .refid 1 ∧ v = .refid 2 then Regex.union fl fr
-      else if u = .refid 2 ∧ v = .refid 3 then Regex.union fl fr
-      else if u = .refid 1 ∧ v = .refid 3 then Regex.union fl2 fr2
+      else if u = .refid 5 ∧ v = .refid 7 then Regex.union fl fr
+      else if u = .refid 7 ∧ v = .refid 8 then Regex.union fl fr
+      else if u = .refid 5 ∧ v = .refid 8 then Regex.union fl2 fr2
       -- Reverse derivative paths (child → parent, from der in update_with_extension)
-      else if u = .refid 2 ∧ v = .refid 1 then Regex.union dfl dfr
-      else if u = .refid 3 ∧ v = .refid 2 then Regex.union dfl dfr
-      else if u = .refid 3 ∧ v = .refid 1 then Regex.union dfl2 dfr2
+      else if u = .refid 7 ∧ v = .refid 5 then Regex.union dfl dfr
+      else if u = .refid 8 ∧ v = .refid 7 then Regex.union dfl dfr
+      else if u = .refid 8 ∧ v = .refid 5 then Regex.union dfl2 dfr2
       else Regex.empty }
 
 -- Environment at l3 entry
@@ -322,8 +322,8 @@ private lemma t_l3_varEnv_fresh :
   apply VarEnv.insert_refs_are_fresh
   · apply VarEnv.insert_refs_are_fresh
     · exact t_branch_varEnv_fresh
-    · exact ⟨1, rfl⟩
-  · exact ⟨3, rfl⟩
+    · exact ⟨5, rfl⟩
+  · exact ⟨8, rfl⟩
 
 -- Helper: t_l3_pathEnv is well-formed
 private lemma t_l3_pathEnv_wf : PathEnv.WellFormed t_l3_pathEnv := by

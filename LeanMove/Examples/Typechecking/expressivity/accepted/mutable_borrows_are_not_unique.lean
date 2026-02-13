@@ -379,6 +379,7 @@ def fields_lenv : LabelEnv :=
 #eval check_fun fields fields_lenv
 
 -- Theorem: fields type checks algorithmically
+set_option maxRecDepth 4096 in
 theorem fields_check : check_fun fields fields_lenv = true := by rfl
 
 -- Initial environment for fields_write function
@@ -403,6 +404,7 @@ def fields_write_lenv : LabelEnv :=
 #eval check_fun fields_write fields_write_lenv
 
 -- Theorem: fields_write type checks algorithmically
+set_option maxRecDepth 4096 in
 theorem fields_write_check : check_fun fields_write fields_write_lenv = true := by rfl
 
 -- -----------------------------------------------------

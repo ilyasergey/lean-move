@@ -173,6 +173,61 @@ def direct_lenv : LabelEnv :=
 -- Full function check
 #eval check_fun direct direct_lenv
 
+-- Debug: check suffixes of direct body to find where check fails
+-- Full body
+#eval (check_stmt direct_lenv direct_initEnv
+  ((letsite s0 ← #0) ;;
+   (var_a ::= s0) ;;
+   (letsite s1 ← &mut var_a) ;;
+   (var_rmut ::= s1) ;;
+   (letsite s2 ← &var_a) ;;
+   (var_rimm ::= s2) ;;
+   (letsite s3 ← copy var_rmut) ;;
+   (letsite s4 ← #0) ;;
+   Stmt.writeRef s3 s4 ;;
+   (letsite s5 ← copy var_rimm) ;;
+   Stmt.letBind s6 (Expr.readRef s5) ;;
+   Stmt.ret [])
+  (.basic .tunit)).isSome  -- expect: false
+
+-- Up to before copy(rmut)
+#eval (check_stmt direct_lenv direct_initEnv
+  ((letsite s0 ← #0) ;;
+   (var_a ::= s0) ;;
+   (letsite s1 ← &mut var_a) ;;
+   (var_rmut ::= s1) ;;
+   (letsite s2 ← &var_a) ;;
+   (var_rimm ::= s2) ;;
+   Stmt.ret [])
+  (.basic .tunit)).isSome  -- before copy: expect true
+
+-- Up to after copy(rmut) + intLit
+#eval (check_stmt direct_lenv direct_initEnv
+  ((letsite s0 ← #0) ;;
+   (var_a ::= s0) ;;
+   (letsite s1 ← &mut var_a) ;;
+   (var_rmut ::= s1) ;;
+   (letsite s2 ← &var_a) ;;
+   (var_rimm ::= s2) ;;
+   (letsite s3 ← copy var_rmut) ;;
+   (letsite s4 ← #0) ;;
+   Stmt.ret [])
+  (.basic .tunit)).isSome  -- after copy+lit: expect true
+
+-- Up to after writeRef
+#eval (check_stmt direct_lenv direct_initEnv
+  ((letsite s0 ← #0) ;;
+   (var_a ::= s0) ;;
+   (letsite s1 ← &mut var_a) ;;
+   (var_rmut ::= s1) ;;
+   (letsite s2 ← &var_a) ;;
+   (var_rimm ::= s2) ;;
+   (letsite s3 ← copy var_rmut) ;;
+   (letsite s4 ← #0) ;;
+   Stmt.writeRef s3 s4 ;;
+   Stmt.ret [])
+  (.basic .tunit)).isSome  -- after writeRef: expect true
+
 -- Test theorem: direct type checks algorithmically
 theorem direct_check : check_fun direct direct_lenv = true := by rfl
 

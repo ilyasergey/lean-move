@@ -179,7 +179,9 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType : MoveType)
     | _ => none
 
   | .ret as =>
-    if as.all (fun a => lookup env.siteEnv a == some retType) &&
+    if as.all (fun a => match lookup env.siteEnv a with
+                         | some τ => MoveType.compatible_bool τ retType
+                         | none => false) &&
        no_locals_borrowed_bool env
     then some env
     else none
@@ -210,7 +212,7 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType : MoveType)
         else none
       | some (.validVar, .ref τ s isBor, _) =>
         if notIn env.siteEnv a then
-          let t := nextFreshRef env.pathEnv
+          let t := nextFreshRefInEnv env
           let env' := {env with siteEnv := insert env.siteEnv a (.ref τ t isBor)
                                 pathEnv := update_with_epsilon s t env.pathEnv}
           check_stmt lenv env' cont retType
@@ -220,9 +222,9 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType : MoveType)
     | .usage (.borrowImm x) =>
       match lookup env.varEnv x with
       | some (.validVar, .basic τ, _) =>
-        -- Check site fresh; use nextFreshRef to ensure ref is fresh
+        -- Check site fresh; use nextFreshRefInEnv to ensure ref is fresh
         if notIn env.siteEnv a then
-          let r := nextFreshRef env.pathEnv
+          let r := nextFreshRefInEnv env
           let env' := {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowImm)
                                 pathEnv := update_with_epsilon r r env.pathEnv |>
                                            update_with_extension r .root [.root_to_var x]}
@@ -233,9 +235,9 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType : MoveType)
     | .usage (.borrowMut x) =>
       match lookup env.varEnv x with
       | some (.validVar, .basic τ, ms) =>
-        -- Check mutable and site fresh; use nextFreshRef to ensure ref is fresh
+        -- Check mutable and site fresh; use nextFreshRefInEnv to ensure ref is fresh
         if ms == .mutable && notIn env.siteEnv a then
-          let r := nextFreshRef env.pathEnv
+          let r := nextFreshRefInEnv env
           let env' := {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowMut)
                                 pathEnv := update_with_epsilon r r env.pathEnv |>
                                            update_with_extension r .root [.root_to_var x]}
@@ -258,7 +260,7 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType : MoveType)
             match lookup fentries f with
             | some btf =>
               if notIn env.siteEnv a then
-                let rf := nextFreshRef env.pathEnv
+                let rf := nextFreshRefInEnv env
                 let env' := {env with siteEnv := insert (delete env.siteEnv src) a (.ref btf rf isBor)
                                       pathEnv := update_with_extension rf s [.field f] env.pathEnv}
                 check_stmt lenv env' cont retType
@@ -277,7 +279,7 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType : MoveType)
             match lookup fentries f with
             | some btf =>
               if notIn env.siteEnv a then
-                let rf := nextFreshRef env.pathEnv
+                let rf := nextFreshRefInEnv env
                 let env' := {env with siteEnv := insert (delete env.siteEnv src) a (.ref btf rf .siteBorrowMut)
                                       pathEnv := update_with_extension rf s [.field f] env.pathEnv}
                 check_stmt lenv env' cont retType
@@ -313,7 +315,7 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType : MoveType)
       match lookup env.siteEnv src with
       | some (.ref τ r _) =>
         if notIn env.siteEnv a then
-          let r' := nextFreshRef env.pathEnv
+          let r' := nextFreshRefInEnv env
           let env' := {env with siteEnv := insert (delete env.siteEnv src) a (.ref τ r' .siteBorrowImm)
                                 pathEnv := consume_ref_transfer env.pathEnv r r'}
           check_stmt lenv env' cont retType
@@ -349,7 +351,7 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType : MoveType)
       if ms == .mutable then
         let ax : Site := .site (env.siteEnv.entries.length)
         if notIn env.siteEnv ax then
-          let r := nextFreshRef env.pathEnv
+          let r := nextFreshRefInEnv env
           let env' := {env with siteEnv := delete (delete (insert env.siteEnv ax (.ref τ r .siteBorrowMut)) a) ax
                                 pathEnv := garbage_collect (update_with_extension r .root [.root_to_var x] (update_with_epsilon r r env.pathEnv)) r}
           check_stmt lenv env' cont retType

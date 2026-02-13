@@ -230,6 +230,19 @@ def nextFreshRef (pe : PathEnv) : Aref :=
   let maxId := pe.refs.foldl (fun acc r => max acc (getRefId r)) 0
   .refid (maxId + 1)
 
+/-- Extract the Aref from a MoveType, if present -/
+def getTypeRef : MoveType → Option Aref
+  | .ref _ r _ => some r
+  | .basic _ => none
+
+/-- Collect all Arefs appearing in VarEnv types -/
+def collectVarEnvRefs (ve : VarEnv) : List Aref :=
+  ve.entries.filterMap fun (_, (_, τ, _)) => getTypeRef τ
+
+/-- Collect all Arefs appearing in SiteEnv types -/
+def collectSiteEnvRefs (se : SiteEnv) : List Aref :=
+  se.entries.filterMap fun (_, τ) => getTypeRef τ
+
 /- ---------------------------------------------------- -/
 /-       Function Signatures                            -/
 /- ---------------------------------------------------- -/
@@ -261,6 +274,25 @@ structure TypeEnv where
   varEnv  : VarEnv
   pathEnv : PathEnv
   funEnv  : FunEnv
+
+/-- Propositional version: r doesn't appear as a ref in any VarEnv or SiteEnv entry,
+    and is also fresh in PathEnv. -/
+def freshRefInEnv (r : Aref) (env : TypeEnv) : Prop :=
+  freshRef r env.pathEnv ∧
+  r ∉ collectVarEnvRefs env.varEnv ∧
+  r ∉ collectSiteEnvRefs env.siteEnv
+
+/-- Boolean version of freshRefInEnv for use in algorithmic type checking -/
+def freshRefInEnvBool (r : Aref) (env : TypeEnv) : Bool :=
+  freshRefBool r env.pathEnv &&
+  !(collectVarEnvRefs env.varEnv).contains r &&
+  !(collectSiteEnvRefs env.siteEnv).contains r
+
+/-- Compute a fresh Aref by finding the maximum refid across all TypeEnv components -/
+def nextFreshRefInEnv (env : TypeEnv) : Aref :=
+  let allRefs := env.pathEnv.refs ++ collectVarEnvRefs env.varEnv ++ collectSiteEnvRefs env.siteEnv
+  let maxId := allRefs.foldl (fun acc r => max acc (getRefId r)) 0
+  .refid (maxId + 1)
 
 -- Label environment: maps labels to their expected entry type environments
 -- Used for type checking control flow (jumps must target labels with compatible environments)

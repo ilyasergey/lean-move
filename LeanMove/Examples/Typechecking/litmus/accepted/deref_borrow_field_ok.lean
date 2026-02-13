@@ -211,11 +211,11 @@ theorem M_new_welltyped : ∃ lenv, typecheck_fun M_new lenv := by
         exact absurd rfl hne
       · -- continuation: ret [s1]
         apply typecheck_stmt.ret
-        · -- All return sites have correct type
+        · -- All return sites have compatible type
           intro a ha
           simp only [List.mem_singleton] at ha
           subst ha
-          rfl
+          exact ⟨_, rfl, rfl⟩
         · -- no_locals_borrowed
           unfold no_locals_borrowed not_borrowed
           intro x v hmem r
@@ -323,8 +323,12 @@ theorem M_t_welltyped : ∃ lenv, typecheck_fun M_t lenv := by
       · rfl  -- M_T_basic = .trecord fentries
       · rfl  -- lookup fentries field_f = some .u64
       · rfl  -- notIn siteEnv s1
-      · -- freshRef (.refid 0) env.pathEnv
-        simp [freshRef, M_t_initEnv, PathEnv.init]
+      · -- freshRefInEnv (.refid 0) env
+        refine ⟨by simp [freshRef, M_t_initEnv, PathEnv.init], ?_, ?_⟩
+        · -- (.refid 0) ∉ collectVarEnvRefs varEnv
+          native_decide
+        · -- (.refid 0) ∉ collectSiteEnvRefs siteEnv
+          native_decide
       · intro v h; injection h  -- rf ≠ .varRef v
       · -- Step 3: let s2 = *s1 (readRef)
         apply typecheck_stmt.let_bind_readRef
@@ -466,16 +470,16 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
         · rfl  -- lookup siteEnv s0 = some M_T
         · rfl  -- MoveType.compatible (basic type)
         · -- Step 4: let s1 = &var_x
-          apply typecheck_stmt.let_bind_borrowImm (r := .refid 1)
+          apply typecheck_stmt.let_bind_borrowImm (r := .refid 2)
           · rfl  -- lookup varEnv var_x = some (.validVar, .basic M_T_basic, .mutable)
           · rfl  -- notIn siteEnv s1
-          · rfl  -- freshRef (.refid 1) pathEnv
+          · rfl  -- freshRefInEnvBool (.refid 2) env
           · intro v h; injection h  -- r ≠ .varRef v
           · -- Step 5: var_x_ref = s1
             apply typecheck_stmt.var_assign_invalid
             · rfl  -- lookup varEnv var_x_ref
             · rfl  -- lookup siteEnv s1
-            · exact MoveType.compatible_of_beq _ _ rfl  -- MoveType.compatible (ref type)
+            · exact MoveType.compatible_bool_sound _ _ rfl  -- MoveType.compatible (ref type, refids compatible)
             · -- Step 6: let s2 = move(var_x_ref)
               apply typecheck_stmt.let_bind_move
               · rfl  -- lookup varEnv var_x_ref = some (.validVar, .ref ..., .mutable)
@@ -484,9 +488,9 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
                 intro r
                 simp only [update_with_extension, update_with_epsilon,
                             Regex.extend, Regex.der, List.foldl, var_x]
-                -- paths(.root, r) depends on whether r = refid 1
-                by_cases hr : r = .refid 1
-                · -- r = refid 1: path is ε ∘ [.root_to_var var_x]
+                -- paths(.root, r) depends on whether r = refid 2
+                by_cases hr : r = .refid 2
+                · -- r = refid 2: path is ε ∘ [.root_to_var var_x]
                   subst hr
                   simp only [foo_initEnv, PathEnv.init]
                   simp only [var_x_ref, and_true]
@@ -495,7 +499,7 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
                   simp only [Regex.interpret_regex] at hax2
                   subst hax2
                   split_ifs at hw' <;> simp_all [Regex.interpret_regex]
-                · -- r ≠ refid 1
+                · -- r ≠ refid 2
                   simp only [hr, ↓reduceIte, foo_initEnv, PathEnv.init]
                   split_ifs <;> simp_all [Regex.interpret_regex]
               · rfl  -- notIn siteEnv s2
@@ -520,7 +524,7 @@ theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
                   simp only [AssocMap.lookup, AssocMap.insert, AssocMap.empty] at hlookup
                   exact absurd hlookup (by simp)
                 · -- Step 8: release s2
-                  apply typecheck_stmt.release (τ := M_T_basic) (r := .refid 1)
+                  apply typecheck_stmt.release (τ := M_T_basic) (r := .refid 2)
                                               (isBor := .siteBorrowImm)
                   · rfl  -- lookup siteEnv s2
                   · -- Step 9: ret []

@@ -276,10 +276,12 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       typecheck_stmt lenv env (.branch a L1 L2) retType
 
   -- return (a1, ..., an) // Return from function
-  | ret : ∀ (lenv : LabelEnv) (env : TypeEnv) (as : List Site) τ,
-      (∀ a, a ∈ as → AssocMap.lookup env.siteEnv a = some τ) →
+  -- Uses MoveType.compatible to compare return site types with the declared return type.
+  -- This allows the checker to be agnostic to exact Aref refid values in declared types.
+  | ret : ∀ (lenv : LabelEnv) (env : TypeEnv) (as : List Site) retType,
+      (∀ a, a ∈ as → ∃ τ, AssocMap.lookup env.siteEnv a = some τ ∧ MoveType.compatible τ retType) →
       no_locals_borrowed env →
-      typecheck_stmt lenv env (.ret as) τ
+      typecheck_stmt lenv env (.ret as) retType
 
   -- abort a // Abort execution with error value
   | abort : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) τ retType,
@@ -312,7 +314,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
   | let_bind_copy_ref : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) x τ ms (s t : Aref) isBor cont retType,
       lookup env.varEnv x = some (.validVar, .ref τ s isBor, ms) →
       notIn env.siteEnv a →
-      freshRefBool t env.pathEnv →
+      freshRefInEnvBool t env →
       (∀ v, t ≠ .varRef v) →
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.ref τ t isBor)
@@ -324,7 +326,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
   | let_bind_borrowImm : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) x τ ms (r : Aref) cont retType,
       lookup env.varEnv x = some (.validVar, .basic τ, ms) →
       notIn env.siteEnv a →
-      freshRefBool r env.pathEnv →
+      freshRefInEnvBool r env →
       (∀ v, r ≠ .varRef v) →
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowImm)
@@ -338,7 +340,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       LE.le .mutable ms →
       lookup env.varEnv x = some (.validVar, .basic τ, ms) →
       notIn env.siteEnv a →
-      freshRefBool r env.pathEnv →
+      freshRefInEnvBool r env →
       (∀ v, r ≠ .varRef v) →
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowMut)
@@ -361,7 +363,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       bt = .trecord fentries →
       lookup fentries f = some bt' →
       notIn env.siteEnv af →
-      freshRef rf env.pathEnv →
+      freshRefInEnv rf env →
       (∀ v, rf ≠ .varRef v) →
       typecheck_stmt lenv
         {env with siteEnv := insert (delete env.siteEnv a) af (.ref bt' rf isBor)
@@ -375,7 +377,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       bt = .trecord fentries →
       lookup fentries f = some btf →
       notIn env.siteEnv af →
-      freshRef rf env.pathEnv →
+      freshRefInEnv rf env →
       (∀ v, rf ≠ .varRef v) →
       typecheck_stmt lenv
         {env with siteEnv := insert (delete env.siteEnv a) af (.ref btf rf .siteBorrowMut)
@@ -408,7 +410,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
   | let_bind_freeze : ∀ (lenv : LabelEnv) (env : TypeEnv) (a c : Site) (τ : BasicMoveType) (r r' : Aref) isBor cont retType,
       lookup env.siteEnv a = some (.ref τ r isBor) →
       notIn env.siteEnv c →
-      freshRef r' env.pathEnv →
+      freshRefInEnv r' env →
       (∀ v, r' ≠ .varRef v) →
       typecheck_stmt lenv
         {env with siteEnv := insert (delete env.siteEnv a) c (.ref τ r' .siteBorrowImm)
@@ -448,7 +450,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       LE.le .mutable ms →
       lookup env.varEnv x = some (.validVar, .basic τ, ms) →
       notIn env.siteEnv ax →
-      freshRefBool r env.pathEnv →
+      freshRefInEnvBool r env →
       (∀ v, r ≠ .varRef v) →
       -- After writeRef: both ax and a are consumed, r is garbage collected
       -- The intermediate pathEnv is: update_with_extension r .root [.root_to_var x] (update_with_epsilon r r env.pathEnv)

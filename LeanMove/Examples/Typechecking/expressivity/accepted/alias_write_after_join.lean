@@ -102,7 +102,7 @@ def t : FunDef := {
     { name := var_a, type := .basic .u64 },
     { name := var_b, type := .basic .u64 },
     { name := var_x, type := .ref .u64 (.refid 1) .siteBorrowMut },
-    { name := var_y, type := .ref .u64 (.refid 42) .siteBorrowMut },
+    { name := var_y, type := .ref .u64 (.refid 2) .siteBorrowMut },
     { name := var_z, type := .ref .u64 (.refid 3) .siteBorrowMut }
   ]
   blocks := [
@@ -156,8 +156,8 @@ def t : FunDef := {
 -- Abbreviations for path elements and refs
 def rta : PathElement := .root_to_var var_a
 def rtb : PathElement := .root_to_var var_b
-def r1 : Aref := .refid 1
-def r2 : Aref := .refid 2
+def r1 : Aref := .refid 4
+def r2 : Aref := .refid 5
 
 -- VarEnv at l1/l2 entry (after l0: a,b assigned, cond consumed)
 def t_branch_varEnv : VarEnv :=
@@ -283,8 +283,8 @@ private lemma t_varEnv_fresh :
           · trivial
         · trivial
       · exact ⟨1, rfl⟩
-    · exact ⟨_, rfl⟩
-  · exact ⟨_, rfl⟩
+    · exact ⟨2, rfl⟩
+  · exact ⟨3, rfl⟩
 
 -- Helper: t_branch_varEnv has fresh refs (updates only basic types)
 private lemma t_branch_varEnv_fresh :
@@ -306,8 +306,8 @@ private lemma t_l3_varEnv_fresh :
   apply VarEnv.insert_refs_are_fresh
   · apply VarEnv.insert_refs_are_fresh
     · exact t_branch_varEnv_fresh
-    · exact ⟨1, rfl⟩
-  · exact ⟨2, rfl⟩
+    · exact ⟨4, rfl⟩
+  · exact ⟨5, rfl⟩
 
 -- Helper: t_l3_env's pathEnv is well-formed
 private lemma t_l3_pathEnv_wf : PathEnv.WellFormed t_l3_env.pathEnv := by

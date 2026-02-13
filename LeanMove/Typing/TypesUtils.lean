@@ -106,6 +106,140 @@ lemma nextFreshRef_fresh_prop (pe : PathEnv) : freshRef (nextFreshRef pe) pe := 
   exact nextFreshRef_fresh pe
 
 /- ---------------------------------------------------- -/
+/-       freshRefInEnv / nextFreshRefInEnv lemmas        -/
+/- ---------------------------------------------------- -/
+
+-- Helper: List.lookup gives membership in the list
+private lemma list_lookup_pair_mem [BEq α] [LawfulBEq α]
+    {l : List (α × β)} {k : α} {v : β}
+    (h : l.lookup k = some v) : (k, v) ∈ l := by
+  induction l with
+  | nil => simp [List.lookup] at h
+  | cons hd tl ih =>
+    simp only [List.lookup] at h
+    split at h
+    · rename_i heq
+      have hk : k = hd.1 := beq_iff_eq.mp heq
+      have hv : hd.2 = v := by injection h
+      subst hk; subst hv; exact List.mem_cons_self ..
+    · exact List.mem_cons_of_mem _ (ih h)
+
+-- freshRefInEnvBool implies freshRefBool on pathEnv
+lemma freshRefInEnvBool_implies_freshRefBool (r : Aref) (env : TypeEnv)
+    (h : freshRefInEnvBool r env = true) : freshRefBool r env.pathEnv = true := by
+  simp only [freshRefInEnvBool, Bool.and_eq_true] at h
+  exact h.1.1
+
+-- freshRefInEnv implies freshRef on pathEnv
+lemma freshRefInEnv_implies_freshRef (r : Aref) (env : TypeEnv)
+    (h : freshRefInEnv r env) : freshRef r env.pathEnv := h.1
+
+-- freshRefInEnv ↔ freshRefInEnvBool
+theorem freshRefInEnv_iff_freshRefInEnvBool (r : Aref) (env : TypeEnv) :
+    freshRefInEnv r env ↔ freshRefInEnvBool r env = true := by
+  constructor
+  · intro ⟨hpath, hvar, hsite⟩
+    simp only [freshRefInEnvBool, Bool.and_eq_true, Bool.not_eq_true',
+               List.contains_eq_any_beq]
+    refine ⟨⟨(freshRef_iff_freshRefBool r env.pathEnv).mp hpath, ?_⟩, ?_⟩
+    · rw [List.any_eq_false]; intro x hx
+      simp only [beq_iff_eq]; exact fun heq => hvar (heq ▸ hx)
+    · rw [List.any_eq_false]; intro x hx
+      simp only [beq_iff_eq]; exact fun heq => hsite (heq ▸ hx)
+  · intro h
+    simp only [freshRefInEnvBool, Bool.and_eq_true, Bool.not_eq_true',
+               List.contains_eq_any_beq] at h
+    obtain ⟨⟨hpath, hvar⟩, hsite⟩ := h
+    refine ⟨(freshRef_iff_freshRefBool r env.pathEnv).mpr hpath, ?_, ?_⟩
+    · intro hmem
+      rw [List.any_eq_false] at hvar
+      exact absurd (beq_self_eq_true r) (hvar r hmem)
+    · intro hmem
+      rw [List.any_eq_false] at hsite
+      exact absurd (beq_self_eq_true r) (hsite r hmem)
+
+-- nextFreshRefInEnv is fresh in the entire TypeEnv (Bool version)
+theorem nextFreshRefInEnv_fresh (env : TypeEnv) :
+    freshRefInEnvBool (nextFreshRefInEnv env) env = true := by
+  unfold nextFreshRefInEnv freshRefInEnvBool freshRefBool
+  simp only [Bool.and_eq_true, Bool.not_eq_true', List.contains_eq_any_beq]
+  -- Abbreviation for the full refs list
+  let AR := env.pathEnv.refs ++ collectVarEnvRefs env.varEnv ++ collectSiteEnvRefs env.siteEnv
+  -- Helper: any ref in AR can't equal the fresh refid
+  have hnotIn : ∀ r, r ∈ AR → ∀ (n : Nat),
+      n = AR.foldl (fun acc r => max acc (getRefId r)) 0 + 1 → r ≠ Aref.refid n := by
+    intro r hr n hn heq
+    have hmax := foldl_max_ge_elem AR 0 r hr
+    subst heq; subst hn; simp only [getRefId] at hmax; omega
+  refine ⟨⟨?_, ?_⟩, ?_⟩
+  · rw [List.any_eq_false]; intro r hr; simp only [beq_iff_eq]
+    exact (hnotIn r (List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inl hr)))) _ rfl).symm
+  · rw [List.any_eq_false]; intro r hr; simp only [beq_iff_eq]
+    exact (hnotIn r (List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inr hr)))) _ rfl).symm
+  · rw [List.any_eq_false]; intro r hr; simp only [beq_iff_eq]
+    exact (hnotIn r (List.mem_append.mpr (Or.inr hr)) _ rfl).symm
+
+-- nextFreshRefInEnv is fresh (Prop version)
+theorem nextFreshRefInEnv_fresh_prop (env : TypeEnv) :
+    freshRefInEnv (nextFreshRefInEnv env) env :=
+  (freshRefInEnv_iff_freshRefInEnvBool _ env).mpr (nextFreshRefInEnv_fresh env)
+
+-- nextFreshRefInEnv is never root
+lemma nextFreshRefInEnv_not_root (env : TypeEnv) : nextFreshRefInEnv env ≠ Aref.root := by
+  simp only [nextFreshRefInEnv]; intro h; cases h
+
+-- nextFreshRefInEnv is never varRef
+lemma nextFreshRefInEnv_not_varRef (env : TypeEnv) (x : Var) :
+    nextFreshRefInEnv env ≠ Aref.varRef x := by
+  simp only [nextFreshRefInEnv]; intro h; cases h
+
+-- nextFreshRefInEnv is not in pathEnv.refs
+lemma nextFreshRefInEnv_not_in_pathEnv (env : TypeEnv) :
+    nextFreshRefInEnv env ∉ env.pathEnv.refs :=
+  (nextFreshRefInEnv_fresh_prop env).1
+
+-- Key lemma: freshRefInEnvBool means the ref doesn't appear in any VarEnv entry
+lemma freshRefInEnvBool_ne_varEnv_ref (t : Aref) (env : TypeEnv) (x : Var)
+    (isv : IsValid) (τ : BasicMoveType) (s : Aref) (isBor : BorrowingKind) (ms : Mut)
+    (hfresh : freshRefInEnvBool t env = true)
+    (hlookup : lookup env.varEnv x = some (isv, .ref τ s isBor, ms)) :
+    t ≠ s := by
+  intro heq; subst heq
+  have ⟨_, hvar, _⟩ := (freshRefInEnv_iff_freshRefInEnvBool t env).mpr hfresh
+  apply hvar
+  simp only [collectVarEnvRefs, List.mem_filterMap]
+  exact ⟨(x, (isv, .ref τ t isBor, ms)), list_lookup_pair_mem hlookup, rfl⟩
+
+-- Key lemma: freshRefInEnvBool means the ref doesn't appear in any SiteEnv entry
+lemma freshRefInEnvBool_ne_siteEnv_ref (t : Aref) (env : TypeEnv) (s : Site)
+    (τ : BasicMoveType) (s_ref : Aref) (isBor : BorrowingKind)
+    (hfresh : freshRefInEnvBool t env = true)
+    (hlookup : lookup env.siteEnv s = some (.ref τ s_ref isBor)) :
+    t ≠ s_ref := by
+  intro heq; subst heq
+  have ⟨_, _, hsite⟩ := (freshRefInEnv_iff_freshRefInEnvBool t env).mpr hfresh
+  apply hsite
+  simp only [collectSiteEnvRefs, List.mem_filterMap]
+  exact ⟨(s, .ref τ t isBor), list_lookup_pair_mem hlookup, rfl⟩
+
+-- Prop versions of the above
+lemma freshRefInEnv_ne_varEnv_ref (t : Aref) (env : TypeEnv) (x : Var)
+    (isv : IsValid) (τ : BasicMoveType) (s : Aref) (isBor : BorrowingKind) (ms : Mut)
+    (hfresh : freshRefInEnv t env)
+    (hlookup : lookup env.varEnv x = some (isv, .ref τ s isBor, ms)) :
+    t ≠ s := by
+  exact freshRefInEnvBool_ne_varEnv_ref t env x isv τ s isBor ms
+    ((freshRefInEnv_iff_freshRefInEnvBool t env).mp hfresh) hlookup
+
+lemma freshRefInEnv_ne_siteEnv_ref (t : Aref) (env : TypeEnv) (s : Site)
+    (τ : BasicMoveType) (s_ref : Aref) (isBor : BorrowingKind)
+    (hfresh : freshRefInEnv t env)
+    (hlookup : lookup env.siteEnv s = some (.ref τ s_ref isBor)) :
+    t ≠ s_ref := by
+  exact freshRefInEnvBool_ne_siteEnv_ref t env s τ s_ref isBor
+    ((freshRefInEnv_iff_freshRefInEnvBool t env).mp hfresh) hlookup
+
+/- ---------------------------------------------------- -/
 /-       PathEnv lemmas                                  -/
 /- ---------------------------------------------------- -/
 
@@ -404,6 +538,10 @@ lemma Aref.isFreshRef_not_varRef (a : Aref) (h : Aref.isFreshRef a) (x : Var) : 
 
 lemma nextFreshRef_isFreshRef (pe : PathEnv) : Aref.isFreshRef (nextFreshRef pe) := by
   exact nextFreshRef_is_refid pe
+
+lemma nextFreshRefInEnv_isFreshRef (env : TypeEnv) :
+    Aref.isFreshRef (nextFreshRefInEnv env) := by
+  simp only [nextFreshRefInEnv]; exact ⟨_, rfl⟩
 
 /-- If r1 is a fresh ref and r1 is Aref-compatible with r2, then r2 is also a fresh ref. -/
 lemma Aref.Compatible_preserves_freshRef (r1 r2 : Aref)
