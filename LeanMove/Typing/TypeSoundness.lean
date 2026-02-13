@@ -253,11 +253,10 @@ structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     ∃ v, lookup m.frame.siteStore s = some v ∧ ValueMatchesType v τ rmap
 
   -- 5. Heap consistency via rmap:
-  --    Every live abstract reference maps to a valid concrete heap location
-  rmap_live : ∀ r, r ∈ env.pathEnv.refs →
-    r ≠ .root →
-    ∃ loc path, rmap.map r = some (loc, path) ∧
-                m.heap.readRef loc path ≠ none
+  --    Every mapped abstract reference points to a valid concrete heap location
+  rmap_live : ∀ r loc path,
+    rmap.map r = some (loc, path) →
+    m.heap.readRef loc path ≠ none
 
   -- 6. Path–heap coherence:
   --    PathEnv paths correspond to concrete field relationships in the heap
@@ -266,13 +265,7 @@ structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     ∀ p, interpret_regex (env.pathEnv.paths (r1, r2)) p →
     PathReflectedInHeap rmap m.heap r1 r2 p
 
-  -- 7. SiteEnv references are tracked in PathEnv:
-  --    Every abstract ref mentioned in a reference type in SiteEnv is in pathEnv.refs
-  siteEnv_refs_tracked : ∀ s bt r bk,
-    lookup env.siteEnv s = some (.ref bt r bk) →
-    r ∈ env.pathEnv.refs
-
-  -- 8. All blocks in the current frame type-check in their lenv environments
+  -- 7. All blocks in the current frame type-check in their lenv environments
   blocks_typed : ∀ b, b ∈ m.frame.blocks → ∀ blockEnv,
     lookup lenv b.label = some blockEnv →
     typecheck_stmt lenv blockEnv b.body retType
@@ -469,14 +462,8 @@ theorem no_danglingRef_readRef (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
         simp only [Option.some.injEq, Value.ref.injEq] at hsrc
         exact hsrc
       rw [hloc_eq.1, hloc_eq.2] at hrmap; exact hrmap
-    -- From siteEnv_refs_tracked + env_wf + rmap_live: heap.readRef loc path ≠ none
-    have hr_tracked := hwt.siteEnv_refs_tracked src τ r isBor hlookup
-    have hr_not_root := hwt.env_wf.siteEnv_wf src (.ref τ r isBor) hlookup
-    have ⟨_, _, hrmap', hheap⟩ := hwt.rmap_live r hr_tracked hr_not_root
-    rw [hrmap_concrete] at hrmap'
-    simp only [Option.some.injEq, Prod.mk.injEq] at hrmap'
-    rw [← hrmap'.1, ← hrmap'.2] at hheap
-    exact hheap
+    -- From rmap_live: heap.readRef loc path ≠ none
+    exact hwt.rmap_live r loc path hrmap_concrete
 
 /-- A writeRef that is well-typed always succeeds (heap write exists).
     Uses the same chain as readRef, plus readRef_ne_none_implies_writeRef_ne_none. -/
@@ -507,14 +494,8 @@ theorem no_danglingRef_writeRef (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
         simp only [Option.some.injEq, Value.ref.injEq] at hdst
         exact hdst
       rw [hloc_eq.1, hloc_eq.2] at hrmap; exact hrmap
-    -- From siteEnv_refs_tracked and rmap_live: heap.readRef loc path ≠ none
-    have hr_tracked := hwt.siteEnv_refs_tracked dst τ r .siteBorrowMut hlookup_dst
-    have hr_not_root := hwt.env_wf.siteEnv_wf dst (.ref τ r .siteBorrowMut) hlookup_dst
-    have ⟨_, _, hrmap', hheap⟩ := hwt.rmap_live r hr_tracked hr_not_root
-    rw [hrmap_concrete] at hrmap'
-    simp only [Option.some.injEq, Prod.mk.injEq] at hrmap'
-    rw [← hrmap'.1, ← hrmap'.2] at hheap
-    -- hheap : m.heap.readRef loc path ≠ none
+    -- From rmap_live: heap.readRef loc path ≠ none
+    have hheap := hwt.rmap_live r loc path hrmap_concrete
     -- By bridge lemma, writeRef also succeeds
     have ⟨h', hwrite⟩ := readRef_ne_none_implies_writeRef_ne_none m.heap loc path v hheap
     rw [hwrite]
@@ -538,22 +519,21 @@ theorem no_danglingRef_progress (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     exact no_danglingRef_writeRef m env lenv retType rmap hwt dst val cont hstmt loc path v hdst hval hheap
 
 -- ============================================================
+-- Part 8: Preservation — typing inversion lemmas
+-- ============================================================
+
+-- Extract continuation typing from each typecheck_stmt constructor.
+-- These are separate lemmas to avoid rw/cases interaction issues.
+
+private theorem inv_intLit
+    (h : typecheck_stmt lenv env (.letBind s (.intLit n) cont) retType) :
+    typecheck_stmt lenv {env with siteEnv := insert env.siteEnv s (.basic .u64)} cont retType :=
+  match h with | .let_bind_intLit _ _ _ _ _ _ _ hc => hc
+
+-- ============================================================
 -- Part 8: Preservation
 -- ============================================================
 
-/-- Each step of execution preserves the well-typed state invariant.
-    If a well-typed running state steps to another running state,
-    then the new state is also well-typed (possibly with a different
-    type environment and reference map).
-
-    This requires case analysis on each typecheck_stmt constructor,
-    showing the post-step machine matches the continuation's type env.
-    Key cases:
-    - readRef: new site gets basic type, ref node deleted from PathEnv
-    - writeRef: both sites deleted, ref garbage-collected from PathEnv
-    - assign: heap alloc preserves other refs, varEnv updated
-    - borrowImm/borrowMut: rmap extended with new ref
-    - call/ret: frame push/pop with return info -/
 theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retType : MoveType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retType rmap)
@@ -562,7 +542,59 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     ∃ env' lenv' retType' rmap',
       WellTypedState m' env' lenv' retType' rmap' ∧
       StackSafe m'.stack m'.frame.returnInfo m'.heap := by
-  sorry
+  -- Case analysis on the statement form
+  cases hstmt : m.frame.stmt with
+  | skip =>
+    -- skip steps to halted or error, never .running
+    exfalso; simp only [step, hstmt] at hstep
+    split at hstep <;> simp at hstep
+  | abort msg =>
+    -- abort steps to error, never .running
+    exfalso; simp only [step, hstmt] at hstep; contradiction
+  | letBind s expr cont =>
+    cases expr with
+    | intLit n =>
+      -- step inserts (.int n) into siteStore, advances to cont
+      simp only [step, hstmt, ExecState.running.injEq] at hstep; subst hstep
+      -- Extract continuation typing from the derivation
+      have hcont := inv_intLit (by rw [← hstmt]; exact hwt.stmt_typed)
+      refine ⟨{env with siteEnv := insert env.siteEnv s (.basic .u64)},
+              lenv, retType, rmap, ?_, hss⟩
+      exact {
+        env_wf := TypeEnv.insert_siteEnv_wf env s (.basic .u64) hwt.env_wf trivial
+        stmt_typed := hcont
+        var_consistent := hwt.var_consistent
+        site_consistent := by
+          intro s' τ hl
+          by_cases heq : s' = s
+          · subst heq
+            simp only [lookup_insert_same, Option.some.injEq] at hl; subst hl
+            exact ⟨.int n, lookup_insert_same _ _ _, trivial⟩
+          · rw [lookup_insert_ne _ s s' _ heq] at hl
+            obtain ⟨v, hv, hm⟩ := hwt.site_consistent s' τ hl
+            refine ⟨v, ?_, hm⟩
+            rw [lookup_insert_ne _ s s' _ heq]; exact hv
+        rmap_live := hwt.rmap_live
+        rmap_paths := hwt.rmap_paths
+        blocks_typed := hwt.blocks_typed
+        lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
+        funEnv_typed := hwt.funEnv_typed
+      }
+    | usage u => sorry
+    | borrowField src bt field => sorry
+    | borrowMutField src bt field => sorry
+    | readRef src => sorry
+    | freeze src => sorry
+    | pack name fieldSites => sorry
+    | binop op a b => sorry
+  | release site cont => sorry
+  | assign x site cont => sorry
+  | writeRef dst val cont => sorry
+  | jump label => sorry
+  | branch c l1 l2 => sorry
+  | ret sites => sorry
+  | call results fname argSites cont => sorry
+  | unpack fields src cont => sorry
 
 -- ============================================================
 -- Part 9: Safe Execution State
