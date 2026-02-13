@@ -326,6 +326,9 @@ private lemma t_l3_pathEnv_wf : PathEnv.WellFormed t_l3_env.pathEnv := by
     · exact Aref.noConfusion h
     · exact Aref.noConfusion h
     · nomatch h
+  · -- root_in_refs: .root ∈ [r2, r1, .root]
+    simp only [t_l3_env, r1, r2, List.mem_cons]
+    right; right; left; trivial
 
 -- Helper: t_l3_env is well-formed
 private lemma t_l3_env_wellformed : TypeEnv.WellFormed t_l3_env :=

@@ -344,6 +344,9 @@ private lemma t_l3_pathEnv_wf : PathEnv.WellFormed t_l3_pathEnv := by
     simp only [t_l3_pathEnv, List.mem_cons] at hx
     rcases hx with h | h | h | h | h
     all_goals (first | exact absurd h Aref.noConfusion | simp at h)
+  · -- root_in_refs
+    simp only [t_l3_pathEnv, List.mem_cons]
+    right; right; right; right; left; trivial
 
 -- Helper: t_l3_env is well-formed
 private lemma t_l3_env_wf : TypeEnv.WellFormed t_l3_env := by
