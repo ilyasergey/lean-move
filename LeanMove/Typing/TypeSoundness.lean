@@ -211,6 +211,36 @@ theorem heap_alloc_read_new (h : Heap) (v : Value) :
   simp only [Heap.alloc, Heap.read]
   exact AssocMap.lookup_insert_same h.store h.nextLoc v
 
+/-- If readRef succeeds, then read at the base location also succeeds -/
+theorem readRef_implies_read (h : Heap) (loc : Loc) (path : List Field) :
+    h.readRef loc path ≠ none → h.read loc ≠ none := by
+  intro hne habs
+  simp only [Heap.readRef, bind, Option.bind, habs] at hne
+  exact hne rfl
+
+/-- heap.alloc preserves heap_loc_bound -/
+theorem heap_loc_bound_after_alloc (h : Heap) (v : Value)
+    (hlb : ∀ loc, h.read loc ≠ none → loc < h.nextLoc) :
+    ∀ loc, (h.alloc v).1.read loc ≠ none → loc < (h.alloc v).1.nextLoc := by
+  intro loc hne
+  show loc < h.nextLoc + 1
+  by_cases heq : loc = h.nextLoc
+  · subst heq; exact Nat.lt_succ_of_le (Nat.le_refl _)
+  · have hread : (h.alloc v).1.read loc = h.read loc := by
+      simp only [Heap.alloc, Heap.read]
+      exact AssocMap.lookup_insert_ne h.store h.nextLoc loc v heq
+    rw [hread] at hne
+    exact Nat.lt_succ_of_lt (hlb loc hne)
+
+/-- After heap.alloc, reading an old location (below nextLoc) is unchanged -/
+theorem heap_alloc_preserves_read (h : Heap) (v : Value) (loc : Loc) :
+    loc < h.nextLoc →
+    (h.alloc v).1.read loc = h.read loc := by
+  intro hlt
+  have hne : loc ≠ h.nextLoc := by intro h; subst h; exact Nat.lt_irrefl _ hlt
+  simp only [Heap.alloc, Heap.read]
+  exact AssocMap.lookup_insert_ne h.store h.nextLoc loc v hne
+
 -- ============================================================
 -- Part 4: PathEnv–Heap Coherence
 -- ============================================================
@@ -295,6 +325,10 @@ structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
   funEnv_typed : ∀ fname fdef,
     lookup m.frame.funEnv fname = some fdef →
     ∃ lenv', typecheck_fun fdef lenv'
+
+  -- 11. Heap well-formedness: all readable locations are below nextLoc.
+  --     This ensures that heap.alloc produces a genuinely fresh location.
+  heap_loc_bound : ∀ loc, m.heap.read loc ≠ none → loc < m.heap.nextLoc
 
 /-- Stack safety: each frame on the stack can be safely restored after ret.
     Defined by structural recursion on the stack. -/
@@ -760,6 +794,7 @@ private theorem inv_assign
     (∃ τ τ',
       lookup env.varEnv x = some (.invalidVar, τ, .mutable) ∧
       lookup env.siteEnv a = some τ' ∧
+      MoveType.compatible τ τ' ∧
       typecheck_stmt lenv
         {env with varEnv := update env.varEnv x (.validVar, τ', .mutable)
                   siteEnv := delete env.siteEnv a}
@@ -767,8 +802,8 @@ private theorem inv_assign
   match h with
   | .var_assign_valid _ _ _ _ ax τ ms r _ _ _ hlookup _ _ hnv hcont =>
     .inl ⟨ax, τ, ms, r, hlookup, hnv, hcont⟩
-  | .var_assign_invalid _ _ _ _ τ τ' _ _ hlookup_var hlookup_site _ hcont =>
-    .inr ⟨τ, τ', hlookup_var, hlookup_site, hcont⟩
+  | .var_assign_invalid _ _ _ _ τ τ' _ _ hlookup_var hlookup_site hcompat hcont =>
+    .inr ⟨τ, τ', hlookup_var, hlookup_site, hcompat, hcont⟩
 
 -- ============================================================
 -- Part 8: Preservation — extracted case lemmas
@@ -816,6 +851,7 @@ private theorem preservation_intLit (m m' : Machine) (env : TypeEnv) (lenv : Lab
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     funEnv_typed := hwt.funEnv_typed
+    heap_loc_bound := hwt.heap_loc_bound
   }
 
 private theorem preservation_copy_val (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -846,6 +882,7 @@ private theorem preservation_copy_val (m m' : Machine) (env : TypeEnv) (lenv : L
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     funEnv_typed := hwt.funEnv_typed
+    heap_loc_bound := hwt.heap_loc_bound
   }
 
 private theorem preservation_move (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -909,6 +946,7 @@ private theorem preservation_move (m m' : Machine) (env : TypeEnv) (lenv : Label
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     funEnv_typed := hwt.funEnv_typed
+    heap_loc_bound := hwt.heap_loc_bound
   }
 
 /-- Reusable helper: delete_ref_node preserves rmap_paths. -/
@@ -930,6 +968,93 @@ private theorem rmap_paths_delete_ref_node (env : TypeEnv) (m : Machine) (rmap :
   obtain ⟨hr2_mem, hr2_ne⟩ := hr2f
   rw [delete_ref_node_paths_not_involving_r env.pathEnv r r1 r2 hr1_ne hr2_ne] at hpf
   exact hrp r1 r2 hr1_mem hr2_mem p hpf
+
+/-- PathReflectedInHeap is preserved under heap.alloc -/
+private theorem pathReflectedInHeap_heap_alloc (rmap : RefMap) (heap : Heap) (v : Value)
+    (r1 r2 : Aref) (p : List PathElement)
+    (hrfl : PathReflectedInHeap rmap heap r1 r2 p)
+    (hlive : ∀ r loc path, rmap.map r = some (loc, path) → heap.readRef loc path ≠ none)
+    (hlb : ∀ loc, heap.read loc ≠ none → loc < heap.nextLoc) :
+    PathReflectedInHeap rmap (heap.alloc v).1 r1 r2 p := by
+  unfold PathReflectedInHeap at hrfl ⊢
+  cases hr1 : rmap.map r1 with
+  | none => trivial
+  | some p1 =>
+    cases hr2 : rmap.map r2 with
+    | none => simp only [hr2]
+    | some p2 =>
+      simp only [hr1, hr2] at hrfl ⊢
+      obtain ⟨loc1, path1⟩ := p1
+      obtain ⟨loc2, path2⟩ := p2
+      simp only at hrfl ⊢
+      intro heq_loc
+      obtain ⟨hpath, hread⟩ := hrfl heq_loc
+      refine ⟨hpath, ?_⟩
+      have hloc2_lt := hlb loc2 (readRef_implies_read heap loc2 path2 (hlive r2 loc2 path2 hr2))
+      have hne : loc2 ≠ heap.nextLoc := by intro h; subst h; exact Nat.lt_irrefl _ hloc2_lt
+      rw [heap_alloc_preserves_readRef heap v loc2 path2 hne]
+      exact hread
+
+/-- WellTypedState is preserved when only the heap grows by alloc (frame unchanged) -/
+private theorem wellTypedState_heap_alloc
+    (frame : Frame) (stack : List Frame) (heap : Heap)
+    (env : TypeEnv) (lenv : LabelEnv) (retType : MoveType) (rmap : RefMap)
+    (v : Value)
+    (hwt : WellTypedState ⟨frame, stack, heap⟩ env lenv retType rmap) :
+    WellTypedState ⟨frame, stack, (heap.alloc v).1⟩ env lenv retType rmap := by
+  have hlb := hwt.heap_loc_bound
+  exact {
+    env_wf := hwt.env_wf
+    stmt_typed := hwt.stmt_typed
+    var_consistent := by
+      intro x isv τ ms hvar
+      have hold := hwt.var_consistent x isv τ ms hvar
+      cases isv with
+      | validVar =>
+        obtain ⟨loc, val, hloc, hread, hmatch⟩ := hold
+        have hlt := hlb loc (by rw [Heap.read] at hread ⊢; simp [hread])
+        refine ⟨loc, val, hloc, ?_, hmatch⟩
+        rw [heap_alloc_preserves_read heap v loc hlt]
+        exact hread
+      | invalidVar => exact hold
+    site_consistent := hwt.site_consistent
+    rmap_live := by
+      intro r loc path hrmap
+      have hlive := hwt.rmap_live r loc path hrmap
+      have hlt := hlb loc (readRef_implies_read heap loc path hlive)
+      have hne : loc ≠ heap.nextLoc := by intro h; subst h; exact Nat.lt_irrefl _ hlt
+      rw [heap_alloc_preserves_readRef heap v loc path hne]
+      exact hlive
+    rmap_paths := by
+      intro r1 r2 hr1 hr2 p hp
+      exact pathReflectedInHeap_heap_alloc rmap heap v r1 r2 p
+        (hwt.rmap_paths r1 r2 hr1 hr2 p hp) hwt.rmap_live hlb
+    blocks_typed := hwt.blocks_typed
+    lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
+    funEnv_typed := hwt.funEnv_typed
+    heap_loc_bound := heap_loc_bound_after_alloc heap v hlb
+  }
+
+/-- StackSafe is preserved under heap.alloc -/
+private theorem stackSafe_heap_alloc (stack : List Frame) (ri : Option ReturnInfo)
+    (heap : Heap) (v : Value)
+    (hss : StackSafe stack ri heap)
+    (hlb : ∀ loc, heap.read loc ≠ none → loc < heap.nextLoc) :
+    StackSafe stack ri (heap.alloc v).1 := by
+  cases stack with
+  | nil => simp [StackSafe]
+  | cons callerFrame rest =>
+    cases ri with
+    | none => simp [StackSafe]
+    | some ri =>
+      simp only [StackSafe] at hss ⊢
+      obtain ⟨hret, hrest⟩ := hss
+      refine ⟨fun vals newSiteStore hbind => ?_, ?_⟩
+      · obtain ⟨env', lenv', retType', rmap', hwt', hss'⟩ := hret vals newSiteStore hbind
+        exact ⟨env', lenv', retType', rmap',
+          wellTypedState_heap_alloc _ _ heap env' lenv' retType' rmap' v hwt',
+          stackSafe_heap_alloc rest callerFrame.returnInfo heap v hss' hwt'.heap_loc_bound⟩
+      · exact stackSafe_heap_alloc rest callerFrame.returnInfo heap v hrest hlb
 
 private theorem preservation_readRef (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retType : MoveType) (rmap : RefMap)
@@ -977,6 +1102,7 @@ private theorem preservation_readRef (m m' : Machine) (env : TypeEnv) (lenv : La
       blocks_typed := hwt.blocks_typed
       lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
       funEnv_typed := hwt.funEnv_typed
+      heap_loc_bound := hwt.heap_loc_bound
     }
 
 private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -1040,6 +1166,7 @@ private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : Labe
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     funEnv_typed := hwt.funEnv_typed
+    heap_loc_bound := hwt.heap_loc_bound
   }
 
 private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -1075,6 +1202,7 @@ private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : La
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     funEnv_typed := hwt.funEnv_typed
+    heap_loc_bound := hwt.heap_loc_bound
   }
 
 /-- Helper: lookup on deleteAll returns some → lookup on original returns some -/
@@ -1127,7 +1255,96 @@ private theorem preservation_pack (m m' : Machine) (env : TypeEnv) (lenv : Label
       blocks_typed := hwt.blocks_typed
       lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
       funEnv_typed := hwt.funEnv_typed
+      heap_loc_bound := hwt.heap_loc_bound
     }
+
+private theorem preservation_assign_invalid (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retType : MoveType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retType rmap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (x : Var) (a : Site) (cont : Stmt) (τ τ' : MoveType)
+    (hvar : lookup env.varEnv x = some (.invalidVar, τ, .mutable))
+    (hsite : lookup env.siteEnv a = some τ')
+    (hcompat : MoveType.compatible τ τ')
+    (hcont : typecheck_stmt lenv
+      {env with varEnv := update env.varEnv x (.validVar, τ', .mutable)
+                siteEnv := delete env.siteEnv a} cont retType)
+    (hstmt : m.frame.stmt = .assign x a cont)
+    (hstep : step (.running m) = .running m') :
+    ∃ env' lenv' retType' rmap',
+      WellTypedState m' env' lenv' retType' rmap' ∧
+      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+  -- Extract runtime values from site_consistent
+  obtain ⟨v, hv, hmatch⟩ := hwt.site_consistent a τ' hsite
+  have hrs : readSite m a = some v := hv
+  simp only [step, hstmt, hrs, ExecState.running.injEq] at hstep; subst hstep
+  -- Fresh ref for the new type
+  have hfresh_τ' : moveTypeIsFreshRef τ' :=
+    MoveType.compatible_preserves_freshRef τ τ'
+      (hwt.env_wf.varEnv_wf x (.invalidVar, τ, .mutable) hvar) hcompat
+  refine ⟨{env with varEnv := update env.varEnv x (.validVar, τ', .mutable),
+                     siteEnv := delete env.siteEnv a},
+          lenv, retType, rmap, ?_,
+          stackSafe_heap_alloc m.stack m.frame.returnInfo m.heap v hss hwt.heap_loc_bound⟩
+  exact {
+    env_wf := ⟨hwt.env_wf.pathEnv_wf,
+               SiteEnv.delete_refs_not_root env.siteEnv a hwt.env_wf.siteEnv_wf,
+               VarEnv.update_refs_are_fresh env.varEnv x (.validVar, τ', .mutable)
+                 hwt.env_wf.varEnv_wf hfresh_τ'⟩
+    stmt_typed := hcont
+    var_consistent := by
+      intro y isv τy ms hvy
+      -- Convert struct projection + update → insert (definitionally equal)
+      have hvy' : lookup (insert env.varEnv x (.validVar, τ', .mutable)) y =
+          some (isv, τy, ms) := hvy
+      by_cases heq : y = x
+      · subst heq
+        rw [lookup_insert_same] at hvy'
+        have hisv : isv = .validVar := (congrArg Prod.fst (Option.some.inj hvy')).symm
+        subst hisv
+        have hτy : τy = τ' :=
+          (congrArg Prod.fst (Prod.mk.inj (Option.some.inj hvy')).2).symm
+        subst hτy
+        exact ⟨(m.heap.alloc v).2, v, lookup_insert_same _ _ _,
+               heap_alloc_read_new m.heap v, hmatch⟩
+      · rw [lookup_insert_ne _ x y _ heq] at hvy'
+        have hold := hwt.var_consistent y isv τy ms hvy'
+        have hne_vs : lookup (insert m.frame.varStore x (some (m.heap.alloc v).2)) y =
+            lookup m.frame.varStore y := lookup_insert_ne _ x y _ heq
+        cases isv with
+        | validVar =>
+          obtain ⟨loc, val, hloc, hread, hm⟩ := hold
+          have hlt := hwt.heap_loc_bound loc (by intro habs; simp [habs] at hread)
+          exact ⟨loc, val, hne_vs.trans hloc,
+                 by rw [heap_alloc_preserves_read m.heap v loc hlt]; exact hread, hm⟩
+        | invalidVar =>
+          simp only at hold ⊢
+          cases hold with
+          | inl h => exact .inl (hne_vs.trans h)
+          | inr h =>
+            obtain ⟨l, hl⟩ := h
+            exact .inr ⟨l, hne_vs.trans hl⟩
+    site_consistent := by
+      intro s' τs hl
+      have hl' : lookup (delete env.siteEnv a) s' = some τs := hl
+      have hne : s' ≠ a := by intro h; subst h; rw [lookup_delete_same] at hl'; simp at hl'
+      rw [lookup_delete_ne env.siteEnv a s' hne] at hl'
+      exact hwt.site_consistent s' τs hl'
+    rmap_live := by
+      intro r loc path hrmap
+      have hlive := hwt.rmap_live r loc path hrmap
+      have hlt := hwt.heap_loc_bound loc (readRef_implies_read m.heap loc path hlive)
+      have hne : loc ≠ m.heap.nextLoc := by intro h; subst h; exact Nat.lt_irrefl _ hlt
+      rw [heap_alloc_preserves_readRef m.heap v loc path hne]; exact hlive
+    rmap_paths := by
+      intro r1 r2 hr1 hr2 p hp
+      exact pathReflectedInHeap_heap_alloc rmap m.heap v r1 r2 p
+        (hwt.rmap_paths r1 r2 hr1 hr2 p hp) hwt.rmap_live hwt.heap_loc_bound
+    blocks_typed := hwt.blocks_typed
+    lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
+    funEnv_typed := hwt.funEnv_typed
+    heap_loc_bound := heap_loc_bound_after_alloc m.heap v hwt.heap_loc_bound
+  }
 
 -- ============================================================
 -- Part 8b: Main Preservation Theorem (dispatches to case lemmas)
@@ -1167,7 +1384,12 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     | pack name fieldSites => exact preservation_pack m m' env lenv retType rmap hwt hss s name fieldSites cont hstmt hstep
     | binop op a b => exact preservation_binop m m' env lenv retType rmap hwt hss s op a b cont hstmt hstep
   | release site cont => exact preservation_release m m' env lenv retType rmap hwt hss site cont hstmt hstep
-  | assign x site cont => sorry
+  | assign x site cont =>
+    rcases inv_assign (by rw [← hstmt]; exact hwt.stmt_typed) with
+      ⟨ax, τ, ms, r, hvar, hnv, hcont⟩ | ⟨τ, τ', hvar, hsite, hcompat, hcont⟩
+    · sorry -- var_assign_valid (mutable borrow + write + garbage_collect)
+    · exact preservation_assign_invalid m m' env lenv retType rmap hwt hss x site cont τ τ'
+        hvar hsite hcompat hcont hstmt hstep
   | writeRef dst val cont => sorry
   | jump label => sorry
   | branch c l1 l2 => sorry
