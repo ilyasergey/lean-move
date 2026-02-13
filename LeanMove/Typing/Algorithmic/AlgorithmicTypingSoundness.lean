@@ -487,7 +487,9 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
               simp only [moveTypeIsFreshRef] at hs_fresh
               have hs_not_root : s ≠ Aref.root := Aref.isFreshRef_not_root s hs_fresh
               have hs_not_varRef : ∀ v, s ≠ Aref.varRef v := Aref.isFreshRef_not_varRef s hs_fresh
-              have hpe' := update_with_epsilon_wellformed s t env.pathEnv hwf.pathEnv_wf hs_not_root hs_not_varRef
+              have ht_not_root : t ≠ Aref.root := nextFreshRefInEnv_not_root env
+              have ht_not_varRef : ∀ v, t ≠ Aref.varRef v := nextFreshRefInEnv_not_varRef env
+              have hpe' := update_with_epsilon_wellformed t s env.pathEnv hwf.pathEnv_wf ht_not_root ht_not_varRef
               have hτ : match (MoveType.ref τ t isBor) with | .ref _ r _ => r ≠ Aref.root | .basic _ => True :=
                 nextFreshRefInEnv_not_root env
               have hwf' := TypeEnv.insert_pathEnv_wf env a (.ref τ t isBor) _ hwf hpe' hτ

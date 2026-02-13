@@ -214,7 +214,7 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType : MoveType)
         if notIn env.siteEnv a then
           let t := nextFreshRefInEnv env
           let env' := {env with siteEnv := insert env.siteEnv a (.ref τ t isBor)
-                                pathEnv := update_with_epsilon s t env.pathEnv}
+                                pathEnv := update_with_epsilon t s env.pathEnv}
           check_stmt lenv env' cont retType
         else none
       | _ => none

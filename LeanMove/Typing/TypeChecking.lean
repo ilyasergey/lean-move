@@ -318,7 +318,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       (∀ v, t ≠ .varRef v) →
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.ref τ t isBor)
-                  pathEnv := update_with_epsilon s t env.pathEnv}
+                  pathEnv := update_with_epsilon t s env.pathEnv}
         cont retType →
       typecheck_stmt lenv env (.letBind a (.usage (.copy x)) cont) retType
 

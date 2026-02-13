@@ -617,7 +617,7 @@ private theorem inv_copy
       (∀ v, t ≠ .varRef v) ∧
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.ref τ t isBor)
-                  pathEnv := update_with_epsilon s t env.pathEnv}
+                  pathEnv := update_with_epsilon t s env.pathEnv}
         cont retType) :=
   match h with
   | .let_bind_copy_val _ _ _ _ bt ms _ _ hlookup _ hcont =>
@@ -908,7 +908,7 @@ private theorem preservation_copy_ref (m m' : Machine) (env : TypeEnv) (lenv : L
     (hnv_t : ∀ v, t ≠ .varRef v)
     (hcont : typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv s (.ref τ_ref t isBor)
-                  pathEnv := update_with_epsilon s_orig t env.pathEnv}
+                  pathEnv := update_with_epsilon t s_orig env.pathEnv}
         cont retType)
     (hstmt : m.frame.stmt = .letBind s (.usage (.copy x)) cont)
     (hstep : step (.running m) = .running m') :
@@ -943,12 +943,12 @@ private theorem preservation_copy_ref (m m' : Machine) (env : TypeEnv) (lenv : L
     exact this (hwt.env_wf.pathEnv_wf.root_in_refs)
   -- 6. Construct WellTypedState
   refine ⟨{env with siteEnv := insert env.siteEnv s (.ref τ_ref t isBor),
-                     pathEnv := update_with_epsilon s_orig t env.pathEnv},
+                     pathEnv := update_with_epsilon t s_orig env.pathEnv},
           lenv, retType, rmap', ?_, hss⟩
   exact {
     env_wf := by
-      have hpe' := update_with_epsilon_wellformed s_orig t env.pathEnv hwt.env_wf.pathEnv_wf
-        hs_not_root hs_not_varRef
+      have hpe' := update_with_epsilon_wellformed t s_orig env.pathEnv hwt.env_wf.pathEnv_wf
+        ht_not_root (by intro v hc; exact hnv_t v hc)
       exact TypeEnv.insert_pathEnv_wf env s (.ref τ_ref t isBor) _ hwt.env_wf hpe' ht_not_root
     stmt_typed := hcont
     var_consistent := by
@@ -1007,11 +1007,61 @@ private theorem preservation_copy_ref (m m' : Machine) (env : TypeEnv) (lenv : L
       · simp only [rmap', if_neg hrt] at hrmap_r'
         exact hwt.rmap_live r' loc_r path_r hrmap_r'
     rmap_paths := by
-      -- PathEnv has changed via update_with_epsilon s_orig t.
-      -- Need to verify path coherence for the new PathEnv with rmap'.
-      -- This requires analyzing update_with_extension and showing the
-      -- concrete heap relationships are consistent.
-      sorry
+      -- PathEnv changed via update_with_epsilon t s_orig (note: z=t, x=s_orig).
+      -- After unfolding: (t,t)→ε; (u,t)→G(u,s_orig); (t,v)→G(s_orig,v); else G(u,v)
+      intro r1 r2 hr1 hr2 p hp
+      have ht_fresh_pe : t ∉ env.pathEnv.refs :=
+        (freshRef_iff_freshRefBool t env.pathEnv).mpr hfresh_t_pathEnv
+      have hrefs_eq : (update_with_epsilon t s_orig env.pathEnv).refs = t :: env.pathEnv.refs := by
+        simp only [update_with_epsilon, update_with_extension, if_pos ht_fresh_pe]
+      rw [hrefs_eq] at hr1 hr2
+      simp only [List.mem_cons] at hr1 hr2
+      -- TODO: add varEnv_refs_in_pathEnv invariant to WellTypedState
+      have hs_in_refs : s_orig ∈ env.pathEnv.refs := sorry
+      -- Helpers for rmap' lookup
+      have hrmap'_t : rmap'.map t = some (loc', path) := by simp [rmap']
+      have hrmap'_ne : ∀ r, r ≠ t → rmap'.map r = rmap.map r := by
+        intro r hr; simp [rmap', hr]
+      -- Use rw (not subst) with h1eq/h2eq to keep t in scope
+      rcases hr1 with h1eq | hr1_mem <;> rcases hr2 with h2eq | hr2_mem
+      · -- (t, t): self-loop, paths = ε
+        rw [h1eq, h2eq] at hp ⊢
+        unfold update_with_epsilon update_with_extension at hp
+        simp only [↓reduceIte] at hp; subst hp
+        unfold PathReflectedInHeap; simp only [hrmap'_t]
+        intro _
+        exact ⟨by simp [fieldPathOf], hwt.rmap_live s_orig loc' path hrmap_s_orig⟩
+      · -- (t, r2): paths = der(G(s_orig,r2)) [] = G(s_orig,r2)
+        rw [h1eq] at hp ⊢
+        have hr2_ne_t : r2 ≠ t := fun h => ht_fresh_pe (h ▸ hr2_mem)
+        unfold update_with_epsilon update_with_extension at hp
+        simp only [↓reduceIte, true_and, show ¬(r2 = t) from hr2_ne_t,
+                   show der (env.pathEnv.paths (s_orig, r2)) [] = env.pathEnv.paths (s_orig, r2) from rfl] at hp
+        have hold := hwt.rmap_paths s_orig r2 hs_in_refs hr2_mem p hp
+        unfold PathReflectedInHeap at hold ⊢
+        rw [hrmap'_t, hrmap'_ne r2 hr2_ne_t]
+        rw [hrmap_s_orig] at hold
+        exact hold
+      · -- (r1, t): paths = G(r1,s_orig) ∘ [] = G(r1,s_orig)
+        rw [h2eq] at hp ⊢
+        have hr1_ne_t : r1 ≠ t := fun h => ht_fresh_pe (h ▸ hr1_mem)
+        unfold update_with_epsilon update_with_extension at hp
+        simp only [↓reduceIte, and_true, show ¬(r1 = t) from hr1_ne_t,
+                   show extend (env.pathEnv.paths (r1, s_orig)) [] = env.pathEnv.paths (r1, s_orig) from rfl] at hp
+        have hold := hwt.rmap_paths r1 s_orig hr1_mem hs_in_refs p hp
+        unfold PathReflectedInHeap at hold ⊢
+        rw [hrmap'_ne r1 hr1_ne_t, hrmap'_t]
+        rw [hrmap_s_orig] at hold
+        exact hold
+      · -- (r1, r2): paths unchanged = G(r1, r2)
+        have hr1_ne_t : r1 ≠ t := fun h => ht_fresh_pe (h ▸ hr1_mem)
+        have hr2_ne_t : r2 ≠ t := fun h => ht_fresh_pe (h ▸ hr2_mem)
+        unfold update_with_epsilon update_with_extension at hp
+        simp only [show ¬(r1 = t) from hr1_ne_t, show ¬(r2 = t) from hr2_ne_t, ite_false] at hp
+        have hold := hwt.rmap_paths r1 r2 hr1_mem hr2_mem p hp
+        unfold PathReflectedInHeap at hold ⊢
+        rw [hrmap'_ne r1 hr1_ne_t, hrmap'_ne r2 hr2_ne_t]
+        exact hold
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     funEnv_typed := hwt.funEnv_typed
