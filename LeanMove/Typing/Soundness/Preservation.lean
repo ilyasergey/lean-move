@@ -297,6 +297,51 @@ private theorem site_consistent_insert_basic (m : Machine) (env : TypeEnv)
     obtain ⟨v', hv', hm⟩ := hwt_sc s' τ' hl
     exact ⟨v', by rw [lookup_insert_ne _ s s' _ heq]; exact hv', hm⟩
 
+/-- When siteEnv gets a `.basic` type inserted, any ref lookup at the new site contradicts,
+    so existing siteEnv_refs_in_pathEnv is preserved. -/
+private lemma siteEnv_refs_in_pathEnv_insert_basic
+    {m : Machine} {env : TypeEnv} {lenv : LabelEnv} {retType : MoveType} {rmap : RefMap}
+    (hwt : WellTypedState m env lenv retType rmap) (s : Site) (bt : BasicMoveType) :
+    ∀ s' bt' r bk,
+      lookup (insert env.siteEnv s (.basic bt)) s' = some (.ref bt' r bk) →
+      r ∈ env.pathEnv.refs := by
+  intro s' bt' r bk hl
+  by_cases heq : s' = s
+  · subst heq; simp [lookup_insert_same] at hl
+  · rw [lookup_insert_ne _ s s' _ heq] at hl
+    exact hwt.siteEnv_refs_in_pathEnv s' bt' r bk hl
+
+/-- When siteEnv gets a `.basic` type inserted and varEnv is unchanged,
+    live_refs_unique is preserved (new site can't have a ref type). -/
+private lemma live_refs_unique_insert_basic
+    {m : Machine} {env : TypeEnv} {lenv : LabelEnv} {retType : MoveType} {rmap : RefMap}
+    (hwt : WellTypedState m env lenv retType rmap) (s : Site) (bt : BasicMoveType) :
+    ∀ r', (∀ x bt' bk ms s' bt'' bk',
+             lookup env.varEnv x = some (.validVar, .ref bt' r' bk, ms) →
+             lookup (insert env.siteEnv s (.basic bt)) s' = some (.ref bt'' r' bk') → False) ∧
+           (∀ s1 s2 bt1 bt2 bk1 bk2, s1 ≠ s2 →
+             lookup (insert env.siteEnv s (.basic bt)) s1 = some (.ref bt1 r' bk1) →
+             lookup (insert env.siteEnv s (.basic bt)) s2 = some (.ref bt2 r' bk2) → False) ∧
+           (∀ x y bt1 bt2 bk1 bk2 ms1 ms2, x ≠ y →
+             lookup env.varEnv x = some (.validVar, .ref bt1 r' bk1, ms1) →
+             lookup env.varEnv y = some (.validVar, .ref bt2 r' bk2, ms2) → False) := by
+  intro r'
+  refine ⟨fun x bt' bk ms s' bt'' bk' hv hs => ?_,
+          fun s1 s2 bt1 bt2 bk1 bk2 hne hs1 hs2 => ?_,
+          fun x y bt1 bt2 bk1 bk2 ms1 ms2 hne hx hy =>
+            (hwt.live_refs_unique r').2.2 x y bt1 bt2 bk1 bk2 ms1 ms2 hne hx hy⟩
+  · by_cases heqs : s' = s
+    · subst heqs; simp [lookup_insert_same] at hs
+    · rw [lookup_insert_ne _ s s' _ heqs] at hs
+      exact (hwt.live_refs_unique r').1 x bt' bk ms s' bt'' bk' hv hs
+  · by_cases heq1 : s1 = s
+    · subst heq1; simp [lookup_insert_same] at hs1
+    · by_cases heq2 : s2 = s
+      · subst heq2; simp [lookup_insert_same] at hs2
+      · rw [lookup_insert_ne _ s s1 _ heq1] at hs1
+        rw [lookup_insert_ne _ s s2 _ heq2] at hs2
+        exact (hwt.live_refs_unique r').2.1 s1 s2 bt1 bt2 bk1 bk2 hne hs1 hs2
+
 private theorem preservation_intLit (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retType : MoveType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retType rmap)
@@ -320,29 +365,8 @@ private theorem preservation_intLit (m m' : Machine) (env : TypeEnv) (lenv : Lab
     rmap_live := hwt.rmap_live
     rmap_paths := hwt.rmap_paths
     varEnv_refs_in_pathEnv := hwt.varEnv_refs_in_pathEnv
-    siteEnv_refs_in_pathEnv := by
-      intro s' bt r bk hl
-      by_cases heq : s' = s
-      · subst heq; simp [lookup_insert_same] at hl
-      · rw [lookup_insert_ne _ s s' _ heq] at hl
-        exact hwt.siteEnv_refs_in_pathEnv s' bt r bk hl
-    live_refs_unique := by
-      intro r'
-      refine ⟨fun x bt bk ms s' bt' bk' hv hs => ?_,
-              fun s1 s2 bt1 bt2 bk1 bk2 hne hs1 hs2 => ?_,
-              fun x y bt1 bt2 bk1 bk2 ms1 ms2 hne hx hy =>
-                (hwt.live_refs_unique r').2.2 x y bt1 bt2 bk1 bk2 ms1 ms2 hne hx hy⟩
-      · by_cases heqs : s' = s
-        · subst heqs; simp [lookup_insert_same] at hs
-        · rw [lookup_insert_ne _ s s' _ heqs] at hs
-          exact (hwt.live_refs_unique r').1 x bt bk ms s' bt' bk' hv hs
-      · by_cases heq1 : s1 = s
-        · subst heq1; simp [lookup_insert_same] at hs1
-        · by_cases heq2 : s2 = s
-          · subst heq2; simp [lookup_insert_same] at hs2
-          · rw [lookup_insert_ne _ s s1 _ heq1] at hs1
-            rw [lookup_insert_ne _ s s2 _ heq2] at hs2
-            exact (hwt.live_refs_unique r').2.1 s1 s2 bt1 bt2 bk1 bk2 hne hs1 hs2
+    siteEnv_refs_in_pathEnv := siteEnv_refs_in_pathEnv_insert_basic hwt s .u64
+    live_refs_unique := live_refs_unique_insert_basic hwt s .u64
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     funEnv_typed := hwt.funEnv_typed
@@ -378,29 +402,8 @@ private theorem preservation_copy_val (m m' : Machine) (env : TypeEnv) (lenv : L
     rmap_live := hwt.rmap_live
     rmap_paths := hwt.rmap_paths
     varEnv_refs_in_pathEnv := hwt.varEnv_refs_in_pathEnv
-    siteEnv_refs_in_pathEnv := by
-      intro s' bt' r bk hl
-      by_cases heq : s' = s
-      · subst heq; simp [lookup_insert_same] at hl
-      · rw [lookup_insert_ne _ s s' _ heq] at hl
-        exact hwt.siteEnv_refs_in_pathEnv s' bt' r bk hl
-    live_refs_unique := by
-      intro r'
-      refine ⟨fun x bt' bk ms s' bt'' bk' hv hs => ?_,
-              fun s1 s2 bt1 bt2 bk1 bk2 hne hs1 hs2 => ?_,
-              fun x y bt1 bt2 bk1 bk2 ms1 ms2 hne hx hy =>
-                (hwt.live_refs_unique r').2.2 x y bt1 bt2 bk1 bk2 ms1 ms2 hne hx hy⟩
-      · by_cases heqs : s' = s
-        · subst heqs; simp [lookup_insert_same] at hs
-        · rw [lookup_insert_ne _ s s' _ heqs] at hs
-          exact (hwt.live_refs_unique r').1 x bt' bk ms s' bt'' bk' hv hs
-      · by_cases heq1 : s1 = s
-        · subst heq1; simp [lookup_insert_same] at hs1
-        · by_cases heq2 : s2 = s
-          · subst heq2; simp [lookup_insert_same] at hs2
-          · rw [lookup_insert_ne _ s s1 _ heq1] at hs1
-            rw [lookup_insert_ne _ s s2 _ heq2] at hs2
-            exact (hwt.live_refs_unique r').2.1 s1 s2 bt1 bt2 bk1 bk2 hne hs1 hs2
+    siteEnv_refs_in_pathEnv := siteEnv_refs_in_pathEnv_insert_basic hwt s bt
+    live_refs_unique := live_refs_unique_insert_basic hwt s bt
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     funEnv_typed := hwt.funEnv_typed
@@ -483,6 +486,144 @@ private lemma rmap_paths_update_with_epsilon
     rw [hrmap'_ne r1 hr1_ne_t, hrmap'_ne r2 hr2_ne_t]
     exact hold
 
+/-- When rmap is extended by a fresh ref t, var_consistent is preserved
+    (since t can't appear in any existing varEnv entry by freshness). -/
+private lemma var_consistent_extend_rmap_fresh
+    {m : Machine} {env : TypeEnv} {lenv : LabelEnv} {retType : MoveType} {rmap : RefMap}
+    (hwt : WellTypedState m env lenv retType rmap)
+    (t : Aref) (loc_t : Loc) (path_t : List Field)
+    (hfresh : freshRefInEnvBool t env) :
+    let rmap' : RefMap := { map := fun r => if r = t then some (loc_t, path_t) else rmap.map r }
+    ∀ y isv τ ms,
+      lookup env.varEnv y = some (isv, τ, ms) →
+      match isv with
+      | .validVar =>
+        ∃ loc v, lookup m.frame.varStore y = some (some loc) ∧
+                 m.heap.read loc = some v ∧ ValueMatchesType v τ rmap'
+      | .invalidVar =>
+        lookup m.frame.varStore y = some none ∨
+        ∃ loc, lookup m.frame.varStore y = some (some loc) := by
+  intro rmap' y isv τ ms hvy
+  have hold := hwt.var_consistent y isv τ ms hvy
+  cases isv with
+  | invalidVar => exact hold
+  | validVar =>
+    obtain ⟨l, v, hl, hr, hm⟩ := hold
+    refine ⟨l, v, hl, hr, ?_⟩
+    cases τ with
+    | basic _ => exact trivial
+    | ref bt r_y bk =>
+      obtain ⟨loc_v, path_v, hv_eq, hrmap_r⟩ := hm
+      by_cases hrt : r_y = t
+      · exact absurd hrt.symm (freshRefInEnvBool_ne_varEnv_ref t env y .validVar bt r_y bk ms hfresh hvy)
+      · refine ⟨loc_v, path_v, hv_eq, ?_⟩
+        show (if r_y = t then some (loc_t, path_t) else rmap.map r_y) = some (loc_v, path_v)
+        rw [if_neg hrt]; exact hrmap_r
+
+/-- When rmap is extended by a fresh ref t, site_consistent is preserved
+    for old siteEnv entries (whose refs aren't t). -/
+private lemma site_consistent_old_entry_extend_rmap
+    {m : Machine} {env : TypeEnv} {lenv : LabelEnv} {retType : MoveType} {rmap : RefMap}
+    (hwt : WellTypedState m env lenv retType rmap)
+    (t : Aref) (loc_t : Loc) (path_t : List Field)
+    (hfresh : freshRefInEnvBool t env)
+    (s' : Site) (τ' : MoveType) (hl : lookup env.siteEnv s' = some τ') :
+    let rmap' : RefMap := { map := fun r => if r = t then some (loc_t, path_t) else rmap.map r }
+    ∃ v', lookup m.frame.siteStore s' = some v' ∧ ValueMatchesType v' τ' rmap' := by
+  intro rmap'
+  obtain ⟨v', hv', hm⟩ := hwt.site_consistent s' τ' hl
+  refine ⟨v', hv', ?_⟩
+  cases τ' with
+  | basic _ => exact trivial
+  | ref bt r_s bk =>
+    obtain ⟨loc_v, path_v, hv_eq', hrmap_r⟩ := hm
+    by_cases hrt : r_s = t
+    · exact absurd hrt.symm (freshRefInEnvBool_ne_siteEnv_ref t env s' bt r_s bk hfresh (hrt ▸ hl))
+    · refine ⟨loc_v, path_v, hv_eq', ?_⟩
+      show (if r_s = t then some (loc_t, path_t) else rmap.map r_s) = some (loc_v, path_v)
+      rw [if_neg hrt]; exact hrmap_r
+
+/-- When rmap is extended by a fresh ref t mapped to (loc_t, path_t),
+    rmap_live is preserved if readRef at (loc_t, path_t) is live. -/
+private lemma rmap_live_extend_fresh
+    {m : Machine} {env : TypeEnv} {lenv : LabelEnv} {retType : MoveType} {rmap : RefMap}
+    (hwt : WellTypedState m env lenv retType rmap)
+    (t : Aref) (loc_t : Loc) (path_t : List Field)
+    (hlive_t : m.heap.readRef loc_t path_t ≠ none) :
+    let rmap' : RefMap := { map := fun r => if r = t then some (loc_t, path_t) else rmap.map r }
+    ∀ r' loc path, rmap'.map r' = some (loc, path) → m.heap.readRef loc path ≠ none := by
+  intro rmap' r' loc path hrmap_r'
+  by_cases hrt : r' = t
+  · subst hrt
+    simp only [rmap', ite_true] at hrmap_r'
+    have h := Option.some.inj hrmap_r'
+    have ⟨h1, h2⟩ := Prod.mk.inj h
+    subst h1; subst h2
+    exact hlive_t
+  · simp only [rmap', if_neg hrt] at hrmap_r'
+    exact hwt.rmap_live r' loc path hrmap_r'
+
+/-- When rmap is extended by a fresh non-root ref t, rmap_root_none is preserved. -/
+private lemma rmap_root_none_extend_fresh
+    {rmap : RefMap}
+    (hwt_root : rmap.map .root = none)
+    (t : Aref) (loc_t : Loc) (path_t : List Field)
+    (ht_not_root : t ≠ .root) :
+    let rmap' : RefMap := { map := fun r => if r = t then some (loc_t, path_t) else rmap.map r }
+    rmap'.map .root = none := by
+  intro rmap'
+  simp only [rmap', if_neg (Ne.symm ht_not_root)]
+  exact hwt_root
+
+/-- When a fresh ref t is inserted into siteEnv at site s (with a type containing t),
+    live_refs_unique is preserved. Uses freshness contradictions. -/
+private lemma live_refs_unique_insert_fresh_ref
+    {m : Machine} {env : TypeEnv} {lenv : LabelEnv} {retType : MoveType} {rmap : RefMap}
+    (hwt : WellTypedState m env lenv retType rmap)
+    (s : Site) (τ_site : MoveType) (t : Aref)
+    (hfresh_pe : t ∉ env.pathEnv.refs)
+    (hsite_has_ref_t : ∀ bt r bk, τ_site = .ref bt r bk → r = t) :
+    ∀ r',
+      (∀ x bt bk ms s' bt' bk',
+        lookup env.varEnv x = some (.validVar, .ref bt r' bk, ms) →
+        lookup (insert env.siteEnv s τ_site) s' = some (.ref bt' r' bk') → False) ∧
+      (∀ s1 s2 bt1 bt2 bk1 bk2, s1 ≠ s2 →
+        lookup (insert env.siteEnv s τ_site) s1 = some (.ref bt1 r' bk1) →
+        lookup (insert env.siteEnv s τ_site) s2 = some (.ref bt2 r' bk2) → False) ∧
+      (∀ x y bt1 bt2 bk1 bk2 ms1 ms2, x ≠ y →
+        lookup env.varEnv x = some (.validVar, .ref bt1 r' bk1, ms1) →
+        lookup env.varEnv y = some (.validVar, .ref bt2 r' bk2, ms2) → False) := by
+  intro r'
+  refine ⟨fun x' bt' bk' ms' s' bt'' bk'' hv hs => ?_,
+          fun s1 s2 bt1 bt2 bk1 bk2 hne hs1 hs2 => ?_,
+          fun x' y bt1 bt2 bk1 bk2 ms1 ms2 hne hx hy =>
+            (hwt.live_refs_unique r').2.2 x' y bt1 bt2 bk1 bk2 ms1 ms2 hne hx hy⟩
+  · -- var-site: if s' = s, extract t from τ_site, contradiction via freshness
+    by_cases heqs : s' = s
+    · subst heqs; rw [lookup_insert_same] at hs
+      have hr_eq := hsite_has_ref_t bt'' r' bk'' (Option.some.inj hs)
+      rw [hr_eq] at hv
+      exact absurd (hwt.varEnv_refs_in_pathEnv x' bt' t bk' ms' hv) hfresh_pe
+    · rw [lookup_insert_ne _ s s' _ heqs] at hs
+      exact (hwt.live_refs_unique r').1 x' bt' bk' ms' s' bt'' bk'' hv hs
+  · -- site-site
+    by_cases heq1 : s1 = s
+    · rw [heq1, lookup_insert_same] at hs1
+      have hr_eq := hsite_has_ref_t bt1 r' bk1 (Option.some.inj hs1)
+      have hne2 : s2 ≠ s := by rw [← heq1]; exact hne.symm
+      rw [lookup_insert_ne _ s s2 _ hne2] at hs2
+      rw [hr_eq] at hs2
+      exact absurd (hwt.siteEnv_refs_in_pathEnv s2 bt2 t bk2 hs2) hfresh_pe
+    · by_cases heq2 : s2 = s
+      · rw [heq2, lookup_insert_same] at hs2
+        have hr_eq := hsite_has_ref_t bt2 r' bk2 (Option.some.inj hs2)
+        rw [lookup_insert_ne _ s s1 _ heq1] at hs1
+        rw [hr_eq] at hs1
+        exact absurd (hwt.siteEnv_refs_in_pathEnv s1 bt1 t bk1 hs1) hfresh_pe
+      · rw [lookup_insert_ne _ s s1 _ heq1] at hs1
+        rw [lookup_insert_ne _ s s2 _ heq2] at hs2
+        exact (hwt.live_refs_unique r').2.1 s1 s2 bt1 bt2 bk1 bk2 hne hs1 hs2
+
 /-- Preservation for copy of a reference-typed variable.
     The new site gets a fresh abstract ref t, and pathEnv is updated with
     update_with_epsilon t s_orig (which makes the path graph track that t
@@ -542,61 +683,20 @@ private theorem preservation_copy_ref (m m' : Machine) (env : TypeEnv) (lenv : L
         ht_not_root (by intro v hc; exact hnv_t v hc)
       exact TypeEnv.insert_pathEnv_wf env s (.ref τ_ref t isBor) _ hwt.env_wf hpe' ht_not_root
     stmt_typed := hcont
-    var_consistent := by
-      -- varEnv is unchanged; varStore and heap are unchanged
-      intro y isv τ' ms' hvy
-      have hold := hwt.var_consistent y isv τ' ms' hvy
-      cases isv with
-      | invalidVar => exact hold
-      | validVar =>
-        obtain ⟨l, v, hl, hr, hm⟩ := hold
-        refine ⟨l, v, hl, hr, ?_⟩
-        cases τ' with
-        | basic _ => exact trivial
-        | ref bt r_y bk =>
-          obtain ⟨loc_v, path_v, hv_eq, hrmap_r⟩ := hm
-          by_cases hrt : r_y = t
-          · -- Impossible: t is fresh in env, so it can't appear in any varEnv entry
-            exact absurd hrt.symm (freshRefInEnvBool_ne_varEnv_ref t env y .validVar bt r_y bk ms' hfresh_t hvy)
-          · refine ⟨loc_v, path_v, hv_eq, ?_⟩
-            show (if r_y = t then some (loc', path) else rmap.map r_y) = some (loc_v, path_v)
-            rw [if_neg hrt]; exact hrmap_r
+    var_consistent := var_consistent_extend_rmap_fresh hwt t loc' path hfresh_t
     site_consistent := by
       intro s'' τ' hl
       by_cases heq : s'' = s
       · subst heq
         rw [lookup_insert_same] at hl; injection hl with hl; subst hl
-        refine ⟨val, lookup_insert_same _ _ _, ?_⟩
-        -- ValueMatchesType val (.ref τ_ref t isBor) rmap'
-        refine ⟨loc', path, hval_eq, ?_⟩
+        refine ⟨val, lookup_insert_same _ _ _, loc', path, hval_eq, ?_⟩
         show (if t = t then some (loc', path) else rmap.map t) = some (loc', path)
         rw [if_pos rfl]
       · rw [lookup_insert_ne _ s s'' _ heq] at hl
-        obtain ⟨v', hv', hm⟩ := hwt.site_consistent s'' τ' hl
-        refine ⟨v', ?_, ?_⟩
-        · rw [lookup_insert_ne _ s s'' _ heq]; exact hv'
-        · cases τ' with
-          | basic _ => exact trivial
-          | ref bt r_s bk =>
-            obtain ⟨loc_v, path_v, hv_eq', hrmap_r⟩ := hm
-            by_cases hrt : r_s = t
-            · -- Impossible: t is fresh in env, so it can't appear in any existing siteEnv entry
-              exact absurd hrt.symm (freshRefInEnvBool_ne_siteEnv_ref t env s'' bt r_s bk hfresh_t (hrt ▸ hl))
-            · refine ⟨loc_v, path_v, hv_eq', ?_⟩
-              show (if r_s = t then some (loc', path) else rmap.map r_s) = some (loc_v, path_v)
-              rw [if_neg hrt]; exact hrmap_r
-    rmap_live := by
-      intro r' loc_r path_r hrmap_r'
-      by_cases hrt : r' = t
-      · subst hrt
-        simp only [rmap', ite_true] at hrmap_r'
-        -- hrmap_r' : some (loc', path) = some (loc_r, path_r)
-        have h := Option.some.inj hrmap_r'
-        have ⟨h1, h2⟩ := Prod.mk.inj h
-        subst h1; subst h2
-        exact hwt.rmap_live s_orig loc' path hrmap_s_orig
-      · simp only [rmap', if_neg hrt] at hrmap_r'
-        exact hwt.rmap_live r' loc_r path_r hrmap_r'
+        have ⟨v', hv', hm⟩ := site_consistent_old_entry_extend_rmap hwt t loc' path hfresh_t s'' τ' hl
+        exact ⟨v', by rw [lookup_insert_ne _ s s'' _ heq]; exact hv', hm⟩
+    rmap_live := rmap_live_extend_fresh hwt t loc' path
+        (hwt.rmap_live s_orig loc' path hrmap_s_orig)
     rmap_paths :=
       have ht_fresh_pe : t ∉ env.pathEnv.refs :=
         (freshRef_iff_freshRefBool t env.pathEnv).mpr hfresh_t_pathEnv
@@ -630,51 +730,15 @@ private theorem preservation_copy_ref (m m' : Machine) (env : TypeEnv) (lenv : L
         rw [hr_eq]; exact .head _
       · rw [lookup_insert_ne _ s s' _ heq] at hl
         exact List.mem_cons_of_mem t (hwt.siteEnv_refs_in_pathEnv s' bt' r' bk' hl)
-    live_refs_unique := by
-      intro r'
+    live_refs_unique :=
       have ht_fresh_pe := (freshRef_iff_freshRefBool t env.pathEnv).mpr hfresh_t_pathEnv
-      refine ⟨fun x' bt' bk' ms' s' bt'' bk'' hv hs => ?_,
-              fun s1 s2 bt1 bt2 bk1 bk2 hne hs1 hs2 => ?_,
-              fun x' y bt1 bt2 bk1 bk2 ms1 ms2 hne hx hy =>
-                (hwt.live_refs_unique r').2.2 x' y bt1 bt2 bk1 bk2 ms1 ms2 hne hx hy⟩
-      · -- var-site: if s' = s, then r' = t, but t is fresh and can't be in varEnv
-        by_cases heqs : s' = s
-        · subst heqs; rw [lookup_insert_same] at hs
-          simp only [Option.some.injEq, MoveType.ref.injEq] at hs
-          rw [← hs.2.1] at hv
-          exact absurd (hwt.varEnv_refs_in_pathEnv x' bt' t bk' ms' hv) ht_fresh_pe
-        · have hs' : lookup (insert env.siteEnv s (.ref τ_ref t isBor)) s' =
-              some (.ref bt'' r' bk'') := hs
-          rw [lookup_insert_ne _ s s' _ heqs] at hs'
-          exact (hwt.live_refs_unique r').1 x' bt' bk' ms' s' bt'' bk'' hv hs'
-      · -- site-site
-        have hs1' : lookup (insert env.siteEnv s (.ref τ_ref t isBor)) s1 =
-            some (.ref bt1 r' bk1) := hs1
-        have hs2' : lookup (insert env.siteEnv s (.ref τ_ref t isBor)) s2 =
-            some (.ref bt2 r' bk2) := hs2
-        by_cases heq1 : s1 = s
-        · rw [heq1, lookup_insert_same] at hs1'
-          simp only [Option.some.injEq, MoveType.ref.injEq] at hs1'
-          have hne2 : s2 ≠ s := by rw [← heq1]; exact hne.symm
-          rw [lookup_insert_ne _ s s2 _ hne2] at hs2'
-          rw [← hs1'.2.1] at hs2'
-          exact absurd (hwt.siteEnv_refs_in_pathEnv s2 bt2 t bk2 hs2') ht_fresh_pe
-        · by_cases heq2 : s2 = s
-          · rw [heq2, lookup_insert_same] at hs2'
-            simp only [Option.some.injEq, MoveType.ref.injEq] at hs2'
-            rw [lookup_insert_ne _ s s1 _ heq1] at hs1'
-            rw [← hs2'.2.1] at hs1'
-            exact absurd (hwt.siteEnv_refs_in_pathEnv s1 bt1 t bk1 hs1') ht_fresh_pe
-          · rw [lookup_insert_ne _ s s1 _ heq1] at hs1'
-            rw [lookup_insert_ne _ s s2 _ heq2] at hs2'
-            exact (hwt.live_refs_unique r').2.1 s1 s2 bt1 bt2 bk1 bk2 hne hs1' hs2'
+      live_refs_unique_insert_fresh_ref hwt s (.ref τ_ref t isBor) t ht_fresh_pe
+        (fun _ _ _ h => by simp only [MoveType.ref.injEq] at h; exact h.2.1.symm)
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := hwt.heap_loc_bound
-    rmap_root_none := by
-      simp only [rmap', if_neg (Ne.symm ht_not_root)]
-      exact hwt.rmap_root_none
+    rmap_root_none := rmap_root_none_extend_fresh hwt.rmap_root_none t loc' path ht_not_root
     no_paths_to_root := by
       have hroot_ne_t : ¬(Aref.root = t) := Ne.symm ht_not_root
       intro u p hp
@@ -1038,60 +1102,19 @@ private theorem preservation_borrowImm (m m' : Machine) (env : TypeEnv) (lenv : 
         (update_with_epsilon r r env.pathEnv) hpe_eps hr_not_root (fun v hc => hnv v hc)
       exact TypeEnv.insert_pathEnv_wf env s (.ref τ r .siteBorrowImm) _ hwt.env_wf hpe' hr_not_root
     stmt_typed := hcont
-    var_consistent := by
-      -- varEnv and varStore and heap are unchanged
-      intro y isv τ' ms' hvy
-      have hold := hwt.var_consistent y isv τ' ms' hvy
-      cases isv with
-      | invalidVar => exact hold
-      | validVar =>
-        obtain ⟨l, v, hl, hr, hm⟩ := hold
-        refine ⟨l, v, hl, hr, ?_⟩
-        cases τ' with
-        | basic _ => exact trivial
-        | ref bt r_y bk =>
-          obtain ⟨loc_v, path_v, hv_eq, hrmap_r⟩ := hm
-          by_cases hrt : r_y = r
-          · -- Impossible: r is fresh in env, can't appear in any varEnv entry
-            exact absurd hrt.symm (freshRefInEnvBool_ne_varEnv_ref r env y .validVar bt r_y bk ms' hfresh hvy)
-          · refine ⟨loc_v, path_v, hv_eq, ?_⟩
-            show (if r_y = r then some (loc, []) else rmap.map r_y) = some (loc_v, path_v)
-            rw [if_neg hrt]; exact hrmap_r
+    var_consistent := var_consistent_extend_rmap_fresh hwt r loc [] hfresh
     site_consistent := by
       intro s'' τ' hl
       by_cases heq : s'' = s
       · subst heq
         rw [lookup_insert_same] at hl; injection hl with hl; subst hl
-        refine ⟨Value.ref loc [], lookup_insert_same _ _ _, ?_⟩
-        -- ValueMatchesType (.ref loc []) (.ref τ r .siteBorrowImm) rmap'
-        refine ⟨loc, [], rfl, ?_⟩
+        refine ⟨Value.ref loc [], lookup_insert_same _ _ _, loc, [], rfl, ?_⟩
         show (if r = r then some (loc, []) else rmap.map r) = some (loc, [])
         rw [if_pos rfl]
       · rw [lookup_insert_ne _ s s'' _ heq] at hl
-        obtain ⟨v', hv', hm⟩ := hwt.site_consistent s'' τ' hl
-        refine ⟨v', ?_, ?_⟩
-        · rw [lookup_insert_ne _ s s'' _ heq]; exact hv'
-        · cases τ' with
-          | basic _ => exact trivial
-          | ref bt r_s bk =>
-            obtain ⟨loc_v, path_v, hv_eq', hrmap_r⟩ := hm
-            by_cases hrt : r_s = r
-            · -- Impossible: r is fresh in env, can't appear in any existing siteEnv entry
-              exact absurd hrt.symm (freshRefInEnvBool_ne_siteEnv_ref r env s'' bt r_s bk hfresh (hrt ▸ hl))
-            · refine ⟨loc_v, path_v, hv_eq', ?_⟩
-              show (if r_s = r then some (loc, []) else rmap.map r_s) = some (loc_v, path_v)
-              rw [if_neg hrt]; exact hrmap_r
-    rmap_live := by
-      intro r' loc_r path_r hrmap_r'
-      by_cases hrt : r' = r
-      · subst hrt
-        simp only [rmap', ite_true] at hrmap_r'
-        have h := Option.some.inj hrmap_r'
-        have ⟨h1, h2⟩ := Prod.mk.inj h
-        subst h1; subst h2
-        exact hreadref
-      · simp only [rmap', if_neg hrt] at hrmap_r'
-        exact hwt.rmap_live r' loc_r path_r hrmap_r'
+        have ⟨v', hv', hm⟩ := site_consistent_old_entry_extend_rmap hwt r loc [] hfresh s'' τ' hl
+        exact ⟨v', by rw [lookup_insert_ne _ s s'' _ heq]; exact hv', hm⟩
+    rmap_live := rmap_live_extend_fresh hwt r loc [] hreadref
     rmap_paths :=
       rmap_paths_update_with_borrow rmap m.heap env.pathEnv r x loc
         m.frame.varStore hr_fresh_pe hr_not_root hreadref hloc
@@ -1115,51 +1138,13 @@ private theorem preservation_borrowImm (m m' : Machine) (env : TypeEnv) (lenv : 
         rw [hr_eq]; exact .head _
       · rw [lookup_insert_ne _ s s' _ heq] at hl
         exact List.mem_cons_of_mem r (hwt.siteEnv_refs_in_pathEnv s' bt' r' bk' hl)
-    live_refs_unique := by
-      intro r'
-      have hr_fresh_pe' := hr_fresh_pe
-      refine ⟨fun x' bt' bk' ms' s' bt'' bk'' hv hs => ?_,
-              fun s1 s2 bt1 bt2 bk1 bk2 hne hs1 hs2 => ?_,
-              fun x' y bt1 bt2 bk1 bk2 ms1 ms2 hne hx hy =>
-                (hwt.live_refs_unique r').2.2 x' y bt1 bt2 bk1 bk2 ms1 ms2 hne hx hy⟩
-      · -- var-site: if s' = s, then r' = r, but r is fresh and can't be in varEnv
-        by_cases heqs : s' = s
-        · subst heqs; rw [lookup_insert_same] at hs
-          simp only [Option.some.injEq, MoveType.ref.injEq] at hs
-          rw [← hs.2.1] at hv
-          exact absurd (hwt.varEnv_refs_in_pathEnv x' bt' r bk' ms' hv) hr_fresh_pe'
-        · have hs' : lookup (insert env.siteEnv s (.ref τ r .siteBorrowImm)) s' =
-              some (.ref bt'' r' bk'') := hs
-          rw [lookup_insert_ne _ s s' _ heqs] at hs'
-          exact (hwt.live_refs_unique r').1 x' bt' bk' ms' s' bt'' bk'' hv hs'
-      · -- site-site
-        have hs1' : lookup (insert env.siteEnv s (.ref τ r .siteBorrowImm)) s1 =
-            some (.ref bt1 r' bk1) := hs1
-        have hs2' : lookup (insert env.siteEnv s (.ref τ r .siteBorrowImm)) s2 =
-            some (.ref bt2 r' bk2) := hs2
-        by_cases heq1 : s1 = s
-        · rw [heq1, lookup_insert_same] at hs1'
-          simp only [Option.some.injEq, MoveType.ref.injEq] at hs1'
-          have hne2 : s2 ≠ s := by rw [← heq1]; exact hne.symm
-          rw [lookup_insert_ne _ s s2 _ hne2] at hs2'
-          rw [← hs1'.2.1] at hs2'
-          exact absurd (hwt.siteEnv_refs_in_pathEnv s2 bt2 r bk2 hs2') hr_fresh_pe'
-        · by_cases heq2 : s2 = s
-          · rw [heq2, lookup_insert_same] at hs2'
-            simp only [Option.some.injEq, MoveType.ref.injEq] at hs2'
-            rw [lookup_insert_ne _ s s1 _ heq1] at hs1'
-            rw [← hs2'.2.1] at hs1'
-            exact absurd (hwt.siteEnv_refs_in_pathEnv s1 bt1 r bk1 hs1') hr_fresh_pe'
-          · rw [lookup_insert_ne _ s s1 _ heq1] at hs1'
-            rw [lookup_insert_ne _ s s2 _ heq2] at hs2'
-            exact (hwt.live_refs_unique r').2.1 s1 s2 bt1 bt2 bk1 bk2 hne hs1' hs2'
+    live_refs_unique := live_refs_unique_insert_fresh_ref hwt s (.ref τ r .siteBorrowImm) r
+      hr_fresh_pe (fun _ r' _ h => by simp only [MoveType.ref.injEq] at h; exact h.2.1.symm)
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := hwt.heap_loc_bound
-    rmap_root_none := by
-      simp only [rmap', if_neg (Ne.symm hr_not_root)]
-      exact hwt.rmap_root_none
+    rmap_root_none := rmap_root_none_extend_fresh hwt.rmap_root_none r loc [] hr_not_root
     no_paths_to_root := by
       have hroot_ne_r : ¬(Aref.root = r) := Ne.symm hr_not_root
       intro u p hp
@@ -1343,6 +1328,41 @@ private theorem stackSafe_heap_alloc (stack : List Frame) (ri : Option ReturnInf
           stackSafe_heap_alloc rest callerFrame.returnInfo heap v hss' hwt'.heap_loc_bound⟩
       · exact stackSafe_heap_alloc rest callerFrame.returnInfo heap v hrest hlb
 
+/-- After delete_ref_node, no_paths_to_root is preserved. -/
+private lemma no_paths_to_root_delete_ref_node'
+    {m : Machine} {env : TypeEnv} {lenv : LabelEnv} {retType : MoveType} {rmap : RefMap}
+    (hwt : WellTypedState m env lenv retType rmap)
+    (r : Aref) (hr_not_root : r ≠ .root) :
+    ∀ u p, interpret_regex ((delete_ref_node env.pathEnv r).paths (u, .root)) p →
+      u = .root ∧ p = [] := by
+  intro u p hp
+  simp only [delete_ref_node] at hp
+  by_cases hu : u = r
+  · subst hu; simp only [true_or, ↓reduceIte, interpret_regex] at hp
+  · by_cases hr' : Aref.root = r
+    · exact absurd hr'.symm hr_not_root
+    · simp only [hu, hr', or_false, ↓reduceIte] at hp
+      exact hwt.no_paths_to_root u p hp
+
+/-- After delete_ref_node, root_path_coherence is preserved. -/
+private lemma root_path_coherence_delete_ref_node'
+    {m : Machine} {env : TypeEnv} {lenv : LabelEnv} {retType : MoveType} {rmap : RefMap}
+    (hwt : WellTypedState m env lenv retType rmap)
+    (r : Aref) (hr_not_root : r ≠ .root) :
+    ∀ v y rest,
+      v ∈ (delete_ref_node env.pathEnv r).refs →
+      interpret_regex ((delete_ref_node env.pathEnv r).paths (.root, v)) (.root_to_var y :: rest) →
+      ∀ loc_v path_v, rmap.map v = some (loc_v, path_v) →
+      ∀ loc_y, lookup m.frame.varStore y = some (some loc_y) →
+      loc_v = loc_y → path_v = fieldPathOf rest := by
+  intro v y rest hv_mem hp loc_v path_v hrmap loc_y hloc heq
+  simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hv_mem
+  obtain ⟨hv_in, hv_ne⟩ := hv_mem
+  simp only [delete_ref_node] at hp
+  have hroot_ne : Aref.root ≠ r := Ne.symm hr_not_root
+  simp only [hroot_ne, hv_ne, or_false, ↓reduceIte] at hp
+  exact hwt.root_path_coherence v y rest hv_in hp loc_v path_v hrmap loc_y hloc heq
+
 private theorem preservation_readRef (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retType : MoveType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retType rmap)
@@ -1446,23 +1466,8 @@ private theorem preservation_readRef (m m' : Machine) (env : TypeEnv) (lenv : La
       funEnv_typed := hwt.funEnv_typed
       heap_loc_bound := hwt.heap_loc_bound
       rmap_root_none := hwt.rmap_root_none
-      no_paths_to_root := by
-        intro u p hp
-        simp only [delete_ref_node] at hp
-        by_cases hu : u = r
-        · subst hu; simp only [true_or, ↓reduceIte, interpret_regex] at hp
-        · by_cases hr' : Aref.root = r
-          · exact absurd hr'.symm hr_not_root
-          · simp only [hu, hr', or_false, ↓reduceIte] at hp
-            exact hwt.no_paths_to_root u p hp
-      root_path_coherence := by
-        intro v y rest hv_mem hp loc_v path_v hrmap loc_y hloc heq
-        simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hv_mem
-        obtain ⟨hv_in, hv_ne⟩ := hv_mem
-        simp only [delete_ref_node] at hp
-        have hroot_ne : Aref.root ≠ r := Ne.symm hr_not_root
-        simp only [hroot_ne, hv_ne, or_false, ↓reduceIte] at hp
-        exact hwt.root_path_coherence v y rest hv_in hp loc_v path_v hrmap loc_y hloc heq
+      no_paths_to_root := no_paths_to_root_delete_ref_node' hwt r hr_not_root
+      root_path_coherence := root_path_coherence_delete_ref_node' hwt r hr_not_root
     }
 
 private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -1657,23 +1662,8 @@ private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : La
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := hwt.heap_loc_bound
     rmap_root_none := hwt.rmap_root_none
-    no_paths_to_root := by
-      intro u p hp
-      simp only [delete_ref_node] at hp
-      by_cases hu : u = r
-      · subst hu; simp only [true_or, ↓reduceIte, interpret_regex] at hp
-      · by_cases hr' : Aref.root = r
-        · exact absurd hr'.symm hr_not_root
-        · simp only [hu, hr', or_false, ↓reduceIte] at hp
-          exact hwt.no_paths_to_root u p hp
-    root_path_coherence := by
-      intro v y rest hv_mem hp loc_v path_v hrmap loc_y hloc heq
-      simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hv_mem
-      obtain ⟨hv_in, hv_ne⟩ := hv_mem
-      simp only [delete_ref_node] at hp
-      have hroot_ne : Aref.root ≠ r := Ne.symm hr_not_root
-      simp only [hroot_ne, hv_ne, or_false, ↓reduceIte] at hp
-      exact hwt.root_path_coherence v y rest hv_in hp loc_v path_v hrmap loc_y hloc heq
+    no_paths_to_root := no_paths_to_root_delete_ref_node' hwt r hr_not_root
+    root_path_coherence := root_path_coherence_delete_ref_node' hwt r hr_not_root
   }
 
 /-- Helper: lookup on deleteAll returns some → lookup on original returns some -/
