@@ -350,6 +350,21 @@ structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
        lookup env.varEnv x = some (.validVar, .ref bt r bk, ms) →
        lookup env.varEnv y = some (.validVar, .ref bt' r bk', ms') → False)
 
+  -- 15. Root is never mapped in rmap (purely static concept)
+  rmap_root_none : rmap.map .root = none
+
+  -- 16. No paths to .root except the self-loop from .root itself
+  no_paths_to_root : ∀ u p,
+    interpret_regex (env.pathEnv.paths (u, .root)) p → u = .root ∧ p = []
+
+  -- 17. Paths from .root to ref v are coherent with variable locations
+  root_path_coherence : ∀ v y rest,
+    v ∈ env.pathEnv.refs →
+    interpret_regex (env.pathEnv.paths (.root, v)) (.root_to_var y :: rest) →
+    ∀ loc_v path_v, rmap.map v = some (loc_v, path_v) →
+    ∀ loc_y, lookup m.frame.varStore y = some (some loc_y) →
+    loc_v = loc_y → path_v = fieldPathOf rest
+
 /-- Stack safety: each frame on the stack can be safely restored after ret.
     Defined by structural recursion on the stack. -/
 def StackSafe : List Frame → Option ReturnInfo → Heap → Prop
@@ -903,6 +918,9 @@ private theorem preservation_intLit (m m' : Machine) (env : TypeEnv) (lenv : Lab
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := hwt.heap_loc_bound
+    rmap_root_none := hwt.rmap_root_none
+    no_paths_to_root := hwt.no_paths_to_root
+    root_path_coherence := hwt.root_path_coherence
   }
 
 private theorem preservation_copy_val (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -958,6 +976,9 @@ private theorem preservation_copy_val (m m' : Machine) (env : TypeEnv) (lenv : L
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := hwt.heap_loc_bound
+    rmap_root_none := hwt.rmap_root_none
+    no_paths_to_root := hwt.no_paths_to_root
+    root_path_coherence := hwt.root_path_coherence
   }
 
 /-- When PathEnv is extended via `update_with_epsilon t s_orig pe` and rmap is
@@ -1222,6 +1243,44 @@ private theorem preservation_copy_ref (m m' : Machine) (env : TypeEnv) (lenv : L
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := hwt.heap_loc_bound
+    rmap_root_none := by
+      simp only [rmap', if_neg (Ne.symm ht_not_root)]
+      exact hwt.rmap_root_none
+    no_paths_to_root := by
+      have hroot_ne_t : ¬(Aref.root = t) := Ne.symm ht_not_root
+      intro u p hp
+      unfold update_with_epsilon update_with_extension at hp
+      by_cases hu : u = t
+      · -- u = t: paths(t, .root) = der (pe.paths (s_orig, .root)) [] = pe.paths (s_orig, .root)
+        rw [hu] at hp
+        simp only [hroot_ne_t, and_false, ite_false, ite_true, der, List.foldl] at hp
+        exact absurd (hwt.no_paths_to_root s_orig p hp).1 hs_not_root
+      · -- u ≠ t, .root ≠ t: paths unchanged
+        simp only [hu, hroot_ne_t, false_and, ite_false] at hp
+        exact hwt.no_paths_to_root u p hp
+    root_path_coherence := by
+      have hroot_ne_t : ¬(Aref.root = t) := Ne.symm ht_not_root
+      have ht_fresh_pe := (freshRef_iff_freshRefBool t env.pathEnv).mpr hfresh_t_pathEnv
+      intro v y rest hv_mem hp loc_v path_v hrmap loc_y hloc heq
+      unfold update_with_epsilon update_with_extension at hv_mem hp
+      simp only [show ¬t ∈ env.pathEnv.refs from ht_fresh_pe, not_false_eq_true, ↓reduceIte] at hv_mem
+      by_cases hv : v = t
+      · -- v = t: paths(.root, t) = G(.root, s_orig) ∘ [] = G(.root, s_orig)
+        rw [hv] at hp hrmap
+        simp only [hroot_ne_t, false_and, ite_false, ite_true, extend, List.foldl] at hp
+        -- rmap'(t) = some (loc', path)
+        simp only [rmap', ite_true] at hrmap
+        obtain ⟨h1, h2⟩ := Prod.mk.inj (Option.some.inj hrmap)
+        subst h1; subst h2
+        exact hwt.root_path_coherence s_orig y rest
+          (hwt.varEnv_refs_in_pathEnv x τ_ref s_orig isBor ms hvar)
+          hp loc' path hrmap_s_orig loc_y hloc heq
+      · -- v ≠ t: unchanged paths and rmap
+        simp only [hroot_ne_t, hv, false_and, ite_false] at hp
+        simp only [rmap', if_neg hv] at hrmap
+        have hv_in : v ∈ env.pathEnv.refs := by
+          simp only [List.mem_cons] at hv_mem; exact hv_mem.resolve_left hv
+        exact hwt.root_path_coherence v y rest hv_in hp loc_v path_v hrmap loc_y hloc heq
   } -- end copy_ref
 
 private theorem preservation_move (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -1367,7 +1426,121 @@ private theorem preservation_move (m m' : Machine) (env : TypeEnv) (lenv : Label
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := hwt.heap_loc_bound
+    rmap_root_none := hwt.rmap_root_none
+    no_paths_to_root := hwt.no_paths_to_root
+    root_path_coherence := by
+      -- pathEnv and rmap unchanged; varStore(x) → none
+      intro v y rest hv_mem hp loc_v path_v hrmap loc_y hloc_y heq
+      by_cases heqx : y = x
+      · -- y = x: varStore'(x) = some none, so lookup = some none ≠ some (some _)
+        subst heqx; simp [lookup_insert_same] at hloc_y
+      · -- y ≠ x: varStore'(y) = varStore(y), use old invariant
+        rw [lookup_insert_ne _ x y _ heqx] at hloc_y
+        exact hwt.root_path_coherence v y rest hv_mem hp loc_v path_v hrmap loc_y hloc_y heq
   }
+
+/-- Reusable helper: rmap_paths is preserved by update_with_extension r .root [.root_to_var x]
+    on top of update_with_epsilon r r pe, when rmap is extended with r ↦ (loc, []).
+    Four cases: (r,r) self-loop, (r,old) uses root_path_coherence, (old,r) uses
+    no_paths_to_root (vacuous), (old,old) delegates to old rmap_paths. -/
+private lemma rmap_paths_update_with_borrow
+    (rmap : RefMap) (heap : Heap) (pe : PathEnv)
+    (r : Aref) (x : Var) (loc : Loc) (varStore : AssocMap Var (Option Loc))
+    (hr_fresh : r ∉ pe.refs)
+    (hr_not_root : r ≠ Aref.root)
+    (hreadref : heap.readRef loc [] ≠ none)
+    (hloc : lookup varStore x = some (some loc))
+    (hrmap_root_none : rmap.map .root = none)
+    (hno_paths_to_root : ∀ u p,
+      interpret_regex (pe.paths (u, .root)) p → u = .root ∧ p = [])
+    (hroot_path_coherence : ∀ v y rest,
+      v ∈ pe.refs →
+      interpret_regex (pe.paths (.root, v)) (.root_to_var y :: rest) →
+      ∀ loc_v path_v, rmap.map v = some (loc_v, path_v) →
+      ∀ loc_y, lookup varStore y = some (some loc_y) →
+      loc_v = loc_y → path_v = fieldPathOf rest)
+    (hrmap_live : ∀ r' loc' path', rmap.map r' = some (loc', path') →
+      heap.readRef loc' path' ≠ none)
+    (hold_paths : ∀ r1 r2, r1 ∈ pe.refs → r2 ∈ pe.refs →
+      ∀ p, interpret_regex (pe.paths (r1, r2)) p →
+        PathReflectedInHeap rmap heap r1 r2 p) :
+    let pe' := update_with_extension r .root [.root_to_var x]
+                 (update_with_epsilon r r pe)
+    let rmap' : RefMap := { map := fun r' => if r' = r then some (loc, []) else rmap.map r' }
+    ∀ r1 r2,
+      r1 ∈ pe'.refs → r2 ∈ pe'.refs →
+      ∀ p, interpret_regex (pe'.paths (r1, r2)) p →
+        PathReflectedInHeap rmap' heap r1 r2 p := by
+  intro pe' rmap' r1 r2 hr1 hr2 p hp
+  have hroot_ne_r : ¬(Aref.root = r) := Ne.symm hr_not_root
+  -- Helpers for rmap' lookup
+  have hrmap'_r : rmap'.map r = some (loc, []) := by simp [rmap']
+  have hrmap'_ne : ∀ r', r' ≠ r → rmap'.map r' = rmap.map r' := by
+    intro r' hr'; simp [rmap', hr']
+  -- pe'.refs = r :: pe.refs
+  have hrefs_eq : pe'.refs = r :: pe.refs := by
+    simp only [pe', update_with_extension, update_with_epsilon]
+    simp only [show ¬r ∈ pe.refs from hr_fresh, not_false_eq_true, ↓reduceIte]
+    simp only [show ¬¬(r ∈ r :: pe.refs) from not_not.mpr (.head _), ↓reduceIte]
+  rw [hrefs_eq] at hr1 hr2
+  simp only [List.mem_cons] at hr1 hr2
+  rcases hr1 with h1eq | hr1_mem <;> rcases hr2 with h2eq | hr2_mem
+  · -- (r, r): self-loop ε
+    rw [h1eq, h2eq] at hp ⊢
+    unfold pe' update_with_extension at hp
+    simp only [↓reduceIte] at hp; subst hp
+    unfold PathReflectedInHeap; simp only [hrmap'_r]
+    intro _; exact ⟨by simp [fieldPathOf], hreadref⟩
+  · -- (r, r2): pe'.paths(r, r2) = der(pe_mid.paths(.root, r2)) [.root_to_var x]
+    rw [h1eq] at hp ⊢
+    have hr2_ne : r2 ≠ r := fun h => hr_fresh (h ▸ hr2_mem)
+    unfold pe' update_with_extension at hp
+    simp only [hr2_ne, and_false, ite_false, ite_true] at hp
+    unfold update_with_epsilon update_with_extension at hp
+    simp only [hr2_ne, hroot_ne_r, false_and, ite_false] at hp
+    simp only [der, List.foldl] at hp
+    -- interpret_regex (.deriv re a) s = interpret_regex re (a :: s) by definition
+    have hp' : interpret_regex (pe.paths (Aref.root, r2))
+        (PathElement.root_to_var x :: p) := hp
+    unfold PathReflectedInHeap
+    rw [hrmap'_r, hrmap'_ne r2 hr2_ne]
+    cases hrmap_r2 : rmap.map r2 with
+    | none => simp
+    | some lr2 =>
+      obtain ⟨loc2, path2⟩ := lr2
+      simp only
+      intro heq_loc
+      have hpath := hroot_path_coherence r2 x p hr2_mem hp'
+          loc2 path2 hrmap_r2 loc hloc heq_loc.symm
+      constructor
+      · simp [hpath]
+      · exact hrmap_live r2 loc2 path2 hrmap_r2
+  · -- (r1, r): pe'.paths(r1, r) = extend(pe_mid.paths(r1, .root)) [.root_to_var x]
+    rw [h2eq] at hp ⊢
+    have hr1_ne : r1 ≠ r := fun h => hr_fresh (h ▸ hr1_mem)
+    unfold pe' update_with_extension at hp
+    simp only [hr1_ne, false_and, ite_false, ite_true] at hp
+    unfold update_with_epsilon update_with_extension at hp
+    simp only [hr1_ne, hroot_ne_r, false_and, ite_false] at hp
+    simp only [extend, List.foldl, interpret_regex] at hp
+    obtain ⟨s1, s2, _, hinterp, _⟩ := hp
+    by_cases hr1_root : r1 = Aref.root
+    · unfold PathReflectedInHeap
+      rw [hr1_root, hrmap'_ne .root (Ne.symm hr_not_root), hrmap_root_none]
+      trivial
+    · have ⟨hr1_eq_root, _⟩ := hno_paths_to_root r1 s1 hinterp
+      exact absurd hr1_eq_root hr1_root
+  · -- (r1, r2): both old, paths unchanged, rmap unchanged
+    have hr1_ne : r1 ≠ r := fun h => hr_fresh (h ▸ hr1_mem)
+    have hr2_ne : r2 ≠ r := fun h => hr_fresh (h ▸ hr2_mem)
+    unfold pe' update_with_extension at hp
+    simp only [hr1_ne, hr2_ne, false_and, ite_false] at hp
+    unfold update_with_epsilon update_with_extension at hp
+    simp only [hr1_ne, hr2_ne, false_and, ite_false] at hp
+    have hold := hold_paths r1 r2 hr1_mem hr2_mem p hp
+    unfold PathReflectedInHeap at hold ⊢
+    rw [hrmap'_ne r1 hr1_ne, hrmap'_ne r2 hr2_ne]
+    exact hold
 
 /-- Preservation for borrowImm of a basic-typed variable.
     The new site gets a fresh abstract ref r with .siteBorrowImm kind,
@@ -1490,12 +1663,11 @@ private theorem preservation_borrowImm (m m' : Machine) (env : TypeEnv) (lenv : 
         exact hreadref
       · simp only [rmap', if_neg hrt] at hrmap_r'
         exact hwt.rmap_live r' loc_r path_r hrmap_r'
-    rmap_paths := by
-      -- PathEnv = update_with_extension r .root [.root_to_var x] (update_with_epsilon r r pe)
-      -- pe'.refs = r :: pe.refs. Four cases: (r,r), (r,old), (old,r), (old,old).
-      -- The (r,old) and (old,r) subcases require a root_var_coherence invariant
-      -- that is not yet present in WellTypedState.
-      sorry
+    rmap_paths :=
+      rmap_paths_update_with_borrow rmap m.heap env.pathEnv r x loc
+        m.frame.varStore hr_fresh_pe hr_not_root hreadref hloc
+        hwt.rmap_root_none hwt.no_paths_to_root hwt.root_path_coherence
+        hwt.rmap_live hwt.rmap_paths
     varEnv_refs_in_pathEnv := by
       intro x' bt' r' bk' ms' hv
       have hold := hwt.varEnv_refs_in_pathEnv x' bt' r' bk' ms' hv
@@ -1556,6 +1728,77 @@ private theorem preservation_borrowImm (m m' : Machine) (env : TypeEnv) (lenv : 
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := hwt.heap_loc_bound
+    rmap_root_none := by
+      simp only [rmap', if_neg (Ne.symm hr_not_root)]
+      exact hwt.rmap_root_none
+    no_paths_to_root := by
+      have hroot_ne_r : ¬(Aref.root = r) := Ne.symm hr_not_root
+      intro u p hp
+      -- Extract pathEnv from the struct
+      have hp : interpret_regex (pe'.paths (u, Aref.root)) p := hp
+      by_cases hu : u = r
+      · -- u = r: pe'.paths(r, .root) = der(pe_mid.paths(.root, .root)) [.root_to_var x]
+        rw [hu] at hp
+        -- Unfold pe' = update_with_extension, simplify conditions
+        unfold pe' update_with_extension at hp
+        simp only [hroot_ne_r, and_false, ite_false, ite_true] at hp
+        -- Unfold pe_mid = update_with_epsilon r r env.pathEnv
+        unfold update_with_epsilon update_with_extension at hp
+        simp only [hroot_ne_r, and_false, ite_false] at hp
+        -- hp : interpret_regex (der (env.pathEnv.paths (.root, .root)) [.root_to_var x]) p
+        simp only [der, List.foldl] at hp
+        -- interpret_regex (.deriv re a) s = interpret_regex re (a :: s) by definition
+        have hp' : interpret_regex (env.pathEnv.paths (Aref.root, Aref.root))
+            (PathElement.root_to_var x :: p) := hp
+        exact absurd (hwt.no_paths_to_root .root _ hp').2 (List.cons_ne_nil _ _)
+      · -- u ≠ r: pe'.paths(u, .root) = pe_mid.paths(u, .root) = pe.paths(u, .root)
+        unfold pe' update_with_extension at hp
+        simp only [hu, hroot_ne_r, ite_false] at hp
+        unfold update_with_epsilon update_with_extension at hp
+        simp only [hu, hroot_ne_r, false_and, ite_false] at hp
+        exact hwt.no_paths_to_root u p hp
+    root_path_coherence := by
+      have hroot_ne_r : ¬(Aref.root = r) := Ne.symm hr_not_root
+      intro v' y rest hv_mem hp loc_v path_v hrmap loc_y hloc heq
+      rw [hrefs_eq] at hv_mem
+      simp only [List.mem_cons] at hv_mem
+      -- Extract pathEnv from the struct
+      have hp : interpret_regex (pe'.paths (Aref.root, v')) (PathElement.root_to_var y :: rest) := hp
+      rcases hv_mem with hv_eq | hv_in
+      · -- v' = r: paths(.root, r) = extend(pe_mid.paths(.root, .root)) [.root_to_var x]
+        rw [hv_eq] at hp hrmap
+        unfold pe' update_with_extension at hp
+        simp only [hroot_ne_r, false_and, ite_false, ite_true] at hp
+        -- Unfold pe_mid to get env.pathEnv.paths(.root, .root)
+        unfold update_with_epsilon update_with_extension at hp
+        simp only [hroot_ne_r, false_and, ite_false] at hp
+        -- hp : interpret_regex (extend (env.pathEnv.paths (.root, .root)) [.root_to_var x])
+        --        (.root_to_var y :: rest)
+        -- extend re [a] = concat re (char a)
+        simp only [extend, List.foldl, interpret_regex] at hp
+        obtain ⟨s1, s2, heq', hinterp, hs2_eq⟩ := hp
+        -- pe.paths(.root, .root) only accepts [] by no_paths_to_root
+        have ⟨_, hs1_nil⟩ := hwt.no_paths_to_root .root s1 hinterp
+        subst hs1_nil; subst hs2_eq
+        -- heq' : .root_to_var y :: rest = [] ++ [.root_to_var x] = [.root_to_var x]
+        simp only [List.nil_append, List.cons.injEq] at heq'
+        obtain ⟨_, hrest_nil⟩ := heq'
+        subst hrest_nil
+        -- rmap'(r) = some (loc, [])
+        simp only [rmap', ite_true] at hrmap
+        obtain ⟨h1, h2⟩ := Prod.mk.inj (Option.some.inj hrmap)
+        subst h1; subst h2
+        -- goal: [] = fieldPathOf [] = []
+        rfl
+      · -- v' ≠ r (v' ∈ env.pathEnv.refs): paths(.root, v') unchanged
+        have hv_ne : ¬(v' = r) := fun h => by subst h; exact absurd hv_in hr_fresh_pe
+        unfold pe' update_with_extension at hp
+        simp only [hroot_ne_r, hv_ne, false_and, ite_false] at hp
+        unfold update_with_epsilon update_with_extension at hp
+        simp only [hroot_ne_r, hv_ne, false_and, ite_false] at hp
+        -- rmap'(v') where v' ≠ r → rmap.map v'
+        simp only [rmap', if_neg hv_ne] at hrmap
+        exact hwt.root_path_coherence v' y rest hv_in hp loc_v path_v hrmap loc_y hloc heq
   } -- end borrowImm
 
 /-- Reusable helper: delete_ref_node preserves rmap_paths. -/
@@ -1645,6 +1888,9 @@ private theorem wellTypedState_heap_alloc
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := heap_loc_bound_after_alloc heap v hlb
+    rmap_root_none := hwt.rmap_root_none
+    no_paths_to_root := hwt.no_paths_to_root
+    root_path_coherence := hwt.root_path_coherence
   }
 
 /-- StackSafe is preserved under heap.alloc -/
@@ -1770,6 +2016,24 @@ private theorem preservation_readRef (m m' : Machine) (env : TypeEnv) (lenv : La
       lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
       funEnv_typed := hwt.funEnv_typed
       heap_loc_bound := hwt.heap_loc_bound
+      rmap_root_none := hwt.rmap_root_none
+      no_paths_to_root := by
+        intro u p hp
+        simp only [delete_ref_node] at hp
+        by_cases hu : u = r
+        · subst hu; simp only [true_or, ↓reduceIte, interpret_regex] at hp
+        · by_cases hr' : Aref.root = r
+          · exact absurd hr'.symm hr_not_root
+          · simp only [hu, hr', or_false, ↓reduceIte] at hp
+            exact hwt.no_paths_to_root u p hp
+      root_path_coherence := by
+        intro v y rest hv_mem hp loc_v path_v hrmap loc_y hloc heq
+        simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hv_mem
+        obtain ⟨hv_in, hv_ne⟩ := hv_mem
+        simp only [delete_ref_node] at hp
+        have hroot_ne : Aref.root ≠ r := Ne.symm hr_not_root
+        simp only [hroot_ne, hv_ne, or_false, ↓reduceIte] at hp
+        exact hwt.root_path_coherence v y rest hv_in hp loc_v path_v hrmap loc_y hloc heq
     }
 
 private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -1882,6 +2146,9 @@ private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : Labe
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := hwt.heap_loc_bound
+    rmap_root_none := hwt.rmap_root_none
+    no_paths_to_root := hwt.no_paths_to_root
+    root_path_coherence := hwt.root_path_coherence
   }
 
 private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -1960,6 +2227,24 @@ private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : La
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := hwt.heap_loc_bound
+    rmap_root_none := hwt.rmap_root_none
+    no_paths_to_root := by
+      intro u p hp
+      simp only [delete_ref_node] at hp
+      by_cases hu : u = r
+      · subst hu; simp only [true_or, ↓reduceIte, interpret_regex] at hp
+      · by_cases hr' : Aref.root = r
+        · exact absurd hr'.symm hr_not_root
+        · simp only [hu, hr', or_false, ↓reduceIte] at hp
+          exact hwt.no_paths_to_root u p hp
+    root_path_coherence := by
+      intro v y rest hv_mem hp loc_v path_v hrmap loc_y hloc heq
+      simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hv_mem
+      obtain ⟨hv_in, hv_ne⟩ := hv_mem
+      simp only [delete_ref_node] at hp
+      have hroot_ne : Aref.root ≠ r := Ne.symm hr_not_root
+      simp only [hroot_ne, hv_ne, or_false, ↓reduceIte] at hp
+      exact hwt.root_path_coherence v y rest hv_in hp loc_v path_v hrmap loc_y hloc heq
   }
 
 /-- Helper: lookup on deleteAll returns some → lookup on original returns some -/
@@ -2040,6 +2325,9 @@ private theorem preservation_pack (m m' : Machine) (env : TypeEnv) (lenv : Label
       lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
       funEnv_typed := hwt.funEnv_typed
       heap_loc_bound := hwt.heap_loc_bound
+      rmap_root_none := hwt.rmap_root_none
+      no_paths_to_root := hwt.no_paths_to_root
+      root_path_coherence := hwt.root_path_coherence
     }
 
 private theorem preservation_assign_valid (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -2256,6 +2544,45 @@ private theorem preservation_assign_valid (m m' : Machine) (env : TypeEnv) (lenv
       lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
       funEnv_typed := hwt.funEnv_typed
       heap_loc_bound := heap_loc_bound_after_alloc m.heap v hwt.heap_loc_bound
+      rmap_root_none := hwt.rmap_root_none
+      no_paths_to_root := by
+        have hroot_ne : Aref.root ≠ r := Ne.symm hr_not_root
+        intro u p hp
+        by_cases hu : u = r
+        · -- u = r: pe'.paths(r, .root) is empty (delete_ref_node)
+          exfalso
+          rw [hu] at hp
+          have hempty : pe'.paths (r, .root) = .empty := by
+            show (delete_ref_node _ r).paths (r, .root) = .empty
+            simp only [delete_ref_node, true_or, ↓reduceIte]
+          rw [hempty] at hp; exact hp
+        · -- u ≠ r: unchanged paths
+          rw [hgc_paths u .root hu hroot_ne] at hp
+          exact hwt.no_paths_to_root u p hp
+      root_path_coherence := by
+        have hroot_ne : Aref.root ≠ r := Ne.symm hr_not_root
+        intro v' y rest hv_mem hp loc_v path_v hrmap loc_y hloc heq
+        -- pe'.refs = env.pathEnv.refs, so v' ∈ env.pathEnv.refs
+        have hv_orig : v' ∈ env.pathEnv.refs := hgc_refs ▸ hv_mem
+        have hv_ne : v' ≠ r := fun h => by subst h; exact absurd hv_orig hr_fresh
+        -- pe'.paths(.root, v') = env.pathEnv.paths(.root, v')
+        rw [hgc_paths .root v' hroot_ne hv_ne] at hp
+        by_cases heqx : y = x
+        · -- y = x: varStore'(x) = (m.heap.alloc v).2 = m.heap.nextLoc (fresh)
+          subst heqx
+          simp only [lookup_insert_same, Option.some.injEq] at hloc
+          -- hloc : (m.heap.alloc v).2 = loc_y
+          -- (m.heap.alloc v).2 = m.heap.nextLoc by definition
+          have halloc_eq : (m.heap.alloc v).2 = m.heap.nextLoc := rfl
+          -- loc_v < m.heap.nextLoc from rmap_live + heap_loc_bound
+          have hlt := hwt.heap_loc_bound loc_v (readRef_implies_read m.heap loc_v path_v
+            (hwt.rmap_live v' loc_v path_v hrmap))
+          -- Rewrite loc_y → (m.heap.alloc v).2 → m.heap.nextLoc in heq
+          rw [← hloc, halloc_eq] at heq
+          exact absurd heq (Nat.ne_of_lt hlt)
+        · -- y ≠ x: varStore(y) unchanged
+          rw [lookup_insert_ne _ x y _ heqx] at hloc
+          exact hwt.root_path_coherence v' y rest hv_orig hp loc_v path_v hrmap loc_y hloc heq
     }
 
 private theorem preservation_assign_invalid (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -2421,6 +2748,23 @@ private theorem preservation_assign_invalid (m m' : Machine) (env : TypeEnv) (le
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := heap_loc_bound_after_alloc m.heap v hwt.heap_loc_bound
+    rmap_root_none := hwt.rmap_root_none
+    no_paths_to_root := hwt.no_paths_to_root
+    root_path_coherence := by
+      -- pathEnv and rmap unchanged; varStore(x) → fresh alloc location
+      intro v' y rest hv_mem hp loc_v path_v hrmap loc_y hloc heq
+      by_cases heqx : y = x
+      · -- y = x: varStore'(x) = (m.heap.alloc v).2 = m.heap.nextLoc (fresh)
+        subst heqx
+        simp only [lookup_insert_same, Option.some.injEq] at hloc
+        have halloc_eq : (m.heap.alloc v).2 = m.heap.nextLoc := rfl
+        have hlt := hwt.heap_loc_bound loc_v (readRef_implies_read m.heap loc_v path_v
+          (hwt.rmap_live v' loc_v path_v hrmap))
+        rw [← hloc, halloc_eq] at heq
+        exact absurd heq (Nat.ne_of_lt hlt)
+      · -- y ≠ x: varStore(y) unchanged
+        rw [lookup_insert_ne _ x y _ heqx] at hloc
+        exact hwt.root_path_coherence v' y rest hv_mem hp loc_v path_v hrmap loc_y hloc heq
   }
 
 -- ============================================================
