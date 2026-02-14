@@ -62,8 +62,13 @@ it produces larger refid values. Updated all affected examples:
 - Updated `t_varEnv_fresh` and `t_l3_varEnv_fresh` proofs
 
 ### subtree_writes_release.lean
-- Label `l3` env refids: `.refid 1` → `.refid 5`, `.refid 2` → `.refid 7`, `.refid 3` → `.refid 8`
-- Updated `t_l3_varEnv`, `t_l3_pathEnv`, and all freshness proofs
+- Fixed `t_l3_pathEnv` refs: `[8, 7, 5, 0, .root]` → `[8, 7, 6, 5, 4, .root]`
+  (added `.refid 4` from `copy root` and `.refid 6` from `copy x`, removed spurious `.refid 0`)
+- Fixed `t_l3_pathEnv` paths: added all 20 non-trivial pairs among {4,5,6,7,8},
+  including ε-copy paths (5↔6), 2-hop paths (fl2/fr2, dfl2/dfr2), and
+  3-hop paths (fl3/fr3, dfl3/dfr3)
+- Updated `t_l3_pathEnv_wf` proof for 6-element refs list
+- Example now fully type-checks (`check_fun t t_lenv = true`)
 
 ### mutable_borrows_are_not_unique.lean
 - Added `set_option maxRecDepth 4096` for both `fields_check` and `fields_write_check`

@@ -228,9 +228,9 @@ def t_l3_varEnv : VarEnv :=
   update ve var_y (.validVar, .ref .u64 (.refid 8) .siteBorrowMut, .mutable)
 
 -- PathEnv at l3 entry: union of paths from l1 (field_l) and l2 (field_r)
--- l1: root →[field_l]→ Sub1 →[field_l]→ Sub2 →[field_l]→ u64
--- l2: root →[field_r]→ Sub1 →[field_r]→ Sub2 →[field_r]→ u64
--- Refs: .refid 5 = Sub1 borrow, .refid 7 = intermediate Sub2, .refid 8 = u64 borrow
+-- l1: copy(root)=4 →[field_l]→ 5(Sub1) →[ε]→ 6(copy) →[field_l]→ 7(Sub2) →[field_l]→ 8(u64)
+-- l2: copy(root)=4 →[field_r]→ 5(Sub1) →[ε]→ 6(copy) →[field_r]→ 7(Sub2) →[field_r]→ 8(u64)
+-- Refs: 4=copy(root), 5=borrow(Sub1), 6=copy(x), 7=borrow(Sub2), 8=borrow(u64)
 --
 -- The checker also produces "reverse" derivative paths via `der` in update_with_extension.
 -- These are `Regex.deriv ε (.field f)` values that are semantically empty but not recognized
@@ -242,22 +242,48 @@ def t_l3_pathEnv : PathEnv :=
   let fr := Regex.concat Regex.ε (Regex.char (PathElement.field field_r))
   let fl2 := Regex.concat fl (Regex.char (PathElement.field field_l))
   let fr2 := Regex.concat fr (Regex.char (PathElement.field field_r))
+  let fl3 := Regex.concat fl2 (Regex.char (PathElement.field field_l))
+  let fr3 := Regex.concat fr2 (Regex.char (PathElement.field field_r))
   -- Reverse derivative paths: deriv ε (.field f)
   let dfl := Regex.deriv Regex.ε (PathElement.field field_l)
   let dfr := Regex.deriv Regex.ε (PathElement.field field_r)
   let dfl2 := Regex.deriv dfl (PathElement.field field_l)
   let dfr2 := Regex.deriv dfr (PathElement.field field_r)
-  { refs := [.refid 8, .refid 7, .refid 5, .refid 0, .root]
+  let dfl3 := Regex.deriv dfl2 (PathElement.field field_l)
+  let dfr3 := Regex.deriv dfr2 (PathElement.field field_r)
+  { refs := [.refid 8, .refid 7, .refid 6, .refid 5, .refid 4, .root]
     paths := fun (u, v) =>
       if u = v then Regex.ε
-      -- Forward paths (from field borrows: parent → child)
+      -- Forward paths: parent → child (via field borrows)
+      -- 4→5 and 4→6 (5,6 are ε-copies of each other)
+      else if u = .refid 4 ∧ v = .refid 5 then Regex.union fl fr
+      else if u = .refid 4 ∧ v = .refid 6 then Regex.union fl fr
+      -- 5↔6 (epsilon copy)
+      else if u = .refid 5 ∧ v = .refid 6 then Regex.ε
+      else if u = .refid 6 ∧ v = .refid 5 then Regex.ε
+      -- 6→7, 5→7 (borrow from Sub1)
+      else if u = .refid 6 ∧ v = .refid 7 then Regex.union fl fr
       else if u = .refid 5 ∧ v = .refid 7 then Regex.union fl fr
+      -- 7→8 (borrow from Sub2)
       else if u = .refid 7 ∧ v = .refid 8 then Regex.union fl fr
+      -- 2-hop forward: 4→7, 5→8, 6→8
+      else if u = .refid 4 ∧ v = .refid 7 then Regex.union fl2 fr2
       else if u = .refid 5 ∧ v = .refid 8 then Regex.union fl2 fr2
-      -- Reverse derivative paths (child → parent, from der in update_with_extension)
+      else if u = .refid 6 ∧ v = .refid 8 then Regex.union fl2 fr2
+      -- 3-hop forward: 4→8
+      else if u = .refid 4 ∧ v = .refid 8 then Regex.union fl3 fr3
+      -- Reverse derivative paths (child → parent)
+      else if u = .refid 5 ∧ v = .refid 4 then Regex.union dfl dfr
+      else if u = .refid 6 ∧ v = .refid 4 then Regex.union dfl dfr
+      else if u = .refid 7 ∧ v = .refid 6 then Regex.union dfl dfr
       else if u = .refid 7 ∧ v = .refid 5 then Regex.union dfl dfr
       else if u = .refid 8 ∧ v = .refid 7 then Regex.union dfl dfr
+      -- 2-hop reverse: 7→4, 8→6, 8→5
+      else if u = .refid 7 ∧ v = .refid 4 then Regex.union dfl2 dfr2
+      else if u = .refid 8 ∧ v = .refid 6 then Regex.union dfl2 dfr2
       else if u = .refid 8 ∧ v = .refid 5 then Regex.union dfl2 dfr2
+      -- 3-hop reverse: 8→4
+      else if u = .refid 8 ∧ v = .refid 4 then Regex.union dfl3 dfr3
       else Regex.empty }
 
 -- Environment at l3 entry
@@ -407,16 +433,16 @@ private lemma t_l3_pathEnv_wf : PathEnv.WellFormed t_l3_pathEnv := by
       intro heq; subst heq
       exact hr (List.mem_cons.mpr (Or.inr (List.mem_cons.mpr
         (Or.inr (List.mem_cons.mpr (Or.inr (List.mem_cons.mpr
-          (Or.inr (List.mem_cons.mpr (Or.inl rfl))))))))))
+          (Or.inr (List.mem_cons.mpr (Or.inr (List.mem_cons.mpr (Or.inl rfl))))))))))))
     simp [hne]
   · -- varref_tracked: vacuously true (no .varRef in refs)
     intro x hx
     simp only [t_l3_pathEnv, List.mem_cons] at hx
-    rcases hx with h | h | h | h | h
+    rcases hx with h | h | h | h | h | h
     all_goals (first | exact absurd h Aref.noConfusion | simp at h)
   · -- root_in_refs
     simp only [t_l3_pathEnv, List.mem_cons]
-    right; right; right; right; left; trivial
+    right; right; right; right; right; left; trivial
 
 -- Helper: t_l3_env is well-formed
 private lemma t_l3_env_wf : TypeEnv.WellFormed t_l3_env := by
