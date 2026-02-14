@@ -770,6 +770,49 @@ lemma TypeEnv.deleteAll_insert_wf (env : TypeEnv) (ss : List Site) (sins : Site)
     exact SiteEnv.insert_refs_not_root _ sins τ hdel hτ
   · exact hwf.varEnv_wf
 
+/-- If a regex matches nothing, its derivative by any character also matches nothing. -/
+lemma no_match_deriv [DecidableEq α] {re : Regex α} {a : α}
+    (h : ∀ q, ¬interpret_regex re q) :
+    ∀ q, ¬interpret_regex (Regex.deriv re a) q := by
+  intro q hcontra
+  simp only [interpret_regex] at hcontra
+  exact h (a :: q) hcontra
+
+/-- If a regex matches nothing, `der re p` also matches nothing. -/
+lemma no_match_der [DecidableEq α] {re : Regex α} (p : List α)
+    (h : ∀ q, ¬interpret_regex re q) :
+    ∀ q, ¬interpret_regex (der re p) q := by
+  induction p generalizing re with
+  | nil => exact h
+  | cons a rest ih =>
+    simp only [der, List.foldl]
+    apply ih
+    exact no_match_deriv h
+
+/-- If a regex matches nothing, `extend re p` also matches nothing. -/
+lemma no_match_extend [DecidableEq α] {re : Regex α} (p : List α)
+    (h : ∀ q, ¬interpret_regex re q) :
+    ∀ q, ¬interpret_regex (extend re p) q := by
+  induction p generalizing re with
+  | nil => exact h
+  | cons a rest ih =>
+    simp only [extend, List.foldl]
+    apply ih
+    intro q hcontra
+    simp only [interpret_regex] at hcontra
+    obtain ⟨q1, _, _, hq1, _⟩ := hcontra
+    exact h q1 hq1
+
+/-- If both regexes match nothing, their union also matches nothing. -/
+lemma no_match_union [DecidableEq α] {r1 r2 : Regex α}
+    (h1 : ∀ q, ¬interpret_regex r1 q) (h2 : ∀ q, ¬interpret_regex r2 q) :
+    ∀ q, ¬interpret_regex (Regex.union r1 r2) q := by
+  intro q hcontra
+  simp only [interpret_regex] at hcontra
+  cases hcontra with
+  | inl h => exact h1 q h
+  | inr h => exact h2 q h
+
 /-- update_with_extension preserves WellFormed when z ≠ root and z is not a varRef.
     In practice, z is always a fresh ref from nextFreshRef (never .root or varRef). -/
 lemma update_with_extension_wellformed (z x : Aref) (path : List PathElement) (pe : PathEnv)
@@ -1011,6 +1054,217 @@ lemma consume_ref_transfer_wellformed (pe : PathEnv) (r r' : Aref) (hwf : PathEn
                       List.mem_cons]
           exact ⟨Or.inr hcontra, hu_ne_r⟩
       exact hwf.from_untracked_to_root_empty u hu_notin huroot
+
+/- ---------------------------------------------------- -/
+/-  Standalone paths_from/to_non_member propagation      -/
+/- ---------------------------------------------------- -/
+
+/-- delete_ref_node preserves paths_from_non_member_empty -/
+lemma delete_ref_node_paths_from_non_member (pe : PathEnv) (r : Aref)
+    (h_from : ∀ u v p, u ∉ pe.refs → u ≠ .root → u ≠ v → ¬interpret_regex (pe.paths (u, v)) p) :
+    ∀ u v p, u ∉ (delete_ref_node pe r).refs → u ≠ .root → u ≠ v →
+    ¬interpret_regex ((delete_ref_node pe r).paths (u, v)) p := by
+  intro u v p hu huroot huv
+  simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq, not_and] at hu
+  by_cases hur : u = r
+  · rw [hur]; simp only [delete_ref_node, true_or, ↓reduceIte, interpret_regex, not_false_eq_true]
+  · have hu_not_in : u ∉ pe.refs := fun hc => hur (Decidable.not_not.mp (hu hc))
+    simp only [delete_ref_node]
+    by_cases hvr : v = r
+    · simp only [hur, hvr, or_true, ↓reduceIte, interpret_regex, not_false_eq_true]
+    · simp only [hur, hvr, or_self, ↓reduceIte]
+      exact h_from u v p hu_not_in huroot huv
+
+/-- delete_ref_node preserves paths_to_non_member_empty -/
+lemma delete_ref_node_paths_to_non_member (pe : PathEnv) (r : Aref)
+    (h_to : ∀ u v p, v ∉ pe.refs → v ≠ .root → u ≠ v → ¬interpret_regex (pe.paths (u, v)) p) :
+    ∀ u v p, v ∉ (delete_ref_node pe r).refs → v ≠ .root → u ≠ v →
+    ¬interpret_regex ((delete_ref_node pe r).paths (u, v)) p := by
+  intro u v p hv hvroot huv
+  simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq, not_and] at hv
+  by_cases hvr : v = r
+  · rw [hvr]; simp only [delete_ref_node, or_true, ↓reduceIte, interpret_regex, not_false_eq_true]
+  · have hv_not_in : v ∉ pe.refs := fun hc => hvr (Decidable.not_not.mp (hv hc))
+    simp only [delete_ref_node]
+    by_cases hur : u = r
+    · simp only [hur, true_or, ↓reduceIte, interpret_regex, not_false_eq_true]
+    · simp only [hur, hvr, or_self, ↓reduceIte]
+      exact h_to u v p hv_not_in hvroot huv
+
+/-- update_with_extension preserves paths_from_non_member_empty (requires hx_tracked). -/
+lemma update_with_extension_paths_from_non_member (z x : Aref) (path : List PathElement) (pe : PathEnv)
+    (h_from : ∀ u v p, u ∉ pe.refs → u ≠ .root → u ≠ v → ¬interpret_regex (pe.paths (u, v)) p)
+    (hx_tracked : x ∈ pe.refs ∨ x = z) :
+    ∀ u v p, u ∉ (update_with_extension z x path pe).refs → u ≠ .root → u ≠ v →
+    ¬interpret_regex ((update_with_extension z x path pe).paths (u, v)) p := by
+  intro u v p' hu huroot huv
+  simp only [update_with_extension] at hu ⊢
+  have hu_ne_z : u ≠ z := by
+    intro heq
+    apply hu
+    rw [heq]
+    by_cases hzin : z ∈ pe.refs
+    · simp only [hzin, not_true_eq_false, ↓reduceIte]
+    · simp only [hzin, not_false_eq_true, ↓reduceIte, List.mem_cons]
+      exact Or.inl trivial
+  have hu_notin : u ∉ pe.refs := by
+    intro hcontra
+    apply hu
+    by_cases hzin : z ∈ pe.refs
+    · simp only [hzin, not_true_eq_false, ↓reduceIte]
+      exact hcontra
+    · simp only [hzin, not_false_eq_true, ↓reduceIte, List.mem_cons]
+      exact Or.inr hcontra
+  have hu_ne_x : u ≠ x := by
+    cases hx_tracked with
+    | inl hx_in => intro heq; exact hu_notin (heq ▸ hx_in)
+    | inr hx_z => intro heq; exact hu_ne_z (heq ▸ hx_z)
+  have hnotboth : ¬(u = z ∧ v = z) := by intro ⟨h, _⟩; exact hu_ne_z h
+  rw [if_neg hnotboth]
+  by_cases hvz : v = z
+  · rw [if_pos hvz]
+    exact no_match_extend path (fun q => h_from u x q hu_notin huroot hu_ne_x) p'
+  · rw [if_neg hvz, if_neg hu_ne_z]
+    exact h_from u v p' hu_notin huroot huv
+
+/-- update_with_extension preserves paths_to_non_member_empty (requires hx_tracked). -/
+lemma update_with_extension_paths_to_non_member (z x : Aref) (path : List PathElement) (pe : PathEnv)
+    (h_to : ∀ u v p, v ∉ pe.refs → v ≠ .root → u ≠ v → ¬interpret_regex (pe.paths (u, v)) p)
+    (hx_tracked : x ∈ pe.refs ∨ x = z) :
+    ∀ u v p, v ∉ (update_with_extension z x path pe).refs → v ≠ .root → u ≠ v →
+    ¬interpret_regex ((update_with_extension z x path pe).paths (u, v)) p := by
+  intro u v p' hv hvroot huv
+  simp only [update_with_extension] at hv ⊢
+  have hv_ne_z : v ≠ z := by
+    intro heq
+    apply hv
+    rw [heq]
+    by_cases hzin : z ∈ pe.refs
+    · simp only [hzin, not_true_eq_false, ↓reduceIte]
+    · simp only [hzin, not_false_eq_true, ↓reduceIte, List.mem_cons]
+      exact Or.inl trivial
+  have hv_notin : v ∉ pe.refs := by
+    intro hcontra
+    apply hv
+    by_cases hzin : z ∈ pe.refs
+    · simp only [hzin, not_true_eq_false, ↓reduceIte]
+      exact hcontra
+    · simp only [hzin, not_false_eq_true, ↓reduceIte, List.mem_cons]
+      exact Or.inr hcontra
+  have hv_ne_x : v ≠ x := by
+    cases hx_tracked with
+    | inl hx_in => intro heq; exact hv_notin (heq ▸ hx_in)
+    | inr hx_z => intro heq; exact hv_ne_z (heq ▸ hx_z)
+  have hnotboth : ¬(u = z ∧ v = z) := by intro ⟨_, h⟩; exact hv_ne_z h
+  rw [if_neg hnotboth, if_neg hv_ne_z]
+  by_cases huz : u = z
+  · rw [if_pos huz]
+    exact no_match_der path (fun q => h_to x v q hv_notin hvroot hv_ne_x.symm) p'
+  · rw [if_neg huz]
+    exact h_to u v p' hv_notin hvroot huv
+
+/-- consume_ref_transfer preserves paths_from_non_member_empty -/
+lemma consume_ref_transfer_paths_from_non_member (pe : PathEnv) (r r' : Aref)
+    (h_from : ∀ u v p, u ∉ pe.refs → u ≠ .root → u ≠ v → ¬interpret_regex (pe.paths (u, v)) p) :
+    ∀ u v p, u ∉ (consume_ref_transfer pe r r').refs → u ≠ .root → u ≠ v →
+    ¬interpret_regex ((consume_ref_transfer pe r r').paths (u, v)) p := by
+  intro u v p hu huroot huv
+  simp only [consume_ref_transfer] at hu ⊢
+  by_cases hur : u = r
+  · simp only [hur, true_or, ↓reduceIte, interpret_regex, not_false_eq_true]
+  · have hu_notin : u ∉ pe.refs := by
+      intro hcontra; apply hu
+      by_cases hr'in : r' ∈ pe.refs
+      · simp only [hr'in, not_true_eq_false, ↓reduceIte, List.mem_filter, decide_eq_true_eq]
+        exact ⟨hcontra, hur⟩
+      · simp only [hr'in, not_false_eq_true, ↓reduceIte, List.mem_filter, decide_eq_true_eq,
+                    List.mem_cons]
+        exact ⟨Or.inr hcontra, hur⟩
+    have hu_ne_r' : u ≠ r' := by
+      intro heq; apply hu
+      by_cases hr'in : r' ∈ pe.refs
+      · exact absurd (heq ▸ hu_notin) (not_not.mpr hr'in)
+      · simp only [hr'in, not_false_eq_true, ↓reduceIte, List.mem_filter, decide_eq_true_eq,
+                    List.mem_cons]
+        exact ⟨Or.inl heq, hur⟩
+    by_cases hvr : v = r
+    · simp only [hur, hvr, or_true, ↓reduceIte, interpret_regex, not_false_eq_true]
+    · have hcond : ¬(u = r ∨ v = r) := by intro h; cases h with
+        | inl h => exact hur h
+        | inr h => exact hvr h
+      simp only [hcond, ↓reduceIte]
+      by_cases hvr' : v = r'
+      · simp only [hvr', ↓reduceIte]
+        -- u ∉ pe.refs, r ∈ pe.refs → u ≠ r
+        exact no_match_union
+          (fun q => h_from u r' q hu_notin huroot hu_ne_r')
+          (fun q => h_from u r q hu_notin huroot (fun h => hur h)) p
+      · simp only [hvr', ↓reduceIte]
+        exact h_from u v p hu_notin huroot huv
+
+/-- consume_ref_transfer preserves paths_to_non_member_empty -/
+lemma consume_ref_transfer_paths_to_non_member (pe : PathEnv) (r r' : Aref)
+    (h_to : ∀ u v p, v ∉ pe.refs → v ≠ .root → u ≠ v → ¬interpret_regex (pe.paths (u, v)) p) :
+    ∀ u v p, v ∉ (consume_ref_transfer pe r r').refs → v ≠ .root → u ≠ v →
+    ¬interpret_regex ((consume_ref_transfer pe r r').paths (u, v)) p := by
+  intro u v p hv hvroot huv
+  simp only [consume_ref_transfer] at hv ⊢
+  by_cases hvr : v = r
+  · simp only [hvr, or_true, ↓reduceIte, interpret_regex, not_false_eq_true]
+  · have hv_notin : v ∉ pe.refs := by
+      intro hcontra; apply hv
+      by_cases hr'in : r' ∈ pe.refs
+      · simp only [hr'in, not_true_eq_false, ↓reduceIte, List.mem_filter, decide_eq_true_eq]
+        exact ⟨hcontra, hvr⟩
+      · simp only [hr'in, not_false_eq_true, ↓reduceIte, List.mem_filter, decide_eq_true_eq,
+                    List.mem_cons]
+        exact ⟨Or.inr hcontra, hvr⟩
+    have hv_ne_r' : v ≠ r' := by
+      intro heq; apply hv
+      by_cases hr'in : r' ∈ pe.refs
+      · exact absurd (heq ▸ hv_notin) (not_not.mpr hr'in)
+      · simp only [hr'in, not_false_eq_true, ↓reduceIte, List.mem_filter, decide_eq_true_eq,
+                    List.mem_cons]
+        exact ⟨Or.inl heq, hvr⟩
+    by_cases hur : u = r
+    · simp only [hur, true_or, ↓reduceIte, interpret_regex, not_false_eq_true]
+    · have hcond : ¬(u = r ∨ v = r) := by intro h; cases h with
+        | inl h => exact hur h
+        | inr h => exact hvr h
+      simp only [hcond, ↓reduceIte, hv_ne_r', ↓reduceIte]
+      exact h_to u v p hv_notin hvroot huv
+
+/-- garbage_collect preserves paths_from_non_member_empty -/
+lemma garbage_collect_paths_from_non_member (pe : PathEnv) (r : Aref)
+    (h_from : ∀ u v p, u ∉ pe.refs → u ≠ .root → u ≠ v → ¬interpret_regex (pe.paths (u, v)) p) :
+    ∀ u v p, u ∉ (garbage_collect pe r).refs → u ≠ .root → u ≠ v →
+    ¬interpret_regex ((garbage_collect pe r).paths (u, v)) p := by
+  intro u v p hu huroot huv
+  simp only [garbage_collect, List.mem_filter, decide_eq_true_eq, not_and] at hu
+  by_cases hur : u = r
+  · rw [hur]; simp only [garbage_collect, true_or, ↓reduceIte, interpret_regex, not_false_eq_true]
+  · have hu_not_in : u ∉ pe.refs := fun hc => hur (Decidable.not_not.mp (hu hc))
+    simp only [garbage_collect]
+    by_cases hvr : v = r
+    · simp only [hur, hvr, or_true, ↓reduceIte, interpret_regex, not_false_eq_true]
+    · simp only [hur, hvr, or_self, ↓reduceIte]
+      exact h_from u v p hu_not_in huroot huv
+
+/-- garbage_collect preserves paths_to_non_member_empty -/
+lemma garbage_collect_paths_to_non_member (pe : PathEnv) (r : Aref)
+    (h_to : ∀ u v p, v ∉ pe.refs → v ≠ .root → u ≠ v → ¬interpret_regex (pe.paths (u, v)) p) :
+    ∀ u v p, v ∉ (garbage_collect pe r).refs → v ≠ .root → u ≠ v →
+    ¬interpret_regex ((garbage_collect pe r).paths (u, v)) p := by
+  intro u v p hv hvroot huv
+  simp only [garbage_collect, List.mem_filter, decide_eq_true_eq, not_and] at hv
+  by_cases hvr : v = r
+  · rw [hvr]; simp only [garbage_collect, or_true, ↓reduceIte, interpret_regex, not_false_eq_true]
+  · have hv_not_in : v ∉ pe.refs := fun hc => hvr (Decidable.not_not.mp (hv hc))
+    simp only [garbage_collect]
+    by_cases hur : u = r
+    · simp only [hur, true_or, ↓reduceIte, interpret_regex, not_false_eq_true]
+    · simp only [hur, hvr, or_self, ↓reduceIte]
+      exact h_to u v p hv_not_in hvroot huv
 
 /- ---------------------------------------------------- -/
 /-       TypeEnv.equiv lemmas                            -/

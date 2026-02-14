@@ -352,6 +352,17 @@ structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     ∀ loc_y, lookup m.frame.varStore y = some (some loc_y) →
     loc_v = loc_y → path_v = fieldPathOf rest
 
+  -- 18. Non-member refs (except root) have no outgoing paths to other refs
+  paths_from_non_member_empty : ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
+    ¬interpret_regex (env.pathEnv.paths (u, v)) p
+
+  -- 19. Non-member refs (except root) have no incoming paths from other refs
+  paths_to_non_member_empty : ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
+    ¬interpret_regex (env.pathEnv.paths (u, v)) p
+
+  -- 20. Self-loops only accept the empty path
+  self_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = []
+
 /-- Stack safety: each frame on the stack can be safely restored after ret.
     Defined by structural recursion on the stack. -/
 def StackSafe : List Frame → Option ReturnInfo → Heap → Prop

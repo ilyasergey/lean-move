@@ -374,6 +374,9 @@ private theorem preservation_intLit (m m' : Machine) (env : TypeEnv) (lenv : Lab
     rmap_root_none := hwt.rmap_root_none
     no_paths_to_root := hwt.no_paths_to_root
     root_path_coherence := hwt.root_path_coherence
+    paths_from_non_member_empty := hwt.paths_from_non_member_empty
+    paths_to_non_member_empty := hwt.paths_to_non_member_empty
+    self_loop_only_empty := hwt.self_loop_only_empty
   }
 
 private theorem preservation_copy_val (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -411,6 +414,9 @@ private theorem preservation_copy_val (m m' : Machine) (env : TypeEnv) (lenv : L
     rmap_root_none := hwt.rmap_root_none
     no_paths_to_root := hwt.no_paths_to_root
     root_path_coherence := hwt.root_path_coherence
+    paths_from_non_member_empty := hwt.paths_from_non_member_empty
+    paths_to_non_member_empty := hwt.paths_to_non_member_empty
+    self_loop_only_empty := hwt.self_loop_only_empty
   }
 
 /-- When PathEnv is extended via `update_with_epsilon t s_orig pe` and rmap is
@@ -782,6 +788,23 @@ private theorem preservation_copy_ref (m m' : Machine) (env : TypeEnv) (lenv : L
         have hv_in : v ∈ env.pathEnv.refs := by
           simp only [List.mem_cons] at hv_mem; exact hv_mem.resolve_left hv
         exact hwt.root_path_coherence v y rest hv_in hp loc_v path_v hrmap loc_y hloc heq
+    paths_from_non_member_empty := by
+      unfold update_with_epsilon
+      exact update_with_extension_paths_from_non_member t s_orig [] env.pathEnv
+        hwt.paths_from_non_member_empty
+        (Or.inl (hwt.varEnv_refs_in_pathEnv x τ_ref s_orig isBor ms hvar))
+    paths_to_non_member_empty := by
+      unfold update_with_epsilon
+      exact update_with_extension_paths_to_non_member t s_orig [] env.pathEnv
+        hwt.paths_to_non_member_empty
+        (Or.inl (hwt.varEnv_refs_in_pathEnv x τ_ref s_orig isBor ms hvar))
+    self_loop_only_empty := by
+      intro u p hp
+      unfold update_with_epsilon update_with_extension at hp
+      by_cases hu : u = t
+      · subst hu; simp only [↓reduceIte] at hp; exact hp
+      · simp only [show ¬(u = t) from hu, and_false, ↓reduceIte] at hp
+        exact hwt.self_loop_only_empty u p hp
   } -- end copy_ref
 
 private theorem preservation_move (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -938,6 +961,9 @@ private theorem preservation_move (m m' : Machine) (env : TypeEnv) (lenv : Label
       · -- y ≠ x: varStore'(y) = varStore(y), use old invariant
         rw [lookup_insert_ne _ x y _ heqx] at hloc_y
         exact hwt.root_path_coherence v y rest hv_mem hp loc_v path_v hrmap loc_y hloc_y heq
+    paths_from_non_member_empty := hwt.paths_from_non_member_empty
+    paths_to_non_member_empty := hwt.paths_to_non_member_empty
+    self_loop_only_empty := hwt.self_loop_only_empty
   }
 
 /-- Reusable helper: rmap_paths is preserved by update_with_extension r .root [.root_to_var x]
@@ -1217,6 +1243,31 @@ private theorem preservation_borrowImm (m m' : Machine) (env : TypeEnv) (lenv : 
         -- rmap'(v') where v' ≠ r → rmap.map v'
         simp only [rmap', if_neg hv_ne] at hrmap
         exact hwt.root_path_coherence v' y rest hv_in hp loc_v path_v hrmap loc_y hloc heq
+    paths_from_non_member_empty := by
+      have h_root_in_mid : Aref.root ∈ (update_with_epsilon r r env.pathEnv).refs :=
+        hpe_mid_refs ▸ List.mem_cons_of_mem _ hwt.env_wf.pathEnv_wf.root_in_refs
+      exact update_with_extension_paths_from_non_member r .root [.root_to_var x] _
+        (by unfold update_with_epsilon
+            exact update_with_extension_paths_from_non_member r r [] env.pathEnv
+              hwt.paths_from_non_member_empty (Or.inr rfl))
+        (Or.inl h_root_in_mid)
+    paths_to_non_member_empty := by
+      have h_root_in_mid : Aref.root ∈ (update_with_epsilon r r env.pathEnv).refs :=
+        hpe_mid_refs ▸ List.mem_cons_of_mem _ hwt.env_wf.pathEnv_wf.root_in_refs
+      exact update_with_extension_paths_to_non_member r .root [.root_to_var x] _
+        (by unfold update_with_epsilon
+            exact update_with_extension_paths_to_non_member r r [] env.pathEnv
+              hwt.paths_to_non_member_empty (Or.inr rfl))
+        (Or.inl h_root_in_mid)
+    self_loop_only_empty := by
+      intro u p hp
+      unfold pe' update_with_extension at hp
+      by_cases hu : u = r
+      · subst hu; simp only [↓reduceIte] at hp; exact hp
+      · simp only [show ¬(u = r) from hu, and_false, ↓reduceIte] at hp
+        unfold update_with_epsilon update_with_extension at hp
+        simp only [show ¬(u = r) from hu, and_false, ↓reduceIte] at hp
+        exact hwt.self_loop_only_empty u p hp
   } -- end borrowImm
 
 /-- Reusable helper: delete_ref_node preserves rmap_paths. -/
@@ -1309,6 +1360,9 @@ private theorem wellTypedState_heap_alloc
     rmap_root_none := hwt.rmap_root_none
     no_paths_to_root := hwt.no_paths_to_root
     root_path_coherence := hwt.root_path_coherence
+    paths_from_non_member_empty := hwt.paths_from_non_member_empty
+    paths_to_non_member_empty := hwt.paths_to_non_member_empty
+    self_loop_only_empty := hwt.self_loop_only_empty
   }
 
 /-- StackSafe is preserved under heap.alloc -/
@@ -1530,6 +1584,17 @@ private theorem preservation_readRef (m m' : Machine) (env : TypeEnv) (lenv : La
       rmap_root_none := hwt.rmap_root_none
       no_paths_to_root := no_paths_to_root_delete_ref_node' hwt r hr_not_root
       root_path_coherence := root_path_coherence_delete_ref_node' hwt r hr_not_root
+      paths_from_non_member_empty :=
+        delete_ref_node_paths_from_non_member env.pathEnv r hwt.paths_from_non_member_empty
+      paths_to_non_member_empty :=
+        delete_ref_node_paths_to_non_member env.pathEnv r hwt.paths_to_non_member_empty
+      self_loop_only_empty := by
+        intro u p hp
+        simp only [delete_ref_node] at hp
+        by_cases hu : u = r
+        · subst hu; simp only [true_or, ↓reduceIte, interpret_regex] at hp
+        · simp only [hu, false_or, ↓reduceIte] at hp
+          exact hwt.self_loop_only_empty u p hp
     }
 
 private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -1645,6 +1710,9 @@ private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : Labe
     rmap_root_none := hwt.rmap_root_none
     no_paths_to_root := hwt.no_paths_to_root
     root_path_coherence := hwt.root_path_coherence
+    paths_from_non_member_empty := hwt.paths_from_non_member_empty
+    paths_to_non_member_empty := hwt.paths_to_non_member_empty
+    self_loop_only_empty := hwt.self_loop_only_empty
   }
 
 private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -1684,6 +1752,17 @@ private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : La
     rmap_root_none := hwt.rmap_root_none
     no_paths_to_root := no_paths_to_root_delete_ref_node' hwt r hr_not_root
     root_path_coherence := root_path_coherence_delete_ref_node' hwt r hr_not_root
+    paths_from_non_member_empty :=
+      delete_ref_node_paths_from_non_member env.pathEnv r hwt.paths_from_non_member_empty
+    paths_to_non_member_empty :=
+      delete_ref_node_paths_to_non_member env.pathEnv r hwt.paths_to_non_member_empty
+    self_loop_only_empty := by
+      intro u p hp
+      simp only [delete_ref_node] at hp
+      by_cases hu : u = r
+      · subst hu; simp only [true_or, ↓reduceIte, interpret_regex] at hp
+      · simp only [hu, false_or, ↓reduceIte] at hp
+        exact hwt.self_loop_only_empty u p hp
   }
 
 /-- Helper: lookup on deleteAll returns some → lookup on original returns some -/
@@ -1767,6 +1846,9 @@ private theorem preservation_pack (m m' : Machine) (env : TypeEnv) (lenv : Label
       rmap_root_none := hwt.rmap_root_none
       no_paths_to_root := hwt.no_paths_to_root
       root_path_coherence := hwt.root_path_coherence
+      paths_from_non_member_empty := hwt.paths_from_non_member_empty
+      paths_to_non_member_empty := hwt.paths_to_non_member_empty
+      self_loop_only_empty := hwt.self_loop_only_empty
     }
 
 private theorem preservation_assign_valid (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -2022,6 +2104,42 @@ private theorem preservation_assign_valid (m m' : Machine) (env : TypeEnv) (lenv
         · -- y ≠ x: varStore(y) unchanged
           rw [lookup_insert_ne _ x y _ heqx] at hloc
           exact hwt.root_path_coherence v' y rest hv_orig hp loc_v path_v hrmap loc_y hloc heq
+      paths_from_non_member_empty := by
+        have h_eps_refs : (update_with_epsilon r r env.pathEnv).refs = r :: env.pathEnv.refs := by
+          simp only [update_with_epsilon, update_with_extension]
+          simp only [show ¬r ∈ env.pathEnv.refs from hr_fresh, not_false_eq_true, ↓reduceIte]
+        have h_root_in_mid : Aref.root ∈ (update_with_epsilon r r env.pathEnv).refs :=
+          h_eps_refs ▸ List.mem_cons_of_mem _ hwt.env_wf.pathEnv_wf.root_in_refs
+        exact garbage_collect_paths_from_non_member _ r
+          (update_with_extension_paths_from_non_member r .root [.root_to_var x] _
+            (by unfold update_with_epsilon
+                exact update_with_extension_paths_from_non_member r r [] env.pathEnv
+                  hwt.paths_from_non_member_empty (Or.inr rfl))
+            (Or.inl h_root_in_mid))
+      paths_to_non_member_empty := by
+        have h_eps_refs : (update_with_epsilon r r env.pathEnv).refs = r :: env.pathEnv.refs := by
+          simp only [update_with_epsilon, update_with_extension]
+          simp only [show ¬r ∈ env.pathEnv.refs from hr_fresh, not_false_eq_true, ↓reduceIte]
+        have h_root_in_mid : Aref.root ∈ (update_with_epsilon r r env.pathEnv).refs :=
+          h_eps_refs ▸ List.mem_cons_of_mem _ hwt.env_wf.pathEnv_wf.root_in_refs
+        exact garbage_collect_paths_to_non_member _ r
+          (update_with_extension_paths_to_non_member r .root [.root_to_var x] _
+            (by unfold update_with_epsilon
+                exact update_with_extension_paths_to_non_member r r [] env.pathEnv
+                  hwt.paths_to_non_member_empty (Or.inr rfl))
+            (Or.inl h_root_in_mid))
+      self_loop_only_empty := by
+        show ∀ u p, interpret_regex (pe'.paths (u, u)) p → p = []
+        intro u p hp
+        unfold pe' garbage_collect at hp
+        by_cases hu : u = r
+        · subst hu; simp only [true_or, ↓reduceIte, interpret_regex] at hp
+        · simp only [hu, false_or, ↓reduceIte] at hp
+          unfold update_with_extension at hp
+          simp only [show ¬(u = r) from hu, and_false, ↓reduceIte] at hp
+          unfold update_with_epsilon update_with_extension at hp
+          simp only [show ¬(u = r) from hu, and_false, ↓reduceIte] at hp
+          exact hwt.self_loop_only_empty u p hp
     }
 
 private theorem preservation_assign_invalid (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -2204,6 +2322,9 @@ private theorem preservation_assign_invalid (m m' : Machine) (env : TypeEnv) (le
       · -- y ≠ x: varStore(y) unchanged
         rw [lookup_insert_ne _ x y _ heqx] at hloc
         exact hwt.root_path_coherence v' y rest hv_mem hp loc_v path_v hrmap loc_y hloc heq
+    paths_from_non_member_empty := hwt.paths_from_non_member_empty
+    paths_to_non_member_empty := hwt.paths_to_non_member_empty
+    self_loop_only_empty := hwt.self_loop_only_empty
   }
 
 /-- Preservation for freeze: converts a (possibly mutable) reference to an immutable one.
@@ -2279,10 +2400,63 @@ private theorem preservation_freeze (m m' : Machine) (env : TypeEnv) (lenv : Lab
         exact ⟨v', by rw [lookup_insert_ne _ s s' _ heq]; exact hv', hm⟩
     rmap_live := rmap_live_extend_fresh hwt r' loc path hlive_r
     rmap_paths := by
-      -- TODO: needs dedicated rmap_paths_consume_ref_transfer lemma
-      -- consume_ref_transfer redirects edges from r to r', and rmap' maps r' to rmap(r)
-      -- Key challenge: paths to r' in old pathEnv (where r' ∉ refs) + rmap'/rmap mismatch
-      sorry
+      intro r1 r2 hr1 hr2 p hp
+      -- Extract membership facts from pe'.refs
+      have hr1_facts : (r1 = r' ∨ r1 ∈ env.pathEnv.refs) ∧ r1 ≠ r := by
+        rw [hpe_refs] at hr1; simp only [List.mem_filter, decide_eq_true_eq, List.mem_cons] at hr1
+        exact hr1
+      have hr2_facts : (r2 = r' ∨ r2 ∈ env.pathEnv.refs) ∧ r2 ≠ r := by
+        rw [hpe_refs] at hr2; simp only [List.mem_filter, decide_eq_true_eq, List.mem_cons] at hr2
+        exact hr2
+      -- Simplify pe'.paths(r1, r2) using consume_ref_transfer definition
+      simp only [pe', consume_ref_transfer] at hp
+      simp only [hr1_facts.2, hr2_facts.2, or_false, ↓reduceIte] at hp
+      -- Case split on r2 = r'
+      by_cases hr2_r' : r2 = r'
+      · -- Case B: r2 = r', paths = union(G(r1, r'), G(r1, r))
+        rw [hr2_r'] at hp ⊢; simp only [↓reduceIte, interpret_regex] at hp
+        rcases hp with hp_old | hp_from_r
+        · -- Sub-case: from G(r1, r')
+          by_cases hr1_r' : r1 = r'
+          · -- B1 self-loop: G(r', r'), by self_loop_only_empty p = []
+            rw [hr1_r'] at hp_old ⊢
+            have hpeq := hwt.self_loop_only_empty r' p hp_old
+            subst hpeq
+            have hrmap'_r' : rmap'.map r' = some (loc, path) := if_pos rfl
+            unfold PathReflectedInHeap
+            simp only [hrmap'_r']
+            intro _
+            exact ⟨by simp [fieldPathOf], hlive_r⟩
+          · -- r1 ≠ r': paths_to_non_member_empty contradicts
+            exact absurd hp_old
+              (hwt.paths_to_non_member_empty r1 r' p hr'_fresh_pe hr'_not_root hr1_r')
+        · -- Sub-case: from G(r1, r)
+          have hr1_ne_r' : r1 ≠ r' := by
+            intro heq; rw [heq] at hp_from_r
+            exact hwt.paths_from_non_member_empty r' r p hr'_fresh_pe hr'_not_root hr'_ne_r hp_from_r
+          have hr1_in : r1 ∈ env.pathEnv.refs := hr1_facts.1.resolve_left hr1_ne_r'
+          have hold := hwt.rmap_paths r1 r hr1_in hr_in_refs p hp_from_r
+          unfold PathReflectedInHeap at hold ⊢
+          have h1 : rmap'.map r1 = rmap.map r1 := if_neg hr1_ne_r'
+          have h2 : rmap'.map r' = some (loc, path) := if_pos rfl
+          rw [h1, h2]
+          rw [hrmap] at hold
+          exact hold
+      · -- Case A: r2 ≠ r', paths = G(r1, r2) (old paths, unchanged)
+        simp only [if_neg hr2_r'] at hp
+        have hr1_ne_r' : r1 ≠ r' := by
+          intro heq; rw [heq] at hp
+          exact hwt.paths_from_non_member_empty r' r2 p hr'_fresh_pe hr'_not_root
+            (fun h => hr2_r' h.symm) hp
+        have hr2_ne_r' : r2 ≠ r' := fun h => hr2_r' h
+        have hr1_in : r1 ∈ env.pathEnv.refs := hr1_facts.1.resolve_left hr1_ne_r'
+        have hr2_in : r2 ∈ env.pathEnv.refs := hr2_facts.1.resolve_left hr2_ne_r'
+        have hold := hwt.rmap_paths r1 r2 hr1_in hr2_in p hp
+        unfold PathReflectedInHeap at hold ⊢
+        have h1 : rmap'.map r1 = rmap.map r1 := if_neg hr1_ne_r'
+        have h2 : rmap'.map r2 = rmap.map r2 := if_neg hr2_ne_r'
+        rw [h1, h2]
+        exact hold
     varEnv_refs_in_pathEnv := by
       intro x bt r_v bk ms hvar
       have hold := hwt.varEnv_refs_in_pathEnv x bt r_v bk ms hvar
@@ -2418,6 +2592,23 @@ private theorem preservation_freeze (m m' : Machine) (env : TypeEnv) (lenv : Lab
         -- rmap'(v) = rmap(v) since v ≠ r'
         simp only [rmap', if_neg hv_r'] at hrmap_v
         exact hwt.root_path_coherence v y rest hv_in hp loc_v path_v hrmap_v loc_y hloc heq
+    paths_from_non_member_empty :=
+      consume_ref_transfer_paths_from_non_member env.pathEnv r r' hwt.paths_from_non_member_empty
+    paths_to_non_member_empty :=
+      consume_ref_transfer_paths_to_non_member env.pathEnv r r' hwt.paths_to_non_member_empty
+    self_loop_only_empty := by
+      intro u p hp
+      simp only [pe', consume_ref_transfer] at hp
+      by_cases hu_r : u = r
+      · subst hu_r; simp only [true_or, ↓reduceIte, interpret_regex] at hp
+      · simp only [hu_r, false_or, ↓reduceIte] at hp
+        by_cases hu_r' : u = r'
+        · rw [hu_r'] at hp; simp only [↓reduceIte, interpret_regex] at hp
+          rcases hp with hp_old | hp_r
+          · exact hwt.self_loop_only_empty r' p hp_old
+          · exact absurd hp_r (hwt.paths_from_non_member_empty r' r p hr'_fresh_pe hr'_not_root hr'_ne_r)
+        · simp only [hu_r', ↓reduceIte] at hp
+          exact hwt.self_loop_only_empty u p hp
   }
 
 -- ============================================================
@@ -2467,11 +2658,12 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     · exact preservation_assign_invalid m m' env lenv retType rmap hwt hss x site cont τ τ'
         hvar hsite hcompat hcont hstmt hstep
   | writeRef dst val cont => sorry
+  | unpack fields src cont => sorry
   | jump label => sorry
   | branch c l1 l2 => sorry
   | ret sites => sorry
   | call results fname argSites cont => sorry
-  | unpack fields src cont => sorry
+
 
 
 end LeanMove.Typing.TypeSoundness

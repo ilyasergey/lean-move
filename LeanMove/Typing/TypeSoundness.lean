@@ -62,6 +62,10 @@ theorem type_soundness_dec (f : FunDef) (lenvDec : LabelEnvDec)
     (check_fun_dec_sound f lenvDec hcheck)
     (checkFunEnv_sound funEnv fte hfunEnv)
     (SoundnessAssumptions.of_check f lenvDec.toLabelEnv heap
-      (check_fun_dec_lenv_wf f lenvDec hcheck) hdec)
+      (check_fun_dec_lenv_wf f lenvDec hcheck)
+      (check_fun_dec_lenv_non_member_from f lenvDec hcheck)
+      (check_fun_dec_lenv_non_member_to f lenvDec hcheck)
+      (check_fun_dec_lenv_self_loop f lenvDec hcheck)
+      hdec)
 
 end LeanMove.Typing.TypeSoundness

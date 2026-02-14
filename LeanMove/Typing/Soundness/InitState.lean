@@ -387,6 +387,26 @@ structure SoundnessAssumptions (f : FunDef) (lenv : LabelEnv) (heap : Heap) wher
       that covers all blocks. -/
   lenv_complete : ∀ block, block ∈ f.blocks → ∃ env, lookup lenv block.label = some env
 
+  /-- Non-member refs have no outgoing paths.
+      `PathEnv.paths` is function-valued and cannot be enumerated without the decidable
+      representation. Established by `check_fun_dec_lenv_non_member_from`. -/
+  lenv_paths_from_non_member : ∀ l env, lookup lenv l = some env →
+    ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
+    ¬interpret_regex (env.pathEnv.paths (u, v)) p
+
+  /-- Non-member refs have no incoming paths.
+      `PathEnv.paths` is function-valued and cannot be enumerated without the decidable
+      representation. Established by `check_fun_dec_lenv_non_member_to`. -/
+  lenv_paths_to_non_member : ∀ l env, lookup lenv l = some env →
+    ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
+    ¬interpret_regex (env.pathEnv.paths (u, v)) p
+
+  /-- Self-loops only accept the empty path.
+      In the decidable representation, `toPathEnv.paths(u, u) = ε` always.
+      Established by `check_fun_dec_lenv_self_loop`. -/
+  lenv_self_loop : ∀ l env, lookup lenv l = some env →
+    ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = []
+
 /-- Boolean check for the decidable fields of `SoundnessAssumptions`.
     `lenv_wf` is excluded because `TypeEnv.WellFormed` involves function-valued
     `PathEnv.paths` and requires the decidable type environment representation. -/
@@ -423,9 +443,20 @@ private theorem any_beq_implies_list_lookup {K V : Type} [DecidableEq K]
     check yields the full `SoundnessAssumptions`. -/
 theorem SoundnessAssumptions.of_check (f : FunDef) (lenv : LabelEnv) (heap : Heap)
     (hlenv_wf : ∀ l env, lookup lenv l = some env → TypeEnv.WellFormed env)
+    (hlenv_from : ∀ l env, lookup lenv l = some env →
+      ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hlenv_to : ∀ l env, lookup lenv l = some env →
+      ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hlenv_self_loop : ∀ l env, lookup lenv l = some env →
+      ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
     (hcheck : SoundnessAssumptions.checkDecidable f lenv heap = true) :
     SoundnessAssumptions f lenv heap where
   lenv_wf := hlenv_wf
+  lenv_paths_from_non_member := hlenv_from
+  lenv_paths_to_non_member := hlenv_to
+  lenv_self_loop := hlenv_self_loop
   params_basic := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
     obtain ⟨⟨⟨hp, _⟩, _⟩, _⟩ := hcheck
@@ -635,6 +666,12 @@ theorem initState_safe (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunD
           root_path_coherence := by
             intro v y rest _ _ loc_v path_v hrmap_v
             exact absurd hrmap_v nofun
+          paths_from_non_member_empty :=
+            ha.lenv_paths_from_non_member entryLabel blockEnv hlookup
+          paths_to_non_member_empty :=
+            ha.lenv_paths_to_non_member entryLabel blockEnv hlookup
+          self_loop_only_empty :=
+            ha.lenv_self_loop entryLabel blockEnv hlookup
         }
       · -- StackSafe [] none heap' = True
         simp only [StackSafe]
