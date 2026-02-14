@@ -341,4 +341,54 @@ theorem check_fun_dec_sound (f : FunDef) (lenvDec : LabelEnvDec) :
     have hmem := lookup_some lenvDec l ted hlenv
     exact TypeEnvDec.wellFormed_bool_sound ted (hwf_all (l, ted) hmem)
 
+/-- Extracts well-formedness from a successful check_fun_dec.
+    If check_fun_dec succeeds, all label environments are well-formed. -/
+theorem check_fun_dec_lenv_wf (f : FunDef) (lenvDec : LabelEnvDec) :
+    check_fun_dec f lenvDec = true →
+    ∀ l env, lookup lenvDec.toLabelEnv l = some env → TypeEnv.WellFormed env := by
+  intro h l env hlookup
+  simp only [check_fun_dec, Bool.and_eq_true] at h
+  obtain ⟨hwf_all, _⟩ := h
+  simp only [LabelEnvDec.toLabelEnv, lookup_mapValues] at hlookup
+  cases hlenv : lookup lenvDec l with
+  | none => simp [hlenv] at hlookup
+  | some ted =>
+    simp [hlenv, Option.map] at hlookup
+    subst hlookup
+    simp only [LabelEnvDec.allWellFormed_bool, List.all_eq_true] at hwf_all
+    have hmem := lookup_some lenvDec l ted hlenv
+    exact TypeEnvDec.wellFormed_bool_sound ted (hwf_all (l, ted) hmem)
+
+/- ---------------------------------------------------- -/
+/-       Decidable Function Environment                  -/
+/- ---------------------------------------------------- -/
+
+/-- Decidable typing environments for a set of functions.
+    Maps function names to their `LabelEnvDec` typing environments. -/
+abbrev FunTypingEnv := AssocMap Id LabelEnvDec
+
+/-- Boolean check: every function in funEnv has a corresponding entry in
+    funTypingEnv and passes check_fun_dec. -/
+def checkFunEnv (funEnv : AssocMap Id FunDef) (fte : FunTypingEnv) : Bool :=
+  funEnv.entries.all fun (fname, fdef) =>
+    match lookup fte fname with
+    | some lenvDec => check_fun_dec fdef lenvDec
+    | none => false
+
+/-- Soundness: if checkFunEnv succeeds, every function in funEnv is well-typed. -/
+theorem checkFunEnv_sound (funEnv : AssocMap Id FunDef) (fte : FunTypingEnv) :
+    checkFunEnv funEnv fte = true →
+    ∀ fname fdef, lookup funEnv fname = some fdef →
+      ∃ lenv', typecheck_fun fdef lenv' := by
+  intro hcheck fname fdef hlookup
+  simp only [checkFunEnv, List.all_eq_true] at hcheck
+  have hmem := lookup_some funEnv fname fdef hlookup
+  have hentry := hcheck (fname, fdef) hmem
+  simp only [] at hentry
+  cases hlenv : lookup fte fname with
+  | none => simp [hlenv] at hentry
+  | some lenvDec =>
+    simp [hlenv] at hentry
+    exact ⟨lenvDec.toLabelEnv, check_fun_dec_sound fdef lenvDec hentry⟩
+
 end LeanMove.Typing
