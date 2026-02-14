@@ -18,8 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Typing.TypeChecking
-import LeanMove.Typing.Algorithmic.TypeCheckingAlgorithmic
-import LeanMove.Typing.Algorithmic.AlgorithmicTypingSoundness
+import LeanMove.Typing.Algorithmic.DecidableTypeEnv
 import LeanMove.Lang.Macros
 
 /-!
@@ -162,91 +161,39 @@ def fn_write : FunDef := {
 -- -           Algorithmic Type Checking Tests        --
 -- -----------------------------------------------------
 
--- Initial environments
-def fn_borrow_initEnv : TypeEnv := {
+-- Initial environments (decidable)
+def fn_borrow_initEnvDec : TypeEnvDec := {
   siteEnv := AssocMap.empty
   varEnv := init_fun_varEnv fn_borrow
-  pathEnv := PathEnv.init
+  pathEnv := .init
   funEnv := AssocMap.empty
 }
 
-def fn_borrow_lenv : LabelEnv :=
-  AssocMap.insert AssocMap.empty "l0" fn_borrow_initEnv
+def fn_borrow_lenvDec : LabelEnvDec :=
+  AssocMap.insert AssocMap.empty "l0" fn_borrow_initEnvDec
 
-def fn_write_initEnv : TypeEnv := {
+def fn_write_initEnvDec : TypeEnvDec := {
   siteEnv := AssocMap.empty
   varEnv := init_fun_varEnv fn_write
-  pathEnv := PathEnv.init
+  pathEnv := .init
   funEnv := AssocMap.empty
 }
 
-def fn_write_lenv : LabelEnv :=
-  AssocMap.insert AssocMap.empty "l0" fn_write_initEnv
-
--- Debug: test algorithmic type checking
-#eval check_fun fn_borrow fn_borrow_lenv
-#eval check_fun fn_write fn_write_lenv
+def fn_write_lenvDec : LabelEnvDec :=
+  AssocMap.insert AssocMap.empty "l0" fn_write_initEnvDec
 
 -- Test theorems: both functions type check algorithmically
-theorem fn_borrow_check : check_fun fn_borrow fn_borrow_lenv = true := by rfl
-theorem fn_write_check : check_fun fn_write fn_write_lenv = true := by rfl
+theorem fn_borrow_check : check_fun_dec fn_borrow fn_borrow_lenvDec = true := by rfl
+theorem fn_write_check : check_fun_dec fn_write fn_write_lenvDec = true := by rfl
 
 -- -----------------------------------------------------
 -- -           Relational Type Checking Theorems      --
 -- -----------------------------------------------------
 
--- Helper: init_fun_varEnv for fn_borrow has fresh refs
-private lemma fn_borrow_varEnv_fresh :
-    VarEnv.RefsAreFresh (init_fun_varEnv fn_borrow) := by
-  unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
-  simp only [fn_borrow, List.foldl]
-  apply VarEnv.insert_refs_are_fresh
-  · apply VarEnv.insert_refs_are_fresh
-    · exact VarEnv.empty_refs_are_fresh
-    · exact ⟨0, rfl⟩
-  · exact ⟨1, rfl⟩
-
-private lemma fn_borrow_lenv_wf :
-    ∀ l env, lookup fn_borrow_lenv l = some env → TypeEnv.WellFormed env := by
-  intro l env hlookup
-  simp only [fn_borrow_lenv, fn_borrow_initEnv,
-             AssocMap.insert, AssocMap.empty, AssocMap.lookup,
-             List.filter, List.lookup] at hlookup
-  split at hlookup
-  · injection hlookup with heq; subst heq
-    exact TypeEnv.init_wellformed _ _ fn_borrow_varEnv_fresh
-  · exact absurd hlookup (by simp)
-
 theorem borrow_welltyped : ∃ lenv, typecheck_fun fn_borrow lenv :=
-  ⟨_, check_fun_sound _ _ fn_borrow_lenv_wf fn_borrow_check⟩
-
--- Helper: init_fun_varEnv for fn_write has fresh refs
-private lemma fn_write_varEnv_fresh :
-    VarEnv.RefsAreFresh (init_fun_varEnv fn_write) := by
-  unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
-  simp only [fn_write, List.foldl]
-  apply VarEnv.insert_refs_are_fresh
-  · apply VarEnv.insert_refs_are_fresh
-    · apply VarEnv.insert_refs_are_fresh
-      · apply VarEnv.insert_refs_are_fresh
-        · exact VarEnv.empty_refs_are_fresh
-        · exact ⟨0, rfl⟩
-      · exact ⟨1, rfl⟩
-    · exact ⟨2, rfl⟩
-  · exact ⟨2, rfl⟩
-
-private lemma fn_write_lenv_wf :
-    ∀ l env, lookup fn_write_lenv l = some env → TypeEnv.WellFormed env := by
-  intro l env hlookup
-  simp only [fn_write_lenv, fn_write_initEnv,
-             AssocMap.insert, AssocMap.empty, AssocMap.lookup,
-             List.filter, List.lookup] at hlookup
-  split at hlookup
-  · injection hlookup with heq; subst heq
-    exact TypeEnv.init_wellformed _ _ fn_write_varEnv_fresh
-  · exact absurd hlookup (by simp)
+  ⟨_, check_fun_dec_sound _ _ fn_borrow_check⟩
 
 theorem write_welltyped : ∃ lenv, typecheck_fun fn_write lenv :=
-  ⟨_, check_fun_sound _ _ fn_write_lenv_wf fn_write_check⟩
+  ⟨_, check_fun_dec_sound _ _ fn_write_check⟩
 
 end LeanMove.Examples.Expressivity.ExtensionAfterCall

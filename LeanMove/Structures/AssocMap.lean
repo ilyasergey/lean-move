@@ -286,4 +286,29 @@ theorem lookup_delete_ne {K V : Type} [DecidableEq K] (m : AssocMap K V) (k k' :
   simp only [lookup, delete]
   exact list_lookup_filter_ne m.entries k k' hne
 
+/-- Map a function over all values in the map, preserving keys -/
+def mapValues {K V W : Type} (self : AssocMap K V) (f : V → W) : AssocMap K W := {
+  entries := self.entries.map fun (k, v) => (k, f v)
+}
+
+/-- Helper: List.lookup commutes with mapping over values -/
+private theorem list_lookup_map_snd {K V W : Type} [DecidableEq K]
+    (l : List (K × V)) (f : V → W) (k : K) :
+    List.lookup k (l.map fun (kv : K × V) => (kv.1, f kv.2)) = (List.lookup k l).map f := by
+  induction l with
+  | nil => simp [List.lookup]
+  | cons hd tl ih =>
+    obtain ⟨k', v⟩ := hd
+    simp only [List.map, List.lookup]
+    split
+    · simp [Option.map]
+    · exact ih
+
+/-- Looking up in mapValues gives the mapped result -/
+theorem lookup_mapValues {K V W : Type} [DecidableEq K]
+    (m : AssocMap K V) (f : V → W) (k : K) :
+    lookup (mapValues m f) k = (lookup m k).map f := by
+  simp only [lookup, mapValues]
+  exact list_lookup_map_snd m.entries f k
+
 end AssocMap

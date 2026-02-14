@@ -18,8 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Typing.TypeChecking
-import LeanMove.Typing.Algorithmic.TypeCheckingAlgorithmic
-import LeanMove.Typing.Algorithmic.AlgorithmicTypingSoundness
+import LeanMove.Typing.Algorithmic.DecidableTypeEnv
 import LeanMove.Lang.Macros
 
 /-!
@@ -200,26 +199,10 @@ def t : FunDef := {
 -- -           Algorithmic Type Checking Tests        --
 -- -----------------------------------------------------
 
--- Initial environment for l0 (entry block)
-def t_initEnv : TypeEnv := {
-  siteEnv := AssocMap.empty
-  varEnv := init_fun_varEnv t
-  pathEnv := PathEnv.init
-  funEnv := AssocMap.empty
-}
-
 -- VarEnv at l1/l2 entry (after l0: cond consumed by move)
 def t_branch_varEnv : VarEnv :=
   let ve := init_fun_varEnv t
   update ve var_cond (.invalidVar, .basic .tbool, .mutable)
-
--- Environment at l1/l2 entry
-def t_branch_env : TypeEnv := {
-  siteEnv := AssocMap.empty
-  varEnv := t_branch_varEnv
-  pathEnv := PathEnv.init
-  funEnv := AssocMap.empty
-}
 
 -- VarEnv at l3 entry (x,y assigned/valid; cond still invalid)
 def t_l3_varEnv : VarEnv :=
@@ -227,16 +210,9 @@ def t_l3_varEnv : VarEnv :=
   let ve := update ve var_x (.validVar, .ref (.trecord sub1_entries) (.refid 5) .siteBorrowMut, .mutable)
   update ve var_y (.validVar, .ref .u64 (.refid 8) .siteBorrowMut, .mutable)
 
--- PathEnv at l3 entry: union of paths from l1 (field_l) and l2 (field_r)
--- l1: copy(root)=4 →[field_l]→ 5(Sub1) →[ε]→ 6(copy) →[field_l]→ 7(Sub2) →[field_l]→ 8(u64)
--- l2: copy(root)=4 →[field_r]→ 5(Sub1) →[ε]→ 6(copy) →[field_r]→ 7(Sub2) →[field_r]→ 8(u64)
+-- PathEnvDec at l3 entry: union of paths from l1 (field_l) and l2 (field_r)
 -- Refs: 4=copy(root), 5=borrow(Sub1), 6=copy(x), 7=borrow(Sub2), 8=borrow(u64)
---
--- The checker also produces "reverse" derivative paths via `der` in update_with_extension.
--- These are `Regex.deriv ε (.field f)` values that are semantically empty but not recognized
--- as such by `is_empty` (since is_empty(.deriv r _) = is_empty r, and is_empty ε = false).
--- We must include them in the l3 PathEnv so that regexSubsumedBy can match them exactly.
-def t_l3_pathEnv : PathEnv :=
+def t_l3_pathEnvDec : PathEnvDec :=
   -- Forward paths: concat ε (char (.field f))
   let fl := Regex.concat Regex.ε (Regex.char (PathElement.field field_l))
   let fr := Regex.concat Regex.ε (Regex.char (PathElement.field field_r))
@@ -252,252 +228,60 @@ def t_l3_pathEnv : PathEnv :=
   let dfl3 := Regex.deriv dfl2 (PathElement.field field_l)
   let dfr3 := Regex.deriv dfr2 (PathElement.field field_r)
   { refs := [.refid 8, .refid 7, .refid 6, .refid 5, .refid 4, .root]
-    paths := fun (u, v) =>
-      if u = v then Regex.ε
+    paths := ⟨[
       -- Forward paths: parent → child (via field borrows)
-      -- 4→5 and 4→6 (5,6 are ε-copies of each other)
-      else if u = .refid 4 ∧ v = .refid 5 then Regex.union fl fr
-      else if u = .refid 4 ∧ v = .refid 6 then Regex.union fl fr
+      -- 4→5, 4→6
+      ((.refid 4, .refid 5), Regex.union fl fr),
+      ((.refid 4, .refid 6), Regex.union fl fr),
       -- 5↔6 (epsilon copy)
-      else if u = .refid 5 ∧ v = .refid 6 then Regex.ε
-      else if u = .refid 6 ∧ v = .refid 5 then Regex.ε
+      ((.refid 5, .refid 6), Regex.ε),
+      ((.refid 6, .refid 5), Regex.ε),
       -- 6→7, 5→7 (borrow from Sub1)
-      else if u = .refid 6 ∧ v = .refid 7 then Regex.union fl fr
-      else if u = .refid 5 ∧ v = .refid 7 then Regex.union fl fr
+      ((.refid 6, .refid 7), Regex.union fl fr),
+      ((.refid 5, .refid 7), Regex.union fl fr),
       -- 7→8 (borrow from Sub2)
-      else if u = .refid 7 ∧ v = .refid 8 then Regex.union fl fr
+      ((.refid 7, .refid 8), Regex.union fl fr),
       -- 2-hop forward: 4→7, 5→8, 6→8
-      else if u = .refid 4 ∧ v = .refid 7 then Regex.union fl2 fr2
-      else if u = .refid 5 ∧ v = .refid 8 then Regex.union fl2 fr2
-      else if u = .refid 6 ∧ v = .refid 8 then Regex.union fl2 fr2
+      ((.refid 4, .refid 7), Regex.union fl2 fr2),
+      ((.refid 5, .refid 8), Regex.union fl2 fr2),
+      ((.refid 6, .refid 8), Regex.union fl2 fr2),
       -- 3-hop forward: 4→8
-      else if u = .refid 4 ∧ v = .refid 8 then Regex.union fl3 fr3
+      ((.refid 4, .refid 8), Regex.union fl3 fr3),
       -- Reverse derivative paths (child → parent)
-      else if u = .refid 5 ∧ v = .refid 4 then Regex.union dfl dfr
-      else if u = .refid 6 ∧ v = .refid 4 then Regex.union dfl dfr
-      else if u = .refid 7 ∧ v = .refid 6 then Regex.union dfl dfr
-      else if u = .refid 7 ∧ v = .refid 5 then Regex.union dfl dfr
-      else if u = .refid 8 ∧ v = .refid 7 then Regex.union dfl dfr
+      ((.refid 5, .refid 4), Regex.union dfl dfr),
+      ((.refid 6, .refid 4), Regex.union dfl dfr),
+      ((.refid 7, .refid 6), Regex.union dfl dfr),
+      ((.refid 7, .refid 5), Regex.union dfl dfr),
+      ((.refid 8, .refid 7), Regex.union dfl dfr),
       -- 2-hop reverse: 7→4, 8→6, 8→5
-      else if u = .refid 7 ∧ v = .refid 4 then Regex.union dfl2 dfr2
-      else if u = .refid 8 ∧ v = .refid 6 then Regex.union dfl2 dfr2
-      else if u = .refid 8 ∧ v = .refid 5 then Regex.union dfl2 dfr2
+      ((.refid 7, .refid 4), Regex.union dfl2 dfr2),
+      ((.refid 8, .refid 6), Regex.union dfl2 dfr2),
+      ((.refid 8, .refid 5), Regex.union dfl2 dfr2),
       -- 3-hop reverse: 8→4
-      else if u = .refid 8 ∧ v = .refid 4 then Regex.union dfl3 dfr3
-      else Regex.empty }
+      ((.refid 8, .refid 4), Regex.union dfl3 dfr3)
+    ]⟩ }
 
--- Environment at l3 entry
-def t_l3_env : TypeEnv := {
-  siteEnv := AssocMap.empty
-  varEnv := t_l3_varEnv
-  pathEnv := t_l3_pathEnv
-  funEnv := AssocMap.empty
-}
-
--- Label environment: maps each label to its entry environment
-def t_lenv : LabelEnv :=
+-- Label environment (decidable)
+def t_lenvDec : LabelEnvDec :=
   insert (insert (insert (insert AssocMap.empty
-    "l0" t_initEnv)
-    "l1" t_branch_env)
-    "l2" t_branch_env)
-    "l3" t_l3_env
-
--- Debug: per-block check
-#eval t.blocks.map fun block =>
-  (block.label, match lookup t_lenv block.label with
-  | some blockEnv => check_block t_lenv block blockEnv t.returnType
-  | none => false)
-
--- Full function check
-#eval check_fun t t_lenv
-
--- Debug: step-by-step check of l1 body
--- Step 1: copy root
-#eval (check_stmt t_lenv t_branch_env
-  ((letsite s1 ← copy var_root) ;;
-   Stmt.jump "l3")
-  t.returnType).isSome
-
--- Step 2: + borrowMutField (Tree::l)
-#eval (check_stmt t_lenv t_branch_env
-  ((letsite s1 ← copy var_root) ;;
-   Stmt.letBind s2 (Expr.borrowMutField s1 (.trecord tree_entries) field_l) ;;
-   Stmt.jump "l3")
-  t.returnType).isSome
-
--- Step 3: + assign var_x
-#eval (check_stmt t_lenv t_branch_env
-  ((letsite s1 ← copy var_root) ;;
-   Stmt.letBind s2 (Expr.borrowMutField s1 (.trecord tree_entries) field_l) ;;
-   (var_x ::= s2) ;;
-   Stmt.jump "l3")
-  t.returnType).isSome
-
--- Step 4: + copy var_x
-#eval (check_stmt t_lenv t_branch_env
-  ((letsite s1 ← copy var_root) ;;
-   Stmt.letBind s2 (Expr.borrowMutField s1 (.trecord tree_entries) field_l) ;;
-   (var_x ::= s2) ;;
-   (letsite s3 ← copy var_x) ;;
-   Stmt.jump "l3")
-  t.returnType).isSome
-
--- Step 5: + borrowMutField (Sub1::l)
-#eval (check_stmt t_lenv t_branch_env
-  ((letsite s1 ← copy var_root) ;;
-   Stmt.letBind s2 (Expr.borrowMutField s1 (.trecord tree_entries) field_l) ;;
-   (var_x ::= s2) ;;
-   (letsite s3 ← copy var_x) ;;
-   Stmt.letBind s4 (Expr.borrowMutField s3 (.trecord sub1_entries) field_l) ;;
-   Stmt.jump "l3")
-  t.returnType).isSome
-
--- Step 6: + borrowMutField (Sub2::l)
-#eval (check_stmt t_lenv t_branch_env
-  ((letsite s1 ← copy var_root) ;;
-   Stmt.letBind s2 (Expr.borrowMutField s1 (.trecord tree_entries) field_l) ;;
-   (var_x ::= s2) ;;
-   (letsite s3 ← copy var_x) ;;
-   Stmt.letBind s4 (Expr.borrowMutField s3 (.trecord sub1_entries) field_l) ;;
-   Stmt.letBind s5 (Expr.borrowMutField s4 (.trecord sub2_entries) field_l) ;;
-   Stmt.jump "l3")
-  t.returnType).isSome
-
--- Step 7: + assign var_y
-#eval (check_stmt t_lenv t_branch_env
-  ((letsite s1 ← copy var_root) ;;
-   Stmt.letBind s2 (Expr.borrowMutField s1 (.trecord tree_entries) field_l) ;;
-   (var_x ::= s2) ;;
-   (letsite s3 ← copy var_x) ;;
-   Stmt.letBind s4 (Expr.borrowMutField s3 (.trecord sub1_entries) field_l) ;;
-   Stmt.letBind s5 (Expr.borrowMutField s4 (.trecord sub2_entries) field_l) ;;
-   (var_y ::= s5) ;;
-   Stmt.jump "l3")
-  t.returnType).isSome
-
--- Full l1 body (same as step 7 — this IS the full l1)
--- Should match the per-block check for l1
-
--- Debug: what nextFreshRefInEnv produces at l1 entry
-#eval nextFreshRefInEnv t_branch_env
+    "l0" { siteEnv := AssocMap.empty, varEnv := init_fun_varEnv t,
+           pathEnv := .init, funEnv := AssocMap.empty })
+    "l1" { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
+           pathEnv := .init, funEnv := AssocMap.empty })
+    "l2" { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
+           pathEnv := .init, funEnv := AssocMap.empty })
+    "l3" { siteEnv := AssocMap.empty, varEnv := t_l3_varEnv,
+           pathEnv := t_l3_pathEnvDec, funEnv := AssocMap.empty }
 
 -- Theorem: t type checks algorithmically
-theorem t_check : check_fun t t_lenv = true := by rfl
+theorem t_check : check_fun_dec t t_lenvDec = true := by rfl
 
 -- -----------------------------------------------------
 -- -           Relational Type Checking Theorems      --
 -- -----------------------------------------------------
 
--- Helper: init_fun_varEnv for t has fresh refs
-private lemma t_varEnv_fresh :
-    VarEnv.RefsAreFresh (init_fun_varEnv t) := by
-  unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
-  simp only [t, List.foldl]
-  apply VarEnv.insert_refs_are_fresh
-  · apply VarEnv.insert_refs_are_fresh
-    · apply VarEnv.insert_refs_are_fresh
-      · apply VarEnv.insert_refs_are_fresh
-        · exact VarEnv.empty_refs_are_fresh
-        · trivial
-      · exact ⟨0, rfl⟩
-    · exact ⟨1, rfl⟩
-  · exact ⟨3, rfl⟩
-
--- Helper: t_branch_varEnv has fresh refs
-private lemma t_branch_varEnv_fresh :
-    VarEnv.RefsAreFresh t_branch_varEnv := by
-  unfold t_branch_varEnv
-  apply VarEnv.insert_refs_are_fresh
-  · exact t_varEnv_fresh
-  · trivial
-
--- Helper: t_l3_varEnv has fresh refs
-private lemma t_l3_varEnv_fresh :
-    VarEnv.RefsAreFresh t_l3_varEnv := by
-  unfold t_l3_varEnv
-  apply VarEnv.insert_refs_are_fresh
-  · apply VarEnv.insert_refs_are_fresh
-    · exact t_branch_varEnv_fresh
-    · exact ⟨5, rfl⟩
-  · exact ⟨8, rfl⟩
-
--- Helper: t_l3_pathEnv is well-formed
-private lemma t_l3_pathEnv_wf : PathEnv.WellFormed t_l3_pathEnv := by
-  constructor
-  · -- refs_complete: for r ∉ refs, paths (.root, r) = .empty
-    intro r hr
-    simp only [t_l3_pathEnv]
-    -- Since u = .root, none of the refid conditions (u = .refid N) can be true
-    -- The function falls through all conditions to Regex.empty
-    have hne : Aref.root ≠ r := by
-      intro heq; subst heq
-      exact hr (List.mem_cons.mpr (Or.inr (List.mem_cons.mpr
-        (Or.inr (List.mem_cons.mpr (Or.inr (List.mem_cons.mpr
-          (Or.inr (List.mem_cons.mpr (Or.inr (List.mem_cons.mpr (Or.inl rfl))))))))))))
-    simp [hne]
-  · -- varref_tracked: vacuously true (no .varRef in refs)
-    intro x hx
-    simp only [t_l3_pathEnv, List.mem_cons] at hx
-    rcases hx with h | h | h | h | h | h
-    all_goals (first | exact absurd h Aref.noConfusion | simp at h)
-  · -- root_in_refs
-    simp only [t_l3_pathEnv, List.mem_cons]
-    right; right; right; right; right; left; trivial
-
--- Helper: t_l3_env is well-formed
-private lemma t_l3_env_wf : TypeEnv.WellFormed t_l3_env := by
-  constructor
-  · exact t_l3_pathEnv_wf
-  · exact SiteEnv.empty_refs_not_root
-  · exact t_l3_varEnv_fresh
-
--- All envs in t_lenv are well-formed
-private lemma t_lenv_wf :
-    ∀ l env, lookup t_lenv l = some env → TypeEnv.WellFormed env := by
-  intro l env hlookup
-  by_cases hl3 : l = "l3"
-  · subst hl3
-    have h : lookup t_lenv "l3" = some t_l3_env := by rfl
-    rw [h] at hlookup; injection hlookup with heq; subst heq
-    exact t_l3_env_wf
-  · by_cases hl2 : l = "l2"
-    · subst hl2
-      have h : lookup t_lenv "l2" = some t_branch_env := by rfl
-      rw [h] at hlookup; injection hlookup with heq; subst heq
-      exact TypeEnv.init_wellformed _ _ t_branch_varEnv_fresh
-    · by_cases hl1 : l = "l1"
-      · subst hl1
-        have h : lookup t_lenv "l1" = some t_branch_env := by rfl
-        rw [h] at hlookup; injection hlookup with heq; subst heq
-        exact TypeEnv.init_wellformed _ _ t_branch_varEnv_fresh
-      · by_cases hl0 : l = "l0"
-        · subst hl0
-          have h : lookup t_lenv "l0" = some t_initEnv := by rfl
-          rw [h] at hlookup; injection hlookup with heq; subst heq
-          exact TypeEnv.init_wellformed _ _ t_varEnv_fresh
-        · exfalso
-          simp only [t_lenv, AssocMap.insert, AssocMap.empty, AssocMap.lookup,
-                     List.filter, List.lookup] at hlookup
-          have h3 : (l == "l3") = false := by
-            cases h : l == "l3"
-            · rfl
-            · exact absurd (eq_of_beq h) hl3
-          have h2 : (l == "l2") = false := by
-            cases h : l == "l2"
-            · rfl
-            · exact absurd (eq_of_beq h) hl2
-          have h1 : (l == "l1") = false := by
-            cases h : l == "l1"
-            · rfl
-            · exact absurd (eq_of_beq h) hl1
-          have h0 : (l == "l0") = false := by
-            cases h : l == "l0"
-            · rfl
-            · exact absurd (eq_of_beq h) hl0
-          simp [h3, h2, h1, h0, List.lookup] at hlookup
-
 -- Main theorem: t is well-typed (relational)
 theorem t_welltyped : ∃ lenv, typecheck_fun t lenv :=
-  ⟨_, check_fun_sound _ _ t_lenv_wf t_check⟩
+  ⟨_, check_fun_dec_sound _ _ t_check⟩
 
 end LeanMove.Examples.Expressivity.SubtreeWritesRelease

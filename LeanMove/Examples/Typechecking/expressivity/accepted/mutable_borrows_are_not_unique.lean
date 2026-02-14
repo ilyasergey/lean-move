@@ -18,8 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Typing.TypeChecking
-import LeanMove.Typing.Algorithmic.TypeCheckingAlgorithmic
-import LeanMove.Typing.Algorithmic.AlgorithmicTypingSoundness
+import LeanMove.Typing.Algorithmic.DecidableTypeEnv
 import LeanMove.Lang.Macros
 
 /-!
@@ -357,157 +356,42 @@ def fields_write : FunDef := {
 -- -           Algorithmic Type Checking Tests        --
 -- -----------------------------------------------------
 
--- Initial environment for fields function
-def fields_initEnv : TypeEnv := {
+-- Initial environments (decidable)
+def fields_initEnvDec : TypeEnvDec := {
   siteEnv := AssocMap.empty
   varEnv := init_fun_varEnv fields
-  pathEnv := PathEnv.init
+  pathEnv := .init
   funEnv := AssocMap.empty
 }
 
--- LabelEnv for fields
-def fields_lenv : LabelEnv :=
-  AssocMap.insert AssocMap.empty "b0" fields_initEnv
+def fields_lenvDec : LabelEnvDec :=
+  AssocMap.insert AssocMap.empty "b0" fields_initEnvDec
 
--- Debug: per-block check
-#eval fields.blocks.map fun block =>
-  (block.label, match lookup fields_lenv block.label with
-  | some blockEnv => check_block fields_lenv block blockEnv fields.returnType
-  | none => false)
-
--- Full function check
-#eval check_fun fields fields_lenv
-
--- Theorem: fields type checks algorithmically
-set_option maxRecDepth 4096 in
-theorem fields_check : check_fun fields fields_lenv = true := by rfl
-
--- Initial environment for fields_write function
-def fields_write_initEnv : TypeEnv := {
+def fields_write_initEnvDec : TypeEnvDec := {
   siteEnv := AssocMap.empty
   varEnv := init_fun_varEnv fields_write
-  pathEnv := PathEnv.init
+  pathEnv := .init
   funEnv := AssocMap.empty
 }
 
--- LabelEnv for fields_write
-def fields_write_lenv : LabelEnv :=
-  AssocMap.insert AssocMap.empty "b0" fields_write_initEnv
+def fields_write_lenvDec : LabelEnvDec :=
+  AssocMap.insert AssocMap.empty "b0" fields_write_initEnvDec
 
--- Debug: per-block check
-#eval fields_write.blocks.map fun block =>
-  (block.label, match lookup fields_write_lenv block.label with
-  | some blockEnv => check_block fields_write_lenv block blockEnv fields_write.returnType
-  | none => false)
-
--- Full function check
-#eval check_fun fields_write fields_write_lenv
-
--- Theorem: fields_write type checks algorithmically
+-- Theorems: both functions type check algorithmically
 set_option maxRecDepth 4096 in
-theorem fields_write_check : check_fun fields_write fields_write_lenv = true := by rfl
+theorem fields_check : check_fun_dec fields fields_lenvDec = true := by rfl
+
+set_option maxRecDepth 4096 in
+theorem fields_write_check : check_fun_dec fields_write fields_write_lenvDec = true := by rfl
 
 -- -----------------------------------------------------
 -- -           Relational Type Checking Theorems      --
 -- -----------------------------------------------------
 
--- Helper: init_fun_varEnv for fields has fresh refs
-private lemma fields_varEnv_fresh :
-    VarEnv.RefsAreFresh (init_fun_varEnv fields) := by
-  unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
-  simp only [fields, List.foldl]
-  apply VarEnv.insert_refs_are_fresh
-  · apply VarEnv.insert_refs_are_fresh
-    · apply VarEnv.insert_refs_are_fresh
-      · apply VarEnv.insert_refs_are_fresh
-        · apply VarEnv.insert_refs_are_fresh
-          · apply VarEnv.insert_refs_are_fresh
-            · apply VarEnv.insert_refs_are_fresh
-              · apply VarEnv.insert_refs_are_fresh
-                · apply VarEnv.insert_refs_are_fresh
-                  · apply VarEnv.insert_refs_are_fresh
-                    · exact VarEnv.empty_refs_are_fresh
-                    · exact ⟨0, rfl⟩
-                  · exact ⟨5, rfl⟩
-                · exact ⟨1, rfl⟩
-              · exact ⟨6, rfl⟩
-            · exact ⟨2, rfl⟩
-          · exact ⟨7, rfl⟩
-        · exact ⟨3, rfl⟩
-      · exact ⟨8, rfl⟩
-    · exact ⟨4, rfl⟩
-  · exact ⟨9, rfl⟩
-
--- All envs in fields_lenv are well-formed
-private lemma fields_lenv_wf :
-    ∀ l env, lookup fields_lenv l = some env → TypeEnv.WellFormed env := by
-  intro l env hlookup
-  by_cases hl0 : l = "b0"
-  · subst hl0
-    have h : lookup fields_lenv "b0" = some fields_initEnv := by rfl
-    rw [h] at hlookup; injection hlookup with heq; subst heq
-    exact TypeEnv.init_wellformed _ _ fields_varEnv_fresh
-  · exfalso
-    simp only [fields_lenv, AssocMap.insert, AssocMap.empty, AssocMap.lookup,
-               List.filter, List.lookup] at hlookup
-    have h0 : (l == "b0") = false := by
-      cases h : l == "b0"
-      · rfl
-      · exact absurd (eq_of_beq h) hl0
-    simp [h0] at hlookup
-
--- Theorem: fields is well-typed (relational)
 theorem fields_welltyped : ∃ lenv, typecheck_fun fields lenv :=
-  ⟨_, check_fun_sound _ _ fields_lenv_wf fields_check⟩
+  ⟨_, check_fun_dec_sound _ _ fields_check⟩
 
--- Helper: init_fun_varEnv for fields_write has fresh refs
--- (Same varEnv as fields since the function definitions have identical params+locals)
-private lemma fields_write_varEnv_fresh :
-    VarEnv.RefsAreFresh (init_fun_varEnv fields_write) := by
-  unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
-  simp only [fields_write, List.foldl]
-  apply VarEnv.insert_refs_are_fresh
-  · apply VarEnv.insert_refs_are_fresh
-    · apply VarEnv.insert_refs_are_fresh
-      · apply VarEnv.insert_refs_are_fresh
-        · apply VarEnv.insert_refs_are_fresh
-          · apply VarEnv.insert_refs_are_fresh
-            · apply VarEnv.insert_refs_are_fresh
-              · apply VarEnv.insert_refs_are_fresh
-                · apply VarEnv.insert_refs_are_fresh
-                  · apply VarEnv.insert_refs_are_fresh
-                    · exact VarEnv.empty_refs_are_fresh
-                    · exact ⟨0, rfl⟩
-                  · exact ⟨5, rfl⟩
-                · exact ⟨1, rfl⟩
-              · exact ⟨6, rfl⟩
-            · exact ⟨2, rfl⟩
-          · exact ⟨7, rfl⟩
-        · exact ⟨3, rfl⟩
-      · exact ⟨8, rfl⟩
-    · exact ⟨4, rfl⟩
-  · exact ⟨9, rfl⟩
-
--- All envs in fields_write_lenv are well-formed
-private lemma fields_write_lenv_wf :
-    ∀ l env, lookup fields_write_lenv l = some env → TypeEnv.WellFormed env := by
-  intro l env hlookup
-  by_cases hl0 : l = "b0"
-  · subst hl0
-    have h : lookup fields_write_lenv "b0" = some fields_write_initEnv := by rfl
-    rw [h] at hlookup; injection hlookup with heq; subst heq
-    exact TypeEnv.init_wellformed _ _ fields_write_varEnv_fresh
-  · exfalso
-    simp only [fields_write_lenv, AssocMap.insert, AssocMap.empty, AssocMap.lookup,
-               List.filter, List.lookup] at hlookup
-    have h0 : (l == "b0") = false := by
-      cases h : l == "b0"
-      · rfl
-      · exact absurd (eq_of_beq h) hl0
-    simp [h0] at hlookup
-
--- Theorem: fields_write is well-typed (relational)
 theorem fields_write_welltyped : ∃ lenv, typecheck_fun fields_write lenv :=
-  ⟨_, check_fun_sound _ _ fields_write_lenv_wf fields_write_check⟩
+  ⟨_, check_fun_dec_sound _ _ fields_write_check⟩
 
 end LeanMove.Examples.Expressivity.MutableBorrowsNotUnique

@@ -18,8 +18,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Typing.TypeChecking
-import LeanMove.Typing.Algorithmic.TypeCheckingAlgorithmic
-import LeanMove.Typing.Algorithmic.AlgorithmicTypingSoundness
+import LeanMove.Typing.Algorithmic.DecidableTypeEnv
 import LeanMove.Lang.Macros
 
 /-!
@@ -152,215 +151,39 @@ def copy_and_freeze : FunDef := {
 -- -           Algorithmic Type Checking Tests        --
 -- -----------------------------------------------------
 
--- Initial environment for direct
-def direct_initEnv : TypeEnv := {
+-- Initial environments (decidable)
+def direct_initEnvDec : TypeEnvDec := {
   siteEnv := AssocMap.empty
   varEnv := init_fun_varEnv direct
-  pathEnv := PathEnv.init
+  pathEnv := .init
   funEnv := AssocMap.empty
 }
 
--- LabelEnv for direct: maps "l0" to initial environment
-def direct_lenv : LabelEnv :=
-  AssocMap.insert AssocMap.empty "l0" direct_initEnv
+def direct_lenvDec : LabelEnvDec :=
+  AssocMap.insert AssocMap.empty "l0" direct_initEnvDec
 
--- Debug: per-block check
-#eval direct.blocks.map fun block =>
-  (block.label, match lookup direct_lenv block.label with
-  | some blockEnv => check_block direct_lenv block blockEnv direct.returnType
-  | none => false)
-
--- Full function check
-#eval check_fun direct direct_lenv
-
--- Debug: step by step prefix checks
--- Just intLit + assign a
-#eval (check_stmt direct_lenv direct_initEnv
-  ((letsite s0 ← #0) ;;
-   (var_a ::= s0) ;;
-   Stmt.ret [])
-  (.basic .tunit)).isSome  -- just assign a
-
--- Up to borrowMut
-#eval (check_stmt direct_lenv direct_initEnv
-  ((letsite s0 ← #0) ;;
-   (var_a ::= s0) ;;
-   (letsite s1 ← &mut var_a) ;;
-   Stmt.ret [])
-  (.basic .tunit)).isSome  -- after borrowMut
-
--- Up to borrowMut + assign rmut
-#eval (check_stmt direct_lenv direct_initEnv
-  ((letsite s0 ← #0) ;;
-   (var_a ::= s0) ;;
-   (letsite s1 ← &mut var_a) ;;
-   (var_rmut ::= s1) ;;
-   Stmt.ret [])
-  (.basic .tunit)).isSome  -- after assign rmut
-
--- Up to borrowImm
-#eval (check_stmt direct_lenv direct_initEnv
-  ((letsite s0 ← #0) ;;
-   (var_a ::= s0) ;;
-   (letsite s1 ← &mut var_a) ;;
-   (var_rmut ::= s1) ;;
-   (letsite s2 ← &var_a) ;;
-   Stmt.ret [])
-  (.basic .tunit)).isSome  -- after borrowImm (before assign rimm)
-
--- Debug: check suffixes of direct body to find where check fails
--- Full body
-#eval (check_stmt direct_lenv direct_initEnv
-  ((letsite s0 ← #0) ;;
-   (var_a ::= s0) ;;
-   (letsite s1 ← &mut var_a) ;;
-   (var_rmut ::= s1) ;;
-   (letsite s2 ← &var_a) ;;
-   (var_rimm ::= s2) ;;
-   (letsite s3 ← copy var_rmut) ;;
-   (letsite s4 ← #0) ;;
-   Stmt.writeRef s3 s4 ;;
-   (letsite s5 ← copy var_rimm) ;;
-   Stmt.letBind s6 (Expr.readRef s5) ;;
-   Stmt.ret [])
-  (.basic .tunit)).isSome  -- expect: false
-
--- Up to before copy(rmut)
-#eval (check_stmt direct_lenv direct_initEnv
-  ((letsite s0 ← #0) ;;
-   (var_a ::= s0) ;;
-   (letsite s1 ← &mut var_a) ;;
-   (var_rmut ::= s1) ;;
-   (letsite s2 ← &var_a) ;;
-   (var_rimm ::= s2) ;;
-   Stmt.ret [])
-  (.basic .tunit)).isSome  -- before copy: expect true
-
--- Up to after copy(rmut) + intLit
-#eval (check_stmt direct_lenv direct_initEnv
-  ((letsite s0 ← #0) ;;
-   (var_a ::= s0) ;;
-   (letsite s1 ← &mut var_a) ;;
-   (var_rmut ::= s1) ;;
-   (letsite s2 ← &var_a) ;;
-   (var_rimm ::= s2) ;;
-   (letsite s3 ← copy var_rmut) ;;
-   (letsite s4 ← #0) ;;
-   Stmt.ret [])
-  (.basic .tunit)).isSome  -- after copy+lit: expect true
-
--- Up to after writeRef
-#eval (check_stmt direct_lenv direct_initEnv
-  ((letsite s0 ← #0) ;;
-   (var_a ::= s0) ;;
-   (letsite s1 ← &mut var_a) ;;
-   (var_rmut ::= s1) ;;
-   (letsite s2 ← &var_a) ;;
-   (var_rimm ::= s2) ;;
-   (letsite s3 ← copy var_rmut) ;;
-   (letsite s4 ← #0) ;;
-   Stmt.writeRef s3 s4 ;;
-   Stmt.ret [])
-  (.basic .tunit)).isSome  -- after writeRef: expect true
-
--- Test theorem: direct type checks algorithmically
-theorem direct_check : check_fun direct direct_lenv = true := by rfl
-
--- Initial environment for copy_and_freeze
-def copy_and_freeze_initEnv : TypeEnv := {
+def copy_and_freeze_initEnvDec : TypeEnvDec := {
   siteEnv := AssocMap.empty
   varEnv := init_fun_varEnv copy_and_freeze
-  pathEnv := PathEnv.init
+  pathEnv := .init
   funEnv := AssocMap.empty
 }
 
--- LabelEnv for copy_and_freeze: maps "l0" to initial environment
-def copy_and_freeze_lenv : LabelEnv :=
-  AssocMap.insert AssocMap.empty "l0" copy_and_freeze_initEnv
+def copy_and_freeze_lenvDec : LabelEnvDec :=
+  AssocMap.insert AssocMap.empty "l0" copy_and_freeze_initEnvDec
 
--- Debug: per-block check
-#eval copy_and_freeze.blocks.map fun block =>
-  (block.label, match lookup copy_and_freeze_lenv block.label with
-  | some blockEnv => check_block copy_and_freeze_lenv block blockEnv copy_and_freeze.returnType
-  | none => false)
-
--- Full function check
-#eval check_fun copy_and_freeze copy_and_freeze_lenv
-
--- Test theorem: copy_and_freeze type checks algorithmically
-theorem copy_and_freeze_check : check_fun copy_and_freeze copy_and_freeze_lenv = true := by rfl
+-- Theorems: both functions type check algorithmically
+theorem direct_check : check_fun_dec direct direct_lenvDec = true := by rfl
+theorem copy_and_freeze_check : check_fun_dec copy_and_freeze copy_and_freeze_lenvDec = true := by rfl
 
 -- -----------------------------------------------------
 -- -           Relational Type Checking Theorems      --
 -- -----------------------------------------------------
 
--- Helper: init_fun_varEnv for direct has fresh refs
-private lemma direct_varEnv_fresh :
-    VarEnv.RefsAreFresh (init_fun_varEnv direct) := by
-  unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
-  simp only [direct, List.foldl]
-  apply VarEnv.insert_refs_are_fresh
-  · apply VarEnv.insert_refs_are_fresh
-    · apply VarEnv.insert_refs_are_fresh
-      · exact VarEnv.empty_refs_are_fresh
-      · trivial
-    · exact ⟨1, rfl⟩
-  · exact ⟨2, rfl⟩
-
--- All envs in direct_lenv are well-formed
-private lemma direct_lenv_wf :
-    ∀ l env, lookup direct_lenv l = some env → TypeEnv.WellFormed env := by
-  intro l env hlookup
-  by_cases hl0 : l = "l0"
-  · subst hl0
-    have h : lookup direct_lenv "l0" = some direct_initEnv := by rfl
-    rw [h] at hlookup; injection hlookup with heq; subst heq
-    exact TypeEnv.init_wellformed _ _ direct_varEnv_fresh
-  · exfalso
-    simp only [direct_lenv, AssocMap.insert, AssocMap.empty, AssocMap.lookup,
-               List.filter, List.lookup] at hlookup
-    have h0 : (l == "l0") = false := by
-      cases h : l == "l0"
-      · rfl
-      · exact absurd (eq_of_beq h) hl0
-    simp [h0] at hlookup
-
--- Theorems: both functions are well-typed
 theorem direct_welltyped : ∃ lenv, typecheck_fun direct lenv :=
-  ⟨_, check_fun_sound _ _ direct_lenv_wf direct_check⟩
-
--- Helper: init_fun_varEnv for copy_and_freeze has fresh refs
-private lemma copy_and_freeze_varEnv_fresh :
-    VarEnv.RefsAreFresh (init_fun_varEnv copy_and_freeze) := by
-  unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
-  simp only [copy_and_freeze, List.foldl]
-  apply VarEnv.insert_refs_are_fresh
-  · apply VarEnv.insert_refs_are_fresh
-    · apply VarEnv.insert_refs_are_fresh
-      · exact VarEnv.empty_refs_are_fresh
-      · trivial
-    · exact ⟨1, rfl⟩
-  · exact ⟨2, rfl⟩
-
--- All envs in copy_and_freeze_lenv are well-formed
-private lemma copy_and_freeze_lenv_wf :
-    ∀ l env, lookup copy_and_freeze_lenv l = some env → TypeEnv.WellFormed env := by
-  intro l env hlookup
-  by_cases hl0 : l = "l0"
-  · subst hl0
-    have h : lookup copy_and_freeze_lenv "l0" = some copy_and_freeze_initEnv := by rfl
-    rw [h] at hlookup; injection hlookup with heq; subst heq
-    exact TypeEnv.init_wellformed _ _ copy_and_freeze_varEnv_fresh
-  · exfalso
-    simp only [copy_and_freeze_lenv, AssocMap.insert, AssocMap.empty, AssocMap.lookup,
-               List.filter, List.lookup] at hlookup
-    have h0 : (l == "l0") = false := by
-      cases h : l == "l0"
-      · rfl
-      · exact absurd (eq_of_beq h) hl0
-    simp [h0] at hlookup
+  ⟨_, check_fun_dec_sound _ _ direct_check⟩
 
 theorem copy_and_freeze_welltyped : ∃ lenv, typecheck_fun copy_and_freeze lenv :=
-  ⟨_, check_fun_sound _ _ copy_and_freeze_lenv_wf copy_and_freeze_check⟩
+  ⟨_, check_fun_dec_sound _ _ copy_and_freeze_check⟩
 
 end LeanMove.Examples.Expressivity.ImmBorrowAfterMut
