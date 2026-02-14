@@ -132,7 +132,8 @@ def VarEnv.refsAreFresh_bool (venv : VarEnv) : Bool :=
 /-- Boolean well-formedness check for PathEnvDec:
     1. root ∈ refs
     2. varRef x ∈ refs → isBorrowPath x (paths (.root, .varRef x))
-    3. For entries with key (.root, r), r must be in refs -/
+    3. For entries with key (.root, r), r must be in refs
+    4. For entries with key (u, .root), u must be in refs -/
 def PathEnvDec.wellFormed_bool (ped : PathEnvDec) : Bool :=
   ped.refs.contains .root &&
   ped.refs.all (fun r =>
@@ -140,7 +141,9 @@ def PathEnvDec.wellFormed_bool (ped : PathEnvDec) : Bool :=
     | .varRef x => isBorrowPath_bool x (ped.toPathEnv.paths (.root, .varRef x))
     | _ => true) &&
   ped.paths.entries.all (fun ((u, v), _) =>
-    !(u == Aref.root) || ped.refs.contains v)
+    !(u == Aref.root) || ped.refs.contains v) &&
+  ped.paths.entries.all (fun ((u, v), _) =>
+    !(v == Aref.root) || ped.refs.contains u)
 
 /-- Boolean well-formedness check for TypeEnvDec -/
 def TypeEnvDec.wellFormed_bool (ted : TypeEnvDec) : Bool :=
@@ -236,11 +239,35 @@ private theorem lookup_none_of_no_root_entry (ped : PathEnvDec) (r : Aref)
     | none => rfl
     | some regex => exact absurd ⟨regex, h⟩ hlookup
 
+/-- Key lemma: if u ∉ refs and the guard check passes, then lookup of (u, .root) returns none -/
+private theorem lookup_none_of_no_to_root_entry (ped : PathEnvDec) (u : Aref)
+    (_hu_not_root : u ≠ .root)
+    (hguard : ped.paths.entries.all (fun ((u, v), _) =>
+      !(v == Aref.root) || ped.refs.contains u) = true)
+    (hu_notin : u ∉ ped.refs) :
+    lookup ped.paths (u, .root) = none := by
+  simp only [List.all_eq_true, Bool.or_eq_true, Bool.not_eq_true',
+             List.contains_eq_any_beq] at hguard
+  by_cases hlookup : ∃ regex, lookup ped.paths (u, .root) = some regex
+  · obtain ⟨regex, hlookup⟩ := hlookup
+    have hmem := lookup_some ped.paths (u, .root) regex hlookup
+    have hg := hguard ((u, .root), regex) hmem
+    simp only [List.any_eq_true, beq_iff_eq] at hg
+    cases hg with
+    | inl habs => simp at habs
+    | inr hcontains =>
+      obtain ⟨r', hr'mem, hr'eq⟩ := hcontains
+      rw [← hr'eq] at hr'mem
+      exact absurd hr'mem hu_notin
+  · cases h : lookup ped.paths (u, .root) with
+    | none => rfl
+    | some regex => exact absurd ⟨regex, h⟩ hlookup
+
 theorem PathEnvDec.wellFormed_bool_sound (ped : PathEnvDec) :
     ped.wellFormed_bool = true → PathEnv.WellFormed ped.toPathEnv := by
   intro h
   simp only [wellFormed_bool, Bool.and_eq_true] at h
-  obtain ⟨⟨hroot, hvarrefs⟩, hguard⟩ := h
+  obtain ⟨⟨⟨hroot, hvarrefs⟩, hguard⟩, hguard_to_root⟩ := h
   constructor
   · -- refs_complete: r ∉ refs → paths (.root, r) = .empty
     intro r hr
@@ -265,6 +292,12 @@ theorem PathEnvDec.wellFormed_bool_sound (ped : PathEnvDec) :
     simp only [toPathEnv, List.contains_eq_any_beq, List.any_eq_true, beq_iff_eq] at hroot ⊢
     obtain ⟨r', hr'mem, hr'eq⟩ := hroot
     exact hr'eq ▸ hr'mem
+  · -- from_untracked_to_root_empty: u ∉ refs → u ≠ .root → paths(u, .root) = .empty
+    intro u hu huroot
+    simp only [toPathEnv]
+    simp only [huroot, ↓reduceIte]
+    have := lookup_none_of_no_to_root_entry ped u huroot hguard_to_root hu
+    simp only [this]
 
 theorem TypeEnvDec.wellFormed_bool_sound (ted : TypeEnvDec) :
     ted.wellFormed_bool = true → TypeEnv.WellFormed ted.toTypeEnv := by

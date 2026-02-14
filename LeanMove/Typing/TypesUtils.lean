@@ -277,6 +277,7 @@ structure PathEnv.WellFormed (pe : PathEnv) : Prop where
   refs_complete : ∀ r, r ∉ pe.refs → pe.paths (.root, r) = .empty
   varref_tracked : ∀ x, Aref.varRef x ∈ pe.refs → isBorrowPath x (pe.paths (.root, Aref.varRef x))
   root_in_refs : Aref.root ∈ pe.refs
+  from_untracked_to_root_empty : ∀ u, u ∉ pe.refs → u ≠ Aref.root → pe.paths (u, .root) = .empty
 
 lemma PathEnv.init_wellformed : PathEnv.WellFormed PathEnv.init := by
   constructor
@@ -293,6 +294,10 @@ lemma PathEnv.init_wellformed : PathEnv.WellFormed PathEnv.init := by
     cases hx
   · -- root_in_refs: .root ∈ [.root]
     simp only [PathEnv.init, List.mem_singleton]
+  · -- from_untracked_to_root_empty: u ∉ [.root] → u ≠ .root → paths(u, .root) = .empty
+    intro u _hu huroot
+    simp only [PathEnv.init]
+    simp [huroot]
 
 /-- delete_ref_node preserves WellFormed when r ≠ root.
     In practice, we never delete root - it's only used for borrow references. -/
@@ -338,6 +343,21 @@ lemma delete_ref_node_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFo
   · -- root_in_refs: .root survives filter since r ≠ .root
     simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq]
     exact ⟨hwf.root_in_refs, fun h => hr_not_root h.symm⟩
+  · -- from_untracked_to_root_empty
+    intro u hu huroot
+    simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq, not_and] at hu
+    by_cases hur : u = r
+    · -- u = r: paths from r are .empty after delete
+      rw [hur]
+      exact delete_ref_node_paths_involving_r pe r r .root (Or.inl rfl)
+    · -- u ≠ r: u ∉ pe.refs
+      have hu_not_in : u ∉ pe.refs := by
+        intro hcontra
+        exact hur (Decidable.not_not.mp (hu hcontra))
+      -- root ≠ r by hr_not_root, u ≠ r by hur: paths unchanged
+      have hroot_ne_r : Aref.root ≠ r := fun h => hr_not_root h.symm
+      rw [delete_ref_node_paths_not_involving_r pe r u .root hur (Ne.symm hr_not_root)]
+      exact hwf.from_untracked_to_root_empty u hu_not_in huroot
 
 /-- nextFreshRef always returns a .refid, never .root or .varRef -/
 lemma nextFreshRef_not_root (pe : PathEnv) : nextFreshRef pe ≠ Aref.root := by
@@ -810,6 +830,28 @@ lemma update_with_extension_wellformed (z x : Aref) (path : List PathElement) (p
       exact hwf.root_in_refs
     · simp only [hzin, not_false_eq_true, ↓reduceIte, List.mem_cons]
       exact Or.inr hwf.root_in_refs
+  · -- from_untracked_to_root_empty
+    intro u hu huroot
+    simp only [update_with_extension] at hu ⊢
+    -- u ∉ refs' implies u ≠ z and u ∉ pe.refs
+    have hu_ne_z : u ≠ z := by
+      intro heq
+      apply hu
+      rw [heq]
+      by_cases hzin : z ∈ pe.refs
+      · simp only [hzin, not_true_eq_false, ↓reduceIte]
+      · simp only [hzin, not_false_eq_true, ↓reduceIte, List.mem_cons]; exact Or.inl trivial
+    have hu_notin : u ∉ pe.refs := by
+      intro hcontra
+      apply hu
+      by_cases hzin : z ∈ pe.refs
+      · simp only [hzin, not_true_eq_false, ↓reduceIte]; exact hcontra
+      · simp only [hzin, not_false_eq_true, ↓reduceIte, List.mem_cons]; exact Or.inr hcontra
+    -- v = .root ≠ z, so neither u=z∧v=z nor v=z applies; u ≠ z so u=z doesn't apply
+    have hnotboth : ¬(u = z ∧ Aref.root = z) := fun ⟨_, h⟩ => hz_not_root h.symm
+    have hroot_ne_z : ¬(Aref.root = z) := fun h => hz_not_root h.symm
+    rw [if_neg hnotboth, if_neg hroot_ne_z, if_neg hu_ne_z]
+    exact hwf.from_untracked_to_root_empty u hu_notin huroot
 
 /-- update_with_epsilon preserves WellFormed -/
 lemma update_with_epsilon_wellformed (s t : Aref) (pe : PathEnv) (hwf : PathEnv.WellFormed pe)
@@ -862,6 +904,22 @@ lemma garbage_collect_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFo
   · -- root_in_refs: .root survives filter since r ≠ .root
     simp only [garbage_collect, List.mem_filter, decide_eq_true_eq]
     exact ⟨hwf.root_in_refs, fun h => hr_not_root h.symm⟩
+  · -- from_untracked_to_root_empty
+    intro u hu huroot
+    simp only [garbage_collect] at hu ⊢
+    simp only [List.mem_filter, decide_eq_true_eq, not_and] at hu
+    by_cases hur : u = r
+    · -- u = r: condition u = r ∨ .root = r is true → .empty
+      simp only [hur, true_or, ↓reduceIte]
+    · -- u ≠ r: condition is false, paths unchanged
+      have hu_notin : u ∉ pe.refs := by
+        intro hcontra; exact hur (Decidable.not_not.mp (hu hcontra))
+      have hcond : ¬(u = r ∨ Aref.root = r) := by
+        intro h; cases h with
+        | inl h => exact hur h
+        | inr h => exact hr_not_root h.symm
+      simp only [hcond, ↓reduceIte]
+      exact hwf.from_untracked_to_root_empty u hu_notin huroot
 
 /-- consume_ref_transfer preserves WellFormed.
     Transfers edges from r to r' and removes r. -/
@@ -929,6 +987,30 @@ lemma consume_ref_transfer_wellformed (pe : PathEnv) (r r' : Aref) (hwf : PathEn
     · simp only [hr'in, not_false_eq_true, ↓reduceIte, List.mem_filter, decide_eq_true_eq,
                   List.mem_cons]
       exact ⟨Or.inr hwf.root_in_refs, hroot_ne_r⟩
+  · -- from_untracked_to_root_empty
+    intro u hu huroot
+    simp only [consume_ref_transfer] at hu ⊢
+    -- .root ≠ r' (since .root ∈ pe.refs and r' ∉ pe.refs)
+    have hroot_ne_r' : Aref.root ≠ r' := by
+      intro h; exact hr'_fresh (h ▸ hwf.root_in_refs)
+    by_cases hur : u = r ∨ Aref.root = r
+    · -- condition true → .empty
+      simp only [hur, ↓reduceIte]
+    · -- u ≠ r and .root ≠ r
+      have hu_ne_r : u ≠ r := fun h => hur (Or.inl h)
+      simp only [hur, ↓reduceIte]
+      -- .root ≠ r', so if .root = r' is false
+      simp only [hroot_ne_r', ↓reduceIte]
+      -- paths = G(u, .root), need u ∉ pe.refs
+      have hu_notin : u ∉ pe.refs := by
+        intro hcontra; apply hu
+        by_cases hr'in : r' ∈ pe.refs
+        · simp only [hr'in, not_true_eq_false, ↓reduceIte, List.mem_filter, decide_eq_true_eq]
+          exact ⟨hcontra, hu_ne_r⟩
+        · simp only [hr'in, not_false_eq_true, ↓reduceIte, List.mem_filter, decide_eq_true_eq,
+                      List.mem_cons]
+          exact ⟨Or.inr hcontra, hu_ne_r⟩
+      exact hwf.from_untracked_to_root_empty u hu_notin huroot
 
 /- ---------------------------------------------------- -/
 /-       TypeEnv.equiv lemmas                            -/
