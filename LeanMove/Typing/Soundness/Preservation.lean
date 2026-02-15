@@ -1069,47 +1069,51 @@ private lemma rmap_paths_update_with_borrow
     rw [hrmap'_ne r1 hr1_ne, hrmap'_ne r2 hr2_ne]
     exact hold
 
-/-- Preservation for borrowImm of a basic-typed variable.
-    The new site gets a fresh abstract ref r with .siteBorrowImm kind,
-    and pathEnv is updated with update_with_extension r .root [.root_to_var x]
-    on top of update_with_epsilon r r (which initializes r in pathEnv).
-    The rmap is extended to map r to (loc, []) where loc is x's heap location. -/
-private theorem preservation_borrowImm (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
+/-- Unified preservation for borrowImm/borrowMut of a basic-typed variable.
+    Both borrow kinds have identical runtime semantics (allocate ref to var's location)
+    and identical proof structure — only the BorrowingKind in siteEnv differs.
+    Parameters: inversion results (τ, r, hfresh, hnv, hcont) and
+    var_consistent results (loc, val, hloc, hread) are pre-computed by the wrappers. -/
+private theorem preservation_borrow (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retType : MoveType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retType rmap)
     (hss : StackSafe m.stack m.frame.returnInfo m.heap)
-    (s : Site) (x : Var) (cont : Stmt)
-    (hstmt : m.frame.stmt = .letBind s (.usage (.borrowImm x)) cont)
-    (hstep : step (.running m) = .running m') :
+    (s : Site) (x : Var) (cont : Stmt) (bk : BorrowingKind)
+    -- Inversion results
+    (τ : BasicMoveType) (r : Aref)
+    (hfresh : freshRefInEnvBool r env)
+    (hnv : ∀ v, r ≠ .varRef v)
+    (hcont : typecheck_stmt lenv
+      {env with siteEnv := insert env.siteEnv s (.ref τ r bk),
+                pathEnv := update_with_extension r .root [.root_to_var x]
+                            (update_with_epsilon r r env.pathEnv)}
+      cont retType)
+    -- Var consistent results
+    (loc : Loc) (val : Value)
+    (hloc : lookup m.frame.varStore x = some (some loc))
+    (hread : m.heap.read loc = some val) :
+    let m' : Machine := { m with frame := { m.frame with
+                siteStore := insert m.frame.siteStore s (Value.ref loc []),
+                stmt := cont } }
     ∃ env' lenv' retType' rmap',
       WellTypedState m' env' lenv' retType' rmap' ∧
       StackSafe m'.stack m'.frame.returnInfo m'.heap := by
-  -- 1. Extract typing hypotheses
-  obtain ⟨τ, ms, r, hlookup, hfresh, hnv, hcont⟩ :=
-    inv_borrowImm (by rw [← hstmt]; exact hwt.stmt_typed)
-  -- 2. Get var_consistent for x (basic type — hmatch is trivially True)
-  obtain ⟨loc, val, hloc, hread, _⟩ :=
-    hwt.var_consistent x .validVar (.basic τ) ms hlookup
-  -- 3. Show getVarLoc succeeds
-  have hgl : getVarLoc m x = some loc := by unfold getVarLoc; simp [hloc]
-  -- 4. Simplify the step
-  simp only [step, hstmt, hgl, ExecState.running.injEq] at hstep; subst hstep
-  -- 5. Define the new rmap extending with r → (loc, [])
+  intro m'
+  -- 1. Define the new rmap extending with r → (loc, [])
   let rmap' : RefMap := { map := fun r' => if r' = r then some (loc, []) else rmap.map r' }
-  -- 6. Freshness facts
+  -- 2. Freshness facts
   have hfresh_pathEnv : freshRefBool r env.pathEnv :=
     freshRefInEnvBool_implies_freshRefBool r env hfresh
   have hr_not_root : r ≠ Aref.root := freshRef_not_root hwt.env_wf.pathEnv_wf r hfresh_pathEnv
   have hr_fresh_pe : r ∉ env.pathEnv.refs :=
     (freshRef_iff_freshRefBool r env.pathEnv).mpr hfresh_pathEnv
-  -- 7. readRef loc [] is live (heap.read loc ≠ none)
-  have hread_ne : m.heap.read loc ≠ none := by simp [hread]
+  -- 3. readRef loc [] is live (heap.read loc ≠ none)
   have hreadref : m.heap.readRef loc [] ≠ none := by
     unfold Heap.readRef; simp [hread, readPath]
-  -- 8. Abbreviation for the new pathEnv
+  -- 4. Abbreviation for the new pathEnv
   let pe' := update_with_extension r .root [.root_to_var x]
                (update_with_epsilon r r env.pathEnv)
-  -- 9. Show pe'.refs = r :: env.pathEnv.refs
+  -- 5. Show pe'.refs = r :: env.pathEnv.refs
   have hpe_mid_refs : (update_with_epsilon r r env.pathEnv).refs = r :: env.pathEnv.refs := by
     simp only [update_with_epsilon, update_with_extension]
     simp only [show ¬r ∈ env.pathEnv.refs from hr_fresh_pe, not_false_eq_true, ↓reduceIte]
@@ -1120,8 +1124,8 @@ private theorem preservation_borrowImm (m m' : Machine) (env : TypeEnv) (lenv : 
     simp only [show ¬(r ∉ (update_with_epsilon r r env.pathEnv).refs) from not_not.mpr hr_in_mid,
                ↓reduceIte]
     exact hpe_mid_refs
-  -- 10. Construct WellTypedState
-  refine ⟨{env with siteEnv := insert env.siteEnv s (.ref τ r .siteBorrowImm),
+  -- 6. Construct WellTypedState
+  refine ⟨{env with siteEnv := insert env.siteEnv s (.ref τ r bk),
                      pathEnv := pe'},
           lenv, retType, rmap', ?_, hss⟩
   exact {
@@ -1130,7 +1134,7 @@ private theorem preservation_borrowImm (m m' : Machine) (env : TypeEnv) (lenv : 
         hr_not_root (fun v hc => hnv v hc)
       have hpe' := update_with_extension_wellformed r .root [.root_to_var x]
         (update_with_epsilon r r env.pathEnv) hpe_eps hr_not_root (fun v hc => hnv v hc)
-      exact TypeEnv.insert_pathEnv_wf env s (.ref τ r .siteBorrowImm) _ hwt.env_wf hpe' hr_not_root
+      exact TypeEnv.insert_pathEnv_wf env s (.ref τ r bk) _ hwt.env_wf hpe' hr_not_root
     stmt_typed := hcont
     var_consistent := var_consistent_extend_rmap_fresh hwt r loc [] hfresh
     site_consistent := by
@@ -1168,7 +1172,7 @@ private theorem preservation_borrowImm (m m' : Machine) (env : TypeEnv) (lenv : 
         rw [hr_eq]; exact .head _
       · rw [lookup_insert_ne _ s s' _ heq] at hl
         exact List.mem_cons_of_mem r (hwt.siteEnv_refs_in_pathEnv s' bt' r' bk' hl)
-    live_refs_unique := live_refs_unique_insert_fresh_ref hwt s (.ref τ r .siteBorrowImm) r
+    live_refs_unique := live_refs_unique_insert_fresh_ref hwt s (.ref τ r bk) r
       hr_fresh_pe (fun _ r' _ h => by simp only [MoveType.ref.injEq] at h; exact h.2.1.symm)
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
@@ -1178,71 +1182,52 @@ private theorem preservation_borrowImm (m m' : Machine) (env : TypeEnv) (lenv : 
     no_paths_to_root := by
       have hroot_ne_r : ¬(Aref.root = r) := Ne.symm hr_not_root
       intro u p hp
-      -- Extract pathEnv from the struct
       have hp : interpret_regex (pe'.paths (u, Aref.root)) p := hp
       by_cases hu : u = r
-      · -- u = r: pe'.paths(r, .root) = der(pe_mid.paths(.root, .root)) [.root_to_var x]
-        rw [hu] at hp
-        -- Unfold pe' = update_with_extension, simplify conditions
+      · rw [hu] at hp
         unfold pe' update_with_extension at hp
         simp only [hroot_ne_r, and_false, ite_false, ite_true] at hp
-        -- Unfold pe_mid = update_with_epsilon r r env.pathEnv
         unfold update_with_epsilon update_with_extension at hp
         simp only [hroot_ne_r, and_false, ite_false] at hp
-        -- hp : interpret_regex (der (env.pathEnv.paths (.root, .root)) [.root_to_var x]) p
         simp only [der, List.foldl] at hp
-        -- interpret_regex (.deriv re a) s = interpret_regex re (a :: s) by definition
         have hp' : interpret_regex (env.pathEnv.paths (Aref.root, Aref.root))
             (PathElement.root_to_var x :: p) := hp
         exact absurd (hwt.no_paths_to_root .root _ hp').2 (List.cons_ne_nil _ _)
-      · -- u ≠ r: pe'.paths(u, .root) = pe_mid.paths(u, .root) = pe.paths(u, .root)
-        unfold pe' update_with_extension at hp
+      · unfold pe' update_with_extension at hp
         simp only [hu, hroot_ne_r, ite_false] at hp
         unfold update_with_epsilon update_with_extension at hp
         simp only [hu, hroot_ne_r, false_and, ite_false] at hp
         exact hwt.no_paths_to_root u p hp
     root_path_coherence := by
       have hroot_ne_r : ¬(Aref.root = r) := Ne.symm hr_not_root
-      intro v' y rest hv_mem hp loc_v path_v hrmap loc_y hloc heq
+      intro v' y rest hv_mem hp loc_v path_v hrmap loc_y hloc' heq
       rw [hrefs_eq] at hv_mem
       simp only [List.mem_cons] at hv_mem
-      -- Extract pathEnv from the struct
       have hp : interpret_regex (pe'.paths (Aref.root, v')) (PathElement.root_to_var y :: rest) := hp
       rcases hv_mem with hv_eq | hv_in
-      · -- v' = r: paths(.root, r) = extend(pe_mid.paths(.root, .root)) [.root_to_var x]
-        rw [hv_eq] at hp hrmap
+      · rw [hv_eq] at hp hrmap
         unfold pe' update_with_extension at hp
         simp only [hroot_ne_r, false_and, ite_false, ite_true] at hp
-        -- Unfold pe_mid to get env.pathEnv.paths(.root, .root)
         unfold update_with_epsilon update_with_extension at hp
         simp only [hroot_ne_r, false_and, ite_false] at hp
-        -- hp : interpret_regex (extend (env.pathEnv.paths (.root, .root)) [.root_to_var x])
-        --        (.root_to_var y :: rest)
-        -- extend re [a] = concat re (char a)
         simp only [extend, List.foldl, interpret_regex] at hp
         obtain ⟨s1, s2, heq', hinterp, hs2_eq⟩ := hp
-        -- pe.paths(.root, .root) only accepts [] by no_paths_to_root
         have ⟨_, hs1_nil⟩ := hwt.no_paths_to_root .root s1 hinterp
         subst hs1_nil; subst hs2_eq
-        -- heq' : .root_to_var y :: rest = [] ++ [.root_to_var x] = [.root_to_var x]
         simp only [List.nil_append, List.cons.injEq] at heq'
         obtain ⟨_, hrest_nil⟩ := heq'
         subst hrest_nil
-        -- rmap'(r) = some (loc, [])
         simp only [rmap', ite_true] at hrmap
         obtain ⟨h1, h2⟩ := Prod.mk.inj (Option.some.inj hrmap)
         subst h1; subst h2
-        -- goal: [] = fieldPathOf [] = []
         rfl
-      · -- v' ≠ r (v' ∈ env.pathEnv.refs): paths(.root, v') unchanged
-        have hv_ne : ¬(v' = r) := fun h => by subst h; exact absurd hv_in hr_fresh_pe
+      · have hv_ne : ¬(v' = r) := fun h => by subst h; exact absurd hv_in hr_fresh_pe
         unfold pe' update_with_extension at hp
         simp only [hroot_ne_r, hv_ne, false_and, ite_false] at hp
         unfold update_with_epsilon update_with_extension at hp
         simp only [hroot_ne_r, hv_ne, false_and, ite_false] at hp
-        -- rmap'(v') where v' ≠ r → rmap.map v'
         simp only [rmap', if_neg hv_ne] at hrmap
-        exact hwt.root_path_coherence v' y rest hv_in hp loc_v path_v hrmap loc_y hloc heq
+        exact hwt.root_path_coherence v' y rest hv_in hp loc_v path_v hrmap loc_y hloc' heq
     paths_from_non_member_empty := by
       have h_root_in_mid : Aref.root ∈ (update_with_epsilon r r env.pathEnv).refs :=
         hpe_mid_refs ▸ List.mem_cons_of_mem _ hwt.env_wf.pathEnv_wf.root_in_refs
@@ -1268,7 +1253,47 @@ private theorem preservation_borrowImm (m m' : Machine) (env : TypeEnv) (lenv : 
         unfold update_with_epsilon update_with_extension at hp
         simp only [show ¬(u = r) from hu, and_false, ↓reduceIte] at hp
         exact hwt.self_loop_only_empty u p hp
-  } -- end borrowImm
+  }
+
+/-- Preservation for borrowImm: thin wrapper around preservation_borrow. -/
+private theorem preservation_borrowImm (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retType : MoveType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retType rmap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (s : Site) (x : Var) (cont : Stmt)
+    (hstmt : m.frame.stmt = .letBind s (.usage (.borrowImm x)) cont)
+    (hstep : step (.running m) = .running m') :
+    ∃ env' lenv' retType' rmap',
+      WellTypedState m' env' lenv' retType' rmap' ∧
+      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+  obtain ⟨τ, ms, r, hlookup, hfresh, hnv, hcont⟩ :=
+    inv_borrowImm (by rw [← hstmt]; exact hwt.stmt_typed)
+  obtain ⟨loc, val, hloc, hread, _⟩ :=
+    hwt.var_consistent x .validVar (.basic τ) ms hlookup
+  have hgl : getVarLoc m x = some loc := by unfold getVarLoc; simp [hloc]
+  simp only [step, hstmt, hgl, ExecState.running.injEq] at hstep; subst hstep
+  exact preservation_borrow m env lenv retType rmap hwt hss s x cont .siteBorrowImm
+    τ r hfresh hnv hcont loc val hloc hread
+
+/-- Preservation for borrowMut: thin wrapper around preservation_borrow. -/
+private theorem preservation_borrowMut (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retType : MoveType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retType rmap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (s : Site) (x : Var) (cont : Stmt)
+    (hstmt : m.frame.stmt = .letBind s (.usage (.borrowMut x)) cont)
+    (hstep : step (.running m) = .running m') :
+    ∃ env' lenv' retType' rmap',
+      WellTypedState m' env' lenv' retType' rmap' ∧
+      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+  obtain ⟨τ, ms, r, hlookup, hfresh, hnv, hcont⟩ :=
+    inv_borrowMut (by rw [← hstmt]; exact hwt.stmt_typed)
+  obtain ⟨loc, val, hloc, hread, _⟩ :=
+    hwt.var_consistent x .validVar (.basic τ) ms hlookup
+  have hgl : getVarLoc m x = some loc := by unfold getVarLoc; simp [hloc]
+  simp only [step, hstmt, hgl, ExecState.running.injEq] at hstep; subst hstep
+  exact preservation_borrow m env lenv retType rmap hwt hss s x cont .siteBorrowMut
+    τ r hfresh hnv hcont loc val hloc hread
 
 /-- Reusable helper: delete_ref_node preserves rmap_paths. -/
 private theorem rmap_paths_delete_ref_node (env : TypeEnv) (m : Machine) (rmap : RefMap)
@@ -2642,7 +2667,7 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
             τ_ref ms s_orig t isBor hvar hfresh_t hnv_t hcont hstmt hstep
       | move x => exact preservation_move m m' env lenv retType rmap hwt hss s x cont hstmt hstep
       | borrowImm x => exact preservation_borrowImm m m' env lenv retType rmap hwt hss s x cont hstmt hstep
-      | borrowMut x => sorry
+      | borrowMut x => exact preservation_borrowMut m m' env lenv retType rmap hwt hss s x cont hstmt hstep
     | borrowField src bt field => sorry
     | borrowMutField src bt field => sorry
     | readRef src => exact preservation_readRef m m' env lenv retType rmap hwt hss s src cont hstmt hstep
