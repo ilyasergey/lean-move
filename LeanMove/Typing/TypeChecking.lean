@@ -569,7 +569,7 @@ inductive typecheck_fun : FunDef → LabelEnv → Prop where
     -- The initial environment has the initialized varEnv, empty siteEnv, initialized pathEnv
     initEnv.varEnv = init_fun_varEnv f →
     initEnv.siteEnv = AssocMap.empty →
-    initEnv.pathEnv = PathEnv.init →
+    initEnv.pathEnv = init_fun_pathEnv f →
     -- The function must have at least one block (entry block)
     f.blocks ≠ [] →
     -- The entry block (first block) must have an environment equivalent to initEnv

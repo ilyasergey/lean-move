@@ -670,6 +670,43 @@ lemma TypeEnv.WellFormed.varEnv_refs_not_root (hwf : TypeEnv.WellFormed env) :
     VarEnv.RefsNotRoot env.varEnv :=
   VarEnv.refsAreFresh_implies_refsNotRoot env.varEnv hwf.varEnv_wf
 
+/-- init_fun_pathEnv is well-formed when all param refs are fresh (.refid n). -/
+lemma PathEnv.init_fun_wellformed (f : FunDef)
+    (hfresh : ∀ p ∈ f.params, ∀ bt r bk, p.2 = .ref bt r bk → Aref.isFreshRef r) :
+    PathEnv.WellFormed (init_fun_pathEnv f) := by
+  constructor
+  · -- refs_complete: r ∉ refs → paths(.root, r) = .empty
+    intro r hr
+    unfold init_fun_pathEnv at hr ⊢
+    simp only at hr ⊢
+    by_cases heq : Aref.root = r
+    · subst heq; simp at hr
+    · simp [heq]
+  · -- varref_tracked: varRef x ∈ refs → isBorrowPath
+    intro x hx
+    unfold init_fun_pathEnv at hx
+    simp only [List.mem_cons, List.mem_filterMap] at hx
+    cases hx with
+    | inl h => cases h
+    | inr h =>
+      obtain ⟨⟨v, τ⟩, hmem, hτ⟩ := h
+      cases τ with
+      | basic _ => simp at hτ
+      | ref bt r bk =>
+        simp at hτ
+        have hfr := hfresh (v, .ref bt r bk) hmem bt r bk rfl
+        obtain ⟨n, hn⟩ := hfr
+        rw [hn] at hτ
+        cases hτ
+  · -- root_in_refs
+    unfold init_fun_pathEnv
+    exact List.Mem.head _
+  · -- from_untracked_to_root_empty
+    intro u _hu huroot
+    unfold init_fun_pathEnv
+    simp only
+    simp [huroot]
+
 /-- Initial TypeEnv with empty siteEnv and PathEnv.init is well-formed
     when the provided varEnv satisfies RefsAreFresh -/
 lemma TypeEnv.init_wellformed (varEnv : VarEnv) (funEnv : FunEnv)
@@ -677,6 +714,17 @@ lemma TypeEnv.init_wellformed (varEnv : VarEnv) (funEnv : FunEnv)
     TypeEnv.WellFormed { siteEnv := AssocMap.empty, varEnv := varEnv, pathEnv := PathEnv.init, funEnv := funEnv } := by
   constructor
   · exact PathEnv.init_wellformed
+  · exact SiteEnv.empty_refs_not_root
+  · exact hvarEnv
+
+/-- Initial TypeEnv with empty siteEnv and init_fun_pathEnv is well-formed
+    when the provided varEnv satisfies RefsAreFresh and param refs are fresh. -/
+lemma TypeEnv.init_fun_wellformed (f : FunDef) (varEnv : VarEnv) (funEnv : FunEnv)
+    (hvarEnv : VarEnv.RefsAreFresh varEnv)
+    (hfresh : ∀ p ∈ f.params, ∀ bt r bk, p.2 = .ref bt r bk → Aref.isFreshRef r) :
+    TypeEnv.WellFormed { siteEnv := AssocMap.empty, varEnv := varEnv, pathEnv := init_fun_pathEnv f, funEnv := funEnv } := by
+  constructor
+  · exact PathEnv.init_fun_wellformed f hfresh
   · exact SiteEnv.empty_refs_not_root
   · exact hvarEnv
 

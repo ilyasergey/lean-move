@@ -76,6 +76,19 @@ theorem PathEnvDec.init_toPathEnv : PathEnvDec.init.toPathEnv = PathEnv.init := 
   show PathEnv.mk [.root] _ = PathEnv.mk [.root] _
   congr 1
 
+/-- Initial decidable PathEnv for a function: includes .root and all abstract refs from ref-typed params. -/
+def init_fun_pathEnvDec (params : List (Var × MoveType)) : PathEnvDec :=
+  let paramRefs := params.filterMap (fun (_, τ) => match τ with
+    | .ref _ r _ => some r
+    | _ => none)
+  { refs := .root :: paramRefs, paths := .empty }
+
+/-- Conversion of init_fun_pathEnvDec produces init_fun_pathEnv -/
+theorem init_fun_pathEnvDec_toPathEnv (f : FunDef) :
+    (init_fun_pathEnvDec f.params).toPathEnv = init_fun_pathEnv f := by
+  simp only [init_fun_pathEnvDec, PathEnvDec.toPathEnv, init_fun_pathEnv]
+  congr 1
+
 /-- Type environment using decidable PathEnv -/
 structure TypeEnvDec where
   siteEnv : SiteEnv

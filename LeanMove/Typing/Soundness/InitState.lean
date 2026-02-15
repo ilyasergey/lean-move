@@ -450,6 +450,21 @@ def checkArgsTyped (params : List (Var × MoveType)) (args : List Value) : Bool 
     | .basic bt => hasType_bool v bt
     | _ => true)
 
+/-- Boolean check that each argument matches its declared parameter type.
+    For basic types: hasType_bool.
+    For ref types: the arg is a .ref and the heap has a well-typed value there. -/
+def checkArgsCompatible (params : List (Var × MoveType)) (args : List Value) (heap : Heap) : Bool :=
+  (params.zip args).all (fun ((_, τ), v) =>
+    match τ with
+    | .basic bt => hasType_bool v bt
+    | .ref bt _r _bk =>
+      match v with
+      | .ref loc path =>
+        match heap.readRef loc path with
+        | some val => hasType_bool val bt
+        | none => false
+      | _ => false)
+
 -- ============================================================
 -- Part 11b': Soundness Assumptions
 -- ============================================================
@@ -475,11 +490,22 @@ structure SoundnessAssumptions (f : FunDef) (lenv : LabelEnv) (heap : Heap) (arg
       In practice, established by `check_fun_dec_sound`. -/
   lenv_wf : ∀ l env, lookup lenv l = some env → TypeEnv.WellFormed env
 
-  /-- Function parameters have basic types (not references).
-      At function entry, the PathEnv is `PathEnv.init` (tracking only `.root`) with an
-      empty RefMap. There is no way to construct initial rmap entries for ref-typed
-      parameters, because the caller's abstract references are not available to the callee. -/
-  params_basic : ∀ x τ, (x, τ) ∈ f.params → ∃ bt, τ = .basic bt
+  /-- Each argument matches its declared parameter type.
+      For basic params: HasType v bt.
+      For ref params: the arg is a .ref loc path, and the heap has a well-typed value there. -/
+  args_compatible : ∀ x τ v, ((x, τ), v) ∈ (f.params.zip args) →
+    match τ with
+    | .basic bt => HasType v bt
+    | .ref bt _r _bk => ∃ loc path, v = .ref loc path ∧
+        (∃ val, heap.readRef loc path = some val ∧ HasType val bt)
+
+  /-- Abstract refs in ref-typed params are pairwise distinct.
+      Required for live_refs_unique at the initial state. -/
+  param_refs_distinct : (f.params.filterMap (fun (_, τ) => match τ with
+    | .ref _ r _ => some r | _ => none)).Nodup
+
+  /-- No param ref is .root. Required for rmap_root_none at the initial state. -/
+  param_refs_not_root : ∀ x bt r bk, (x, .ref bt r bk) ∈ f.params → r ≠ .root
 
   /-- The initial heap is internally consistent: every readable location is below `nextLoc`.
       This is a runtime property unknown to the type checker. Holds trivially for `Heap.empty`. -/
@@ -519,15 +545,16 @@ structure SoundnessAssumptions (f : FunDef) (lenv : LabelEnv) (heap : Heap) (arg
   lenv_self_loop : ∀ l env, lookup lenv l = some env →
     ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = []
 
-  /-- Each basic-typed argument has the declared type.
-      Connects runtime argument values to their static types.
-      Established by `checkArgsTyped`. -/
-  args_typed : ∀ x τ v, ((x, τ), v) ∈ (f.params.zip args) →
-    ∀ bt, τ = .basic bt → HasType v bt
-
   /-- Parameter names are unique. Required to connect `allocArgs` (first occurrence wins)
       with `init_fun_varEnv` (foldl, last occurrence wins) — they agree when names are unique. -/
   params_nodup : (f.params.map Prod.fst).Nodup
+
+  /-- Entry block varEnv matches init_fun_varEnv exactly (not just MoveType.compatible).
+      This ensures that the abstract refs in the entry block's var types are exactly
+      the param refs, needed for rmap construction at the initial state.
+      (MoveType.compatible allows different refids, which would break rmap.) -/
+  entry_varEnv_exact : ∀ block env, f.blocks.head? = some block →
+    lookup lenv block.label = some env → LookupEquiv env.varEnv (init_fun_varEnv f)
 
 /-- Boolean check for all decidable hypotheses of type soundness.
     Includes `check_fun_dec` (function type-checks), `checkFunEnv`
@@ -540,8 +567,13 @@ def SoundnessAssumptions.checkDecidable (f : FunDef) (lenvDec : LabelEnvDec)
   check_fun_dec f lenvDec &&
   -- checkFunEnv: all functions in funEnv are well-typed
   checkFunEnv funEnv fte &&
-  -- params_basic: all parameter types are basic
-  f.params.all (fun (_, τ) => match τ with | .basic _ => true | _ => false) &&
+  -- args_compatible: each argument matches its declared type (basic or ref)
+  checkArgsCompatible f.params args heap &&
+  -- param_refs_distinct: abstract refs in ref-typed params are pairwise distinct
+  decide ((f.params.filterMap (fun (_, τ) => match τ with
+    | .ref _ r _ => some r | _ => none)).Nodup) &&
+  -- param_refs_not_root: no param ref is .root
+  f.params.all (fun (_, τ) => match τ with | .ref _ .root _ => false | _ => true) &&
   -- heap_wf: all locations in heap store are below nextLoc
   heap.store.entries.all (fun (loc, _) => decide (loc < heap.nextLoc)) &&
   -- lenv_empty_sites: all siteEnvs in lenv entries are empty
@@ -550,10 +582,15 @@ def SoundnessAssumptions.checkDecidable (f : FunDef) (lenvDec : LabelEnvDec)
   f.blocks.all (fun block => lenvDec.entries.any (fun (l, _) => l == block.label)) &&
   -- lenv_allWellFormed: PathEnvDec well-formedness (enables non-member / self-loop properties)
   lenvDec.allWellFormed_bool &&
-  -- args_typed: each basic-typed argument has matching type
-  checkArgsTyped f.params args &&
   -- params_nodup: parameter names are unique
-  decide ((f.params.map Prod.fst).Nodup)
+  decide ((f.params.map Prod.fst).Nodup) &&
+  -- entry_varEnv_exact: entry block varEnv matches init_fun_varEnv exactly
+  (match f.blocks.head? with
+   | some block =>
+     match AssocMap.lookup lenvDec block.label with
+     | some ted => lookup_equiv_bool ted.varEnv (init_fun_varEnv f)
+     | none => true
+   | none => true)
 
 -- Helper: if some entry has a matching key, List.lookup succeeds
 private theorem any_beq_implies_list_lookup {K V : Type} [DecidableEq K]
@@ -592,23 +629,58 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     (heap : Heap) (args : List Value)
     (hcheck : SoundnessAssumptions.checkDecidable f lenvDec funEnv fte heap args = true) :
     SoundnessAssumptions f lenvDec.toLabelEnv heap args where
+  -- checkDecidable has 11 conjuncts (10 &&):
+  -- 1:check_fun_dec 2:checkFunEnv 3:checkArgsCompatible 4:param_refs_distinct
+  -- 5:param_refs_not_root 6:heap_wf 7:lenv_empty_sites 8:lenv_complete
+  -- 9:allWellFormed_bool 10:params_nodup 11:entry_varEnv_exact
   lenv_wf := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨hcfd, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hcfd, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     exact check_fun_dec_lenv_wf f lenvDec hcfd
-  args_typed := by
+  args_compatible := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨_, _⟩, hat⟩, _⟩ := hcheck
-    simp only [checkArgsTyped, List.all_eq_true] at hat
-    intro x τ v hmem bt hbt
-    subst hbt
-    have := hat ((x, .basic bt), v) hmem
-    simp only at this
-    exact hasType_bool_sound _ _ this
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hac⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    simp only [checkArgsCompatible, List.all_eq_true] at hac
+    intro x τ v hmem
+    have hentry := hac ((x, τ), v) hmem
+    match τ with
+    | .basic bt =>
+      simp only at hentry
+      exact hasType_bool_sound _ _ hentry
+    | .ref bt _r _bk =>
+      simp only at hentry
+      match hv : v, hentry with
+      | .ref loc path, hentry =>
+        simp only at hentry
+        match hr : heap.readRef loc path, hentry with
+        | some val, hentry =>
+          exact ⟨loc, path, rfl, val, hr, hasType_bool_sound _ _ hentry⟩
+  param_refs_distinct := by
+    simp only [checkDecidable, Bool.and_eq_true] at hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨_, hd⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    exact decide_eq_true_eq.mp hd
+  param_refs_not_root := by
+    simp only [checkDecidable, Bool.and_eq_true] at hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨_, hnr⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    simp only [List.all_eq_true] at hnr
+    intro x bt r bk hmem
+    have := hnr (x, .ref bt r bk) hmem
+    cases r with
+    | root => simp at this
+    | refid _ => exact Aref.noConfusion
+    | varRef _ => exact Aref.noConfusion
   params_nodup := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨_, hnd⟩ := hcheck
+    obtain ⟨⟨_, hnd⟩, _⟩ := hcheck
     exact decide_eq_true_eq.mp hnd
+  entry_varEnv_exact := by
+    simp only [checkDecidable, Bool.and_eq_true] at hcheck
+    obtain ⟨_, heve⟩ := hcheck
+    intro block env hhead hlookup
+    obtain ⟨ted, hted, rfl⟩ := toLabelEnv_lookup_some lenvDec block.label env hlookup
+    show LookupEquiv ted.varEnv (init_fun_varEnv f)
+    apply lookup_equiv_bool_sound
+    revert heve; rw [hhead]; dsimp; rw [hted]; exact id
   lenv_paths_from_non_member := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
     obtain ⟨⟨⟨_, hwf⟩, _⟩, _⟩ := hcheck
@@ -633,15 +705,6 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     simp only [TypeEnvDec.toTypeEnv, PathEnvDec.toPathEnv] at hp
     simp only [↓reduceIte, interpret_regex] at hp
     exact hp
-  params_basic := by
-    simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨_, _⟩, hp⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
-    simp only [List.all_eq_true] at hp
-    intro x τ hmem
-    have := hp (x, τ) hmem
-    cases τ with
-    | basic bt => exact ⟨bt, rfl⟩
-    | ref _ _ _ => simp at this
   heap_wf := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
     obtain ⟨⟨⟨⟨⟨⟨_, hh⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
@@ -734,6 +797,179 @@ private lemma allocArgs_param_has_type (heap : Heap) (params : List (Var × Move
             hnodup_ps x bt hmem_rest
           exact ⟨loc, v, by rw [lookup_insert_ne _ _ _ _ heq]; exact hlookup, hread, hht⟩
 
+/-- allocArgs succeeds only when params.length = args.length -/
+private lemma allocArgs_length_eq (heap : Heap) (params : List (Var × MoveType))
+    (args : List Value) (heap_out : Heap) (vs : VarStore)
+    (halloc : allocArgs heap params args = some (heap_out, vs)) :
+    params.length = args.length := by
+  induction params generalizing heap args heap_out vs with
+  | nil =>
+    cases args with
+    | nil => rfl
+    | cons _ _ => simp [allocArgs] at halloc
+  | cons p ps ih =>
+    obtain ⟨y, τ_y⟩ := p
+    cases args with
+    | nil => simp [allocArgs] at halloc
+    | cons a as' =>
+      simp only [allocArgs, Bind.bind, Option.bind] at halloc
+      cases hrec : allocArgs (heap.alloc a).1 ps as' with
+      | none => rw [hrec] at halloc; simp at halloc
+      | some pair =>
+        obtain ⟨h', vs'⟩ := pair
+        exact congrArg Nat.succ (ih (heap.alloc a).1 as' h' vs' hrec)
+
+/-- If a ∈ l₁ and l₁.length = l₂.length, then ∃ b, (a, b) ∈ l₁.zip l₂ -/
+private lemma exists_mem_zip_right {α β : Type} {l₁ : List α} {l₂ : List β}
+    {a : α} (hlen : l₁.length = l₂.length) (hmem : a ∈ l₁) :
+    ∃ b, (a, b) ∈ l₁.zip l₂ := by
+  induction l₁ generalizing l₂ with
+  | nil => simp at hmem
+  | cons x xs ih =>
+    cases l₂ with
+    | nil => simp at hlen
+    | cons y ys =>
+      simp only [List.mem_cons] at hmem
+      rcases hmem with rfl | hmem
+      · exact ⟨y, by simp⟩
+      · have ⟨b, hb⟩ := ih (Nat.succ.inj hlen) hmem
+        exact ⟨b, List.mem_cons_of_mem _ hb⟩
+
+/-- List.lookup succeeds when the key-value pair is in the list and keys are Nodup. -/
+private lemma list_lookup_of_mem_nodup {K V : Type} [BEq K] [LawfulBEq K]
+    {l : List (K × V)} {k : K} {v : V}
+    (hmem : (k, v) ∈ l) (hnodup : (l.map Prod.fst).Nodup) :
+    l.lookup k = some v := by
+  induction l with
+  | nil => simp at hmem
+  | cons hd tl ih =>
+    simp only [List.map, List.nodup_cons] at hnodup
+    obtain ⟨hnotin, hnodup_tl⟩ := hnodup
+    simp only [List.mem_cons] at hmem
+    rcases hmem with rfl | hmem
+    · simp [List.lookup]
+    · simp only [List.lookup]
+      split
+      · rename_i heq
+        have hkeq : k = hd.1 := beq_iff_eq.mp heq
+        have hk_in_tl : k ∈ tl.map Prod.fst := by
+          rw [List.mem_map]; exact ⟨(k, v), hmem, rfl⟩
+        exact absurd (hkeq ▸ hk_in_tl) hnotin
+      · exact ih hmem hnodup_tl
+
+/-- Ref keys from zip+filterMap form a sublist of ref keys from params-only filterMap. -/
+private lemma paramRefKeys_sublist (params : List (Var × MoveType)) (args : List Value) :
+    List.Sublist
+    ((params.zip args).filterMap (fun ((_, τ), v) =>
+      match τ, v with
+      | .ref _ r _, .ref _ _ => some r
+      | _, _ => none))
+    (params.filterMap (fun (_, τ) => match τ with
+      | .ref _ r _ => some r
+      | _ => none)) := by
+  induction params generalizing args with
+  | nil => exact List.Sublist.slnil
+  | cons p ps ih =>
+    obtain ⟨_, τ⟩ := p
+    cases args with
+    | nil => simp only [List.zip_nil_right, List.filterMap_nil]; exact List.nil_sublist _
+    | cons a as' =>
+      simp only [List.zip_cons_cons, List.filterMap_cons]
+      cases τ with
+      | basic _ => exact ih as'
+      | ref bt r bk =>
+        cases a with
+        | ref _ _ => exact List.Sublist.cons₂ _ (ih as')
+        | int _ => exact List.Sublist.cons _ (ih as')
+        | bool _ => exact List.Sublist.cons _ (ih as')
+        | unit => exact List.Sublist.cons _ (ih as')
+        | record _ => exact List.Sublist.cons _ (ih as')
+
+/-- allocArgs stores the exact argument value for each param/arg pair. -/
+private lemma allocArgs_param_stores_arg (heap : Heap) (params : List (Var × MoveType))
+    (args : List Value) (heap_out : Heap) (vs : VarStore)
+    (hlb : ∀ loc, heap.read loc ≠ none → loc < heap.nextLoc)
+    (halloc : allocArgs heap params args = some (heap_out, vs))
+    (hnodup : (params.map Prod.fst).Nodup) :
+    ∀ x τ v, ((x, τ), v) ∈ (params.zip args) →
+    ∃ loc, lookup vs x = some (some loc) ∧ heap_out.read loc = some v := by
+  induction params generalizing heap args heap_out vs with
+  | nil => intro x τ v hmem; simp at hmem
+  | cons p ps ih =>
+    intro x τ v hmem
+    obtain ⟨y, τ_y⟩ := p
+    cases args with
+    | nil => simp [allocArgs] at halloc
+    | cons a as' =>
+      simp only [allocArgs, Bind.bind, Option.bind] at halloc
+      cases hrec : allocArgs (heap.alloc a).1 ps as' with
+      | none => rw [hrec] at halloc; simp at halloc
+      | some pair =>
+        obtain ⟨h', vs'⟩ := pair
+        rw [hrec] at halloc; dsimp at halloc
+        simp only [Option.some.injEq, Prod.mk.injEq] at halloc
+        obtain ⟨rfl, rfl⟩ := halloc
+        simp only [List.map, List.nodup_cons] at hnodup
+        obtain ⟨hy_notin, hnodup_ps⟩ := hnodup
+        simp only [List.zip_cons_cons, List.mem_cons, Prod.mk.injEq] at hmem
+        rcases hmem with ⟨⟨rfl, rfl⟩, rfl⟩ | hmem_rest
+        · -- head case: x = y, v = a (after rfl, a is replaced by v)
+          refine ⟨(heap.alloc v).2, lookup_insert_same _ _ _, ?_⟩
+          have hloc : (heap.alloc v).2 < (heap.alloc v).1.nextLoc := by
+            simp [Heap.alloc]
+          rw [allocArgs_preserves_old_read (heap.alloc v).1 ps as' h' vs' hrec
+              (heap.alloc v).2 hloc]
+          exact heap_alloc_read_same heap v
+        · -- tail case
+          have hx_in_ps : x ∈ ps.map Prod.fst := by
+            rw [List.mem_map]
+            exact ⟨(x, τ), (List.of_mem_zip hmem_rest).1, rfl⟩
+          have heq : x ≠ y := fun h => hy_notin (h ▸ hx_in_ps)
+          have ⟨loc, hlookup, hread⟩ := ih (heap.alloc a).1 as' h' vs'
+            (heap_alloc_preserves_bound heap a hlb) hrec hnodup_ps x τ v hmem_rest
+          exact ⟨loc, by rw [lookup_insert_ne _ _ _ _ heq]; exact hlookup, hread⟩
+
+/-- If two params both contribute the same ref r to the filterMap, they must be the same param. -/
+private lemma nodup_filterMap_params_same_ref
+    (params : List (Var × MoveType))
+    (hnodup_names : (params.map Prod.fst).Nodup)
+    (hnodup_refs : (params.filterMap (fun (_, τ) => match τ with
+      | .ref _ r _ => some r | _ => none)).Nodup)
+    {x y : Var} {bt bt' : BasicMoveType} {r : Aref} {bk bk' : BorrowingKind}
+    (hpx : (x, MoveType.ref bt r bk) ∈ params)
+    (hpy : (y, MoveType.ref bt' r bk') ∈ params) :
+    x = y := by
+  induction params with
+  | nil => simp at hpx
+  | cons hd tl ih =>
+    simp only [List.map, List.nodup_cons] at hnodup_names
+    obtain ⟨hnotin_names, hnodup_names_tl⟩ := hnodup_names
+    obtain ⟨z, τ_z⟩ := hd
+    simp only [List.mem_cons, Prod.mk.injEq] at hpx hpy
+    have hnodup_refs_tl : (tl.filterMap (fun (_, τ) => match τ with
+        | .ref _ r' _ => some r' | _ => none)).Nodup := by
+      cases τ_z with
+      | basic _ => simpa only [List.filterMap_cons] using hnodup_refs
+      | ref _ _ _ => exact (List.nodup_cons.mp (by simpa only [List.filterMap_cons] using hnodup_refs)).2
+    rcases hpx with ⟨rfl, rfl⟩ | hpx_tl
+    · -- x is head
+      rcases hpy with ⟨rfl, _⟩ | hpy_tl
+      · rfl
+      · -- y in tail with same r → r ∈ filterMap of tail, but head also contributes r → Nodup contradiction
+        exfalso
+        have : r ∈ tl.filterMap (fun (_, τ) => match τ with | .ref _ r' _ => some r' | _ => none) :=
+          List.mem_filterMap.mpr ⟨(y, .ref bt' r bk'), hpy_tl, by simp⟩
+        have := (List.nodup_cons.mp (by simpa only [List.filterMap_cons] using hnodup_refs)).1
+        contradiction
+    · rcases hpy with ⟨rfl, rfl⟩ | hpy_tl
+      · -- y is head, x in tail
+        exfalso
+        have : r ∈ tl.filterMap (fun (_, τ) => match τ with | .ref _ r' _ => some r' | _ => none) :=
+          List.mem_filterMap.mpr ⟨(x, .ref bt r bk), hpx_tl, by simp⟩
+        have := (List.nodup_cons.mp (by simpa only [List.filterMap_cons] using hnodup_refs)).1
+        contradiction
+      · exact ih hnodup_names_tl hnodup_refs_tl hpx_tl hpy_tl
+
 /-- The initial state of a well-typed function is safe.
     Requires that the function type-checks. If initState produces a .running state,
     it is well-typed; if it produces an error, it is not danglingRef. -/
@@ -782,35 +1018,118 @@ theorem initState_safe (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunD
       have htyped_entry := hblocks_typed ⟨entryLabel, entryBody⟩ hentry_in blockEnv hlookup
       -- blockEnv is well-formed
       have hblockEnv_wf := ha.lenv_wf entryLabel blockEnv hlookup
-      -- Construct WellTypedState with rmap that maps nothing
-      let rmap : RefMap := { map := fun _ => none }
+      -- Construct rmap from ref-typed params and their argument values
+      let paramRefEntries := (f.params.zip args).filterMap (fun ((_, τ), v) =>
+        match τ, v with
+        | .ref _ r _, .ref loc path => some (r, (loc, path))
+        | _, _ => none)
+      let rmap : RefMap := { map := fun r => List.lookup r paramRefEntries }
       -- Destructure equiv into components
       have hequiv_unf := hequiv
       unfold TypeEnv.equiv at hequiv_unf
       obtain ⟨_, hvar_compat, hrefs_equiv, hpaths_equiv⟩ := hequiv_unf
+      -- Key fact: blockEnv.varEnv = init_fun_varEnv f (exact, from entry_varEnv_exact)
+      have hvarEnv_exact : LookupEquiv blockEnv.varEnv (init_fun_varEnv f) :=
+        ha.entry_varEnv_exact ⟨entryLabel, entryBody⟩ blockEnv hhead hlookup
       -- Key facts used in multiple fields
-      have hrefs_eq : blockEnv.pathEnv.refs = [Aref.root] := by
+      have hrefs_eq : blockEnv.pathEnv.refs = (init_fun_pathEnv f).refs := by
         rw [hpathEnv] at hrefs_equiv; exact hrefs_equiv
       have hsiteEnv_empty : ∀ s, lookup blockEnv.siteEnv s = none :=
         ha.lenv_empty_sites entryLabel blockEnv hlookup
-      -- No ref types appear in blockEnv.varEnv valid entries
-      have hno_ref_in_varEnv : ∀ x bt r bk ms,
-          lookup blockEnv.varEnv x = some (.validVar, .ref bt r bk, ms) → False := by
-        intro x bt r bk ms hlookup_var
-        have hcompat := hvar_compat x
-        rw [hlookup_var, hvarEnv] at hcompat
-        cases hlookup_init : lookup (init_fun_varEnv f) x with
-        | none =>
-          rw [hlookup_init] at hcompat; exact hcompat
-        | some e2 =>
-          rw [hlookup_init] at hcompat
-          obtain ⟨isv₀, τ₀, ms₀⟩ := e2
-          have ⟨hisv, hcomp_t, _⟩ : VarEntryCompatible _ _ := hcompat
-          rw [← hisv] at hlookup_init
-          have hparam := init_fun_varEnv_valid_in_params f x τ₀ ms₀ hlookup_init
-          obtain ⟨bt', hbt'⟩ := ha.params_basic x τ₀ hparam
-          rw [hbt'] at hcomp_t
-          exact hcomp_t
+      -- Helper: from blockEnv valid var lookup, get the exact init type and param membership
+      have hvar_init_exact : ∀ x τ ms, lookup blockEnv.varEnv x = some (.validVar, τ, ms) →
+          lookup (init_fun_varEnv f) x = some (.validVar, τ, ms) ∧ (x, τ) ∈ f.params := by
+        intro x τ ms hlookup_var
+        have := hvarEnv_exact x
+        rw [hlookup_var] at this
+        have hlookup_init := this.symm
+        exact ⟨hlookup_init, init_fun_varEnv_valid_in_params f x τ ms hlookup_init⟩
+      -- Helper: List.lookup reverse direction
+      have list_lookup_mem : ∀ {K V : Type} [inst : BEq K] [inst2 : LawfulBEq K]
+          {l : List (K × V)} {k : K} {v : V},
+          l.lookup k = some v → (k, v) ∈ l := by
+        intro K V _ _ l k v h
+        induction l with
+        | nil => simp [List.lookup] at h
+        | cons hd tl ih =>
+          simp only [List.lookup] at h
+          split at h
+          · rename_i heq
+            have hk : k = hd.1 := beq_iff_eq.mp heq
+            have hv : hd.2 = v := by injection h
+            subst hk; subst hv; exact List.mem_cons_self ..
+          · exact List.mem_cons_of_mem _ (ih h)
+      -- Helper: rmap.map r = some (loc, path) implies membership in params.zip args
+      have hrmap_mem : ∀ r loc path, rmap.map r = some (loc, path) →
+          ∃ x bt bk, ((x, .ref bt r bk), .ref loc path) ∈ f.params.zip args := by
+        intro r loc path hrmap_eq
+        have hmem_entries : (r, (loc, path)) ∈ paramRefEntries :=
+          list_lookup_mem hrmap_eq
+        simp only [paramRefEntries, List.mem_filterMap] at hmem_entries
+        obtain ⟨⟨⟨x, τ⟩, v⟩, hmem_zip, hfm⟩ := hmem_entries
+        -- hfm : (match τ, v with | .ref _ r' _, .ref loc' path' => some ... | _, _ => none) = some ...
+        -- Only the .ref/.ref case produces `some`, all others give `none`
+        revert hfm
+        cases τ with
+        | basic _ => simp
+        | ref bt r' bk =>
+          cases v with
+          | int _ => simp
+          | bool _ => simp
+          | unit => simp
+          | record _ => simp
+          | ref loc' path' =>
+            intro hfm
+            simp only [Option.some.injEq, Prod.mk.injEq] at hfm
+            obtain ⟨rfl, rfl, rfl⟩ := hfm
+            exact ⟨x, bt, bk, hmem_zip⟩
+      -- Helper: ref param with arg → rmap maps it
+      have hrmap_of_param : ∀ x bt r bk loc path,
+          ((x, .ref bt r bk), .ref loc path) ∈ f.params.zip args →
+          rmap.map r = some (loc, path) := by
+        intro x bt r bk loc path hmem_zip
+        show List.lookup r paramRefEntries = some (loc, path)
+        have hmem_pre : (r, (loc, path)) ∈ paramRefEntries := by
+          simp only [paramRefEntries, List.mem_filterMap]
+          exact ⟨((x, .ref bt r bk), .ref loc path), hmem_zip, by simp⟩
+        have hkeys_nodup : (paramRefEntries.map Prod.fst).Nodup := by
+          have hmf : paramRefEntries.map Prod.fst =
+            (f.params.zip args).filterMap (fun ((_, τ), v) =>
+              match τ, v with | .ref _ r' _, .ref _ _ => some r' | _, _ => none) := by
+            simp only [paramRefEntries, List.map_filterMap]
+            congr 1
+            ext ⟨⟨_, τ⟩, v⟩
+            cases τ with
+            | basic _ => simp
+            | ref _ _ _ => cases v <;> simp
+          rw [hmf]
+          exact (paramRefKeys_sublist f.params args).nodup ha.param_refs_distinct
+        exact list_lookup_of_mem_nodup hmem_pre hkeys_nodup
+      -- Helper: allocArgs gives length equality + zip membership
+      have hlen_eq : f.params.length = args.length :=
+        allocArgs_length_eq heap f.params args heap' paramVarStore hallocArgs
+      have hmem_zip_of_param : ∀ x τ, (x, τ) ∈ f.params → ∃ v, ((x, τ), v) ∈ f.params.zip args :=
+        fun x τ h => exists_mem_zip_right hlen_eq h
+      -- Helper: .root ∈ (init_fun_pathEnv f).refs
+      have hroot_in_init : Aref.root ∈ (init_fun_pathEnv f).refs := by
+        simp only [init_fun_pathEnv]; exact List.Mem.head _
+      -- Helper: .root ∈ blockEnv.pathEnv.refs
+      have hroot_in_block : Aref.root ∈ blockEnv.pathEnv.refs :=
+        hrefs_eq ▸ hroot_in_init
+      -- Helper: heap'.readRef = heap.readRef for locations referenced by rmap
+      have hreadRef_preserved : ∀ r loc path, rmap.map r = some (loc, path) →
+          heap'.readRef loc path = heap.readRef loc path := by
+        intro r loc path hrmap_eq
+        obtain ⟨x, bt, bk, hmem_zip⟩ := hrmap_mem r loc path hrmap_eq
+        have hcompat := ha.args_compatible x (.ref bt r bk) (.ref loc path) hmem_zip
+        obtain ⟨_, _, hveq, _, hreadref, _⟩ := hcompat
+        cases hveq
+        have hread_ne : heap.read loc ≠ none := by
+          intro h; unfold Heap.readRef at hreadref; simp [h] at hreadref
+        have hloc := ha.heap_wf loc hread_ne
+        have hpreserve := allocArgs_preserves_old_read heap f.params args heap' paramVarStore
+          hallocArgs loc hloc
+        unfold Heap.readRef; rw [hpreserve]
       refine ⟨blockEnv, lenv, f.returnType, rmap, ?_, ?_⟩
       · -- WellTypedState
         exact {
@@ -818,54 +1137,75 @@ theorem initState_safe (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunD
           stmt_typed := htyped_entry
           var_consistent := by
             intro x isv τ ms hlookup_var
-            have hcompat := hvar_compat x
-            rw [hlookup_var, hvarEnv] at hcompat
-            cases hlookup_init : lookup (init_fun_varEnv f) x with
-            | none => rw [hlookup_init] at hcompat; exact hcompat.elim
-            | some e2 =>
-              rw [hlookup_init] at hcompat
-              obtain ⟨isv₀, τ₀, ms₀⟩ := e2
-              have ⟨hisv, hcomp_t, _⟩ : VarEntryCompatible _ _ := hcompat
-              cases isv with
-              | validVar =>
-                rw [← hisv] at hlookup_init
-                have hparam := init_fun_varEnv_valid_in_params f x τ₀ ms₀ hlookup_init
-                have hnot_local := init_fun_varEnv_valid_not_local f x τ₀ ms₀ hlookup_init
-                have ⟨loc, v, hstore, hread⟩ :=
-                  allocArgs_param_allocated heap f.params args heap' paramVarStore
-                    ha.heap_wf hallocArgs x τ₀ hparam
-                have hlookup_vs : lookup (addLocals paramVarStore f.locals) x = some (some loc) := by
-                  rw [addLocals_preserves_lookup paramVarStore f.locals x hnot_local]
-                  exact hstore
-                cases τ with
-                | basic bt =>
-                  -- Derive τ₀ = .basic bt from compatibility and params_basic
-                  have ⟨bt₀, hbt₀⟩ := ha.params_basic x τ₀ hparam
-                  rw [hbt₀] at hcomp_t
-                  change bt = bt₀ at hcomp_t
-                  subst hcomp_t; rw [hbt₀] at hparam
-                  have ⟨loc', w, hstore', hread_w, hht⟩ :=
-                    allocArgs_param_has_type heap f.params args heap' paramVarStore
-                      ha.heap_wf hallocArgs ha.args_typed ha.params_nodup x bt hparam
-                  have hloc_eq : loc' = loc := Option.some.inj (Option.some.inj (hstore'.symm.trans hstore))
-                  subst hloc_eq
-                  have : w = v := Option.some.inj (hread_w.symm.trans hread)
-                  subst this
-                  exact ⟨loc', w, hlookup_vs, hread, hht⟩
-                | ref bt r bk => exact absurd hlookup_var (by intro h; exact hno_ref_in_varEnv x bt r bk ms h)
-              | invalidVar =>
-                rw [← hisv] at hlookup_init
-                have hlocal := init_fun_varEnv_invalid_is_local f x τ₀ ms₀ hlookup_init
-                exact Or.inl (addLocals_local_some_none paramVarStore f.locals x hlocal)
+            have hlookup_init' : lookup (init_fun_varEnv f) x = some (isv, τ, ms) := by
+              rw [← hvarEnv_exact x]; exact hlookup_var
+            cases isv with
+            | validVar =>
+              have hparam := init_fun_varEnv_valid_in_params f x τ ms hlookup_init'
+              have hnot_local := init_fun_varEnv_valid_not_local f x τ ms hlookup_init'
+              -- Get corresponding arg via zip membership
+              have ⟨arg_v, hmem_zip⟩ := hmem_zip_of_param x τ hparam
+              -- allocArgs stores this exact arg at some location
+              have ⟨alloc_loc, hstore, hread⟩ :=
+                allocArgs_param_stores_arg heap f.params args heap' paramVarStore
+                  ha.heap_wf hallocArgs ha.params_nodup x τ arg_v hmem_zip
+              have hlookup_vs : lookup (addLocals paramVarStore f.locals) x = some (some alloc_loc) := by
+                rw [addLocals_preserves_lookup paramVarStore f.locals x hnot_local]
+                exact hstore
+              cases τ with
+              | basic bt =>
+                have hht := ha.args_compatible x (.basic bt) arg_v hmem_zip
+                exact ⟨alloc_loc, arg_v, hlookup_vs, hread, hht⟩
+              | ref bt r bk =>
+                have hcompat := ha.args_compatible x (.ref bt r bk) arg_v hmem_zip
+                obtain ⟨loc, path, hveq, val, hreadref, hht⟩ := hcompat
+                subst hveq
+                have hrmap_r := hrmap_of_param x bt r bk loc path hmem_zip
+                exact ⟨alloc_loc, .ref loc path, hlookup_vs, hread, loc, path, rfl, hrmap_r⟩
+            | invalidVar =>
+              have hlocal := init_fun_varEnv_invalid_is_local f x τ ms hlookup_init'
+              exact Or.inl (addLocals_local_some_none paramVarStore f.locals x hlocal)
           site_consistent := by
             intro s τ hlookup_s
             rw [hsiteEnv_empty s] at hlookup_s; cases hlookup_s
           rmap_live := by
-            intro r loc path hrmap
-            exact absurd hrmap nofun
+            intro r loc path hrmap_eq
+            obtain ⟨x, bt, bk, hmem_zip⟩ := hrmap_mem r loc path hrmap_eq
+            have hcompat := ha.args_compatible x (.ref bt r bk) (.ref loc path) hmem_zip
+            obtain ⟨_, _, hveq, val, hreadref, _⟩ := hcompat
+            cases hveq
+            rw [hreadRef_preserved r loc path hrmap_eq, hreadref]
+            exact fun h => nomatch h
           rmap_paths := by
-            intro r1 r2 _ _ p _
-            simp only [PathReflectedInHeap, rmap]
+            intro r1 r2 hr1 hr2 p hp
+            have hpaths_init := hpaths_equiv r1 r2 hr1 hr2
+            rw [hpathEnv] at hpaths_init
+            by_cases heq : r1 = r2
+            · subst heq
+              have hself : blockEnv.pathEnv.paths (r1, r1) = Regex.ε := by
+                rw [hpaths_init]; simp [init_fun_pathEnv]
+              rw [hself] at hp
+              have hp_nil := ha.lenv_self_loop entryLabel blockEnv hlookup r1 p (by rw [hself]; exact hp)
+              subst hp_nil
+              -- PathReflectedInHeap rmap heap' r1 r1 []
+              unfold PathReflectedInHeap
+              cases hrm : rmap.map r1 with
+              | none => exact True.intro
+              | some pair =>
+                obtain ⟨loc, path⟩ := pair
+                intro _
+                obtain ⟨x, bt, bk, hmz⟩ := hrmap_mem r1 loc path hrm
+                have hcompat : ∃ loc' path', Value.ref loc path = .ref loc' path' ∧
+                    (∃ val, heap.readRef loc' path' = some val ∧ HasType val bt) :=
+                  ha.args_compatible x (.ref bt r1 bk) (.ref loc path) hmz
+                obtain ⟨_, _, hveq, val, hrf, _⟩ := hcompat
+                cases hveq
+                refine ⟨(List.append_nil path).symm, ?_⟩
+                rw [hreadRef_preserved r1 loc path hrm, hrf]
+                exact fun h => nomatch h
+            · have hempty : blockEnv.pathEnv.paths (r1, r2) = Regex.empty := by
+                rw [hpaths_init]; simp [init_fun_pathEnv, heq]
+              rw [hempty] at hp; exact absurd hp id
           blocks_typed := by
             intro b hmem benv hlookup_b
             exact hblocks_typed b hmem benv hlookup_b
@@ -876,7 +1216,13 @@ theorem initState_safe (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunD
               hallocArgs ha.heap_wf
           varEnv_refs_in_pathEnv := by
             intro x bt r bk ms hlookup_var
-            exact absurd hlookup_var (by intro h; exact absurd h (by exact hno_ref_in_varEnv x bt r bk ms))
+            have ⟨_, hparam⟩ := hvar_init_exact x (.ref bt r bk) ms hlookup_var
+            have hr_in_init : r ∈ (init_fun_pathEnv f).refs := by
+              simp only [init_fun_pathEnv]
+              apply List.mem_cons_of_mem
+              simp only [List.mem_filterMap]
+              exact ⟨(x, .ref bt r bk), hparam, by simp⟩
+            exact hrefs_eq ▸ hr_in_init
           siteEnv_refs_in_pathEnv := by
             intro s bt r bk hlookup_s
             rw [hsiteEnv_empty s] at hlookup_s; cases hlookup_s
@@ -889,29 +1235,61 @@ theorem initState_safe (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunD
             · -- site-site: siteEnv empty
               intro s s' bt bt' bk bk' _ hlookup_s _
               rw [hsiteEnv_empty s] at hlookup_s; cases hlookup_s
-            · -- var-var: no ref types in valid vars
-              intro x y bt bt' bk bk' ms ms' _ hlookup_x _
-              exact hno_ref_in_varEnv x bt r bk ms hlookup_x
+            · -- var-var: from param_refs_distinct
+              intro x y bt bt' bk bk' ms ms' hne hlookup_x hlookup_y
+              have ⟨_, hpx⟩ := hvar_init_exact x (.ref bt r bk) ms hlookup_x
+              have ⟨_, hpy⟩ := hvar_init_exact y (.ref bt' r bk') ms' hlookup_y
+              exact absurd (nodup_filterMap_params_same_ref f.params ha.params_nodup
+                ha.param_refs_distinct hpx hpy) hne
           rmap_root_none := by
-            simp only [rmap]
+            show rmap.map Aref.root = none
+            by_contra h
+            have ⟨pair, hpair⟩ := Option.ne_none_iff_exists'.mp h
+            obtain ⟨rloc, rpath⟩ := pair
+            obtain ⟨x, bt, bk, hmem_zip⟩ := hrmap_mem Aref.root rloc rpath hpair
+            exact ha.param_refs_not_root x bt Aref.root bk (List.of_mem_zip hmem_zip).1 rfl
           no_paths_to_root := by
             intro u p hp
             by_cases hu : u = Aref.root
             · constructor
               · exact hu
               · have hpaths : blockEnv.pathEnv.paths (.root, .root) = Regex.ε := by
-                  have h := hequiv.2.2.2 .root .root
-                    (hrefs_eq ▸ .head []) (hrefs_eq ▸ .head [])
-                  rw [hpathEnv] at h; exact h
+                  have h := hpaths_equiv .root .root hroot_in_block hroot_in_block
+                  rw [hpathEnv] at h; simp [init_fun_pathEnv] at h; exact h
                 rw [hu, hpaths] at hp; exact hp
-            · -- u ≠ .root → u ∉ refs → paths(u, .root) = .empty → False
-              have hu_not_in : u ∉ blockEnv.pathEnv.refs := by
-                rw [hrefs_eq]; simp; exact hu
-              have hempty := hblockEnv_wf.pathEnv_wf.from_untracked_to_root_empty u hu_not_in hu
-              rw [hempty] at hp; exact hp.elim
+            · have hpaths_empty : blockEnv.pathEnv.paths (u, .root) = Regex.empty := by
+                by_cases hu_in : u ∈ blockEnv.pathEnv.refs
+                · have h := hpaths_equiv u .root hu_in hroot_in_block
+                  rw [hpathEnv] at h
+                  simp only [init_fun_pathEnv, hu, ↓reduceIte] at h
+                  exact h
+                · exact hblockEnv_wf.pathEnv_wf.from_untracked_to_root_empty u hu_in hu
+              rw [hpaths_empty] at hp; exact hp.elim
           root_path_coherence := by
-            intro v y rest _ _ loc_v path_v hrmap_v
-            exact absurd hrmap_v nofun
+            intro v y rest hv_in hp loc_v path_v hrmap_v loc_y hlookup_y
+            -- paths(.root, v) from init_fun_pathEnv is .empty for v ≠ .root, ε for v = .root
+            -- ε only matches p = [], not (.root_to_var y :: rest)
+            by_cases hv : v = Aref.root
+            · -- v = .root: paths(.root, .root) = ε, only matches []
+              subst hv
+              have hpaths : blockEnv.pathEnv.paths (.root, .root) = Regex.ε := by
+                have h := hpaths_equiv .root .root hroot_in_block hroot_in_block
+                rw [hpathEnv] at h; simp [init_fun_pathEnv] at h; exact h
+              rw [hpaths] at hp
+              -- hp : interpret_regex ε (.root_to_var y :: rest) = False for non-empty path
+              have := ha.lenv_self_loop entryLabel blockEnv hlookup .root
+                (.root_to_var y :: rest) (by rw [hpaths]; exact hp)
+              exact absurd this (by simp)
+            · -- v ≠ .root: paths(.root, v) = .empty
+              have hpaths_empty : blockEnv.pathEnv.paths (.root, v) = Regex.empty := by
+                by_cases hv_in' : v ∈ blockEnv.pathEnv.refs
+                · have h := hpaths_equiv .root v hroot_in_block hv_in'
+                  rw [hpathEnv] at h
+                  have hroot_ne_v : Aref.root ≠ v := fun heq => hv heq.symm
+                  simp only [init_fun_pathEnv, show ¬(Aref.root = v) from hroot_ne_v, ite_false] at h
+                  exact h
+                · exact hblockEnv_wf.pathEnv_wf.refs_complete v hv_in'
+              rw [hpaths_empty] at hp; exact hp.elim
           paths_from_non_member_empty :=
             ha.lenv_paths_from_non_member entryLabel blockEnv hlookup
           paths_to_non_member_empty :=
@@ -919,8 +1297,20 @@ theorem initState_safe (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunD
           self_loop_only_empty :=
             ha.lenv_self_loop entryLabel blockEnv hlookup
           rmap_has_type := by
-            intro r bt loc path hrmap
-            exact absurd hrmap nofun
+            intro r bt loc path hrmap_eq hor
+            rcases hor with ⟨x, bk, ms, hlookup_x⟩ | ⟨s, bk, hlookup_s⟩
+            · have ⟨_, hparam⟩ := hvar_init_exact x (.ref bt r bk) ms hlookup_x
+              have ⟨arg_v, hmem_zip⟩ := hmem_zip_of_param x (.ref bt r bk) hparam
+              have hcompat : ∃ loc' path', arg_v = .ref loc' path' ∧
+                  (∃ val, heap.readRef loc' path' = some val ∧ HasType val bt) :=
+                ha.args_compatible x (.ref bt r bk) arg_v hmem_zip
+              obtain ⟨loc', path', hveq, val, hreadref, hht⟩ := hcompat
+              subst hveq
+              have hrmap_r := hrmap_of_param x bt r bk loc' path' hmem_zip
+              rw [hrmap_eq] at hrmap_r; cases hrmap_r
+              rw [hreadRef_preserved r loc path hrmap_eq]
+              exact ⟨val, hreadref, hht⟩
+            · rw [hsiteEnv_empty s] at hlookup_s; cases hlookup_s
         }
       · -- StackSafe [] none heap' = True
         simp only [StackSafe]

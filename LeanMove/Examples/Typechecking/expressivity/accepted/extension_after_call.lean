@@ -165,7 +165,7 @@ def fn_write : FunDef := {
 def fn_borrow_initEnvDec : TypeEnvDec := {
   siteEnv := AssocMap.empty
   varEnv := init_fun_varEnv fn_borrow
-  pathEnv := .init
+  pathEnv := init_fun_pathEnvDec fn_borrow.params
   funEnv := AssocMap.empty
 }
 
@@ -175,7 +175,7 @@ def fn_borrow_lenvDec : LabelEnvDec :=
 def fn_write_initEnvDec : TypeEnvDec := {
   siteEnv := AssocMap.empty
   varEnv := init_fun_varEnv fn_write
-  pathEnv := .init
+  pathEnv := init_fun_pathEnvDec fn_write.params
   funEnv := AssocMap.empty
 }
 

@@ -17,7 +17,6 @@
 import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
-import LeanMove.Typing.TypeChecking
 import LeanMove.Typing.Algorithmic.DecidableTypeEnv
 import LeanMove.Lang.Macros
 
@@ -176,6 +175,7 @@ def t : FunDef := {
       body :=
         -- _ = move(x) -- release x
         (letsite s6 ← move var_x) ;;
+        (release s6) ;;                 -- release moved ref to remove from path graph
         -- *(&mut (&mut copy(root).Tree::l).Sub1::r) = Sub2 { l: 0, r: 0 }
         -- This is safe because root.l.r is not borrowed
         (letsite s7 ← copy var_root) ;;
@@ -205,80 +205,106 @@ def t_branch_varEnv : VarEnv :=
   update ve var_cond (.invalidVar, .basic .tbool, .mutable)
 
 -- VarEnv at l3 entry (x,y assigned/valid; cond still invalid)
+-- Checker assigns refid 5 to x and refid 8 to y in both branches
 def t_l3_varEnv : VarEnv :=
   let ve := t_branch_varEnv
   let ve := update ve var_x (.validVar, .ref (.trecord sub1_entries) (.refid 5) .siteBorrowMut, .mutable)
   update ve var_y (.validVar, .ref .u64 (.refid 8) .siteBorrowMut, .mutable)
 
--- PathEnvDec at l3 entry: union of paths from l1 (field_l) and l2 (field_r)
--- Refs: 4=copy(root), 5=borrow(Sub1), 6=copy(x), 7=borrow(Sub2), 8=borrow(u64)
-def t_l3_pathEnvDec : PathEnvDec :=
-  -- Forward paths: concat ε (char (.field f))
-  let fl := Regex.concat Regex.ε (Regex.char (PathElement.field field_l))
-  let fr := Regex.concat Regex.ε (Regex.char (PathElement.field field_r))
-  let fl2 := Regex.concat fl (Regex.char (PathElement.field field_l))
-  let fr2 := Regex.concat fr (Regex.char (PathElement.field field_r))
-  let fl3 := Regex.concat fl2 (Regex.char (PathElement.field field_l))
-  let fr3 := Regex.concat fr2 (Regex.char (PathElement.field field_r))
-  -- Reverse derivative paths: deriv ε (.field f)
-  let dfl := Regex.deriv Regex.ε (PathElement.field field_l)
-  let dfr := Regex.deriv Regex.ε (PathElement.field field_r)
-  let dfl2 := Regex.deriv dfl (PathElement.field field_l)
-  let dfr2 := Regex.deriv dfr (PathElement.field field_r)
-  let dfl3 := Regex.deriv dfl2 (PathElement.field field_l)
-  let dfr3 := Regex.deriv dfr2 (PathElement.field field_r)
-  { refs := [.refid 8, .refid 7, .refid 6, .refid 5, .refid 4, .root]
-    paths := ⟨[
-      -- Forward paths: parent → child (via field borrows)
-      -- 4→5, 4→6
-      ((.refid 4, .refid 5), Regex.union fl fr),
-      ((.refid 4, .refid 6), Regex.union fl fr),
-      -- 5↔6 (epsilon copy)
-      ((.refid 5, .refid 6), Regex.ε),
-      ((.refid 6, .refid 5), Regex.ε),
-      -- 6→7, 5→7 (borrow from Sub1)
-      ((.refid 6, .refid 7), Regex.union fl fr),
-      ((.refid 5, .refid 7), Regex.union fl fr),
-      -- 7→8 (borrow from Sub2)
-      ((.refid 7, .refid 8), Regex.union fl fr),
-      -- 2-hop forward: 4→7, 5→8, 6→8
-      ((.refid 4, .refid 7), Regex.union fl2 fr2),
-      ((.refid 5, .refid 8), Regex.union fl2 fr2),
-      ((.refid 6, .refid 8), Regex.union fl2 fr2),
-      -- 3-hop forward: 4→8
-      ((.refid 4, .refid 8), Regex.union fl3 fr3),
-      -- Reverse derivative paths (child → parent)
-      ((.refid 5, .refid 4), Regex.union dfl dfr),
-      ((.refid 6, .refid 4), Regex.union dfl dfr),
-      ((.refid 7, .refid 6), Regex.union dfl dfr),
-      ((.refid 7, .refid 5), Regex.union dfl dfr),
-      ((.refid 8, .refid 7), Regex.union dfl dfr),
-      -- 2-hop reverse: 7→4, 8→6, 8→5
-      ((.refid 7, .refid 4), Regex.union dfl2 dfr2),
-      ((.refid 8, .refid 6), Regex.union dfl2 dfr2),
-      ((.refid 8, .refid 5), Regex.union dfl2 dfr2),
-      -- 3-hop reverse: 8→4
-      ((.refid 8, .refid 4), Regex.union dfl3 dfr3)
-    ]⟩ }
+-- Regex helpers matching the structural forms produced by the checker.
+-- Forward paths: extend ε by field chars
+private def fl := Regex.concat Regex.ε (Regex.char (PathElement.field field_l))
+private def fr := Regex.concat Regex.ε (Regex.char (PathElement.field field_r))
+private def fl2 := Regex.concat fl (Regex.char (PathElement.field field_l))
+private def fr2 := Regex.concat fr (Regex.char (PathElement.field field_r))
+private def fl3 := Regex.concat fl2 (Regex.char (PathElement.field field_l))
+private def fr3 := Regex.concat fr2 (Regex.char (PathElement.field field_r))
 
--- Label environment (decidable)
+-- Reverse paths: Brzozowski derivatives of ε
+private def dfl := Regex.deriv Regex.ε (PathElement.field field_l)
+private def dfr := Regex.deriv Regex.ε (PathElement.field field_r)
+private def dfl2 := Regex.deriv dfl (PathElement.field field_l)
+private def dfr2 := Regex.deriv dfr (PathElement.field field_r)
+private def dfl3 := Regex.deriv dfl2 (PathElement.field field_l)
+private def dfr3 := Regex.deriv dfr2 (PathElement.field field_r)
+
+-- Abbreviations for ref pairs
+private def r4 : Aref := .refid 4
+private def r5 : Aref := .refid 5
+private def r6 : Aref := .refid 6
+private def r7 : Aref := .refid 7
+private def r8 : Aref := .refid 8
+
+-- l3 PathEnvDec: paths computed from both branches (l1 uses field_l, l2 uses field_r).
+-- At jump "l3", the checker produces pathEnv.refs = [r8, r7, r6, r5, r4, .root, .refid 0].
+-- The l3 paths are unions of the left (field_l) and right (field_r) branch paths.
+-- Self-loops (ε) and root paths (empty) are handled automatically by toPathEnv.
+def t_l3_pathEnvDec : PathEnvDec :=
+  { refs := [r8, r7, r6, r5, r4, .root, .refid 0]
+    paths :=
+      (AssocMap.empty
+      -- r0 ↔ r4: ε (copy alias, same in both branches)
+      |>.insert (.refid 0, .refid 4) Regex.ε
+      |>.insert (.refid 4, .refid 0) Regex.ε
+      -- r0 ↔ r5: union fl fr / union dfl dfr
+      |>.insert (.refid 0, r5) (.union fl fr)
+      |>.insert (r5, .refid 0) (.union dfl dfr)
+      -- r0 ↔ r6: union fl fr / union dfl dfr (r6 is alias of r5)
+      |>.insert (.refid 0, r6) (.union fl fr)
+      |>.insert (r6, .refid 0) (.union dfl dfr)
+      -- r0 ↔ r7: union fl2 fr2 / union dfl2 dfr2
+      |>.insert (.refid 0, r7) (.union fl2 fr2)
+      |>.insert (r7, .refid 0) (.union dfl2 dfr2)
+      -- r0 ↔ r8: union fl3 fr3 / union dfl3 dfr3
+      |>.insert (.refid 0, r8) (.union fl3 fr3)
+      |>.insert (r8, .refid 0) (.union dfl3 dfr3)
+      -- r4 ↔ r5: union fl fr / union dfl dfr
+      |>.insert (.refid 4, r5) (.union fl fr)
+      |>.insert (r5, .refid 4) (.union dfl dfr)
+      -- r4 ↔ r6: union fl fr / union dfl dfr
+      |>.insert (.refid 4, r6) (.union fl fr)
+      |>.insert (r6, .refid 4) (.union dfl dfr)
+      -- r5 ↔ r6: ε (alias, same in both branches)
+      |>.insert (r5, r6) Regex.ε
+      |>.insert (r6, r5) Regex.ε
+      -- r5 ↔ r7: union fl fr / union dfl dfr
+      |>.insert (r5, r7) (.union fl fr)
+      |>.insert (r7, r5) (.union dfl dfr)
+      -- r5 ↔ r8: union fl2 fr2 / union dfl2 dfr2
+      |>.insert (r5, r8) (.union fl2 fr2)
+      |>.insert (r8, r5) (.union dfl2 dfr2)
+      -- r6 ↔ r7: union fl fr / union dfl dfr
+      |>.insert (r6, r7) (.union fl fr)
+      |>.insert (r7, r6) (.union dfl dfr)
+      -- r6 ↔ r8: union fl2 fr2 / union dfl2 dfr2
+      |>.insert (r6, r8) (.union fl2 fr2)
+      |>.insert (r8, r6) (.union dfl2 dfr2)
+      -- r7 ↔ r8: union fl fr / union dfl dfr
+      |>.insert (r7, r8) (.union fl fr)
+      |>.insert (r8, r7) (.union dfl dfr)
+      -- r4 ↔ r7: union fl2 fr2 / union dfl2 dfr2
+      |>.insert (.refid 4, r7) (.union fl2 fr2)
+      |>.insert (r7, .refid 4) (.union dfl2 dfr2)
+      -- r4 ↔ r8: union fl3 fr3 / union dfl3 dfr3
+      |>.insert (.refid 4, r8) (.union fl3 fr3)
+      |>.insert (r8, .refid 4) (.union dfl3 dfr3))
+  }
+
+-- Decidable label environment
 def t_lenvDec : LabelEnvDec :=
   insert (insert (insert (insert AssocMap.empty
     "l0" { siteEnv := AssocMap.empty, varEnv := init_fun_varEnv t,
-           pathEnv := .init, funEnv := AssocMap.empty })
+           pathEnv := init_fun_pathEnvDec t.params, funEnv := AssocMap.empty })
     "l1" { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
-           pathEnv := .init, funEnv := AssocMap.empty })
+           pathEnv := init_fun_pathEnvDec t.params, funEnv := AssocMap.empty })
     "l2" { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
-           pathEnv := .init, funEnv := AssocMap.empty })
+           pathEnv := init_fun_pathEnvDec t.params, funEnv := AssocMap.empty })
     "l3" { siteEnv := AssocMap.empty, varEnv := t_l3_varEnv,
            pathEnv := t_l3_pathEnvDec, funEnv := AssocMap.empty }
 
--- Theorem: t type checks algorithmically
+-- Theorem: t is well-typed (algorithmic, decidable)
+set_option maxRecDepth 8192 in
 theorem t_check : check_fun_dec t t_lenvDec = true := by rfl
-
--- -----------------------------------------------------
--- -           Relational Type Checking Theorems      --
--- -----------------------------------------------------
 
 -- Main theorem: t is well-typed (relational)
 theorem t_welltyped : ∃ lenv, typecheck_fun t lenv :=

@@ -1121,7 +1121,7 @@ theorem check_fun_sound (f : FunDef) (lenv : LabelEnv)
       let initEnv : TypeEnv := {
         varEnv := init_fun_varEnv f
         siteEnv := AssocMap.empty
-        pathEnv := PathEnv.init
+        pathEnv := init_fun_pathEnv f
         funEnv := AssocMap.empty
       }
       apply typecheck_fun.fun_ok f lenv initEnv

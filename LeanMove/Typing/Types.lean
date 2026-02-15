@@ -151,6 +151,28 @@ def PathEnv.init : PathEnv :=
   { refs := [.root],
     paths := fun (u, v) => if u = v then Regex.ε else Regex.empty }
 
+/-- Initial PathEnv for a function: includes .root and all abstract refs from ref-typed params.
+    For functions with only basic-typed params, this equals `PathEnv.init` definitionally. -/
+def init_fun_pathEnv (f : FunDef) : PathEnv :=
+  let paramRefs := f.params.filterMap (fun (_, τ) => match τ with
+    | .ref _ r _ => some r
+    | _ => none)
+  { refs := .root :: paramRefs,
+    paths := fun (u, v) => if u = v then Regex.ε else Regex.empty }
+
+/-- When all parameters have basic types, `init_fun_pathEnv f = PathEnv.init`. -/
+lemma init_fun_pathEnv_basic (f : FunDef)
+    (hbasic : ∀ x τ, (x, τ) ∈ f.params → ∃ bt, τ = .basic bt) :
+    init_fun_pathEnv f = PathEnv.init := by
+  simp only [init_fun_pathEnv, PathEnv.init]
+  have hnil : f.params.filterMap (fun (_, τ) => match τ with
+    | .ref _ r _ => some r | _ => none) = [] := by
+    rw [List.filterMap_eq_nil_iff]
+    intro ⟨x, τ⟩ hmem
+    obtain ⟨bt, hbt⟩ := hbasic x τ hmem
+    simp [hbt]
+  simp [hnil]
+
 -- Check that the property p holds for all paths from s to tracked refs in penv
 def check_outbound (penv: PathEnv) (s: Aref) (p: Regex PathElement → Prop) :=
   forall s', s' ∈ penv.refs → p (penv.paths  (s, s'))

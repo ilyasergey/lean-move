@@ -360,7 +360,7 @@ def fields_write : FunDef := {
 def fields_initEnvDec : TypeEnvDec := {
   siteEnv := AssocMap.empty
   varEnv := init_fun_varEnv fields
-  pathEnv := .init
+  pathEnv := init_fun_pathEnvDec fields.params
   funEnv := AssocMap.empty
 }
 
@@ -370,7 +370,7 @@ def fields_lenvDec : LabelEnvDec :=
 def fields_write_initEnvDec : TypeEnvDec := {
   siteEnv := AssocMap.empty
   varEnv := init_fun_varEnv fields_write
-  pathEnv := .init
+  pathEnv := init_fun_pathEnvDec fields_write.params
   funEnv := AssocMap.empty
 }
 

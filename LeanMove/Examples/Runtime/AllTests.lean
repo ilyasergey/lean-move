@@ -102,6 +102,18 @@ private theorem deref_borrow_foo_no_danglingRef :
     ∀ n loc, run n (initState foo moduleFunEnv []) ≠ .error (.danglingRef loc) :=
   type_soundness_dec foo foo_lenvDec moduleFunEnv module_fte [] Heap.empty (by rfl)
 
+-- M.t(this: &M.T) — reads field f from immutable ref, halts
+private def mtHeap : Heap × Loc :=
+  Heap.empty.alloc (.record [(⟨"f"⟩, .int 42)])
+
+#guard (run 100 (initState M_t moduleFunEnv [.ref mtHeap.2 []] mtHeap.1)).isHalted
+
+-- Type soundness: M_t never produces a danglingRef error (ref-typed param)
+set_option maxRecDepth 4096 in
+private theorem deref_borrow_M_t_no_danglingRef :
+    ∀ n loc, run n (initState M_t moduleFunEnv [.ref mtHeap.2 []] mtHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec M_t M_t_lenvDec moduleFunEnv module_fte [.ref mtHeap.2 []] mtHeap.1 (by rfl)
+
 end
 
 -- ============================================================
@@ -168,8 +180,17 @@ private def boxHeap : Heap × Loc :=
 #guard (run 100 (initState fn_borrow AssocMap.empty [.ref boxHeap.2 []] boxHeap.1)).isHalted
 #guard (run 200 (initState fn_write AssocMap.empty [.ref boxHeap.2 []] boxHeap.1)).isHalted
 
--- Note: type_soundness_dec requires all params to be basic types.
--- fn_borrow and fn_write take ref-typed params, so type_soundness_dec is not applicable here.
+-- Type soundness: fn_borrow never produces a danglingRef error (ref-typed param)
+set_option maxRecDepth 4096 in
+private theorem fn_borrow_no_danglingRef :
+    ∀ n loc, run n (initState fn_borrow empty [.ref boxHeap.2 []] boxHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec fn_borrow fn_borrow_lenvDec empty empty [.ref boxHeap.2 []] boxHeap.1 (by rfl)
+
+-- Type soundness: fn_write never produces a danglingRef error (ref-typed param)
+set_option maxRecDepth 4096 in
+private theorem fn_write_no_danglingRef :
+    ∀ n loc, run n (initState fn_write empty [.ref boxHeap.2 []] boxHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec fn_write fn_write_lenvDec empty empty [.ref boxHeap.2 []] boxHeap.1 (by rfl)
 
 end
 
@@ -188,8 +209,16 @@ private def twoStructsHeap : Heap × Loc × Loc :=
 #guard (run 200 (initState t AssocMap.empty [.bool true, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1)).isHalted
 #guard (run 200 (initState t AssocMap.empty [.bool false, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1)).isHalted
 
--- Note: type_soundness_dec requires all params to be basic types.
--- t takes ref-typed params (var_a, var_b), so type_soundness_dec is not applicable here.
+-- Type soundness: t never produces a danglingRef error (two ref-typed params)
+set_option maxRecDepth 4096 in
+private theorem ext_writes_join_t_true_no_danglingRef :
+    ∀ n loc, run n (initState t empty [.bool true, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec t t_lenvDec empty empty [.bool true, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1 (by rfl)
+
+set_option maxRecDepth 4096 in
+private theorem ext_writes_join_t_false_no_danglingRef :
+    ∀ n loc, run n (initState t empty [.bool false, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec t t_lenvDec empty empty [.bool false, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1 (by rfl)
 
 end
 
@@ -225,8 +254,17 @@ private def pointHeap : Heap × Loc :=
 #guard (run 200 (initState borrow AssocMap.empty [.ref pointHeap.2 []] pointHeap.1)).isHalted
 #guard (run 200 (initState write AssocMap.empty [.ref pointHeap.2 []] pointHeap.1)).isHalted
 
--- Note: type_soundness_dec requires all params to be basic types.
--- borrow and write take ref-typed params, so type_soundness_dec is not applicable here.
+-- Type soundness: borrow never produces a danglingRef error (ref-typed param)
+set_option maxRecDepth 4096 in
+private theorem borrow_no_danglingRef :
+    ∀ n loc, run n (initState borrow empty [.ref pointHeap.2 []] pointHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec borrow borrow_lenvDec empty empty [.ref pointHeap.2 []] pointHeap.1 (by rfl)
+
+-- Type soundness: write never produces a danglingRef error (ref-typed param)
+set_option maxRecDepth 4096 in
+private theorem write_no_danglingRef :
+    ∀ n loc, run n (initState write empty [.ref pointHeap.2 []] pointHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec write write_lenvDec empty empty [.ref pointHeap.2 []] pointHeap.1 (by rfl)
 
 end
 
@@ -244,8 +282,17 @@ private def pairHeap : Heap × Loc :=
 #guard (run 300 (initState fields AssocMap.empty [.ref pairHeap.2 []] pairHeap.1)).isHalted
 #guard (run 500 (initState fields_write AssocMap.empty [.ref pairHeap.2 []] pairHeap.1)).isHalted
 
--- Note: type_soundness_dec requires all params to be basic types.
--- fields and fields_write take ref-typed params, so type_soundness_dec is not applicable here.
+-- Type soundness: fields never produces a danglingRef error (ref-typed param)
+set_option maxRecDepth 8192 in
+private theorem fields_no_danglingRef :
+    ∀ n loc, run n (initState fields empty [.ref pairHeap.2 []] pairHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec fields fields_lenvDec empty empty [.ref pairHeap.2 []] pairHeap.1 (by rfl)
+
+-- Type soundness: fields_write never produces a danglingRef error (ref-typed param)
+set_option maxRecDepth 8192 in
+private theorem fields_write_no_danglingRef :
+    ∀ n loc, run n (initState fields_write empty [.ref pairHeap.2 []] pairHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec fields_write fields_write_lenvDec empty empty [.ref pairHeap.2 []] pairHeap.1 (by rfl)
 
 end
 
@@ -263,8 +310,16 @@ private def treeHeap : Heap × Loc :=
 #guard (run 300 (initState t AssocMap.empty [.bool true, .ref treeHeap.2 []] treeHeap.1)).isHalted
 #guard (run 300 (initState t AssocMap.empty [.bool false, .ref treeHeap.2 []] treeHeap.1)).isHalted
 
--- Note: type_soundness_dec requires all params to be basic types.
--- t takes ref-typed params (var_root), so type_soundness_dec is not applicable here.
+-- Type soundness: t never produces a danglingRef error (bool + ref-typed params)
+set_option maxRecDepth 16384 in
+private theorem subtree_t_true_no_danglingRef :
+    ∀ n loc, run n (initState t empty [.bool true, .ref treeHeap.2 []] treeHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec t t_lenvDec empty empty [.bool true, .ref treeHeap.2 []] treeHeap.1 (by rfl)
+
+set_option maxRecDepth 16384 in
+private theorem subtree_t_false_no_danglingRef :
+    ∀ n loc, run n (initState t empty [.bool false, .ref treeHeap.2 []] treeHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec t t_lenvDec empty empty [.bool false, .ref treeHeap.2 []] treeHeap.1 (by rfl)
 
 end
 

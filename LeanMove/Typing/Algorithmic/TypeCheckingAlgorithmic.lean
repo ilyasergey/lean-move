@@ -417,7 +417,7 @@ def check_fun (f : FunDef) (lenv : LabelEnv) : Bool :=
   let initEnv : TypeEnv := {
     varEnv := initVarEnv,
     siteEnv := AssocMap.empty,
-    pathEnv := PathEnv.init,
+    pathEnv := init_fun_pathEnv f,
     funEnv := AssocMap.empty
   }
   match f.blocks with

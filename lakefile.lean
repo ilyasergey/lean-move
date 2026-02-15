@@ -58,3 +58,8 @@ lean_lib «examples» where
 lean_lib «runtime» where
   srcDir := "LeanMove/Examples/Runtime"
   roots := #[`AllTests]
+
+-- Build everything: core libraries, examples, and runtime tests
+-- Build with: lake build all
+lean_lib «all» where
+  roots := #[`LeanMove, `LeanMove.Examples.Runtime.AllTests]

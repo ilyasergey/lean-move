@@ -190,7 +190,7 @@ def M_t : FunDef := {
 def M_t_lenvDec : LabelEnvDec :=
   insert empty "b0"
     { siteEnv := empty, varEnv := init_fun_varEnv M_t,
-      pathEnv := .init, funEnv := module_funEnv }
+      pathEnv := init_fun_pathEnvDec M_t.params, funEnv := module_funEnv }
 
 -- Test theorem: M.t type checks algorithmically
 theorem M_t_check : check_fun_dec M_t M_t_lenvDec = true := by rfl
