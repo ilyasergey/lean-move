@@ -15,7 +15,6 @@
 -/
 
 import Batteries.Data.HashMap
-import Ssreflect.Lang
 import LeanMove.Structures.DecidableEquality
 
 /- -----------------------------------------------------

@@ -14,7 +14,6 @@
  limitations under the License.
 -/
 import Batteries.Data.HashMap
-import Ssreflect.Lang
 
 import LeanMove.Structures.AssocMap
 import LeanMove.Structures.Regex

@@ -15,7 +15,6 @@
 -/
 
 import Batteries.Data.HashMap
-import Ssreflect.Lang
 
 /- A data structure for mapping pairs of identifiers to regular expressions -/
 

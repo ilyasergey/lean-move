@@ -14,7 +14,6 @@
  limitations under the License.
 -/
 
-import Ssreflect.Lang
 
 /-!
 # List Utility Lemmas

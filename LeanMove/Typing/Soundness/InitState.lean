@@ -380,6 +380,30 @@ where
       | some v => hasType_bool v bt && checkFields fields rest
       | none => false
 
+-- Manual simp lemmas for hasType_bool (equational theorem generation
+-- fails for where-clause mutual definitions in Lean 4.27)
+@[simp] theorem hasType_bool_int_u64 (n) : hasType_bool (.int n) .u64 = true := rfl
+@[simp] theorem hasType_bool_bool_tbool (b) : hasType_bool (.bool b) .tbool = true := rfl
+@[simp] theorem hasType_bool_unit_tunit : hasType_bool .unit .tunit = true := rfl
+@[simp] theorem hasType_bool_record_trecord (fields fentries) :
+    hasType_bool (.record fields) (.trecord fentries) = hasType_bool.checkFields fields fentries.entries := rfl
+@[simp] theorem hasType_bool_int_tbool (n) : hasType_bool (.int n) .tbool = false := rfl
+@[simp] theorem hasType_bool_int_tunit (n) : hasType_bool (.int n) .tunit = false := rfl
+@[simp] theorem hasType_bool_int_trecord (n m) : hasType_bool (.int n) (.trecord m) = false := rfl
+@[simp] theorem hasType_bool_bool_u64 (b) : hasType_bool (.bool b) .u64 = false := rfl
+@[simp] theorem hasType_bool_bool_tunit (b) : hasType_bool (.bool b) .tunit = false := rfl
+@[simp] theorem hasType_bool_bool_trecord (b m) : hasType_bool (.bool b) (.trecord m) = false := rfl
+@[simp] theorem hasType_bool_unit_u64 : hasType_bool .unit .u64 = false := rfl
+@[simp] theorem hasType_bool_unit_tbool : hasType_bool .unit .tbool = false := rfl
+@[simp] theorem hasType_bool_unit_trecord (m) : hasType_bool .unit (.trecord m) = false := rfl
+@[simp] theorem hasType_bool_record_u64 (f) : hasType_bool (.record f) .u64 = false := rfl
+@[simp] theorem hasType_bool_record_tbool (f) : hasType_bool (.record f) .tbool = false := rfl
+@[simp] theorem hasType_bool_record_tunit (f) : hasType_bool (.record f) .tunit = false := rfl
+@[simp] theorem hasType_bool_ref_u64 (l p) : hasType_bool (.ref l p) .u64 = false := rfl
+@[simp] theorem hasType_bool_ref_tbool (l p) : hasType_bool (.ref l p) .tbool = false := rfl
+@[simp] theorem hasType_bool_ref_tunit (l p) : hasType_bool (.ref l p) .tunit = false := rfl
+@[simp] theorem hasType_bool_ref_trecord (l p m) : hasType_bool (.ref l p) (.trecord m) = false := rfl
+
 mutual
   theorem hasType_bool_sound : ∀ (v : Value) (bt : BasicMoveType),
       hasType_bool v bt = true → HasType v bt
@@ -387,7 +411,7 @@ mutual
     | .bool b, .tbool, _ => HasType.bool b
     | .unit, .tunit, _ => HasType.unit
     | .record fields, .trecord fentries, h => by
-        simp only [hasType_bool] at h
+        simp only [hasType_bool_record_trecord] at h
         exact HasType.record fields fentries
           (by
             intro f hne
@@ -403,22 +427,22 @@ mutual
               (lookup_some fentries f bt' hlookup)
             rw [hfield] at hv''; simp only [Option.some.injEq] at hv''; subst hv''
             exact hht)
-    | .int _, .tbool, h => by simp [hasType_bool] at h
-    | .int _, .tunit, h => by simp [hasType_bool] at h
-    | .int _, .trecord _, h => by simp [hasType_bool] at h
-    | .bool _, .u64, h => by simp [hasType_bool] at h
-    | .bool _, .tunit, h => by simp [hasType_bool] at h
-    | .bool _, .trecord _, h => by simp [hasType_bool] at h
-    | .unit, .u64, h => by simp [hasType_bool] at h
-    | .unit, .tbool, h => by simp [hasType_bool] at h
-    | .unit, .trecord _, h => by simp [hasType_bool] at h
-    | .record _, .u64, h => by simp [hasType_bool] at h
-    | .record _, .tbool, h => by simp [hasType_bool] at h
-    | .record _, .tunit, h => by simp [hasType_bool] at h
-    | .ref _ _, .u64, h => by simp [hasType_bool] at h
-    | .ref _ _, .tbool, h => by simp [hasType_bool] at h
-    | .ref _ _, .tunit, h => by simp [hasType_bool] at h
-    | .ref _ _, .trecord _, h => by simp [hasType_bool] at h
+    | .int _, .tbool, h => by simp at h
+    | .int _, .tunit, h => by simp at h
+    | .int _, .trecord _, h => by simp at h
+    | .bool _, .u64, h => by simp at h
+    | .bool _, .tunit, h => by simp at h
+    | .bool _, .trecord _, h => by simp at h
+    | .unit, .u64, h => by simp at h
+    | .unit, .tbool, h => by simp at h
+    | .unit, .trecord _, h => by simp at h
+    | .record _, .u64, h => by simp at h
+    | .record _, .tbool, h => by simp at h
+    | .record _, .tunit, h => by simp at h
+    | .ref _ _, .u64, h => by simp at h
+    | .ref _ _, .tbool, h => by simp at h
+    | .ref _ _, .tunit, h => by simp at h
+    | .ref _ _, .trecord _, h => by simp at h
   termination_by v bt _ => sizeOf v + sizeOf bt
   decreasing_by all_goals (simp_wf; rcases fentries with ⟨e⟩; simp [AssocMap.mk.sizeOf_spec]; omega)
 

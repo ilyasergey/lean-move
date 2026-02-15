@@ -15,7 +15,6 @@
 
 -/
 
-import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Typing.TypeChecking

@@ -14,7 +14,6 @@
  limitations under the License.
 -/
 
-import Ssreflect.Lang
 import LeanMove.Structures.ListUtils
 
 namespace Regex

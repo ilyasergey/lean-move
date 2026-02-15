@@ -15,7 +15,6 @@
 -/
 
 import Batteries.Data.HashMap
-import Ssreflect.Lang
 import Aesop
 import Mathlib.Tactic.Convert
 
@@ -75,7 +74,7 @@ instance {K V : Type} [Hashable K] [Hashable V] : Hashable (AssocMap K V) where
 instance {K V : Type} [DecidableEq K] [DecidableEq V] : DecidableEq (AssocMap K V) :=
   fun m1 m2 =>
     match decEq m1.entries m2.entries with
-    | isTrue h => isTrue (by sby move: m1 m2 h=>[e1][e2])
+    | isTrue h => isTrue (by cases m1; cases m2; congr)
     | isFalse h => isFalse (fun h' => h (by cases h'; rfl))
 
 -- function to check that all keys are unique
@@ -86,12 +85,17 @@ def uniqueKeys {K V : Type} [DecidableEq K] (self : AssocMap K V) : Bool :=
 
 theorem lookup_some {K V : Type} [DecidableEq K] (m : AssocMap K V) (k : K) (v : V) :
   lookup m k = some v → (k, v) ∈ m.entries := by
-  move=>H1
-  scase: m H1; elim=>//==; unfold lookup =>[|a b//== es Hi H1]
-  { sdone }
-  move: H1
-  unfold lookup=>//==; simp [List.lookup]
-  aesop
+  rcases m with ⟨entries⟩
+  simp only [lookup]
+  intro h
+  induction entries with
+  | nil => simp [List.lookup] at h
+  | cons hd tl ih =>
+    simp only [List.lookup] at h
+    obtain ⟨a, b⟩ := hd
+    split at h
+    · cases h; simp_all [BEq.beq]
+    · exact List.Mem.tail _ (ih h)
 
 
 theorem notIn_uniqueKeys_insert {K V : Type} [DecidableEq K] (m : AssocMap K V) (k : K) (v : V) :

@@ -249,15 +249,15 @@ lemma delete_ref_node_refs (pe : PathEnv) (r : Aref) :
 
 lemma delete_ref_node_paths_involving_r (pe : PathEnv) (r : Aref) (u v : Aref) :
     u = r ∨ v = r → (delete_ref_node pe r).paths (u, v) = Regex.empty := by
-  move=> h
+  intro h
   simp only [delete_ref_node]
-  scase: h => hr
+  rcases h with hr | hr
   · simp [hr]
   · simp [hr]
 
 lemma delete_ref_node_paths_not_involving_r (pe : PathEnv) (r : Aref) (u v : Aref) :
     u ≠ r → v ≠ r → (delete_ref_node pe r).paths (u, v) = pe.paths (u, v) := by
-  move=> hu hv
+  intro hu hv
   simp only [delete_ref_node]
   simp [hu, hv]
 
