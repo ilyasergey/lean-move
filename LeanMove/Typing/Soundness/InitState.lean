@@ -15,6 +15,7 @@
 -/
 
 import LeanMove.Typing.Soundness.SafeExec
+import LeanMove.Typing.Algorithmic.DecidableTypeEnv
 
 /-!
 # Type Soundness: Initial State Safety
@@ -409,16 +410,20 @@ structure SoundnessAssumptions (f : FunDef) (lenv : LabelEnv) (heap : Heap) wher
 
 /-- Boolean check for the decidable fields of `SoundnessAssumptions`.
     `lenv_wf` is excluded because `TypeEnv.WellFormed` involves function-valued
-    `PathEnv.paths` and requires the decidable type environment representation. -/
-def SoundnessAssumptions.checkDecidable (f : FunDef) (lenv : LabelEnv) (heap : Heap) : Bool :=
+    `PathEnv.paths` and requires the decidable type environment representation.
+    All other fields — including path non-member and self-loop properties — are
+    checked here. -/
+def SoundnessAssumptions.checkDecidable (f : FunDef) (lenvDec : LabelEnvDec) (heap : Heap) : Bool :=
   -- params_basic: all parameter types are basic
   f.params.all (fun (_, τ) => match τ with | .basic _ => true | _ => false) &&
   -- heap_wf: all locations in heap store are below nextLoc
   heap.store.entries.all (fun (loc, _) => decide (loc < heap.nextLoc)) &&
   -- lenv_empty_sites: all siteEnvs in lenv entries are empty
-  lenv.entries.all (fun (_, env) => env.siteEnv.isEmpty) &&
+  lenvDec.entries.all (fun (_, ted) => ted.siteEnv.isEmpty) &&
   -- lenv_complete: every block label appears in lenv
-  f.blocks.all (fun block => lenv.entries.any (fun (l, _) => l == block.label))
+  f.blocks.all (fun block => lenvDec.entries.any (fun (l, _) => l == block.label)) &&
+  -- lenv_allWellFormed: PathEnvDec well-formedness (enables non-member / self-loop properties)
+  lenvDec.allWellFormed_bool
 
 -- Helper: if some entry has a matching key, List.lookup succeeds
 private theorem any_beq_implies_list_lookup {K V : Type} [DecidableEq K]
@@ -439,27 +444,50 @@ private theorem any_beq_implies_list_lookup {K V : Type} [DecidableEq K]
       · exact ih htail
       · exact ⟨v, rfl⟩
 
+/-- Helper: extract a TypeEnvDec entry from a LabelEnvDec lookup via toLabelEnv -/
+private theorem toLabelEnv_lookup_some (lenvDec : LabelEnvDec) (l : Label) (env : TypeEnv)
+    (hlookup : lookup lenvDec.toLabelEnv l = some env) :
+    ∃ ted, lookup lenvDec l = some ted ∧ env = ted.toTypeEnv := by
+  simp only [LabelEnvDec.toLabelEnv, lookup_mapValues] at hlookup
+  cases hlenv : lookup lenvDec l with
+  | none => simp [hlenv] at hlookup
+  | some ted => simp [hlenv, Option.map] at hlookup; exact ⟨ted, rfl, hlookup.symm⟩
+
 /-- Soundness of the decidable check: given `lenv_wf` separately, the boolean
-    check yields the full `SoundnessAssumptions`. -/
-theorem SoundnessAssumptions.of_check (f : FunDef) (lenv : LabelEnv) (heap : Heap)
-    (hlenv_wf : ∀ l env, lookup lenv l = some env → TypeEnv.WellFormed env)
-    (hlenv_from : ∀ l env, lookup lenv l = some env →
-      ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
-      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
-    (hlenv_to : ∀ l env, lookup lenv l = some env →
-      ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
-      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
-    (hlenv_self_loop : ∀ l env, lookup lenv l = some env →
-      ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
-    (hcheck : SoundnessAssumptions.checkDecidable f lenv heap = true) :
-    SoundnessAssumptions f lenv heap where
+    check yields the full `SoundnessAssumptions`. Path non-member and self-loop
+    properties are derived from `allWellFormed_bool` inside `checkDecidable`. -/
+theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec) (heap : Heap)
+    (hlenv_wf : ∀ l env, lookup lenvDec.toLabelEnv l = some env → TypeEnv.WellFormed env)
+    (hcheck : SoundnessAssumptions.checkDecidable f lenvDec heap = true) :
+    SoundnessAssumptions f lenvDec.toLabelEnv heap where
   lenv_wf := hlenv_wf
-  lenv_paths_from_non_member := hlenv_from
-  lenv_paths_to_non_member := hlenv_to
-  lenv_self_loop := hlenv_self_loop
+  lenv_paths_from_non_member := by
+    simp only [checkDecidable, Bool.and_eq_true] at hcheck
+    obtain ⟨_, hwf⟩ := hcheck
+    intro l env hlookup
+    obtain ⟨ted, hted, rfl⟩ := toLabelEnv_lookup_some lenvDec l env hlookup
+    simp only [LabelEnvDec.allWellFormed_bool, List.all_eq_true] at hwf
+    have hwf_ted := hwf (l, ted) (lookup_some lenvDec l ted hted)
+    simp only [TypeEnvDec.wellFormed_bool, Bool.and_eq_true] at hwf_ted
+    exact PathEnvDec.toPathEnv_non_member_from ted.pathEnv hwf_ted.1.1
+  lenv_paths_to_non_member := by
+    simp only [checkDecidable, Bool.and_eq_true] at hcheck
+    obtain ⟨_, hwf⟩ := hcheck
+    intro l env hlookup
+    obtain ⟨ted, hted, rfl⟩ := toLabelEnv_lookup_some lenvDec l env hlookup
+    simp only [LabelEnvDec.allWellFormed_bool, List.all_eq_true] at hwf
+    have hwf_ted := hwf (l, ted) (lookup_some lenvDec l ted hted)
+    simp only [TypeEnvDec.wellFormed_bool, Bool.and_eq_true] at hwf_ted
+    exact PathEnvDec.toPathEnv_non_member_to ted.pathEnv hwf_ted.1.1
+  lenv_self_loop := by
+    intro l env hlookup u p hp
+    obtain ⟨ted, _, rfl⟩ := toLabelEnv_lookup_some lenvDec l env hlookup
+    simp only [TypeEnvDec.toTypeEnv, PathEnvDec.toPathEnv] at hp
+    simp only [↓reduceIte, interpret_regex] at hp
+    exact hp
   params_basic := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨hp, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨hp, _⟩, _⟩, _⟩, _⟩ := hcheck
     simp only [List.all_eq_true] at hp
     intro x τ hmem
     have := hp (x, τ) hmem
@@ -468,7 +496,7 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenv : LabelEnv) (heap : Hea
     | ref _ _ _ => simp at this
   heap_wf := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨_, hh⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨_, hh⟩, _⟩, _⟩, _⟩ := hcheck
     simp only [List.all_eq_true] at hh
     intro loc hread
     unfold Heap.read at hread
@@ -478,24 +506,28 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenv : LabelEnv) (heap : Hea
       exact decide_eq_true_eq.mp (hh (loc, v) (lookup_some heap.store loc v hlookup))
   lenv_empty_sites := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨_, hs⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨_, hs⟩, _⟩, _⟩ := hcheck
     simp only [List.all_eq_true] at hs
     intro l env hlookup s
-    have hmem := lookup_some lenv l env hlookup
-    have hchk := hs (l, env) hmem
-    have hempty : env.siteEnv.entries = [] := by
-      cases h : env.siteEnv.entries with
+    obtain ⟨ted, hted, rfl⟩ := toLabelEnv_lookup_some lenvDec l env hlookup
+    have hchk := hs (l, ted) (lookup_some lenvDec l ted hted)
+    have hempty : ted.siteEnv.entries = [] := by
+      cases h : ted.siteEnv.entries with
       | nil => rfl
       | cons _ _ => simp [AssocMap.isEmpty, h] at hchk
-    show AssocMap.lookup env.siteEnv s = none
+    show AssocMap.lookup ted.siteEnv s = none
     simp only [AssocMap.lookup, hempty, List.lookup]
   lenv_complete := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨_, hc⟩ := hcheck
+    obtain ⟨⟨_, hc⟩, _⟩ := hcheck
     simp only [List.all_eq_true] at hc
     intro block hmem
-    have := hc block hmem
-    exact any_beq_implies_list_lookup lenv.entries block.label this
+    have hany := hc block hmem
+    obtain ⟨ted, hted⟩ := any_beq_implies_list_lookup lenvDec.entries block.label hany
+    exact ⟨ted.toTypeEnv, by
+      simp only [LabelEnvDec.toLabelEnv, lookup_mapValues]
+      show (lookup lenvDec block.label).map TypeEnvDec.toTypeEnv = some ted.toTypeEnv
+      rw [show lookup lenvDec block.label = some ted from hted]; rfl⟩
 
 -- ============================================================
 -- Part 11c: initState_safe
