@@ -369,6 +369,38 @@ private lemma foldlM_pack_sound
           exact ih _ hfold tl_nodup hmem'
       | ref _ _ _ => simp [hlk] at hfold
 
+/-- If the pack fold succeeds from empty init, every key in the result comes from some field -/
+private lemma foldlM_pack_complete
+    (siteEnv : SiteEnv) (fields : List (Field × Site))
+    (init fentries : AssocMap Field BasicMoveType)
+    (hfold : fields.foldlM (fun acc (p : Field × Site) =>
+      match AssocMap.lookup siteEnv p.2 with
+      | some (.basic bt) => some (AssocMap.insert acc p.1 bt)
+      | _ => none) init = some fentries)
+    (f : Field) (hne : lookup fentries f ≠ none)
+    (hinit : lookup init f = none) :
+    ∃ a, (f, a) ∈ fields := by
+  induction fields generalizing init with
+  | nil =>
+    simp only [List.foldlM, pure, Option.some.injEq] at hfold
+    subst hfold; exact absurd hinit hne
+  | cons hd tl ih =>
+    obtain ⟨f', s'⟩ := hd
+    simp only [List.foldlM, bind, Option.bind] at hfold
+    cases hlk : lookup siteEnv s' with
+    | none => simp [hlk] at hfold
+    | some mt =>
+      cases mt with
+      | basic bt =>
+        simp [hlk] at hfold
+        by_cases heq : f = f'
+        · exact ⟨s', by subst heq; exact List.mem_cons_self⟩
+        · have hinit' : lookup (insert init f' bt) f = none := by
+            rw [lookup_insert_ne _ f' f bt heq]; exact hinit
+          obtain ⟨a, ha⟩ := ih _ hfold hinit'
+          exact ⟨a, List.mem_cons_of_mem _ ha⟩
+      | ref _ _ _ => simp [hlk] at hfold
+
 /- ---------------------------------------------------- -/
 /-       Field distinctness lemma                        -/
 /- ---------------------------------------------------- -/
@@ -743,6 +775,10 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
           intro f a' hmem
           exact foldlM_pack_sound env.siteEnv fields AssocMap.empty fentries hfold
             (check_fields_distinct_implies_fnames_nodup fields hdistinct) hmem
+        · -- Every fentries key comes from fields
+          intro f hne
+          exact foldlM_pack_complete env.siteEnv fields AssocMap.empty fentries hfold f hne
+            (by simp [AssocMap.lookup, AssocMap.empty])
         · exact check_fields_distinct_implies_sites_distinct fields hdistinct
         · have hwf' := TypeEnv.deleteAll_insert_wf env (fields.map Prod.snd) a (.basic (.trecord fentries)) hwf trivial
           exact ih_cont _ hwf' h
@@ -882,31 +918,45 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
         simp only at h
         split at h
         · rename_i hms
-          split at h
-          · rename_i hfresh_ax
-            let r := nextFreshRefInEnv env
-            let ax : Site := .site (env.siteEnv.entries.length)
-            apply typecheck_stmt.var_assign_valid (τ := τ) (ms := ms) (r := r) (ax := ax)
-            · simp only [beq_iff_eq] at hms; simp only [hms, LE.le, Mut.le]
-            · exact hlookup
-            · exact hfresh_ax
-            · exact nextFreshRefInEnv_fresh env
-            · exact nextFreshRefInEnv_not_varRef env
-            · have hr_not_root : r ≠ Aref.root := nextFreshRefInEnv_not_root env
-              have hr_not_varRef : ∀ v, r ≠ Aref.varRef v := nextFreshRefInEnv_not_varRef env
-              have hpe' := update_with_extension_wellformed r .root [.root_to_var x] _
-                (update_with_epsilon_wellformed r r env.pathEnv hwf.pathEnv_wf hr_not_root hr_not_varRef) hr_not_root hr_not_varRef
-              have hpe_gc := garbage_collect_wellformed _ r hpe' hr_not_root
-              have hsenv_ins := SiteEnv.insert_refs_not_root env.siteEnv ax (.ref τ r .siteBorrowMut) hwf.siteEnv_wf
-                (by exact hr_not_root)
-              have hsenv_del1 := SiteEnv.delete_refs_not_root _ a hsenv_ins
-              have hsenv_del2 := SiteEnv.delete_refs_not_root _ ax hsenv_del1
-              let env' : TypeEnv := {env with
-                siteEnv := delete (delete (insert env.siteEnv ax (.ref τ r .siteBorrowMut)) a) ax
-                pathEnv := garbage_collect (update_with_extension r .root [.root_to_var x] (update_with_epsilon r r env.pathEnv)) r}
-              have hwf' : TypeEnv.WellFormed env' := ⟨hpe_gc, hsenv_del2, hwf.varEnv_wf⟩
-              exact ih_cont env' hwf' h
-          · simp at h
+          cases hlookup_a : lookup env.siteEnv a with
+          | none => simp [hlookup_a] at h
+          | some mt_a =>
+            cases mt_a with
+            | basic τ' =>
+              simp only [hlookup_a] at h
+              split at h
+              · rename_i hτ_beq
+                split at h
+                · rename_i hfresh_ax
+                  let r := nextFreshRefInEnv env
+                  let ax : Site := .site (env.siteEnv.entries.length)
+                  have hτ_eq : τ = τ' := BasicMoveType.eq_of_beq _ _ hτ_beq
+                  have ha_type : lookup env.siteEnv a = some (.basic τ) := by
+                    rw [hτ_eq]; exact hlookup_a
+                  apply typecheck_stmt.var_assign_valid (τ := τ) (ms := ms) (r := r) (ax := ax)
+                  · simp only [beq_iff_eq] at hms; simp only [hms, LE.le, Mut.le]
+                  · exact hlookup
+                  · exact ha_type
+                  · exact hfresh_ax
+                  · exact nextFreshRefInEnv_fresh env
+                  · exact nextFreshRefInEnv_not_varRef env
+                  · have hr_not_root : r ≠ Aref.root := nextFreshRefInEnv_not_root env
+                    have hr_not_varRef : ∀ v, r ≠ Aref.varRef v := nextFreshRefInEnv_not_varRef env
+                    have hpe' := update_with_extension_wellformed r .root [.root_to_var x] _
+                      (update_with_epsilon_wellformed r r env.pathEnv hwf.pathEnv_wf hr_not_root hr_not_varRef) hr_not_root hr_not_varRef
+                    have hpe_gc := garbage_collect_wellformed _ r hpe' hr_not_root
+                    have hsenv_ins := SiteEnv.insert_refs_not_root env.siteEnv ax (.ref τ r .siteBorrowMut) hwf.siteEnv_wf
+                      (by exact hr_not_root)
+                    have hsenv_del1 := SiteEnv.delete_refs_not_root _ a hsenv_ins
+                    have hsenv_del2 := SiteEnv.delete_refs_not_root _ ax hsenv_del1
+                    let env' : TypeEnv := {env with
+                      siteEnv := delete (delete (insert env.siteEnv ax (.ref τ r .siteBorrowMut)) a) ax
+                      pathEnv := garbage_collect (update_with_extension r .root [.root_to_var x] (update_with_epsilon r r env.pathEnv)) r}
+                    have hwf' : TypeEnv.WellFormed env' := ⟨hpe_gc, hsenv_del2, hwf.varEnv_wf⟩
+                    exact ih_cont env' hwf' h
+                · simp at h
+              · simp at h
+            | ref _ _ _ => simp [hlookup_a] at h
         · simp at h
       | (.validVar, .ref _ _ _, _) => simp at h
       | (.invalidVar, τ, .mutable) =>

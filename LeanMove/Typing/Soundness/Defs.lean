@@ -44,16 +44,37 @@ open Regex
 -- ============================================================
 
 /-- A runtime `Value` is shape-compatible with a static `BasicMoveType`.
-    For the danglingRef proof we only need structural compatibility
-    (correct variant + record fields exist), not full recursive typing. -/
-def HasType : Value → BasicMoveType → Prop
-  | .int _, .u64 => True
-  | .bool _, .tbool => True
-  | .unit, .tunit => True
-  | .record fields, .trecord fentries =>
-      -- Every field in the type has a corresponding value field
-      (∀ f, lookup fentries f ≠ none → fields.lookup f ≠ none)
-  | _, _ => False
+    Recursive: for records, sub-field values must also have matching types.
+    Split into two hypotheses to avoid nested inductive issues with ∃. -/
+inductive HasType : Value → BasicMoveType → Prop where
+  | int : ∀ n, HasType (.int n) .u64
+  | bool : ∀ b, HasType (.bool b) .tbool
+  | unit : HasType .unit .tunit
+  | record : ∀ fields fentries,
+      (∀ f, lookup fentries f ≠ none → fields.lookup f ≠ none) →
+      (∀ f bt v, lookup fentries f = some bt → fields.lookup f = some v → HasType v bt) →
+      HasType (.record fields) (.trecord fentries)
+
+/-- If a value has record type, it must be a record. -/
+theorem HasType.record_fields {v : Value} {fentries : AssocMap Field BasicMoveType} :
+    HasType v (.trecord fentries) → ∃ fields, v = .record fields := by
+  intro h; cases h with
+  | record fields _ _ _ => exact ⟨fields, rfl⟩
+
+/-- readPath at a typed field succeeds and the sub-value has the field type. -/
+theorem HasType.readPath_field {fields : List (Field × Value)}
+    {fentries : AssocMap Field BasicMoveType} {f : Field} {bt : BasicMoveType} :
+    HasType (.record fields) (.trecord fentries) →
+    lookup fentries f = some bt →
+    ∃ vf, readPath (.record fields) [f] = some vf ∧ HasType vf bt := by
+  intro h hlookup
+  cases h with
+  | record _ _ hexists htyped =>
+    have hne : fields.lookup f ≠ none := hexists f (by rw [hlookup]; simp)
+    cases hfl : fields.lookup f with
+    | none => exact absurd hfl hne
+    | some vf =>
+      exact ⟨vf, by simp [readPath, hfl], htyped f bt vf hlookup hfl⟩
 
 -- ============================================================
 -- Part 2: Reference Map
@@ -65,11 +86,11 @@ structure RefMap where
   map : Aref → Option (Loc × List Field)
 
 /-- A value matches a MoveType, given a reference map for resolving abstract refs.
-    For basic types, we use True since danglingRef safety only requires ref tracking.
+    For basic types, the value must have that basic type (via `HasType`).
     For ref types, we track the concrete location via the rmap. -/
 def ValueMatchesType (v : Value) (τ : MoveType) (rmap : RefMap) : Prop :=
   match τ with
-  | .basic _bt => True
+  | .basic bt => HasType v bt
   | .ref _bt r _bk =>
     ∃ loc path, v = .ref loc path ∧ rmap.map r = some (loc, path)
 
@@ -228,6 +249,27 @@ theorem heap_alloc_preserves_read (h : Heap) (v : Value) (loc : Loc) :
   simp only [Heap.alloc, Heap.read]
   exact AssocMap.lookup_insert_ne h.store h.nextLoc loc v hne
 
+/-- If readRef at (loc, path) yields a record with a typed field,
+    then readRef at (loc, path ++ [f]) succeeds. -/
+theorem HasType.readRef_field_ne_none {fentries : AssocMap Field BasicMoveType}
+    {bt : BasicMoveType} (heap : Heap) (loc : Loc) (path : List Field) (f : Field) :
+    (∃ v, heap.readRef loc path = some v ∧ HasType v (.trecord fentries)) →
+    lookup fentries f = some bt →
+    heap.readRef loc (path ++ [f]) ≠ none := by
+  intro ⟨v, hread, htyped⟩ hlookup
+  obtain ⟨fields, hv_eq⟩ := HasType.record_fields htyped
+  rw [hv_eq] at hread htyped
+  obtain ⟨vf, hreadpath, _⟩ := HasType.readPath_field htyped hlookup
+  -- readRef loc (path ++ [f]) decomposes via readPath_append
+  simp only [Heap.readRef, bind, Option.bind] at hread ⊢
+  cases hbase : heap.read loc with
+  | none => simp [hbase] at hread
+  | some baseVal =>
+    simp [hbase] at hread ⊢
+    rw [readPath_append, hread, Option.bind]
+    rw [hreadpath]
+    simp
+
 -- ============================================================
 -- Part 4: PathEnv–Heap Coherence
 -- ============================================================
@@ -362,6 +404,15 @@ structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
 
   -- 20. Self-loops only accept the empty path
   self_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = []
+
+  -- 21. Rmap entries have matching heap types:
+  --     If an abstract ref maps to (loc, path) and has basic type bt in the env,
+  --     then the heap value at that location has type bt.
+  rmap_has_type : ∀ r bt loc path,
+    rmap.map r = some (loc, path) →
+    ((∃ x bk ms, lookup env.varEnv x = some (.validVar, .ref bt r bk, ms)) ∨
+     (∃ s bk, lookup env.siteEnv s = some (.ref bt r bk))) →
+    ∃ v, m.heap.readRef loc path = some v ∧ HasType v bt
 
 /-- Stack safety: each frame on the stack can be safely restored after ret.
     Defined by structural recursion on the stack. -/

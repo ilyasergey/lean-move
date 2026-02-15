@@ -350,13 +350,18 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType : MoveType)
     match lookup env.varEnv x with
     | some (.validVar, .basic τ, ms) =>
       if ms == .mutable then
-        let ax : Site := .site (env.siteEnv.entries.length)
-        if notIn env.siteEnv ax then
-          let r := nextFreshRefInEnv env
-          let env' := {env with siteEnv := delete (delete (insert env.siteEnv ax (.ref τ r .siteBorrowMut)) a) ax
-                                pathEnv := garbage_collect (update_with_extension r .root [.root_to_var x] (update_with_epsilon r r env.pathEnv)) r}
-          check_stmt lenv env' cont retType
-        else none
+        match lookup env.siteEnv a with
+        | some (.basic τ') =>
+          if τ == τ' then
+            let ax : Site := .site (env.siteEnv.entries.length)
+            if notIn env.siteEnv ax then
+              let r := nextFreshRefInEnv env
+              let env' := {env with siteEnv := delete (delete (insert env.siteEnv ax (.ref τ r .siteBorrowMut)) a) ax
+                                    pathEnv := garbage_collect (update_with_extension r .root [.root_to_var x] (update_with_epsilon r r env.pathEnv)) r}
+              check_stmt lenv env' cont retType
+            else none
+          else none
+        | _ => none
       else none
     | some (.invalidVar, τ, .mutable) =>
       match lookup env.siteEnv a with

@@ -426,6 +426,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       (∀ f a, (f, a) ∈ fields →
          ∃ (bt : BasicMoveType), lookup env.siteEnv a = some (.basic bt) ∧
                                  lookup fentries f = some bt) →
+      (∀ f, lookup fentries f ≠ none → ∃ a, (f, a) ∈ fields) →
       (∀ a₁ a₂, (∃ f₁ f₂, (f₁, a₁) ∈ fields ∧ (f₂, a₂) ∈ fields ∧ f₁ ≠ f₂) → a₁ ≠ a₂) →
       typecheck_stmt lenv
         {env with siteEnv := insert (deleteAll env.siteEnv (fields.map Prod.snd)) b (.basic (.trecord fentries))}
@@ -450,6 +451,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
   | var_assign_valid : ∀ (lenv : LabelEnv) (env : TypeEnv) x a ax τ ms (r : Aref) cont retType,
       LE.le .mutable ms →
       lookup env.varEnv x = some (.validVar, .basic τ, ms) →
+      lookup env.siteEnv a = some (.basic τ) →
       notIn env.siteEnv ax →
       freshRefInEnvBool r env →
       (∀ v, r ≠ .varRef v) →

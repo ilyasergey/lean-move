@@ -19,7 +19,7 @@ import Ssreflect.Lang
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Typing.TypeChecking
-import LeanMove.Typing.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Typing.Algorithmic.DecidableTypeEnv
 import LeanMove.Lang.Macros
 
 -- -----------------------------------------------------
@@ -136,86 +136,18 @@ def M_new : FunDef := {
   ]
 }
 
--- Initial environment for M.new: parameter g is a valid mutable int variable
-def M_new_initEnv : TypeEnv := {
-  siteEnv := AssocMap.empty
-  varEnv := init_varEnv_from_params [(var_g, .basic .u64)]
-  pathEnv := PathEnv.init
-  funEnv := module_funEnv
-}
+-- Decidable label environment for M.new
+def M_new_lenvDec : LabelEnvDec :=
+  insert empty "b0"
+    { siteEnv := empty, varEnv := init_fun_varEnv M_new,
+      pathEnv := .init, funEnv := module_funEnv }
 
--- LabelEnv for M.new: maps "b0" to the initial environment
-def M_new_lenv : LabelEnv :=
-  AssocMap.insert AssocMap.empty "b0" M_new_initEnv
+-- Test theorem: M.new type checks algorithmically
+theorem M_new_check : check_fun_dec M_new M_new_lenvDec = true := by rfl
 
--- Test theorem 1
-theorem M_new_check: check_fun M_new M_new_lenv := by rfl
-
--- Theorem: M.new is well-typed
-theorem M_new_welltyped : ∃ lenv, typecheck_fun M_new lenv := by
-  exists M_new_lenv
-  apply typecheck_fun.fun_ok (initEnv := M_new_initEnv)
-  · rfl  -- initEnv.varEnv
-  · rfl  -- initEnv.siteEnv
-  · rfl  -- initEnv.pathEnv
-  · simp only [M_new]; intro h; exact List.noConfusion h  -- blocks ≠ []
-  · -- Entry block environment equivalence (now 2-tuple Block)
-    intro entryLabel entryBody entryEnv hhead hlookup
-    simp only [M_new, List.head?] at hhead
-    injection hhead with hblock
-    have h1 : entryLabel = "b0" := (congrArg Block.label hblock).symm
-    subst h1
-    simp only [M_new_lenv, AssocMap.insert, AssocMap.lookup] at hlookup
-    injection hlookup with heq
-    rw [← heq]
-    unfold TypeEnv.equiv
-    refine ⟨LookupEquiv.refl _, VarEnvLookupCompatible.refl _, rfl, ?_⟩
-    intros; rfl
-  · -- Every block must type check
-    intro block hmem blockEnv hlookup
-    simp only [M_new, List.mem_singleton] at hmem
-    subst hmem
-    simp only [M_new_lenv, AssocMap.insert, AssocMap.lookup] at hlookup
-    injection hlookup with heq
-    subst heq
-    unfold typecheck_block
-
-    -- Body: letBind s0 (move g) (letBind s1 (pack ...) (ret [s1]))
-    -- Type check follows CPS structure: let_bind_move -> let_bind_pack -> ret
-    apply typecheck_stmt.let_bind_move
-    · rfl  -- lookup varEnv var_g
-    · -- not_borrowed var_g env
-      unfold not_borrowed
-      intro r
-      simp only [M_new_initEnv, PathEnv.init]
-      split
-      · simp only [Regex.interpret_regex]; intro h; cases h
-      · simp only [Regex.interpret_regex]; exact id
-    · rfl  -- notIn siteEnv s0
-    · -- continuation: letBind s1 (pack ...) (ret [s1])
-      apply typecheck_stmt.let_bind_pack (fentries := AssocMap.insert AssocMap.empty field_f .u64)
-      · rfl  -- s1 not in env1.siteEnv
-      · -- All field sites exist with correct types
-        intro f a hmem
-        simp at hmem
-        obtain ⟨hf, ha⟩ := hmem
-        subst hf ha
-        exists .u64
-      · -- All field sites distinct
-        intro a1 a2 hexists
-        obtain ⟨f1, f2, h1, h2, hne⟩ := hexists
-        simp at h1 h2
-        have hf1 : f1 = field_f := h1.1
-        have hf2 : f2 = field_f := h2.1
-        rw [hf1, hf2] at hne
-        exact absurd rfl hne
-      · -- continuation: ret [s1]
-        apply typecheck_stmt.ret
-        · -- All return sites have compatible type
-          intro a ha
-          simp only [List.mem_singleton] at ha
-          subst ha
-          exact ⟨_, rfl, rfl⟩
+-- Theorem: M.new is well-typed (via algorithmic soundness)
+theorem M_new_welltyped : ∃ lenv, typecheck_fun M_new lenv :=
+  ⟨_, check_fun_dec_sound _ _ M_new_check⟩
 
 -- -----------------------------------------------------
 -- -                     M.t                          --
@@ -239,7 +171,7 @@ theorem M_new_welltyped : ∃ lenv, typecheck_fun M_new lenv := by
   - return
 -/
 def M_t : FunDef := {
-  params := [(var_this, .ref M_T_basic (.varRef var_this) .siteBorrowImm)]
+  params := [(var_this, .ref M_T_basic (.refid 0) .siteBorrowImm)]
   returnType := .basic .tunit
   locals := [{ name := var_y, type := .basic .u64 }]
   blocks := [
@@ -254,89 +186,18 @@ def M_t : FunDef := {
   ]
 }
 
--- Initial environment for M_t: parameter this is a valid immutable ref, local y is invalid
-def M_t_initEnv : TypeEnv := {
-  siteEnv := AssocMap.empty
-  varEnv := init_fun_varEnv M_t
-  pathEnv := PathEnv.init
-  funEnv := module_funEnv
-}
+-- Decidable label environment for M.t
+def M_t_lenvDec : LabelEnvDec :=
+  insert empty "b0"
+    { siteEnv := empty, varEnv := init_fun_varEnv M_t,
+      pathEnv := .init, funEnv := module_funEnv }
 
--- LabelEnv for M_t: maps "b0" to the initial environment
-def M_t_lenv : LabelEnv :=
-  AssocMap.insert AssocMap.empty "b0" M_t_initEnv
+-- Test theorem: M.t type checks algorithmically
+theorem M_t_check : check_fun_dec M_t M_t_lenvDec = true := by rfl
 
--- Test theorem 2
-theorem M_t_check: check_fun M_t M_t_lenv := by rfl
-
--- Theorem: M_t is well-typed
-theorem M_t_welltyped : ∃ lenv, typecheck_fun M_t lenv := by
-  exists M_t_lenv
-  apply typecheck_fun.fun_ok (initEnv := M_t_initEnv)
-  · rfl  -- initEnv.varEnv = init_fun_varEnv M_t
-  · rfl  -- initEnv.siteEnv = empty
-  · rfl  -- initEnv.pathEnv = PathEnv.init
-  · simp only [M_t]; intro h; exact List.noConfusion h  -- blocks ≠ []
-  · -- Entry block environment equivalence
-    intro entryLabel entryBody entryEnv hhead hlookup
-    simp only [M_t, List.head?] at hhead
-    injection hhead with hblock
-    have h1 : entryLabel = "b0" := (congrArg Block.label hblock).symm
-    subst h1
-    simp only [M_t_lenv, AssocMap.insert, AssocMap.lookup] at hlookup
-    injection hlookup with heq
-    rw [← heq]
-    unfold TypeEnv.equiv
-    refine ⟨LookupEquiv.refl _, VarEnvLookupCompatible.refl _, rfl, ?_⟩
-    intros; rfl
-  · -- Every block must type check
-    intro block hmem blockEnv hlookup
-    simp only [M_t, List.mem_singleton] at hmem
-    subst hmem
-    simp only [M_t_lenv, AssocMap.insert, AssocMap.lookup] at hlookup
-    injection hlookup with heq
-    subst heq
-    unfold typecheck_block
-
-    -- Step 1: let s0 = move(this)
-    apply typecheck_stmt.let_bind_move
-    · rfl  -- lookup varEnv var_this
-    · -- not_borrowed var_this
-      unfold not_borrowed
-      intro r
-      simp only [M_t_initEnv, PathEnv.init]
-      split
-      · simp only [Regex.interpret_regex]; intro h; cases h
-      · simp only [Regex.interpret_regex]; exact id
-    · rfl  -- notIn siteEnv s0
-    · -- Step 2: let s1 = &s0.T::f (borrowField)
-      apply typecheck_stmt.let_bind_borrowField (rf := .refid 0)
-                   (fentries := AssocMap.insert AssocMap.empty field_f .u64)
-      · rfl  -- lookup siteEnv s0
-      · rfl  -- M_T_basic = .trecord fentries
-      · rfl  -- lookup fentries field_f = some .u64
-      · rfl  -- notIn siteEnv s1
-      · -- freshRefInEnv (.refid 0) env
-        refine ⟨by simp [freshRef, M_t_initEnv, PathEnv.init], ?_, ?_⟩
-        · -- (.refid 0) ∉ collectVarEnvRefs varEnv
-          native_decide
-        · -- (.refid 0) ∉ collectSiteEnvRefs siteEnv
-          native_decide
-      · intro v h; injection h  -- rf ≠ .varRef v
-      · -- Step 3: let s2 = *s1 (readRef)
-        apply typecheck_stmt.let_bind_readRef
-        · rfl  -- lookup siteEnv s1
-        · rfl  -- notIn siteEnv s2
-        · -- Step 4: y = s2 (var_assign_invalid)
-          apply typecheck_stmt.var_assign_invalid
-          · rfl  -- lookup varEnv var_y
-          · rfl  -- lookup siteEnv s2
-          · rfl  -- MoveType.compatible (basic type)
-          · -- Step 5: ret []
-            apply typecheck_stmt.ret
-            · -- All return sites have correct type (vacuous)
-              intro a ha
-              cases ha
+-- Theorem: M_t is well-typed (via algorithmic soundness)
+theorem M_t_welltyped : ∃ lenv, typecheck_fun M_t lenv :=
+  ⟨_, check_fun_dec_sound _ _ M_t_check⟩
 
 -- -----------------------------------------------------
 -- -                     foo                          --
@@ -382,137 +243,17 @@ def foo : FunDef := {
   ]
 }
 
--- Initial environment for foo: no params, locals x and x_ref
-def foo_initEnv : TypeEnv := {
-  siteEnv := AssocMap.empty
-  varEnv := init_fun_varEnv foo
-  pathEnv := PathEnv.init
-  funEnv := module_funEnv
-}
+-- Decidable label environment for foo
+def foo_lenvDec : LabelEnvDec :=
+  insert empty "b0"
+    { siteEnv := empty, varEnv := init_fun_varEnv foo,
+      pathEnv := .init, funEnv := module_funEnv }
 
--- LabelEnv for foo: maps "b0" to the initial environment
-def foo_lenv : LabelEnv :=
-  AssocMap.insert AssocMap.empty "b0" foo_initEnv
+-- Test theorem: foo type checks algorithmically
+theorem foo_check : check_fun_dec foo foo_lenvDec = true := by rfl
 
--- Test theorem 3
-theorem foo_check: check_fun foo foo_lenv := by rfl
-
--- Theorem: foo is well-typed
-theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv := by
-  exists foo_lenv
-  apply typecheck_fun.fun_ok (initEnv := foo_initEnv)
-  · rfl  -- initEnv.varEnv = init_fun_varEnv foo
-  · rfl  -- initEnv.siteEnv = empty
-  · rfl  -- initEnv.pathEnv = PathEnv.init
-  · simp only [foo]; intro h; exact List.noConfusion h  -- blocks ≠ []
-  · -- Entry block environment equivalence
-    intro entryLabel entryBody entryEnv hhead hlookup
-    simp only [foo, List.head?] at hhead
-    injection hhead with hblock
-    have h1 : entryLabel = "b0" := (congrArg Block.label hblock).symm
-    subst h1
-    simp only [foo_lenv, AssocMap.insert, AssocMap.lookup] at hlookup
-    injection hlookup with heq
-    rw [← heq]
-    unfold TypeEnv.equiv
-    refine ⟨LookupEquiv.refl _, VarEnvLookupCompatible.refl _, rfl, ?_⟩
-    intros; rfl
-  · -- Every block must type check
-    intro block hmem blockEnv hlookup
-    simp only [foo, List.mem_singleton] at hmem
-    subst hmem
-    simp only [foo_lenv, AssocMap.insert, AssocMap.lookup] at hlookup
-    injection hlookup with heq
-    subst heq
-    unfold typecheck_block
-
-    -- Step 1: let s3 = 2
-    apply typecheck_stmt.let_bind_intLit
-    · rfl  -- notIn siteEnv s3
-    · -- Step 2: let s0 = pack T{f: s3}
-      apply typecheck_stmt.let_bind_pack (fentries := AssocMap.insert AssocMap.empty field_f .u64)
-      · rfl  -- notIn siteEnv s0
-      · -- All field sites have correct types
-        intro f a hmem
-        simp at hmem
-        obtain ⟨hf, ha⟩ := hmem
-        subst hf ha
-        exists .u64
-      · -- All field sites distinct
-        intro a1 a2 hexists
-        obtain ⟨f1, f2, h1, h2, hne⟩ := hexists
-        simp at h1 h2
-        have hf1 : f1 = field_f := h1.1
-        have hf2 : f2 = field_f := h2.1
-        rw [hf1, hf2] at hne
-        exact absurd rfl hne
-      · -- Step 3: var_x = s0
-        apply typecheck_stmt.var_assign_invalid
-        · rfl  -- lookup varEnv var_x
-        · rfl  -- lookup siteEnv s0 = some M_T
-        · rfl  -- MoveType.compatible (basic type)
-        · -- Step 4: let s1 = &var_x
-          apply typecheck_stmt.let_bind_borrowImm (r := .refid 2)
-          · rfl  -- lookup varEnv var_x = some (.validVar, .basic M_T_basic, .mutable)
-          · rfl  -- notIn siteEnv s1
-          · rfl  -- freshRefInEnvBool (.refid 2) env
-          · intro v h; injection h  -- r ≠ .varRef v
-          · -- Step 5: var_x_ref = s1
-            apply typecheck_stmt.var_assign_invalid
-            · rfl  -- lookup varEnv var_x_ref
-            · rfl  -- lookup siteEnv s1
-            · exact MoveType.compatible_bool_sound _ _ rfl  -- MoveType.compatible (ref type, refids compatible)
-            · -- Step 6: let s2 = move(var_x_ref)
-              apply typecheck_stmt.let_bind_move
-              · rfl  -- lookup varEnv var_x_ref = some (.validVar, .ref ..., .mutable)
-              · -- not_borrowed var_x_ref
-                unfold not_borrowed
-                intro r
-                simp only [update_with_extension, update_with_epsilon,
-                            Regex.extend, Regex.der, List.foldl, var_x]
-                -- paths(.root, r) depends on whether r = refid 2
-                by_cases hr : r = .refid 2
-                · -- r = refid 2: path is ε ∘ [.root_to_var var_x]
-                  subst hr
-                  simp only [foo_initEnv, PathEnv.init]
-                  simp only [var_x_ref, and_true]
-                  intro ⟨w, hw⟩
-                  obtain ⟨ax2, heq, hw', hax2⟩ := hw
-                  simp only [Regex.interpret_regex] at hax2
-                  subst hax2
-                  split_ifs at hw' <;> simp_all [Regex.interpret_regex]
-                · -- r ≠ refid 2
-                  simp only [hr, ↓reduceIte, foo_initEnv, PathEnv.init]
-                  split_ifs <;> simp_all [Regex.interpret_regex]
-              · rfl  -- notIn siteEnv s2
-              · -- Step 7: call M.t(s2)
-                apply typecheck_stmt.call (params := [⟨M_T_basic, some false⟩]) (rets := [])
-                · rfl  -- all_fresh_sites env []
-                · rfl  -- lookup funEnv "M.t"
-                · -- types_conform siteEnv [s2] [⟨M_T_basic, some false⟩]
-                  exact ⟨rfl, trivial, trivial⟩
-                · -- types_conform siteEnv [] []
-                  trivial
-                · -- check_mutable_inputs_isolated (s2 is immutable, vacuous)
-                  intro mi_site hmi mi_bt mi_ref hlookup
-                  simp only [List.mem_singleton] at hmi
-                  subst hmi
-                  simp only [AssocMap.lookup, AssocMap.insert, AssocMap.empty] at hlookup
-                  exact absurd hlookup (by simp)
-                · -- check_mutable_inputs_have_outbound (s2 is immutable, vacuous)
-                  intro mi_site hmi mi_bt mi_ref hlookup
-                  simp only [List.mem_singleton] at hmi
-                  subst hmi
-                  simp only [AssocMap.lookup, AssocMap.insert, AssocMap.empty] at hlookup
-                  exact absurd hlookup (by simp)
-                · -- Step 8: release s2
-                  apply typecheck_stmt.release (τ := M_T_basic) (r := .refid 2)
-                                              (isBor := .siteBorrowImm)
-                  · rfl  -- lookup siteEnv s2
-                  · -- Step 9: ret []
-                    apply typecheck_stmt.ret
-                    · -- All return sites have correct type (vacuous)
-                      intro a ha
-                      cases ha
+-- Theorem: foo is well-typed (via algorithmic soundness)
+theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv :=
+  ⟨_, check_fun_dec_sound _ _ foo_check⟩
 
 end LeanMove.Examples
