@@ -20,7 +20,7 @@ import LeanMove.Typing.TypeSoundness
 
 -- Import example definitions
 import LeanMove.Examples.Typechecking.litmus.accepted.borrow_in_loop_fixed_ok
--- import LeanMove.Examples.Typechecking.litmus.accepted.deref_borrow_field_ok
+import LeanMove.Examples.Typechecking.litmus.accepted.deref_borrow_field_ok
 import LeanMove.Examples.Typechecking.expressivity.accepted.alias_writes
 import LeanMove.Examples.Typechecking.expressivity.accepted.alias_write_after_join
 import LeanMove.Examples.Typechecking.expressivity.accepted.extension_after_call
@@ -76,33 +76,33 @@ end
 -- ============================================================
 -- 2. deref_borrow_field_ok
 -- ============================================================
--- section
--- open LeanMove.Examples
+section
+open LeanMove.Examples
 
--- private def moduleFunEnv : AssocMap Id FunDef :=
---   AssocMap.insert (AssocMap.insert AssocMap.empty "M.new" M_new) "M.t" M_t
+private def moduleFunEnv : AssocMap Id FunDef :=
+  AssocMap.insert (AssocMap.insert AssocMap.empty "M.new" M_new) "M.t" M_t
 
--- private def module_fte : FunTypingEnv :=
---   insert (insert empty "M.new" M_new_lenvDec) "M.t" M_t_lenvDec
+private def module_fte : FunTypingEnv :=
+  insert (insert empty "M.new" M_new_lenvDec) "M.t" M_t_lenvDec
 
--- -- M.new(2) returns record {f: 2}
--- #guard (run 100 (initState M_new moduleFunEnv [.int 2])).getHaltedValues ==
---   some [.record [(⟨"f"⟩, .int 2)]]
+-- M.new(2) returns record {f: 2}
+#guard (run 100 (initState M_new moduleFunEnv [.int 2])).getHaltedValues ==
+  some [.record [(⟨"f"⟩, .int 2)]]
 
--- -- foo() halts (calls M.t inter-procedurally)
--- #guard (run 100 (initState foo moduleFunEnv [])).isHalted
+-- foo() halts (calls M.t inter-procedurally)
+#guard (run 100 (initState foo moduleFunEnv [])).isHalted
 
--- -- Type soundness: M_new never produces a danglingRef error
--- private theorem deref_borrow_M_new_no_danglingRef :
---     ∀ n loc, run n (initState M_new moduleFunEnv [.int 2]) ≠ .error (.danglingRef loc) :=
---   type_soundness_dec M_new M_new_lenvDec moduleFunEnv module_fte [.int 2] Heap.empty (by rfl)
+-- Type soundness: M_new never produces a danglingRef error
+private theorem deref_borrow_M_new_no_danglingRef :
+    ∀ n loc, run n (initState M_new moduleFunEnv [.int 2]) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec M_new M_new_lenvDec moduleFunEnv module_fte [.int 2] Heap.empty (by rfl)
 
--- -- Type soundness: foo never produces a danglingRef error
--- private theorem deref_borrow_foo_no_danglingRef :
---     ∀ n loc, run n (initState foo moduleFunEnv []) ≠ .error (.danglingRef loc) :=
---   type_soundness_dec foo foo_lenvDec moduleFunEnv module_fte [] Heap.empty (by rfl)
+-- Type soundness: foo never produces a danglingRef error
+private theorem deref_borrow_foo_no_danglingRef :
+    ∀ n loc, run n (initState foo moduleFunEnv []) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec foo foo_lenvDec moduleFunEnv module_fte [] Heap.empty (by rfl)
 
--- end
+end
 
 -- ============================================================
 -- 3. alias_writes — 4 functions, all halt
