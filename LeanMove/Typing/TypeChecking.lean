@@ -279,6 +279,9 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
   -- This allows the checker to be agnostic to exact Aref refid values in declared types.
   -- Note: no_locals_borrowed is NOT checked here — consistent with Move VM semantics
   -- where `return` implicitly drops all locals, releasing their borrows.
+
+  -- TODO: needs to check that all reference-typed sites are reachable from the parameters (varRef)
+  -- This might require tracking those in the PathEnv
   | ret : ∀ (lenv : LabelEnv) (env : TypeEnv) (as : List Site) retType,
       (∀ a, a ∈ as → ∃ τ, AssocMap.lookup env.siteEnv a = some τ ∧ MoveType.compatible τ retType) →
       typecheck_stmt lenv env (.ret as) retType
