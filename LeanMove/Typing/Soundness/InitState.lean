@@ -370,7 +370,8 @@ def hasType_bool : Value → BasicMoveType → Bool
   | .bool _, .tbool => true
   | .unit, .tunit => true
   | .record fields, .trecord fentries =>
-      checkFields fields fentries.entries
+      checkFields fields fentries.entries &&
+      fields.all (fun p => (List.lookup p.1 fentries.entries).isSome)
   | _, _ => false
 where
   checkFields (fields : List (Field × Value)) : List (Field × BasicMoveType) → Bool
@@ -386,7 +387,9 @@ where
 @[simp] theorem hasType_bool_bool_tbool (b) : hasType_bool (.bool b) .tbool = true := rfl
 @[simp] theorem hasType_bool_unit_tunit : hasType_bool .unit .tunit = true := rfl
 @[simp] theorem hasType_bool_record_trecord (fields fentries) :
-    hasType_bool (.record fields) (.trecord fentries) = hasType_bool.checkFields fields fentries.entries := rfl
+    hasType_bool (.record fields) (.trecord fentries) =
+    (hasType_bool.checkFields fields fentries.entries &&
+     fields.all (fun p => (List.lookup p.1 fentries.entries).isSome)) := rfl
 @[simp] theorem hasType_bool_int_tbool (n) : hasType_bool (.int n) .tbool = false := rfl
 @[simp] theorem hasType_bool_int_tunit (n) : hasType_bool (.int n) .tunit = false := rfl
 @[simp] theorem hasType_bool_int_trecord (n m) : hasType_bool (.int n) (.trecord m) = false := rfl
@@ -404,6 +407,23 @@ where
 @[simp] theorem hasType_bool_ref_tunit (l p) : hasType_bool (.ref l p) .tunit = false := rfl
 @[simp] theorem hasType_bool_ref_trecord (l p m) : hasType_bool (.ref l p) (.trecord m) = false := rfl
 
+/-- If fields.all checks that every value-field key exists in the type entries,
+    then List.lookup on the value succeeding implies List.lookup on the type succeeds. -/
+private theorem all_lookup_cover (fields : List (Field × Value)) (entries : List (Field × BasicMoveType))
+    (hall : fields.all (fun p => (List.lookup p.1 entries).isSome) = true)
+    (f : Field) (hne : fields.lookup f ≠ none) : List.lookup f entries ≠ none := by
+  induction fields with
+  | nil => simp [List.lookup] at hne
+  | cons hd tl ih =>
+    obtain ⟨k, v⟩ := hd
+    simp only [List.all_cons, Bool.and_eq_true] at hall
+    obtain ⟨hhd, htl⟩ := hall
+    simp only [List.lookup] at hne
+    by_cases hfk : f = k
+    · subst hfk; simp only [Option.isSome_iff_ne_none] at hhd; exact hhd
+    · simp only [show (f == k) = false from beq_eq_false_iff_ne.mpr hfk] at hne
+      exact ih htl hne
+
 mutual
   theorem hasType_bool_sound : ∀ (v : Value) (bt : BasicMoveType),
       hasType_bool v bt = true → HasType v bt
@@ -411,19 +431,23 @@ mutual
     | .bool b, .tbool, _ => HasType.bool b
     | .unit, .tunit, _ => HasType.unit
     | .record fields, .trecord fentries, h => by
-        simp only [hasType_bool_record_trecord] at h
+        simp only [hasType_bool_record_trecord, Bool.and_eq_true] at h
+        obtain ⟨hcheck, hcover⟩ := h
         exact HasType.record fields fentries
           (by
             intro f hne
             cases hf : lookup fentries f with
             | none => exact absurd hf hne
             | some bt' =>
-              obtain ⟨v, hv, _⟩ := hasType_checkFields_sound fields fentries.entries h f bt'
+              obtain ⟨v, hv, _⟩ := hasType_checkFields_sound fields fentries.entries hcheck f bt'
                 (lookup_some fentries f bt' hf)
               rw [hv]; exact Option.some_ne_none _)
           (by
+            intro f hne
+            exact all_lookup_cover fields fentries.entries hcover f hne)
+          (by
             intro f bt' v' hlookup hfield
-            obtain ⟨v'', hv'', hht⟩ := hasType_checkFields_sound fields fentries.entries h f bt'
+            obtain ⟨v'', hv'', hht⟩ := hasType_checkFields_sound fields fentries.entries hcheck f bt'
               (lookup_some fentries f bt' hlookup)
             rw [hfield] at hv''; simp only [Option.some.injEq] at hv''; subst hv''
             exact hht)

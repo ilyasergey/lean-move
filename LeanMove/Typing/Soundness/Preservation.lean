@@ -206,12 +206,13 @@ private theorem inv_writeRef
     ∃ τ r,
       lookup env.siteEnv dst = some (.ref τ r .siteBorrowMut) ∧
       lookup env.siteEnv val = some (.basic τ) ∧
+      check_outbound env.pathEnv r (fun re => only_matches_empty (simplify re)) ∧
       typecheck_stmt lenv
         {env with siteEnv := delete (delete env.siteEnv val) dst
                   pathEnv := garbage_collect env.pathEnv r}
         cont retType :=
   match h with
-  | .write_ref _ _ _ _ τ r _ _ hdst hval _ hcont => ⟨τ, r, hdst, hval, hcont⟩
+  | .write_ref _ _ _ _ τ r _ _ hdst hval hcheck hcont => ⟨τ, r, hdst, hval, hcheck, hcont⟩
 
 private theorem inv_jump
     (h : typecheck_stmt lenv env (.jump L) retType) :
@@ -1979,6 +1980,195 @@ private theorem stackSafe_heap_alloc (stack : List Frame) (ri : Option ReturnInf
           stackSafe_heap_alloc rest callerFrame.returnInfo heap v hss' hwt'.heap_loc_bound⟩
       · exact stackSafe_heap_alloc rest callerFrame.returnInfo heap v hrest hlb
 
+/-- WellTypedState is preserved under heap.writeRef.
+    The write at (loc, wpath) changes the root value at loc from baseVal to
+    writePath baseVal wpath vval. All WellTypedState invariants are preserved because:
+    - For locations ≠ loc: heap reads unchanged
+    - For loc with basic-typed vars: writePath_preserves_HasType_general + HasType_transfer
+    - For loc with ref-typed vars: impossible (ref can't coexist with writePath success)
+    - For rmap_live/rmap_paths: heap_writeRef_preserves_readRef_same_loc + suffix transfer
+    - For rmap_has_type: writePath_preserves_readPath_HasType -/
+private theorem wellTypedState_heap_writeRef
+    (frame : Frame) (stack : List Frame) (heap heap' : Heap)
+    (loc : Loc) (wpath : List Field) (vval v_leaf : Value) (τ : BasicMoveType)
+    (env : TypeEnv) (lenv : LabelEnv) (retType : MoveType) (rmap : RefMap)
+    (hwt : WellTypedState ⟨frame, stack, heap⟩ env lenv retType rmap)
+    (hwr : heap.writeRef loc wpath vval = some heap')
+    (hv_leaf_read : heap.readRef loc wpath = some v_leaf)
+    (hv_leaf_ht : HasType v_leaf τ)
+    (hmval : HasType vval τ) :
+    WellTypedState ⟨frame, stack, heap'⟩ env lenv retType rmap := by
+  -- Extract base value and writePath facts
+  have hlb := hwt.heap_loc_bound
+  simp only [Heap.readRef, bind, Option.bind] at hv_leaf_read
+  simp only [Heap.writeRef, bind, Option.bind] at hwr
+  cases hbase : heap.read loc with
+  | none => simp [hbase] at hv_leaf_read
+  | some baseVal =>
+    simp only [hbase] at hv_leaf_read hwr
+    cases hwp : writePath baseVal wpath vval with
+    | none => simp [hwp] at hwr
+    | some newRoot =>
+      simp [hwp] at hwr
+      -- hwr : heap' = heap.write loc newRoot (or reverse)
+      -- hv_leaf_read : readPath baseVal wpath = some v_leaf
+      -- Helper: reads at other locations
+      have hread_diff : ∀ loc', loc' ≠ loc → heap'.read loc' = heap.read loc' := by
+        intro loc' hne; rw [← hwr]
+        exact heap_write_preserves_read heap loc loc' newRoot (Ne.symm hne)
+      have hread_loc : heap'.read loc = some newRoot := by
+        rw [← hwr]; simp [Heap.write, Heap.read, lookup_insert_same]
+      -- Reconstruct the full writeRef for helpers that need it
+      have hwr_full : heap.writeRef loc wpath vval = some heap' := by
+        simp [Heap.writeRef, bind, Option.bind, hbase, hwp, hwr]
+      exact {
+        env_wf := hwt.env_wf
+        stmt_typed := hwt.stmt_typed
+        var_consistent := by
+          intro x isv τ_x ms hvar
+          have hvc := hwt.var_consistent x isv τ_x ms hvar
+          cases isv with
+          | validVar =>
+            obtain ⟨loc_x, v_x, hvarStore, hread_x, hmatch_x⟩ := hvc
+            by_cases hloc : loc_x = loc
+            · subst hloc
+              have hveq : v_x = baseVal := by
+                rw [hbase] at hread_x; simp only [Option.some.injEq] at hread_x; exact hread_x.symm
+              subst hveq
+              refine ⟨loc_x, newRoot, hvarStore, hread_loc, ?_⟩
+              cases τ_x with
+              | basic bt_x =>
+                dsimp only [ValueMatchesType] at hmatch_x ⊢
+                exact writePath_preserves_HasType_general v_x wpath vval newRoot bt_x
+                  hmatch_x hwp (by
+                    intro bt_leaf htap
+                    obtain ⟨bt', htap'⟩ := readPath_ne_none_implies_typeAtPath v_x bt_x
+                      wpath hmatch_x (by rw [hv_leaf_read]; exact Option.some_ne_none _)
+                    rw [htap'] at htap; simp only [Option.some.injEq] at htap; subst htap
+                    obtain ⟨u, hru, hhu⟩ := HasType_typeAtPath v_x bt_x wpath bt' hmatch_x htap'
+                    rw [hv_leaf_read] at hru; simp only [Option.some.injEq] at hru; subst hru
+                    exact HasType_transfer hhu hv_leaf_ht hmval)
+              | ref bt_ref r_ref bk_ref =>
+                exfalso
+                dsimp only [ValueMatchesType] at hmatch_x
+                obtain ⟨loc', path', hveq, _⟩ := hmatch_x
+                rw [hveq] at hwp hv_leaf_read
+                cases wpath with
+                | cons f rest => simp [writePath] at hwp
+                | nil =>
+                  simp [readPath] at hv_leaf_read; rw [← hv_leaf_read] at hv_leaf_ht
+                  exact HasType_not_ref loc' path' τ hv_leaf_ht
+            · exact ⟨loc_x, v_x, hvarStore, by rw [hread_diff loc_x hloc]; exact hread_x, hmatch_x⟩
+          | invalidVar => exact hvc
+        site_consistent := hwt.site_consistent
+        rmap_live := by
+          intro r' loc' path' hrmap'
+          have hlive := hwt.rmap_live r' loc' path' hrmap'
+          by_cases hloc : loc = loc'
+          · subst hloc
+            exact heap_writeRef_preserves_readRef_same_loc heap loc wpath path' vval heap'
+              hwr_full hlive (by
+                intro suffix hsuffix
+                cases suffix with
+                | nil => simp [readPath]
+                | cons sf srest =>
+                  simp only [Heap.readRef, bind, Option.bind, hbase] at hlive
+                  rw [← hsuffix, readPath_append] at hlive
+                  simp only [hv_leaf_read, Option.bind] at hlive
+                  exact HasType_transfer_readPath_ne_none v_leaf vval τ
+                    (sf :: srest) hv_leaf_ht hmval hlive)
+          · simp only [Heap.readRef, bind, Option.bind] at hlive ⊢
+            rw [hread_diff loc' (Ne.symm hloc)]
+            exact hlive
+        rmap_paths := by
+          intro r1 r2 hr1 hr2 p hp
+          have hpih := hwt.rmap_paths r1 r2 hr1 hr2 p hp
+          unfold PathReflectedInHeap at hpih ⊢
+          cases hrm1 : rmap.map r1 with
+          | none => simp [hrm1] at hpih ⊢
+          | some p1 =>
+            obtain ⟨loc1, path1⟩ := p1
+            cases hrm2 : rmap.map r2 with
+            | none => simp [hrm1, hrm2] at hpih ⊢
+            | some p2 =>
+              obtain ⟨loc2, path2⟩ := p2
+              simp only [hrm1, hrm2] at hpih ⊢
+              intro hloc_eq
+              obtain ⟨hpath_eq, hne⟩ := hpih hloc_eq
+              refine ⟨hpath_eq, ?_⟩
+              by_cases hloc2 : loc = loc2
+              · subst hloc2
+                exact heap_writeRef_preserves_readRef_same_loc heap loc wpath path2 vval heap'
+                  hwr_full hne (by
+                    intro suffix hsuffix
+                    cases suffix with
+                    | nil => simp [readPath]
+                    | cons sf srest =>
+                      simp only [Heap.readRef, bind, Option.bind, hbase] at hne
+                      rw [← hsuffix, readPath_append] at hne
+                      simp only [hv_leaf_read, Option.bind] at hne
+                      exact HasType_transfer_readPath_ne_none v_leaf vval τ
+                        (sf :: srest) hv_leaf_ht hmval hne)
+              · simp only [Heap.readRef, bind, Option.bind] at hne ⊢
+                rw [hread_diff loc2 (Ne.symm hloc2)]
+                exact hne
+        varEnv_refs_in_pathEnv := hwt.varEnv_refs_in_pathEnv
+        siteEnv_refs_in_pathEnv := hwt.siteEnv_refs_in_pathEnv
+        live_refs_unique := hwt.live_refs_unique
+        blocks_typed := hwt.blocks_typed
+        lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
+        funEnv_typed := hwt.funEnv_typed
+        heap_loc_bound := heap_loc_bound_after_writeRef heap loc wpath vval heap' hlb hwr_full
+        rmap_root_none := hwt.rmap_root_none
+        no_paths_to_root := hwt.no_paths_to_root
+        root_path_coherence := hwt.root_path_coherence
+        paths_from_non_member_empty := hwt.paths_from_non_member_empty
+        paths_to_non_member_empty := hwt.paths_to_non_member_empty
+        self_loop_only_empty := hwt.self_loop_only_empty
+        rmap_has_type := by
+          intro r' bt loc' path' hrmap' hcond
+          obtain ⟨v_old, hread_old, hht_old⟩ := hwt.rmap_has_type r' bt loc' path' hrmap' hcond
+          by_cases hloc' : loc = loc'
+          · subst hloc'
+            simp only [Heap.readRef, bind, Option.bind, hbase] at hread_old
+            obtain ⟨vnew, hread_vnew, hht_vnew⟩ := writePath_preserves_readPath_HasType
+              baseVal wpath path' vval newRoot v_leaf v_old τ bt
+              hwp hread_old hht_old hv_leaf_read hv_leaf_ht hmval
+            exact ⟨vnew, by simp [Heap.readRef, bind, Option.bind, hread_loc, hread_vnew], hht_vnew⟩
+          · refine ⟨v_old, ?_, hht_old⟩
+            simp only [Heap.readRef, bind, Option.bind] at hread_old ⊢
+            rw [hread_diff loc' (Ne.symm hloc')]
+            exact hread_old
+      }
+
+/-- StackSafe is preserved under heap.writeRef -/
+private theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
+    (heap heap' : Heap) (loc : Loc) (wpath : List Field)
+    (vval v_leaf : Value) (τ : BasicMoveType)
+    (hss : StackSafe stack ri heap)
+    (hwr : heap.writeRef loc wpath vval = some heap')
+    (hv_leaf_read : heap.readRef loc wpath = some v_leaf)
+    (hv_leaf_ht : HasType v_leaf τ)
+    (hmval : HasType vval τ) :
+    StackSafe stack ri heap' := by
+  cases stack with
+  | nil => simp [StackSafe]
+  | cons callerFrame rest =>
+    cases ri with
+    | none => simp [StackSafe]
+    | some ri =>
+      simp only [StackSafe] at hss ⊢
+      obtain ⟨hret, hrest⟩ := hss
+      refine ⟨fun vals newSiteStore hbind => ?_, ?_⟩
+      · obtain ⟨env', lenv', retType', rmap', hwt', hss'⟩ := hret vals newSiteStore hbind
+        exact ⟨env', lenv', retType', rmap',
+          wellTypedState_heap_writeRef _ _ heap heap' loc wpath vval v_leaf τ
+            env' lenv' retType' rmap' hwt' hwr hv_leaf_read hv_leaf_ht hmval,
+          stackSafe_heap_writeRef rest callerFrame.returnInfo heap heap' loc wpath
+            vval v_leaf τ hss' hwr hv_leaf_read hv_leaf_ht hmval⟩
+      · exact stackSafe_heap_writeRef rest callerFrame.returnInfo heap heap' loc wpath
+          vval v_leaf τ hrest hwr hv_leaf_read hv_leaf_ht hmval
+
 /-- After delete_ref_node, no_paths_to_root is preserved. -/
 private lemma no_paths_to_root_delete_ref_node'
     {m : Machine} {env : TypeEnv} {lenv : LabelEnv} {retType : MoveType} {rmap : RefMap}
@@ -2420,6 +2610,310 @@ private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : La
         exact Or.inr ⟨s', bk, hsite⟩
   }
 
+private theorem preservation_writeRef (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retType : MoveType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retType rmap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (dst val : Site) (cont : Stmt)
+    (hstmt : m.frame.stmt = .writeRef dst val cont)
+    (hstep : step (.running m) = .running m') :
+    ∃ env' lenv' retType' rmap',
+      WellTypedState m' env' lenv' retType' rmap' ∧
+      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+  -- 1. Invert typing
+  obtain ⟨τ, r, hdst_type, hval_type, hcheck, hcont⟩ :=
+    inv_writeRef (by rw [← hstmt]; exact hwt.stmt_typed)
+  -- 2. Get concrete values from site_consistent
+  obtain ⟨vdst, hvdst, hmdst⟩ := hwt.site_consistent dst (.ref τ r .siteBorrowMut) hdst_type
+  obtain ⟨loc, wpath, hveq, hrmap⟩ := hmdst
+  obtain ⟨vval, hvval, hmval⟩ := hwt.site_consistent val (.basic τ) hval_type
+  -- hmval : HasType vval τ
+  -- 3. Show readSite succeeds
+  have hrs_dst : readSite m dst = some (.ref loc wpath) := by rw [readSite, hvdst, hveq]
+  have hrs_val : readSite m val = some vval := hvval
+  -- 4. Show writeRef succeeds (from rmap_live)
+  have hheap := hwt.rmap_live r loc wpath hrmap
+  obtain ⟨heap', hwr⟩ := readRef_ne_none_implies_writeRef_ne_none m.heap loc wpath vval hheap
+  -- 5. Step gives m'
+  simp only [step, hstmt, hrs_dst, hrs_val, hwr, ExecState.running.injEq] at hstep; subst hstep
+  -- 6. Key facts
+  have hr_not_root : r ≠ .root := hwt.env_wf.siteEnv_wf dst (.ref τ r .siteBorrowMut) hdst_type
+  have hcheck_empty := check_outbound_only_empty env.pathEnv r hcheck
+  -- rmap_has_type for the ref r
+  have hrmap_ht := hwt.rmap_has_type r τ loc wpath hrmap (Or.inr ⟨dst, .siteBorrowMut, hdst_type⟩)
+  obtain ⟨v_leaf, hv_leaf_read, hv_leaf_ht⟩ := hrmap_ht
+  -- Helper: heap'.read at different locations is unchanged
+  have hread_diff : ∀ loc', loc' ≠ loc → heap'.read loc' = m.heap.read loc' := by
+    intro loc' hne
+    simp only [Heap.writeRef, bind, Option.bind] at hwr
+    cases hbase : m.heap.read loc with
+    | none => simp [hbase] at hwr
+    | some baseVal =>
+      simp [hbase] at hwr
+      cases hwp : writePath baseVal wpath vval with
+      | none => simp [hwp] at hwr
+      | some newVal =>
+        simp [hwp] at hwr; rw [← hwr]
+        exact heap_write_preserves_read m.heap loc loc' newVal (Ne.symm hne)
+  -- 7. Construct WellTypedState for m'
+  refine ⟨{env with siteEnv := delete (delete env.siteEnv val) dst,
+                     pathEnv := delete_ref_node env.pathEnv r},
+          lenv, retType, rmap, ?_,
+          stackSafe_heap_writeRef m.stack m.frame.returnInfo m.heap heap' loc wpath
+            vval v_leaf τ hss hwr hv_leaf_read hv_leaf_ht hmval⟩
+  exact {
+    env_wf := ⟨delete_ref_node_wellformed env.pathEnv r hwt.env_wf.pathEnv_wf hr_not_root,
+               SiteEnv.delete_refs_not_root _ dst
+                 (SiteEnv.delete_refs_not_root _ val hwt.env_wf.siteEnv_wf),
+               hwt.env_wf.varEnv_wf⟩
+    stmt_typed := hcont
+    var_consistent := by
+      intro x isv τ_x ms hvar
+      have hvc := hwt.var_consistent x isv τ_x ms hvar
+      cases isv with
+      | validVar =>
+        dsimp only at hvc ⊢
+        obtain ⟨loc_x, v_x, hvarStore, hread_x, hmatch_x⟩ := hvc
+        by_cases hloc : loc = loc_x
+        · -- Same location: heap value at loc changes due to writeRef
+          subst hloc  -- eliminates loc_x, keeps loc
+          -- Extract writePath and new root value from writeRef
+          have ⟨newRootVal, hwp, hread_new⟩ :
+              ∃ nv, writePath v_x wpath vval = some nv ∧ heap'.read loc = some nv := by
+            simp only [Heap.writeRef, bind, Option.bind, hread_x] at hwr
+            cases hwp' : writePath v_x wpath vval with
+            | none => simp [hwp'] at hwr
+            | some nv =>
+              simp [hwp'] at hwr
+              exact ⟨nv, rfl, by rw [← hwr]; simp [Heap.write, Heap.read, lookup_insert_same]⟩
+          refine ⟨loc, newRootVal, hvarStore, hread_new, ?_⟩
+          -- ValueMatchesType newRootVal τ_x rmap
+          cases τ_x with
+          | basic bt_x =>
+            dsimp only [ValueMatchesType] at hmatch_x ⊢
+            exact writePath_preserves_HasType_general v_x wpath vval newRootVal bt_x
+              hmatch_x hwp (by
+                intro bt_leaf htap
+                -- Derive readPath v_x wpath = some v_leaf from readRef
+                have hread_leaf : readPath v_x wpath = some v_leaf := by
+                  simp only [Heap.readRef, bind, Option.bind, hread_x] at hv_leaf_read
+                  exact hv_leaf_read
+                -- HasType_typeAtPath gives HasType v_leaf bt_leaf
+                obtain ⟨u, hread_u, hht_u⟩ :=
+                  HasType_typeAtPath v_x bt_x wpath bt_leaf hmatch_x htap
+                rw [hread_leaf] at hread_u
+                simp only [Option.some.injEq] at hread_u; subst hread_u
+                -- Transfer: HasType v_leaf bt_leaf → HasType v_leaf τ → HasType vval τ → HasType vval bt_leaf
+                exact HasType_transfer hht_u hv_leaf_ht hmval)
+          | ref bt_ref r_ref bk_ref =>
+            -- Variable x has ref type at same location as write target — impossible
+            exfalso
+            dsimp only [ValueMatchesType] at hmatch_x
+            obtain ⟨loc', path', hveq, _⟩ := hmatch_x
+            rw [hveq] at hwp hread_x
+            -- readRef loc wpath succeeds (from rmap_has_type for r at loc),
+            -- but v_x = .ref so readPath (.ref ...) at non-empty path = none
+            -- and at empty path, the leaf IS .ref which can't have HasType
+            cases wpath with
+            | cons f rest => simp [writePath] at hwp
+            | nil =>
+              simp only [Heap.readRef, bind, Option.bind, hread_x, readPath,
+                          Option.some.injEq] at hv_leaf_read
+              rw [← hv_leaf_read] at hv_leaf_ht
+              exact HasType_not_ref loc' path' τ hv_leaf_ht
+        · -- Different location: heap value unchanged
+          exact ⟨loc_x, v_x, hvarStore, (hread_diff loc_x (Ne.symm hloc)).trans hread_x, hmatch_x⟩
+      | invalidVar =>
+        dsimp only at hvc ⊢
+        rcases hvc with hvc_none | ⟨loc_x, hvc_some⟩
+        · exact Or.inl hvc_none
+        · exact Or.inr ⟨loc_x, hvc_some⟩
+    site_consistent := by
+      intro s' τ' hl
+      have hne_dst : s' ≠ dst := by
+        intro h; subst h; rw [lookup_delete_same] at hl; simp at hl
+      rw [lookup_delete_ne _ dst s' hne_dst] at hl
+      have hne_val : s' ≠ val := by
+        intro h; subst h; rw [lookup_delete_same] at hl; simp at hl
+      rw [lookup_delete_ne _ val s' hne_val] at hl
+      exact hwt.site_consistent s' τ' hl
+    rmap_live := by
+      intro r' loc' path' hrmap'
+      have hlive := hwt.rmap_live r' loc' path' hrmap'
+      by_cases hloc : loc = loc'
+      · subst hloc
+        exact heap_writeRef_preserves_readRef_same_loc m.heap loc wpath path' vval heap'
+          hwr hlive (by
+            intro suffix hsuffix
+            cases suffix with
+            | nil => simp [readPath]
+            | cons sf srest =>
+              -- Derive readPath v_leaf (sf :: srest) ≠ none from old heap
+              have hleaf_suffix : readPath v_leaf (sf :: srest) ≠ none := by
+                simp only [Heap.readRef, bind, Option.bind] at hlive hv_leaf_read
+                cases hbase : m.heap.read loc with
+                | none => simp [hbase] at hv_leaf_read
+                | some baseVal =>
+                  simp only [hbase] at hlive hv_leaf_read
+                  rw [← hsuffix, readPath_append] at hlive
+                  simp only [hv_leaf_read, Option.bind] at hlive
+                  exact hlive
+              -- Transfer readPath success from v_leaf to vval via shared type τ
+              exact HasType_transfer_readPath_ne_none v_leaf vval τ
+                (sf :: srest) hv_leaf_ht hmval hleaf_suffix)
+      · rwa [heap_writeRef_preserves_readRef_diff_loc m.heap loc loc' wpath path' vval heap'
+               hloc hwr]
+    rmap_paths := by
+      intro r1 r2 hr1 hr2 p hp
+      have hr1_orig : r1 ∈ env.pathEnv.refs := by
+        simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hr1; exact hr1.1
+      have hr2_orig : r2 ∈ env.pathEnv.refs := by
+        simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hr2; exact hr2.1
+      have hr1_ne_r : r1 ≠ r := by
+        simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hr1; exact hr1.2
+      have hr2_ne_r : r2 ≠ r := by
+        simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hr2; exact hr2.2
+      simp only [delete_ref_node, hr1_ne_r, hr2_ne_r, false_or, ↓reduceIte] at hp
+      have hpih := hwt.rmap_paths r1 r2 hr1_orig hr2_orig p hp
+      unfold PathReflectedInHeap at hpih ⊢
+      cases hrm1 : rmap.map r1 with
+      | none => simp [hrm1] at hpih ⊢
+      | some p1 =>
+        obtain ⟨loc1, path1⟩ := p1
+        cases hrm2 : rmap.map r2 with
+        | none => simp [hrm1, hrm2] at hpih ⊢
+        | some p2 =>
+          obtain ⟨loc2, path2⟩ := p2
+          simp only [hrm1, hrm2] at hpih ⊢
+          intro hloc_eq
+          obtain ⟨hpath_eq, hne⟩ := hpih hloc_eq
+          refine ⟨hpath_eq, ?_⟩
+          by_cases hloc2 : loc = loc2
+          · subst hloc2
+            exact heap_writeRef_preserves_readRef_same_loc m.heap loc wpath path2 vval heap'
+              hwr hne (by
+                intro suffix hsuffix
+                cases suffix with
+                | nil => simp [readPath]
+                | cons sf srest =>
+                  -- Same pattern as rmap_live suffix case
+                  have hleaf_suffix : readPath v_leaf (sf :: srest) ≠ none := by
+                    simp only [Heap.readRef, bind, Option.bind] at hne hv_leaf_read
+                    cases hbase : m.heap.read loc with
+                    | none => simp [hbase] at hv_leaf_read
+                    | some baseVal =>
+                      simp only [hbase] at hne hv_leaf_read
+                      rw [← hsuffix, readPath_append] at hne
+                      simp only [hv_leaf_read, Option.bind] at hne
+                      exact hne
+                  exact HasType_transfer_readPath_ne_none v_leaf vval τ
+                    (sf :: srest) hv_leaf_ht hmval hleaf_suffix)
+          · rwa [heap_writeRef_preserves_readRef_diff_loc m.heap loc loc2 wpath path2 vval heap'
+                   hloc2 hwr]
+    varEnv_refs_in_pathEnv :=
+      varEnv_refs_in_pathEnv_delete_ref_node hwt r dst τ (.siteBorrowMut) hdst_type
+    siteEnv_refs_in_pathEnv := by
+      intro s' bt r' bk hl
+      have hne_dst : s' ≠ dst := by
+        intro h; subst h; rw [lookup_delete_same] at hl; simp at hl
+      rw [lookup_delete_ne _ dst s' hne_dst] at hl
+      have hne_val : s' ≠ val := by
+        intro h; subst h; rw [lookup_delete_same] at hl; simp at hl
+      rw [lookup_delete_ne _ val s' hne_val] at hl
+      have hr'_in := hwt.siteEnv_refs_in_pathEnv s' bt r' bk hl
+      have hr'_ne : r' ≠ r := by
+        intro heq; rw [heq] at hl
+        exact (hwt.live_refs_unique r).2.1 s' dst bt τ bk .siteBorrowMut hne_dst hl hdst_type
+      simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq]
+      exact ⟨hr'_in, hr'_ne⟩
+    live_refs_unique := by
+      intro r'
+      refine ⟨fun x' bt bk ms' s' bt' bk' hvar' hs' => ?_,
+              fun s1 s2 bt1 bt2 bk1 bk2 hne hs1 hs2 => ?_,
+              fun x1 x2 bt1 bt2 bk1 bk2 ms1 ms2 hne hx1 hx2 =>
+                (hwt.live_refs_unique r').2.2 x1 x2 bt1 bt2 bk1 bk2 ms1 ms2 hne hx1 hx2⟩
+      · have hne_dst : s' ≠ dst := by
+          intro h; subst h; rw [lookup_delete_same] at hs'; simp at hs'
+        rw [lookup_delete_ne _ dst s' hne_dst] at hs'
+        have hne_val : s' ≠ val := by
+          intro h; subst h; rw [lookup_delete_same] at hs'; simp at hs'
+        rw [lookup_delete_ne _ val s' hne_val] at hs'
+        exact (hwt.live_refs_unique r').1 x' bt bk ms' s' bt' bk' hvar' hs'
+      · have hne1_dst : s1 ≠ dst := by
+          intro h; subst h; rw [lookup_delete_same] at hs1; simp at hs1
+        rw [lookup_delete_ne _ dst s1 hne1_dst] at hs1
+        have hne1_val : s1 ≠ val := by
+          intro h; subst h; rw [lookup_delete_same] at hs1; simp at hs1
+        rw [lookup_delete_ne _ val s1 hne1_val] at hs1
+        have hne2_dst : s2 ≠ dst := by
+          intro h; subst h; rw [lookup_delete_same] at hs2; simp at hs2
+        rw [lookup_delete_ne _ dst s2 hne2_dst] at hs2
+        have hne2_val : s2 ≠ val := by
+          intro h; subst h; rw [lookup_delete_same] at hs2; simp at hs2
+        rw [lookup_delete_ne _ val s2 hne2_val] at hs2
+        exact (hwt.live_refs_unique r').2.1 s1 s2 bt1 bt2 bk1 bk2 hne hs1 hs2
+    blocks_typed := hwt.blocks_typed
+    lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
+    funEnv_typed := hwt.funEnv_typed
+    heap_loc_bound := heap_loc_bound_after_writeRef m.heap loc wpath vval heap' hwt.heap_loc_bound hwr
+    rmap_root_none := hwt.rmap_root_none
+    no_paths_to_root := no_paths_to_root_delete_ref_node' hwt r hr_not_root
+    root_path_coherence := root_path_coherence_delete_ref_node' hwt r hr_not_root
+    paths_from_non_member_empty :=
+      delete_ref_node_paths_from_non_member env.pathEnv r hwt.paths_from_non_member_empty
+    paths_to_non_member_empty :=
+      delete_ref_node_paths_to_non_member env.pathEnv r hwt.paths_to_non_member_empty
+    self_loop_only_empty := by
+      intro u p hp
+      simp only [delete_ref_node] at hp
+      by_cases hu : u = r
+      · subst hu; simp only [true_or, ↓reduceIte, interpret_regex] at hp
+      · simp only [hu, false_or, ↓reduceIte] at hp
+        exact hwt.self_loop_only_empty u p hp
+    rmap_has_type := by
+      intro r' bt loc' path' hrmap' hcond
+      have hcond' : (∃ x bk ms, lookup env.varEnv x = some (.validVar, .ref bt r' bk, ms)) ∨
+                    (∃ s bk, lookup env.siteEnv s = some (.ref bt r' bk)) := by
+        rcases hcond with ⟨x, bk, ms, hvar⟩ | ⟨s', bk, hsite⟩
+        · exact Or.inl ⟨x, bk, ms, hvar⟩
+        · have hne_dst : s' ≠ dst := by
+            intro h; subst h; rw [lookup_delete_same] at hsite; simp at hsite
+          rw [lookup_delete_ne _ dst s' hne_dst] at hsite
+          have hne_val : s' ≠ val := by
+            intro h; subst h; rw [lookup_delete_same] at hsite; simp at hsite
+          rw [lookup_delete_ne _ val s' hne_val] at hsite
+          exact Or.inr ⟨s', bk, hsite⟩
+      obtain ⟨v_old, hread_old, hht_old⟩ := hwt.rmap_has_type r' bt loc' path' hrmap' hcond'
+      by_cases hloc' : loc = loc'
+      · subst hloc'
+        -- Same location: use writePath_preserves_readPath_HasType
+        -- Extract base value and readPath facts from readRef
+        simp only [Heap.readRef, bind, Option.bind] at hread_old hv_leaf_read
+        have hwr' := hwr
+        simp only [Heap.writeRef, bind, Option.bind] at hwr'
+        cases hbase : m.heap.read loc with
+        | none => simp [hbase] at hv_leaf_read
+        | some baseVal =>
+          simp only [hbase] at hread_old hv_leaf_read hwr'
+          cases hwp2 : writePath baseVal wpath vval with
+          | none => simp [hwp2] at hwr'
+          | some newRoot =>
+            simp [hwp2] at hwr'
+            -- hwr' : m.heap.write loc newRoot = heap'
+            obtain ⟨vnew, hread_vnew, hht_vnew⟩ := writePath_preserves_readPath_HasType
+              baseVal wpath path' vval newRoot v_leaf v_old τ bt
+              hwp2 hread_old hht_old hv_leaf_read hv_leaf_ht hmval
+            refine ⟨vnew, ?_, hht_vnew⟩
+            rw [← hwr']
+            simp only [Heap.readRef, bind, Option.bind, Heap.write, Heap.read,
+                        lookup_insert_same, hread_vnew]
+      · have hread' : heap'.readRef loc' path' = some v_old := by
+          rw [heap_writeRef_preserves_readRef_diff_loc m.heap loc loc' wpath path' vval heap'
+                hloc' hwr]
+          exact hread_old
+        exact ⟨v_old, hread', hht_old⟩
+  }
+
 /-- Helper: lookup on deleteAll returns some → lookup on original returns some -/
 private lemma lookup_deleteAll_some (l : AssocMap Site MoveType) (ks : List Site)
     (k : Site) (v : MoveType) (h : lookup (deleteAll l ks) k = some v) :
@@ -2540,6 +3034,14 @@ private theorem preservation_pack (m m' : Machine) (env : TypeEnv) (lenv : Label
                 obtain ⟨v, _, hv_mem⟩ := collectPackFields_mem m.frame.siteStore fieldSites
                   fieldVals hcpf f a ha_mem
                 exact list_lookup_ne_none_of_mem hv_mem)
+              (fun f hne_fv => by
+                cases hv : fieldVals.lookup f with
+                | none => exact absurd hv hne_fv
+                | some v =>
+                  obtain ⟨a, ha_mem, _⟩ := collectPackFields_lookup_inv m.frame.siteStore
+                    fieldSites fieldVals hcpf f v hv
+                  obtain ⟨_, _, hfent_bt⟩ := hfield_map f a ha_mem
+                  rw [hfent_bt]; exact Option.some_ne_none _)
               (fun f bt v hfent hval => by
                 obtain ⟨a, ha_mem, ha_store⟩ := collectPackFields_lookup_inv m.frame.siteStore
                   fieldSites fieldVals hcpf f v hval
@@ -3510,7 +4012,7 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
         hvar ha_type hnv hfresh hnotin hcont hstmt hstep
     · exact preservation_assign_invalid m m' env lenv retType rmap hwt hss x site cont τ τ'
         hvar hsite hcompat hcont hstmt hstep
-  | writeRef dst val cont => sorry
+  | writeRef dst val cont => exact preservation_writeRef m m' env lenv retType rmap hwt hss dst val cont hstmt hstep
   | unpack fields src cont => sorry
   | jump label => sorry
   | branch c l1 l2 => sorry
