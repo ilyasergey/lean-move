@@ -705,12 +705,9 @@ private theorem preservation_copy_ref (m m' : Machine) (env : TypeEnv) (lenv : L
   simp only [step, hstmt, hrv, ExecState.running.injEq] at hstep; subst hstep
   -- 4. Define the new rmap extending with t → (loc', path)
   let rmap' : RefMap := { map := fun r => if r = t then some (loc', path) else rmap.map r }
-  -- 5. Get freshness of s_orig from well-formedness
-  have hfresh_s_orig : moveTypeIsFreshRef (.ref τ_ref s_orig isBor) :=
+  -- 5. Get s_orig ≠ root from well-formedness
+  have hs_not_root : s_orig ≠ Aref.root :=
     hwt.env_wf.varEnv_wf x (.validVar, .ref τ_ref s_orig isBor, ms) hvar
-  have hs_orig_fresh : Aref.isFreshRef s_orig := hfresh_s_orig
-  have hs_not_root : s_orig ≠ Aref.root := Aref.isFreshRef_not_root s_orig hs_orig_fresh
-  have hs_not_varRef : ∀ v, s_orig ≠ Aref.varRef v := Aref.isFreshRef_not_varRef s_orig hs_orig_fresh
   -- Extract pathEnv freshness from env-wide freshness
   have hfresh_t_pathEnv : freshRefBool t env.pathEnv :=
     freshRefInEnvBool_implies_freshRefBool t env hfresh_t
@@ -886,7 +883,7 @@ private theorem preservation_move (m m' : Machine) (env : TypeEnv) (lenv : Label
   obtain ⟨loc, val, hloc, hread, hmatch⟩ := hwt.var_consistent x .validVar τ ms hvar
   have hrv : readVar m x = some val := by unfold readVar; simp [hloc, hread]
   simp only [step, hstmt, hrv, ExecState.running.injEq] at hstep; subst hstep
-  have hfresh : moveTypeIsFreshRef τ := hwt.env_wf.varEnv_wf x (.validVar, τ, ms) hvar
+  have hfresh : moveTypeRefNotRoot τ := hwt.env_wf.varEnv_wf x (.validVar, τ, ms) hvar
   refine ⟨{env with varEnv := update env.varEnv x (.invalidVar, τ, ms),
                      siteEnv := insert env.siteEnv s τ},
           lenv, retType, rmap, ?_, hss⟩
@@ -897,8 +894,8 @@ private theorem preservation_move (m m' : Machine) (env : TypeEnv) (lenv : Label
       · apply SiteEnv.insert_refs_not_root _ _ _ hwt.env_wf.siteEnv_wf
         cases τ with
         | basic _ => trivial
-        | ref _ r _ => exact Aref.isFreshRef_not_root r hfresh
-      · exact VarEnv.update_refs_are_fresh env.varEnv x (.invalidVar, τ, ms)
+        | ref _ r _ => exact hfresh
+      · exact VarEnv.update_refs_not_root env.varEnv x (.invalidVar, τ, ms)
                 hwt.env_wf.varEnv_wf hfresh
     stmt_typed := hcont
     var_consistent := by
@@ -3572,8 +3569,8 @@ private theorem preservation_assign_invalid (m m' : Machine) (env : TypeEnv) (le
   have hrs : readSite m a = some v := hv
   simp only [step, hstmt, hrs, ExecState.running.injEq] at hstep; subst hstep
   -- Fresh ref for the new type
-  have hfresh_τ' : moveTypeIsFreshRef τ' :=
-    MoveType.compatible_preserves_freshRef τ τ'
+  have hfresh_τ' : moveTypeRefNotRoot τ' :=
+    MoveType.compatible_preserves_not_root τ τ'
       (hwt.env_wf.varEnv_wf x (.invalidVar, τ, .mutable) hvar) hcompat
   -- Capture facts for use inside struct by-blocks (x, a not in scope there)
   have hsite_a := hsite  -- lookup env.siteEnv a = some τ'
@@ -3586,7 +3583,7 @@ private theorem preservation_assign_invalid (m m' : Machine) (env : TypeEnv) (le
   exact {
     env_wf := ⟨hwt.env_wf.pathEnv_wf,
                SiteEnv.delete_refs_not_root env.siteEnv a hwt.env_wf.siteEnv_wf,
-               VarEnv.update_refs_are_fresh env.varEnv x (.validVar, τ', .mutable)
+               VarEnv.update_refs_not_root env.varEnv x (.validVar, τ', .mutable)
                  hwt.env_wf.varEnv_wf hfresh_τ'⟩
     stmt_typed := hcont
     var_consistent := by

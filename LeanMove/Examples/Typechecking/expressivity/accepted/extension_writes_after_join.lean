@@ -102,8 +102,8 @@ def s13 : Site := .site 13 -- integer literal 0 for write
 def t : FunDef := {
   params := [
     (var_cond, .basic .tbool),
-    (var_a, .ref (.trecord s_entries) (.refid 300) .siteBorrowMut),
-    (var_b, .ref (.trecord s_entries) (.refid 301) .siteBorrowMut)
+    (var_a, .ref (.trecord s_entries) (.varRef (Var.mk "a")) .siteBorrowMut),
+    (var_b, .ref (.trecord s_entries) (.varRef (Var.mk "b")) .siteBorrowMut)
   ]
   returnType := .ref (.trecord s_entries) (.refid 302) .siteBorrowMut
   locals := [

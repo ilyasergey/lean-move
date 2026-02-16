@@ -157,7 +157,9 @@ def init_fun_pathEnv (f : FunDef) : PathEnv :=
     | .ref _ r _ => some r
     | _ => none)
   { refs := .root :: paramRefs,
-    paths := fun (u, v) => if u = v then Regex.ε else Regex.empty }
+    paths := fun (u, v) =>
+      if u = v then Regex.ε
+      else .empty }
 
 /-- When all parameters have basic types, `init_fun_pathEnv f = PathEnv.init`. -/
 lemma init_fun_pathEnv_basic (f : FunDef)
@@ -170,7 +172,7 @@ lemma init_fun_pathEnv_basic (f : FunDef)
     intro ⟨x, τ⟩ hmem
     obtain ⟨bt, hbt⟩ := hbasic x τ hmem
     simp [hbt]
-  simp [hnil]
+  simp only [hnil]
 
 -- Check that the property p holds for all paths from s to tracked refs in penv
 def check_outbound (penv: PathEnv) (s: Aref) (p: Regex PathElement → Prop) :=
@@ -340,16 +342,53 @@ def TypeEnv.equiv (env1 env2 : TypeEnv) : Prop :=
   (∀ u v, u ∈ env1.pathEnv.refs → v ∈ env1.pathEnv.refs →
     env1.pathEnv.paths (u, v) = env2.pathEnv.paths (u, v))
 
-/-- `envL.subsumes env` means envL's paths are at least as wide as env's paths:
-    every path in env is also a path in envL.
-    Used at jump/branch targets where envL may be a join of multiple predecessors. -/
+/- ---------------------------------------------------- -/
+/-       Aref Substitution (for refid unification)     -/
+/- ---------------------------------------------------- -/
+
+/-- Apply a substitution to a MoveType's Aref.
+    Only ref types are affected; basic types are unchanged. -/
+def applySubstMoveType (σ : Aref → Aref) : MoveType → MoveType
+  | .basic bt => .basic bt
+  | .ref bt r bk => .ref bt (σ r) bk
+
+/-- Base type compatibility for MoveType: checks base type and borrow kind match,
+    ignoring the Aref. Used for invalid (consumed) entries where arefs are irrelevant. -/
+def MoveType.baseCompatible : MoveType → MoveType → Prop
+  | .basic bt1, .basic bt2 => bt1 = bt2
+  | .ref bt1 _ bk1, .ref bt2 _ bk2 => bt1 = bt2 ∧ bk1 = bk2
+  | _, _ => False
+
+/-- VarEnv entries match after applying substitution σ to the first VarEnv's types.
+    For valid entries: exact match after applying σ (refids are unified).
+    For invalid entries: base type compatibility suffices (arefs don't matter). -/
+def VarEnvSubstEquiv (σ : Aref → Aref) (ve1 ve2 : VarEnv) : Prop :=
+  ∀ k, match AssocMap.lookup ve1 k, AssocMap.lookup ve2 k with
+    | some (.validVar, τ1, ms1), some (.validVar, τ2, ms2) =>
+      applySubstMoveType σ τ1 = τ2 ∧ ms1 = ms2
+    | some (.invalidVar, τ1, ms1), some (.invalidVar, τ2, ms2) =>
+      MoveType.baseCompatible τ1 τ2 ∧ ms1 = ms2
+    | none, none => True
+    | _, _ => False
+
+/-- `envL.subsumes env` means there exists a refid substitution σ such that
+    after renaming envL's refid placeholders via σ, the VarEnvs match env's exactly,
+    the PathEnv refs match env's, and env's paths are included in envL's paths.
+    σ maps envL's .refid arefs → env's actual arefs (which may include .varRef).
+    Used at jump/branch targets where envL is a label environment. -/
 def TypeEnv.subsumes (envL env : TypeEnv) : Prop :=
   LookupEquiv env.siteEnv envL.siteEnv ∧
-  VarEnvLookupCompatible env.varEnv envL.varEnv ∧
-  env.pathEnv.refs = envL.pathEnv.refs ∧
-  (∀ u v, u ∈ env.pathEnv.refs → v ∈ env.pathEnv.refs →
-    ∀ path, interpret_regex (env.pathEnv.paths (u, v)) path →
-            interpret_regex (envL.pathEnv.paths (u, v)) path)
+  ∃ σ : Aref → Aref,
+    -- σ is identity on non-refid arefs (only .refid placeholders are renamed)
+    (∀ r, (∀ n, r ≠ .refid n) → σ r = r) ∧
+    -- After σ on envL, VarEnv entries match env's
+    VarEnvSubstEquiv σ envL.varEnv env.varEnv ∧
+    -- After σ on envL, PathEnv refs match env's
+    envL.pathEnv.refs.map σ = env.pathEnv.refs ∧
+    -- Paths in env are included in envL (env ⊆ envL, after σ renaming)
+    (∀ u v, u ∈ envL.pathEnv.refs → v ∈ envL.pathEnv.refs →
+      ∀ path, interpret_regex (env.pathEnv.paths (σ u, σ v)) path →
+              interpret_regex (envL.pathEnv.paths (u, v)) path)
 
 /- ---------------------------------------------------- -/
 /-       Well-formedness of the environments            -/

@@ -121,10 +121,10 @@ lemma not_borrowed_bool_sound (x : Var) (env : TypeEnv)
   by_cases hr : r ∈ env.pathEnv.refs
   · -- r ∈ refs: use match_bool_complete (contrapositive)
     have h := hbool r hr
+    simp only [Bool.not_eq_true'] at h
     intro haccept
     have hmatch := @Regex.match_bool_complete _ _ _ _ haccept
-    simp only [hmatch, Bool.not_true] at h
-    exact absurd h (by decide)
+    simp [hmatch] at h
   · -- r ∉ refs: path from root is empty by refs_complete
     have hempty := hwf.refs_complete r hr
     simp only [hempty, interpret_regex]
@@ -474,16 +474,10 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
             · simp only [hlookup]
             · exact not_borrowed_bool_sound x env hwf.pathEnv_wf hnotbor
             · exact hfresh
-            · -- τ comes from varEnv, so it satisfies RefsAreFresh by hwf.varEnv_wf
-              have hτ_fresh := VarEnv.lookup_type_is_fresh env.varEnv x .validVar τ ms hwf.varEnv_wf hlookup
-              have hτ_not_root : moveTypeRefsNotRoot τ := by
-                unfold moveTypeIsFreshRef at hτ_fresh
-                unfold moveTypeRefsNotRoot
-                cases τ with
-                | basic _ => trivial
-                | ref bt r bk => exact Aref.isFreshRef_not_root r hτ_fresh
+            · -- τ comes from varEnv, so it satisfies RefsNotRoot by hwf.varEnv_wf
+              have hτ_not_root := VarEnv.lookup_type_refs_not_root env.varEnv x .validVar τ ms hwf.varEnv_wf hlookup
               rw [moveTypeRefsNotRoot_eq] at hτ_not_root
-              have hwf' := TypeEnv.insert_update_wf env a τ x (.invalidVar, τ, ms) hwf hτ_not_root hτ_fresh
+              have hwf' := TypeEnv.insert_update_wf env a τ x (.invalidVar, τ, ms) hwf hτ_not_root hτ_not_root
               exact ih_cont _ hwf' h
           · simp at h
         | (.invalidVar, _, _) => simp at h
@@ -515,11 +509,7 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
             · exact hfresh
             · exact nextFreshRefInEnv_fresh env
             · exact nextFreshRefInEnv_not_varRef env
-            · have hs_fresh := VarEnv.lookup_type_is_fresh env.varEnv x .validVar (.ref τ s isBor) ms hwf.varEnv_wf hlookup
-              simp only [moveTypeIsFreshRef] at hs_fresh
-              have hs_not_root : s ≠ Aref.root := Aref.isFreshRef_not_root s hs_fresh
-              have hs_not_varRef : ∀ v, s ≠ Aref.varRef v := Aref.isFreshRef_not_varRef s hs_fresh
-              have ht_not_root : t ≠ Aref.root := nextFreshRefInEnv_not_root env
+            · have ht_not_root : t ≠ Aref.root := nextFreshRefInEnv_not_root env
               have ht_not_varRef : ∀ v, t ≠ Aref.varRef v := nextFreshRefInEnv_not_varRef env
               have hpe' := update_with_epsilon_wellformed t s env.pathEnv hwf.pathEnv_wf ht_not_root ht_not_varRef
               have hτ : match (MoveType.ref τ t isBor) with | .ref _ r _ => r ≠ Aref.root | .basic _ => True :=
@@ -785,20 +775,233 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
       · simp at h
     · simp at h
 
+/- ---------------------------------------------------- -/
+/-       Substitution soundness helpers                  -/
+/- ---------------------------------------------------- -/
+
+/-- Helper: the foldl step function used in computeRefSubst -/
+private def refSubstStep (a : Option (List (Aref × Aref))) (pair : Aref × Aref) :
+    Option (List (Aref × Aref)) :=
+  match a with
+  | none => none
+  | some pairs =>
+    let (r1, r2) := pair
+    match pairs.lookup r1 with
+    | some r2' => if r2 == r2' then some pairs else none
+    | none =>
+      if pairs.any (fun (_, t) => t == r2) then none
+      else some (pair :: pairs)
+
+/-- foldl of refSubstStep starting from none always gives none -/
+private lemma refSubstStep_foldl_none (input : List (Aref × Aref)) :
+    input.foldl refSubstStep none = none := by
+  induction input with
+  | nil => rfl
+  | cons _ _ ih => simp only [List.foldl_cons, refSubstStep]; exact ih
+
+/-- The foldl in computeRefSubst preserves the property that all keys are refids,
+    given that the input pairs all have refid keys. -/
+private lemma computeRefSubst_foldl_keys_refid
+    (input : List (Aref × Aref))
+    (hinput : ∀ k v, (k, v) ∈ input → ∃ n, k = .refid n)
+    (acc : List (Aref × Aref))
+    (hacc : ∀ k v, (k, v) ∈ acc → ∃ n, k = .refid n)
+    (result : List (Aref × Aref))
+    (hresult : input.foldl refSubstStep (some acc) = some result) :
+    ∀ k v, (k, v) ∈ result → ∃ n, k = .refid n := by
+  induction input generalizing acc with
+  | nil =>
+    simp only [List.foldl_nil] at hresult
+    injection hresult with hresult
+    rw [← hresult]; exact hacc
+  | cons pair rest ih =>
+    simp only [List.foldl_cons] at hresult
+    obtain ⟨r1, r2⟩ := pair
+    simp only [refSubstStep] at hresult
+    have hinput_rest : ∀ k v, (k, v) ∈ rest → ∃ n, k = .refid n :=
+      fun k v hm => hinput k v (List.mem_cons_of_mem _ hm)
+    -- Case split on List.lookup r1 acc
+    cases hlk : List.lookup r1 acc with
+    | none =>
+      simp only [hlk] at hresult
+      -- New key: check injectivity condition
+      cases hinj : (acc.any fun x => x.2 == r2) with
+      | false =>
+        simp only [hinj, Bool.false_eq_true, ite_false] at hresult
+        -- pair :: acc case
+        have hacc' : ∀ k v, (k, v) ∈ (r1, r2) :: acc → ∃ n, k = .refid n := by
+          intro k v hm
+          cases List.mem_cons.mp hm with
+          | inl heq =>
+            have hk : k = r1 := (Prod.mk.inj heq).1
+            subst hk
+            exact hinput k r2 (List.mem_cons.mpr (Or.inl rfl))
+          | inr htail => exact hacc k v htail
+        exact ih hinput_rest ((r1, r2) :: acc) hacc' hresult
+      | true =>
+        simp only [hinj, ite_true] at hresult
+        -- foldl starting from none — impossible
+        rw [refSubstStep_foldl_none] at hresult; simp at hresult
+    | some r2' =>
+      simp only [hlk] at hresult
+      -- Existing key: check consistency
+      by_cases hr2eq : r2 = r2'
+      · simp only [beq_iff_eq, hr2eq, ite_true] at hresult
+        exact ih hinput_rest acc hacc hresult
+      · have hne_beq : (r2 == r2') = false := beq_false_of_ne hr2eq
+        simp only [hne_beq, Bool.false_eq_true, ite_false] at hresult
+        rw [refSubstStep_foldl_none] at hresult; simp at hresult
+
+/-- All keys in the substitution computed by computeRefSubst are refids. -/
+private lemma computeRefSubst_keys_refid (ve1 ve2 : VarEnv) (pairs : List (Aref × Aref))
+    (h : computeRefSubst ve1 ve2 = some pairs) :
+    ∀ k v, (k, v) ∈ pairs → ∃ n, k = .refid n := by
+  simp only [computeRefSubst] at h
+  -- The foldl lambda is definitionally equal to refSubstStep
+  change (ve1.entries.filterMap _).foldl refSubstStep (some []) = some pairs at h
+  apply computeRefSubst_foldl_keys_refid _ _ [] (fun _ _ hm => nomatch hm) _ h
+  -- Show that filterMap only produces refid keys
+  intro k v hm
+  simp only [List.mem_filterMap] at hm
+  obtain ⟨⟨x, isv, τ, ms⟩, _, hfm⟩ := hm
+  simp only at hfm
+  split at hfm <;> simp at hfm
+  split at hfm <;> simp at hfm
+  exact ⟨_, hfm.2.1.symm⟩
+
+/-- applySubstArefList is identity on arefs that are not refids,
+    when the substitution comes from computeRefSubst. -/
+private lemma applySubstArefList_non_refid (pairs : List (Aref × Aref))
+    (hkeys : ∀ k v, (k, v) ∈ pairs → ∃ n, k = .refid n)
+    (r : Aref) (hr : ∀ n, r ≠ .refid n) :
+    applySubstArefList pairs r = r := by
+  simp only [applySubstArefList]
+  -- Show pairs.lookup r = none since r is not a refid but all keys are
+  have hlk : pairs.lookup r = none := by
+    induction pairs with
+    | nil => simp [List.lookup]
+    | cons p rest ih =>
+      obtain ⟨k, v⟩ := p
+      have ⟨n, hk⟩ := hkeys k v (List.mem_cons.mpr (Or.inl rfl))
+      subst hk
+      have hne : (r == Aref.refid n) = false := by
+        apply beq_false_of_ne
+        exact hr n
+      simp only [List.lookup, hne]
+      exact ih (fun k v hm => hkeys k v (List.mem_cons.mpr (Or.inr hm)))
+  simp [hlk]
+
+/-- applySubstMoveTypeList agrees with applySubstMoveType using applySubstArefList. -/
+private lemma applySubstMoveTypeList_eq (σ : List (Aref × Aref)) (τ : MoveType) :
+    applySubstMoveTypeList σ τ = applySubstMoveType (applySubstArefList σ) τ := by
+  cases τ with
+  | basic bt => rfl
+  | ref bt r bk => rfl
+
+/-- Boolean base type compatibility implies the relational version. -/
+private lemma MoveType_base_compatible_bool_sound (τ1 τ2 : MoveType) :
+    MoveType.base_compatible_bool τ1 τ2 = true → MoveType.baseCompatible τ1 τ2 := by
+  cases τ1 with
+  | basic bt1 =>
+    cases τ2 with
+    | basic bt2 =>
+      simp only [MoveType.base_compatible_bool, MoveType.baseCompatible]
+      exact fun h => BasicMoveType.eq_of_beq bt1 bt2 h
+    | ref _ _ _ => simp [MoveType.base_compatible_bool]
+  | ref bt1 r1 bk1 =>
+    cases τ2 with
+    | basic _ => simp [MoveType.base_compatible_bool]
+    | ref bt2 r2 bk2 =>
+      simp only [MoveType.base_compatible_bool, Bool.and_eq_true, MoveType.baseCompatible]
+      intro ⟨hbt, hbk⟩
+      exact ⟨BasicMoveType.eq_of_beq bt1 bt2 hbt, beq_iff_eq.mp hbk⟩
+
+/-- Soundness of varenv_subst_equiv_bool: if it returns true, VarEnvSubstEquiv holds. -/
+private lemma varenv_subst_equiv_bool_sound (σ : List (Aref × Aref)) (ve1 ve2 : VarEnv) :
+    varenv_subst_equiv_bool σ ve1 ve2 = true →
+    VarEnvSubstEquiv (applySubstArefList σ) ve1 ve2 := by
+  intro h
+  simp only [varenv_subst_equiv_bool, Bool.and_eq_true, List.all_eq_true] at h
+  obtain ⟨hall1, hall2⟩ := h
+  intro k
+  -- Case split on lookup ve1 k
+  cases hk1 : AssocMap.lookup ve1 k with
+  | none =>
+    -- If ve1 has no entry for k, ve2 must also have none
+    cases hk2 : AssocMap.lookup ve2 k with
+    | none => simp
+    | some val2 =>
+      -- ve2 has entry for k but ve1 doesn't — contradicts hall2
+      exfalso
+      obtain ⟨isv2, τ2, ms2⟩ := val2
+      have hmem2 : (k, (isv2, τ2, ms2)) ∈ ve2.entries :=
+        AssocMap.lookup_some ve2 k (isv2, τ2, ms2) hk2
+      have := hall2 (k, (isv2, τ2, ms2)) hmem2
+      simp only [Option.isSome] at this
+      rw [hk1] at this
+      simp at this
+  | some val1 =>
+    obtain ⟨isv1, τ1, ms1⟩ := val1
+    -- ve1 has entry (isv1, τ1, ms1) for k
+    cases hk2 : AssocMap.lookup ve2 k with
+    | none =>
+      -- ve1 has entry but ve2 doesn't — contradicts hall1
+      exfalso
+      have hmem1 : (k, (isv1, τ1, ms1)) ∈ ve1.entries :=
+        AssocMap.lookup_some ve1 k (isv1, τ1, ms1) hk1
+      have hcond := hall1 (k, (isv1, τ1, ms1)) hmem1
+      simp only [hk2] at hcond
+      simp at hcond
+    | some val2 =>
+      obtain ⟨isv2, τ2, ms2⟩ := val2
+      -- Extract conditions from hall1
+      have hmem1 : (k, (isv1, τ1, ms1)) ∈ ve1.entries :=
+        AssocMap.lookup_some ve1 k (isv1, τ1, ms1) hk1
+      have hcond := hall1 (k, (isv1, τ1, ms1)) hmem1
+      simp only [hk2, Bool.and_eq_true] at hcond
+      obtain ⟨⟨hisv_eq, hms_eq⟩, htype_cond⟩ := hcond
+      have hisv : isv1 = isv2 := beq_iff_eq.mp hisv_eq
+      have hms : ms1 = ms2 := beq_iff_eq.mp hms_eq
+      subst hisv hms
+      cases isv1 with
+      | validVar =>
+        simp only at htype_cond
+        have htype : applySubstMoveTypeList σ τ1 = τ2 := MoveType.eq_of_beq _ _ htype_cond
+        rw [applySubstMoveTypeList_eq] at htype
+        exact ⟨htype, rfl⟩
+      | invalidVar =>
+        simp only at htype_cond
+        exact ⟨MoveType_base_compatible_bool_sound τ1 τ2 htype_cond, rfl⟩
+
 /-- Soundness of subsumes_bool: if it returns true, the semantic subsumption holds. -/
 theorem subsumes_bool_implies_subsumes (envL env : TypeEnv) :
     TypeEnv.subsumes_bool envL env = true → TypeEnv.subsumes envL env := by
   intro h
-  simp only [TypeEnv.subsumes_bool, Bool.and_eq_true, List.all_eq_true] at h
-  obtain ⟨⟨⟨hse, hve⟩, hrefs⟩, hpaths⟩ := h
-  refine ⟨?_, ?_, ?_, ?_⟩
-  · exact lookup_equiv_bool_sound _ _ hse
-  · exact varenv_lookup_compatible_bool_sound _ _ hve
-  · exact beq_iff_eq.mp hrefs
-  · intro u v hu hv path hmatch
-    have hu' := hpaths u hu
-    have huv := hu' v hv
-    exact regexSubsumedBy_sound _ _ huv path hmatch
+  simp only [TypeEnv.subsumes_bool, Bool.and_eq_true] at h
+  obtain ⟨hse, hrest⟩ := h
+  -- Case split on computeRefSubst result
+  split at hrest
+  · simp at hrest  -- none case: contradiction
+  · rename_i pairs heq_subst
+    simp only [Bool.and_eq_true, List.all_eq_true] at hrest
+    obtain ⟨⟨hve, hrefs⟩, hpaths⟩ := hrest
+    -- Define σ as the function version of the substitution
+    let σ : Aref → Aref := fun r => applySubstArefList pairs r
+    refine ⟨lookup_equiv_bool_sound _ _ hse, σ, ?_, ?_, ?_, ?_⟩
+    · -- σ is identity on non-refid arefs
+      intro r hr
+      exact applySubstArefList_non_refid pairs
+        (computeRefSubst_keys_refid envL.varEnv env.varEnv pairs heq_subst) r hr
+    · -- VarEnvSubstEquiv σ envL.varEnv env.varEnv
+      exact varenv_subst_equiv_bool_sound pairs envL.varEnv env.varEnv hve
+    · -- envL.pathEnv.refs.map σ = env.pathEnv.refs
+      have : (envL.pathEnv.refs.map (applySubstArefList pairs) == env.pathEnv.refs) = true := hrefs
+      exact beq_iff_eq.mp this
+    · -- Path inclusion: env ⊆ envL after σ
+      intro u v hu hv path hinterp
+      have hu' := hpaths u hu
+      have huv := hu' v hv
+      exact regexSubsumedBy_sound _ _ huv path hinterp
 
 /- ---------------------------------------------------- -/
 /-       Statement type checking soundness               -/
@@ -968,10 +1171,10 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
           split at h
           · rename_i hcompat
             have hcompat' := MoveType.compatible_bool_sound τ τ' hcompat
-            have hτ_fresh := VarEnv.lookup_type_is_fresh env.varEnv x .invalidVar τ .mutable hwf.varEnv_wf hlookup
-            have hτ'_fresh := MoveType.compatible_preserves_freshRef τ τ' hτ_fresh hcompat'
+            have hτ_notroot := VarEnv.lookup_type_refs_not_root env.varEnv x .invalidVar τ .mutable hwf.varEnv_wf hlookup
+            have hτ'_notroot := MoveType.compatible_preserves_not_root τ τ' hτ_notroot hcompat'
             have hsenv' := SiteEnv.delete_refs_not_root env.siteEnv a hwf.siteEnv_wf
-            have hvarenv' := VarEnv.update_refs_are_fresh env.varEnv x (.validVar, τ', .mutable) hwf.varEnv_wf hτ'_fresh
+            have hvarenv' := VarEnv.update_refs_not_root env.varEnv x (.validVar, τ', .mutable) hwf.varEnv_wf hτ'_notroot
             let env' : TypeEnv := {env with varEnv := update env.varEnv x (.validVar, τ', .mutable)
                                             siteEnv := delete env.siteEnv a}
             have hwf' : TypeEnv.WellFormed env' := ⟨hwf.pathEnv_wf, hsenv', hvarenv'⟩

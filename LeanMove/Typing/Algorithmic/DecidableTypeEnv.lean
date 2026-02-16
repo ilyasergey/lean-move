@@ -135,24 +135,19 @@ def SiteEnv.refsNotRoot_bool (senv : SiteEnv) : Bool :=
     | .ref _ r _ => r != .root
     | .basic _ => true
 
-/-- All references in a VarEnv are fresh refs (boolean check) -/
-def VarEnv.refsAreFresh_bool (venv : VarEnv) : Bool :=
+/-- All references in a VarEnv are not root (boolean check) -/
+def VarEnv.refsNotRoot_bool (venv : VarEnv) : Bool :=
   venv.entries.all fun (_, (_, τ, _)) =>
     match τ with
-    | .ref _ r _ => Aref.isFreshRef_bool r
+    | .ref _ r _ => r != .root
     | .basic _ => true
 
 /-- Boolean well-formedness check for PathEnvDec:
     1. root ∈ refs
-    2. varRef x ∈ refs → isBorrowPath x (paths (.root, .varRef x))
-    3. All stored entry keys have source in refs
-    4. All stored entry keys have target in refs -/
+    2. All stored entry keys have source in refs
+    3. All stored entry keys have target in refs -/
 def PathEnvDec.wellFormed_bool (ped : PathEnvDec) : Bool :=
   ped.refs.contains .root &&
-  ped.refs.all (fun r =>
-    match r with
-    | .varRef x => isBorrowPath_bool x (ped.toPathEnv.paths (.root, .varRef x))
-    | _ => true) &&
   ped.paths.entries.all (fun ((u, _), _) => ped.refs.contains u) &&
   ped.paths.entries.all (fun ((_, v), _) => ped.refs.contains v)
 
@@ -160,7 +155,7 @@ def PathEnvDec.wellFormed_bool (ped : PathEnvDec) : Bool :=
 def TypeEnvDec.wellFormed_bool (ted : TypeEnvDec) : Bool :=
   ted.pathEnv.wellFormed_bool &&
   SiteEnv.refsNotRoot_bool ted.siteEnv &&
-  VarEnv.refsAreFresh_bool ted.varEnv
+  VarEnv.refsNotRoot_bool ted.varEnv
 
 /-- Boolean well-formedness check for all entries in a LabelEnvDec -/
 def LabelEnvDec.allWellFormed_bool (led : LabelEnvDec) : Bool :=
@@ -208,10 +203,10 @@ private theorem SiteEnv_refsNotRoot_bool_sound (senv : SiteEnv) :
     simp only [bne_iff_ne] at this
     exact this
 
-private theorem VarEnv_refsAreFresh_bool_sound (venv : VarEnv) :
-    VarEnv.refsAreFresh_bool venv = true → VarEnv.RefsAreFresh venv := by
+private theorem VarEnv_refsNotRoot_bool_sound (venv : VarEnv) :
+    VarEnv.refsNotRoot_bool venv = true → VarEnv.RefsNotRoot venv := by
   intro h x entry hlookup
-  simp only [VarEnv.refsAreFresh_bool, List.all_eq_true] at h
+  simp only [VarEnv.refsNotRoot_bool, List.all_eq_true] at h
   have hmem := lookup_some venv x entry hlookup
   obtain ⟨isv, τ, m⟩ := entry
   have := h (x, (isv, τ, m)) hmem
@@ -219,8 +214,8 @@ private theorem VarEnv_refsAreFresh_bool_sound (venv : VarEnv) :
   cases τ with
   | basic _ => trivial
   | ref bt r bk =>
-    simp only at this ⊢
-    exact Aref_isFreshRef_bool_sound r this
+    simp only [bne_iff_ne] at this
+    exact this
 
 /-- Key lemma: if u ∉ refs and all stored entries have source in refs,
     then lookup of (u, v) returns none for any v -/
@@ -266,7 +261,7 @@ theorem PathEnvDec.wellFormed_bool_sound (ped : PathEnvDec) :
     ped.wellFormed_bool = true → PathEnv.WellFormed ped.toPathEnv := by
   intro h
   simp only [wellFormed_bool, Bool.and_eq_true] at h
-  obtain ⟨⟨⟨hroot, hvarrefs⟩, hguard_from⟩, hguard_to⟩ := h
+  obtain ⟨⟨hroot, hguard_from⟩, hguard_to⟩ := h
   constructor
   · -- refs_complete: r ∉ refs → paths (.root, r) = .empty
     intro r hr
@@ -279,12 +274,6 @@ theorem PathEnvDec.wellFormed_bool_sound (ped : PathEnvDec) :
     · simp only [hrr, ↓reduceIte]
       have := lookup_none_of_non_member_to ped .root r hguard_to hr
       simp only [this]
-  · -- varref_tracked: varRef x ∈ refs → isBorrowPath x (paths (.root, .varRef x))
-    intro x hx
-    simp only [List.all_eq_true] at hvarrefs
-    have := hvarrefs (.varRef x) hx
-    simp only at this
-    exact isBorrowPath_bool_sound x _ this
   · -- root_in_refs: .root ∈ refs
     simp only [toPathEnv, List.contains_eq_any_beq, List.any_eq_true, beq_iff_eq] at hroot ⊢
     obtain ⟨r', hr'mem, hr'eq⟩ := hroot
@@ -303,7 +292,7 @@ theorem PathEnvDec.toPathEnv_non_member_from (ped : PathEnvDec)
     ¬interpret_regex (ped.toPathEnv.paths (u, v)) p := by
   intro u v p hu _huroot huv
   simp only [wellFormed_bool, Bool.and_eq_true] at hwf
-  obtain ⟨⟨⟨_, _⟩, hguard_from⟩, _⟩ := hwf
+  obtain ⟨⟨_, hguard_from⟩, _⟩ := hwf
   simp only [toPathEnv] at hu ⊢
   simp only [huv, ↓reduceIte]
   rw [lookup_none_of_non_member_from ped u v hguard_from hu]
@@ -316,7 +305,7 @@ theorem PathEnvDec.toPathEnv_non_member_to (ped : PathEnvDec)
     ¬interpret_regex (ped.toPathEnv.paths (u, v)) p := by
   intro u v p hv _hvroot huv
   simp only [wellFormed_bool, Bool.and_eq_true] at hwf
-  obtain ⟨⟨⟨_, _⟩, _⟩, hguard_to⟩ := hwf
+  obtain ⟨⟨_, _⟩, hguard_to⟩ := hwf
   simp only [toPathEnv] at hv ⊢
   simp only [huv, ↓reduceIte]
   rw [lookup_none_of_non_member_to ped u v hguard_to hv]
@@ -330,7 +319,7 @@ theorem TypeEnvDec.wellFormed_bool_sound (ted : TypeEnvDec) :
   exact {
     pathEnv_wf := PathEnvDec.wellFormed_bool_sound ted.pathEnv hpe
     siteEnv_wf := SiteEnv_refsNotRoot_bool_sound ted.siteEnv hse
-    varEnv_wf := VarEnv_refsAreFresh_bool_sound ted.varEnv hve
+    varEnv_wf := VarEnv_refsNotRoot_bool_sound ted.varEnv hve
   }
 
 /- ---------------------------------------------------- -/

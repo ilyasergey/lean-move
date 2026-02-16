@@ -64,16 +64,90 @@ def TypeEnv.equiv_bool (env1 env2 : TypeEnv) : Bool :=
     env1.pathEnv.refs.all fun v =>
       regexBeq (env1.pathEnv.paths (u, v)) (env2.pathEnv.paths (u, v))
 
-/-- Check that envL subsumes env: same siteEnv/varEnv/refs, and every path regex
-    in env is subsumed by the corresponding regex in envL.
-    Used at jump/branch targets where envL may be a join of multiple predecessors. -/
+/- ---------------------------------------------------- -/
+/-       Refid Substitution (algorithmic)               -/
+/- ---------------------------------------------------- -/
+
+/-- Apply a list-based substitution to an Aref.
+    Looks up r in the substitution; returns r unchanged if not found. -/
+def applySubstArefList (σ : List (Aref × Aref)) (r : Aref) : Aref :=
+  match σ.lookup r with
+  | some r' => r'
+  | none => r
+
+/-- Apply a list-based substitution to a MoveType. -/
+def applySubstMoveTypeList (σ : List (Aref × Aref)) : MoveType → MoveType
+  | .basic bt => .basic bt
+  | .ref bt r bk => .ref bt (applySubstArefList σ r) bk
+
+/-- Apply a list-based substitution to a VarEnv. -/
+def applySubstVarEnvList (σ : List (Aref × Aref)) (ve : VarEnv) : VarEnv :=
+  ⟨ve.entries.map fun (x, (isv, τ, ms)) => (x, (isv, applySubstMoveTypeList σ τ, ms))⟩
+
+/-- Compute a refid substitution by comparing VALID ref-typed entries in two VarEnvs.
+    Maps envL's .refid placeholders → env's actual arefs (which may be .varRef or .refid).
+    Only valid entries participate: invalid entries use MoveType.compatible separately.
+    Returns none if conflicting or non-injective. -/
+def computeRefSubst (ve_target ve_source : VarEnv) : Option (List (Aref × Aref)) :=
+  let refPairs := ve_target.entries.filterMap fun (x, (isv, τ_target, _)) =>
+    match isv, τ_target with
+    | .validVar, .ref _ (.refid n1) _ =>
+      match lookup ve_source x with
+      | some (.validVar, .ref _ r2 _, _) =>
+        if (.refid n1 : Aref) == r2 then none  -- identity, no remapping needed
+        else some (.refid n1, r2)
+      | _ => none  -- mismatch caught by varenv_subst_equiv_bool
+    | _, _ => none
+  -- Build substitution, checking consistency and injectivity
+  refPairs.foldl (fun acc pair =>
+    match acc with
+    | none => none
+    | some pairs =>
+      let (r1, r2) := pair
+      match pairs.lookup r1 with
+      | some r2' => if r2 == r2' then some pairs else none  -- consistency
+      | none =>
+        -- injectivity: r2 must not already be a target
+        if pairs.any (fun (_, t) => t == r2) then none
+        else some (pair :: pairs)
+  ) (some [])
+
+/-- Boolean base type compatibility: checks base type and borrow kind, ignoring Aref. -/
+def MoveType.base_compatible_bool : MoveType → MoveType → Bool
+  | .basic bt1, .basic bt2 => bt1.beq bt2
+  | .ref bt1 _ bk1, .ref bt2 _ bk2 => bt1.beq bt2 && bk1 == bk2
+  | _, _ => false
+
+/-- Boolean check for VarEnvSubstEquiv: for valid entries, exact match after σ;
+    for invalid entries, base type compatibility (arefs ignored). -/
+def varenv_subst_equiv_bool (σ : List (Aref × Aref)) (ve1 ve2 : VarEnv) : Bool :=
+  ve1.entries.all (fun (x, (isv1, τ1, ms1)) =>
+    match lookup ve2 x with
+    | some (isv2, τ2, ms2) =>
+      isv1 == isv2 && ms1 == ms2 &&
+      match isv1 with
+      | .validVar => applySubstMoveTypeList σ τ1 == τ2
+      | .invalidVar => MoveType.base_compatible_bool τ1 τ2
+    | none => false) &&
+  ve2.entries.all (fun (x, _) => (lookup ve1 x).isSome)
+
+/-- Check that envL subsumes env with refid unification.
+    Computes σ mapping envL's .refid placeholders to env's actual arefs, then checks:
+    1. SiteEnvs are equivalent
+    2. VarEnvs match after σ (exact for valid, compatible for invalid)
+    3. PathEnv refs match after σ
+    4. env's paths are subsumed by envL's paths (env ⊆ envL, after σ renaming) -/
 def TypeEnv.subsumes_bool (envL env : TypeEnv) : Bool :=
   lookup_equiv_bool env.siteEnv envL.siteEnv &&
-  varenv_lookup_compatible_bool env.varEnv envL.varEnv &&
-  env.pathEnv.refs == envL.pathEnv.refs &&
-  env.pathEnv.refs.all fun u =>
-    env.pathEnv.refs.all fun v =>
-      regexSubsumedBy (env.pathEnv.paths (u, v)) (envL.pathEnv.paths (u, v))
+  match computeRefSubst envL.varEnv env.varEnv with
+  | none => false
+  | some σ =>
+    varenv_subst_equiv_bool σ envL.varEnv env.varEnv &&
+    (envL.pathEnv.refs.map (applySubstArefList σ) == env.pathEnv.refs) &&
+    envL.pathEnv.refs.all fun u =>
+      envL.pathEnv.refs.all fun v =>
+        regexSubsumedBy (env.pathEnv.paths (applySubstArefList σ u, applySubstArefList σ v))
+          (envL.pathEnv.paths (u, v))
 
 /-- Boolean check for all_fresh_sites -/
 def all_fresh_sites_bool (env: TypeEnv) (as: List Site) : Bool :=

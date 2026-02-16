@@ -221,20 +221,20 @@ instance : DecidableEq MoveType := fun t1 t2 =>
   else
     isFalse (fun heq => h (MoveType.beq_of_eq t1 t2 heq))
 
-/-- Two Arefs are compatible if they have the same kind.
-    In particular, any `.refid n` is compatible with any `.refid m` (ignoring the numeric value).
-    This allows the checker to be agnostic to the exact refid values in declared types. -/
+/-- Two Arefs are compatible if neither is root, or both are root.
+    All non-root arefs (.refid, .varRef) are mutually compatible.
+    This allows the checker to be agnostic to the exact aref values in declared types. -/
 def Aref.compatible : Aref → Aref → Bool
-  | .refid _, .refid _ => true
   | .root, .root => true
-  | .varRef x, .varRef y => x == y
-  | _, _ => false
+  | .root, _ => false
+  | _, .root => false
+  | _, _ => true
 
 def Aref.Compatible : Aref → Aref → Prop
-  | .refid _, .refid _ => True
   | .root, .root => True
-  | .varRef x, .varRef y => x = y
-  | _, _ => False
+  | .root, _ => False
+  | _, .root => False
+  | _, _ => True
 
 theorem Aref.compatible_sound (a1 a2 : Aref) : a1.compatible a2 = true → a1.Compatible a2 := by
   cases a1 <;> cases a2 <;> simp [compatible, Compatible]
@@ -281,6 +281,6 @@ theorem MoveType.compatible_of_beq (t1 t2 : MoveType) :
     cases r with
     | root => exact trivial
     | refid n => exact trivial
-    | varRef x => exact rfl
+    | varRef x => exact trivial
 
 end LeanMove.Lang.MoveLight

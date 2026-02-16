@@ -146,9 +146,9 @@ def invalid : FunDef := {
   returnType := .basic .tunit
   locals := [
     { name := var_a, type := .basic .u64 },
-    { name := var_r, type := .ref .u64 (.varRef var_a) .siteBorrowMut },
-    { name := var_mut1, type := .ref .u64 (.varRef var_a) .siteBorrowMut },
-    { name := var_imm1, type := .ref .u64 (.varRef var_a) .siteBorrowImm }
+    { name := var_r, type := .ref .u64 (.refid 0) .siteBorrowMut },
+    { name := var_mut1, type := .ref .u64 (.refid 1) .siteBorrowMut },
+    { name := var_imm1, type := .ref .u64 (.refid 2) .siteBorrowImm }
   ]
   blocks := [
     { label := "b0"

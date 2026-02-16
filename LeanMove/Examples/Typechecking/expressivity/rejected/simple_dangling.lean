@@ -166,7 +166,7 @@ def field_dangling : FunDef := {
   params := [(var_s, .ref (.trecord s_entries) (.varRef var_s) .siteBorrowMut)]
   returnType := .basic .tunit
   locals := [
-    { name := var_f, type := .ref .u64 (.varRef var_s) .siteBorrowImm }
+    { name := var_f, type := .ref .u64 (.refid 0) .siteBorrowImm }
   ]
   blocks := [
     { label := "b0"
@@ -203,8 +203,8 @@ def nested_field_dangling : FunDef := {
   params := [(var_p, .ref (.trecord p_entries) (.varRef var_p) .siteBorrowMut)]
   returnType := .basic .tunit
   locals := [
-    { name := var_s, type := .ref (.trecord s_entries) (.varRef var_p) .siteBorrowMut },
-    { name := var_f, type := .ref .u64 (.varRef var_p) .siteBorrowImm }
+    { name := var_s, type := .ref (.trecord s_entries) (.refid 1) .siteBorrowMut },
+    { name := var_f, type := .ref .u64 (.refid 2) .siteBorrowImm }
   ]
   blocks := [
     { label := "b0"
@@ -254,8 +254,8 @@ def simple_call_dangling : FunDef := {
   returnType := .basic .tunit
   locals := [
     { name := var_a, type := .basic .u64 },
-    { name := var_m, type := .ref .u64 (.varRef var_a) .siteBorrowMut },
-    { name := var_i, type := .ref .u64 (.varRef var_a) .siteBorrowImm }
+    { name := var_m, type := .ref .u64 (.refid 5) .siteBorrowMut },
+    { name := var_i, type := .ref .u64 (.refid 6) .siteBorrowImm }
   ]
   blocks := [
     { label := "b0"
@@ -298,7 +298,7 @@ def field_call_dangling : FunDef := {
   params := [(var_s, .ref (.trecord s_entries) (.varRef var_s) .siteBorrowMut)]
   returnType := .basic .tunit
   locals := [
-    { name := var_f, type := .ref .u64 (.varRef var_s) .siteBorrowImm }
+    { name := var_f, type := .ref .u64 (.refid 0) .siteBorrowImm }
   ]
   blocks := [
     { label := "b0"

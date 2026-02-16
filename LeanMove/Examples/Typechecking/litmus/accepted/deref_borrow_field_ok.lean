@@ -170,7 +170,7 @@ theorem M_new_welltyped : ∃ lenv, typecheck_fun M_new lenv :=
   - return
 -/
 def M_t : FunDef := {
-  params := [(var_this, .ref M_T_basic (.refid 0) .siteBorrowImm)]
+  params := [(var_this, .ref M_T_basic (.varRef var_this) .siteBorrowImm)]
   returnType := .basic .tunit
   locals := [{ name := var_y, type := .basic .u64 }]
   blocks := [

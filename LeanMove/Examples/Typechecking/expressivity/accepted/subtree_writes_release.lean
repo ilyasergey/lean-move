@@ -83,7 +83,7 @@ def tree_entries : AssocMap Field BasicMoveType :=
   insert (insert empty field_l (.trecord sub1_entries)) field_r (.trecord sub1_entries)
 
 -- Abstract reference for the parameter
-def r0 : Aref := .refid 0
+def r0 : Aref := .varRef ⟨"root"⟩
 
 -- Variables
 def var_cond : Var := ⟨"cond"⟩
@@ -235,28 +235,28 @@ private def r7 : Aref := .refid 7
 private def r8 : Aref := .refid 8
 
 -- l3 PathEnvDec: paths computed from both branches (l1 uses field_l, l2 uses field_r).
--- At jump "l3", the checker produces pathEnv.refs = [r8, r7, r6, r5, r4, .root, .refid 0].
+-- At jump "l3", the checker produces pathEnv.refs = [r8, r7, r6, r5, r4, .root, r0].
 -- The l3 paths are unions of the left (field_l) and right (field_r) branch paths.
 -- Self-loops (ε) and root paths (empty) are handled automatically by toPathEnv.
 def t_l3_pathEnvDec : PathEnvDec :=
-  { refs := [r8, r7, r6, r5, r4, .root, .refid 0]
+  { refs := [r8, r7, r6, r5, r4, .root, r0]
     paths :=
       (AssocMap.empty
       -- r0 ↔ r4: ε (copy alias, same in both branches)
-      |>.insert (.refid 0, .refid 4) Regex.ε
-      |>.insert (.refid 4, .refid 0) Regex.ε
+      |>.insert (r0, .refid 4) Regex.ε
+      |>.insert (.refid 4, r0) Regex.ε
       -- r0 ↔ r5: union fl fr / union dfl dfr
-      |>.insert (.refid 0, r5) (.union fl fr)
-      |>.insert (r5, .refid 0) (.union dfl dfr)
+      |>.insert (r0, r5) (.union fl fr)
+      |>.insert (r5, r0) (.union dfl dfr)
       -- r0 ↔ r6: union fl fr / union dfl dfr (r6 is alias of r5)
-      |>.insert (.refid 0, r6) (.union fl fr)
-      |>.insert (r6, .refid 0) (.union dfl dfr)
+      |>.insert (r0, r6) (.union fl fr)
+      |>.insert (r6, r0) (.union dfl dfr)
       -- r0 ↔ r7: union fl2 fr2 / union dfl2 dfr2
-      |>.insert (.refid 0, r7) (.union fl2 fr2)
-      |>.insert (r7, .refid 0) (.union dfl2 dfr2)
+      |>.insert (r0, r7) (.union fl2 fr2)
+      |>.insert (r7, r0) (.union dfl2 dfr2)
       -- r0 ↔ r8: union fl3 fr3 / union dfl3 dfr3
-      |>.insert (.refid 0, r8) (.union fl3 fr3)
-      |>.insert (r8, .refid 0) (.union dfl3 dfr3)
+      |>.insert (r0, r8) (.union fl3 fr3)
+      |>.insert (r8, r0) (.union dfl3 dfr3)
       -- r4 ↔ r5: union fl fr / union dfl dfr
       |>.insert (.refid 4, r5) (.union fl fr)
       |>.insert (r5, .refid 4) (.union dfl dfr)

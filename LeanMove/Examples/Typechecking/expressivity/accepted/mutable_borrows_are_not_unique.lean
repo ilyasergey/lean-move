@@ -126,7 +126,7 @@ def pair_entries : AssocMap Field BasicMoveType :=
   insert (insert empty field_s1 (.trecord s_entries)) field_s2 (.trecord s_entries)
 
 -- Abstract reference for the parameter
-def r0 : Aref := .refid 0
+def r0 : Aref := .varRef ⟨"p"⟩
 
 -- Variables (matching MVIR naming)
 def var_p : Var := ⟨"p"⟩

@@ -29,7 +29,6 @@ and can be reused for semantic soundness proofs.
 - `SiteEnv.RefsNotRoot` / `VarEnv.RefsNotRoot` — reference invariants
 - `VarEnv.RefsAreFresh` — stronger freshness invariant
 - `TypeEnv.WellFormed` — combined environment invariant and preservation
-- `varRef_fresh_when_not_borrowed` — key semantic property
 - `call_connect_inputs_outputs_wf` — WellFormed preservation for call connections
 -/
 
@@ -271,11 +270,10 @@ def isBorrowPath (x : Var) (regex : Regex PathElement) : Prop :=
 
 /-- A path environment is well-formed if:
     1. Refs not in the refs list have empty paths from root
-    2. VarRef x is in refs only if the path from root is a borrow path for x
-    3. The root reference is always in the refs list -/
+    2. The root reference is always in the refs list
+    3. Untracked refs have empty paths to root -/
 structure PathEnv.WellFormed (pe : PathEnv) : Prop where
   refs_complete : ∀ r, r ∉ pe.refs → pe.paths (.root, r) = .empty
-  varref_tracked : ∀ x, Aref.varRef x ∈ pe.refs → isBorrowPath x (pe.paths (.root, Aref.varRef x))
   root_in_refs : Aref.root ∈ pe.refs
   from_untracked_to_root_empty : ∀ u, u ∉ pe.refs → u ≠ Aref.root → pe.paths (u, .root) = .empty
 
@@ -287,11 +285,6 @@ lemma PathEnv.init_wellformed : PathEnv.WellFormed PathEnv.init := by
     by_cases heq : Aref.root = r
     · exact absurd heq.symm hr
     · simp [heq]
-  · -- varref_tracked: varRef x is not in init.refs (which is just [.root])
-    intro x hx
-    simp only [PathEnv.init, List.mem_singleton] at hx
-    -- hx says Aref.varRef x = Aref.root, which is false
-    cases hx
   · -- root_in_refs: .root ∈ [.root]
     simp only [PathEnv.init, List.mem_singleton]
   · -- from_untracked_to_root_empty: u ∉ [.root] → u ≠ .root → paths(u, .root) = .empty
@@ -329,17 +322,6 @@ lemma delete_ref_node_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFo
         have := delete_ref_node_paths_not_involving_r pe r .root r' hne hr''
         simp only [this]
         exact hwf.refs_complete r' hnotin
-  · -- varref_tracked preservation
-    intro x hx
-    simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hx
-    obtain ⟨hxin, hxne⟩ := hx
-    -- varRef x was in pe.refs and varRef x ≠ r
-    have hborrow := hwf.varref_tracked x hxin
-    -- root ≠ r by hr_not_root
-    have hroot_ne : Aref.root ≠ r := fun h => hr_not_root h.symm
-    have := delete_ref_node_paths_not_involving_r pe r .root (Aref.varRef x) hroot_ne hxne
-    simp only [this]
-    exact hborrow
   · -- root_in_refs: .root survives filter since r ≠ .root
     simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq]
     exact ⟨hwf.root_in_refs, fun h => hr_not_root h.symm⟩
@@ -563,23 +545,26 @@ lemma nextFreshRefInEnv_isFreshRef (env : TypeEnv) :
     Aref.isFreshRef (nextFreshRefInEnv env) := by
   simp only [nextFreshRefInEnv]; exact ⟨_, rfl⟩
 
-/-- If r1 is a fresh ref and r1 is Aref-compatible with r2, then r2 is also a fresh ref. -/
-lemma Aref.Compatible_preserves_freshRef (r1 r2 : Aref)
-    (hfresh : Aref.isFreshRef r1) (hcompat : Aref.Compatible r1 r2) : Aref.isFreshRef r2 := by
-  obtain ⟨n, hn⟩ := hfresh
-  subst hn
-  cases r2 with
-  | refid m => exact ⟨m, rfl⟩
-  | root => exact absurd hcompat (by simp [Aref.Compatible])
+/-- If r1 is not root and Aref-compatible with r2, then r2 is also not root. -/
+lemma Aref.Compatible_preserves_not_root (r1 r2 : Aref)
+    (hnotroot : r1 ≠ .root) (hcompat : Aref.Compatible r1 r2) : r2 ≠ .root := by
+  intro heq; subst heq
+  cases r1 with
+  | root => exact hnotroot rfl
+  | refid _ => exact absurd hcompat (by simp [Aref.Compatible])
   | varRef _ => exact absurd hcompat (by simp [Aref.Compatible])
 
 /-- Helper function: predicate that a MoveType's ref is a fresh ref (refid) -/
 def moveTypeIsFreshRef (τ : MoveType) : Prop :=
   match τ with | .ref _ r _ => Aref.isFreshRef r | .basic _ => True
 
-/-- If τ has a fresh ref and τ' is compatible with τ, then τ' also has a fresh ref. -/
-lemma MoveType.compatible_preserves_freshRef (τ τ' : MoveType)
-    (hfresh : moveTypeIsFreshRef τ) (hcompat : MoveType.compatible τ τ') : moveTypeIsFreshRef τ' := by
+/-- Helper: predicate that a MoveType's ref is not root -/
+def moveTypeRefNotRoot (τ : MoveType) : Prop :=
+  match τ with | .ref _ r _ => r ≠ .root | .basic _ => True
+
+/-- If τ's ref is not root and τ' is compatible with τ, then τ' ref is also not root. -/
+lemma MoveType.compatible_preserves_not_root (τ τ' : MoveType)
+    (hnotroot : moveTypeRefNotRoot τ) (hcompat : MoveType.compatible τ τ') : moveTypeRefNotRoot τ' := by
   cases τ with
   | basic bt =>
     cases τ' with
@@ -591,8 +576,18 @@ lemma MoveType.compatible_preserves_freshRef (τ τ' : MoveType)
     | ref bt' r' bk' =>
       simp only [MoveType.compatible] at hcompat
       obtain ⟨_, hr, _⟩ := hcompat
-      simp only [moveTypeIsFreshRef] at hfresh ⊢
-      exact Aref.Compatible_preserves_freshRef r r' hfresh hr
+      simp only [moveTypeRefNotRoot] at hnotroot ⊢
+      exact Aref.Compatible_preserves_not_root r r' hnotroot hr
+
+/-- Fresh ref implies not root (bridge lemma). -/
+lemma moveTypeIsFreshRef_implies_notRoot (τ : MoveType)
+    (hfresh : moveTypeIsFreshRef τ) : moveTypeRefNotRoot τ := by
+  cases τ with
+  | basic _ => trivial
+  | ref bt r bk =>
+    simp only [moveTypeIsFreshRef] at hfresh
+    simp only [moveTypeRefNotRoot]
+    exact Aref.isFreshRef_not_root r hfresh
 
 /-- All references in a VarEnv are fresh refs (refids).
     This is a stronger invariant than RefsNotRoot. -/
@@ -659,58 +654,48 @@ lemma VarEnv.lookup_type_is_fresh (venv : VarEnv) (x : Var) (isValid : IsValid) 
 /-- A type environment is well-formed if:
     1. The path environment is well-formed
     2. All references in siteEnv are not root
-    3. All references in varEnv are fresh refs (refids) -/
+    3. All references in varEnv are not root -/
 structure TypeEnv.WellFormed (env : TypeEnv) : Prop where
   pathEnv_wf : PathEnv.WellFormed env.pathEnv
   siteEnv_wf : SiteEnv.RefsNotRoot env.siteEnv
-  varEnv_wf : VarEnv.RefsAreFresh env.varEnv
+  varEnv_wf : VarEnv.RefsNotRoot env.varEnv
 
-/-- Helper: get RefsNotRoot from WellFormed -/
+/-- Helper: get RefsNotRoot from WellFormed (now trivial alias) -/
 lemma TypeEnv.WellFormed.varEnv_refs_not_root (hwf : TypeEnv.WellFormed env) :
     VarEnv.RefsNotRoot env.varEnv :=
-  VarEnv.refsAreFresh_implies_refsNotRoot env.varEnv hwf.varEnv_wf
+  hwf.varEnv_wf
 
-/-- init_fun_pathEnv is well-formed when all param refs are fresh (.refid n). -/
-lemma PathEnv.init_fun_wellformed (f : FunDef)
-    (hfresh : ∀ p ∈ f.params, ∀ bt r bk, p.2 = .ref bt r bk → Aref.isFreshRef r) :
+/-- init_fun_pathEnv is well-formed for any function definition. -/
+lemma PathEnv.init_fun_wellformed (f : FunDef) :
     PathEnv.WellFormed (init_fun_pathEnv f) := by
   constructor
   · -- refs_complete: r ∉ refs → paths(.root, r) = .empty
     intro r hr
     unfold init_fun_pathEnv at hr ⊢
-    simp only at hr ⊢
+    dsimp only at hr
     by_cases heq : Aref.root = r
     · subst heq; simp at hr
-    · simp [heq]
-  · -- varref_tracked: varRef x ∈ refs → isBorrowPath
-    intro x hx
-    unfold init_fun_pathEnv at hx
-    simp only [List.mem_cons, List.mem_filterMap] at hx
-    cases hx with
-    | inl h => cases h
-    | inr h =>
-      obtain ⟨⟨v, τ⟩, hmem, hτ⟩ := h
-      cases τ with
-      | basic _ => simp at hτ
-      | ref bt r bk =>
-        simp at hτ
-        have hfr := hfresh (v, .ref bt r bk) hmem bt r bk rfl
-        obtain ⟨n, hn⟩ := hfr
-        rw [hn] at hτ
-        cases hτ
+    · cases r with
+      | root => exact absurd rfl heq
+      | refid n => simp [heq]
+      | varRef x =>
+        have hni : Aref.varRef x ∉ _ := fun h => hr (List.mem_cons_of_mem _ h)
+        simp [heq, hni]
   · -- root_in_refs
     unfold init_fun_pathEnv
     exact List.Mem.head _
   · -- from_untracked_to_root_empty
     intro u _hu huroot
     unfold init_fun_pathEnv
-    simp only
-    simp [huroot]
+    cases u with
+    | root => exact absurd rfl huroot
+    | refid _ => simp [huroot]
+    | varRef _ => simp [huroot]
 
 /-- Initial TypeEnv with empty siteEnv and PathEnv.init is well-formed
-    when the provided varEnv satisfies RefsAreFresh -/
+    when the provided varEnv satisfies RefsNotRoot -/
 lemma TypeEnv.init_wellformed (varEnv : VarEnv) (funEnv : FunEnv)
-    (hvarEnv : VarEnv.RefsAreFresh varEnv) :
+    (hvarEnv : VarEnv.RefsNotRoot varEnv) :
     TypeEnv.WellFormed { siteEnv := AssocMap.empty, varEnv := varEnv, pathEnv := PathEnv.init, funEnv := funEnv } := by
   constructor
   · exact PathEnv.init_wellformed
@@ -718,13 +703,12 @@ lemma TypeEnv.init_wellformed (varEnv : VarEnv) (funEnv : FunEnv)
   · exact hvarEnv
 
 /-- Initial TypeEnv with empty siteEnv and init_fun_pathEnv is well-formed
-    when the provided varEnv satisfies RefsAreFresh and param refs are fresh. -/
+    when the provided varEnv satisfies RefsNotRoot. -/
 lemma TypeEnv.init_fun_wellformed (f : FunDef) (varEnv : VarEnv) (funEnv : FunEnv)
-    (hvarEnv : VarEnv.RefsAreFresh varEnv)
-    (hfresh : ∀ p ∈ f.params, ∀ bt r bk, p.2 = .ref bt r bk → Aref.isFreshRef r) :
+    (hvarEnv : VarEnv.RefsNotRoot varEnv) :
     TypeEnv.WellFormed { siteEnv := AssocMap.empty, varEnv := varEnv, pathEnv := init_fun_pathEnv f, funEnv := funEnv } := by
   constructor
-  · exact PathEnv.init_fun_wellformed f hfresh
+  · exact PathEnv.init_fun_wellformed f
   · exact SiteEnv.empty_refs_not_root
   · exact hvarEnv
 
@@ -753,26 +737,26 @@ lemma TypeEnv.deleteAll_siteEnv_wf (env : TypeEnv) (ss : List Site) (hwf : TypeE
   · exact SiteEnv.deleteAll_refs_not_root env.siteEnv ss hwf.siteEnv_wf
   · exact hwf.varEnv_wf
 
-/-- Updating varEnv preserves TypeEnv.WellFormed if the new entry satisfies RefsAreFresh -/
+/-- Updating varEnv preserves TypeEnv.WellFormed if the new entry has a not-root ref -/
 lemma TypeEnv.update_varEnv_wf (env : TypeEnv) (x : Var) (v : IsValid × MoveType × Mut)
     (hwf : TypeEnv.WellFormed env)
-    (hv : moveTypeIsFreshRef v.2.1) :
+    (hv : moveTypeRefNotRoot v.2.1) :
     TypeEnv.WellFormed {env with varEnv := update env.varEnv x v} := by
   constructor
   · exact hwf.pathEnv_wf
   · exact hwf.siteEnv_wf
-  · exact VarEnv.update_refs_are_fresh env.varEnv x v hwf.varEnv_wf hv
+  · exact VarEnv.update_refs_not_root env.varEnv x v hwf.varEnv_wf hv
 
 /-- Combined update: insert site and update varEnv preserves WellFormed -/
 lemma TypeEnv.insert_update_wf (env : TypeEnv) (s : Site) (τ : MoveType) (x : Var) (v : IsValid × MoveType × Mut)
     (hwf : TypeEnv.WellFormed env)
     (hτ : match τ with | .ref _ r _ => r ≠ Aref.root | .basic _ => True)
-    (hv : moveTypeIsFreshRef v.2.1) :
+    (hv : moveTypeRefNotRoot v.2.1) :
     TypeEnv.WellFormed {env with siteEnv := insert env.siteEnv s τ, varEnv := update env.varEnv x v} := by
   constructor
   · exact hwf.pathEnv_wf
   · exact SiteEnv.insert_refs_not_root env.siteEnv s τ hwf.siteEnv_wf hτ
-  · exact VarEnv.update_refs_are_fresh env.varEnv x v hwf.varEnv_wf hv
+  · exact VarEnv.update_refs_not_root env.varEnv x v hwf.varEnv_wf hv
 
 /-- Combined: insert site and update pathEnv preserves WellFormed -/
 lemma TypeEnv.insert_pathEnv_wf (env : TypeEnv) (s : Site) (τ : MoveType) (pe' : PathEnv)
@@ -888,32 +872,6 @@ lemma update_with_extension_wellformed (z x : Aref) (path : List PathElement) (p
       have hempty := hwf.refs_complete r hrnot
       simp only [hrz, hnotz, ↓reduceIte]
       exact hempty
-  · -- varref_tracked: varRef x' in refs implies borrow path
-    intro x' hx'
-    simp only [update_with_extension] at hx' ⊢
-    by_cases hzin : z ∈ pe.refs
-    · -- z already in refs
-      simp only [hzin, not_true_eq_false, ↓reduceIte] at hx'
-      have hborrow := hwf.varref_tracked x' hx'
-      by_cases hvz : Aref.varRef x' = z
-      · -- varRef x' = z: impossible since z is not a varRef
-        exact absurd hvz.symm (hz_not_varRef x')
-      · have hnotboth : ¬(Aref.root = z ∧ Aref.varRef x' = z) := fun h => hz_not_root h.1.symm
-        simp only [hvz, hnotz, ↓reduceIte]
-        exact hborrow
-    · -- z not in refs
-      simp only [hzin, not_false_eq_true, ↓reduceIte, List.mem_cons] at hx'
-      cases hx' with
-      | inl hvz =>
-        -- varRef x' = z: impossible since z is not a varRef
-        exact absurd hvz.symm (hz_not_varRef x')
-      | inr hx'in =>
-        have hborrow := hwf.varref_tracked x' hx'in
-        by_cases hvz : Aref.varRef x' = z
-        · exact absurd (hvz ▸ hx'in) hzin
-        · have hnotboth : ¬(Aref.root = z ∧ Aref.varRef x' = z) := fun h => hz_not_root h.1.symm
-          simp only [hvz, hnotz, ↓reduceIte]
-          exact hborrow
   · -- root_in_refs: .root stays in refs (z ≠ .root so root was already there)
     simp only [update_with_extension]
     by_cases hzin : z ∈ pe.refs
@@ -979,19 +937,6 @@ lemma garbage_collect_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFo
         | inr h => exact hvr h
       simp only [hcond, ↓reduceIte]
       exact horiginal
-  · -- varref_tracked: varRef x in refs implies borrow path
-    intro x hx
-    simp only [garbage_collect, List.mem_filter, decide_eq_true_eq] at hx
-    obtain ⟨hxin, hxne⟩ := hx
-    simp only [garbage_collect]
-    -- varRef x ≠ r, and root ≠ r, so the path is unchanged
-    have hcond : ¬(Aref.root = r ∨ Aref.varRef x = r) := by
-      intro hcontra
-      cases hcontra with
-      | inl h => exact hr_not_root h.symm
-      | inr h => exact hxne h
-    simp only [hcond, ↓reduceIte]
-    exact hwf.varref_tracked x hxin
   · -- root_in_refs: .root survives filter since r ≠ .root
     simp only [garbage_collect, List.mem_filter, decide_eq_true_eq]
     exact ⟨hwf.root_in_refs, fun h => hr_not_root h.symm⟩
@@ -1046,29 +991,6 @@ lemma consume_ref_transfer_wellformed (pe : PathEnv) (r r' : Aref) (hwf : PathEn
                       List.mem_cons]
           exact ⟨Or.inr hcontra, hv_ne_r⟩
         exact hwf.refs_complete v hv_notin
-  · -- varref_tracked: varRef x in new refs implies borrow path
-    intro x hx
-    simp only [consume_ref_transfer] at hx ⊢
-    simp only [hr'_fresh, not_false_eq_true, ↓reduceIte, List.mem_filter, decide_eq_true_eq,
-                List.mem_cons] at hx
-    obtain ⟨hxin, hx_ne_r⟩ := hx
-    -- varRef x ≠ r and (varRef x = r' ∨ varRef x ∈ pe.refs)
-    -- But r' is not a varRef, so varRef x ≠ r'
-    have hvx_ne_r' : Aref.varRef x ≠ r' := fun h => absurd h.symm (hr'_not_varRef x)
-    have hxin_orig : Aref.varRef x ∈ pe.refs := by
-      cases hxin with
-      | inl h => exact absurd h hvx_ne_r'
-      | inr h => exact h
-    -- root ≠ r and varRef x ≠ r, so condition is false
-    have hcond : ¬(Aref.root = r ∨ Aref.varRef x = r) := by
-      intro hcontra
-      cases hcontra with
-      | inl h => exact hr_not_root h.symm
-      | inr h => exact hx_ne_r h
-    simp only [hcond, ↓reduceIte]
-    -- varRef x ≠ r', so path is G(root, varRef x)
-    simp only [hvx_ne_r', ↓reduceIte]
-    exact hwf.varref_tracked x hxin_orig
   · -- root_in_refs: .root survives filter since r ≠ .root
     simp only [consume_ref_transfer]
     have hroot_ne_r : Aref.root ≠ r := fun h => hr_not_root h.symm
@@ -1320,50 +1242,6 @@ lemma garbage_collect_paths_to_non_member (pe : PathEnv) (r : Aref)
 
 lemma TypeEnv.equiv_refl (env : TypeEnv) : TypeEnv.equiv env env := by
   exact ⟨LookupEquiv.refl _, VarEnvLookupCompatible.refl _, rfl, fun _ _ _ _ => rfl⟩
-
-/- ---------------------------------------------------- -/
-/-       varRef freshness lemma                          -/
-/- ---------------------------------------------------- -/
-
-/-- Key lemma: If a variable is not borrowed (paths from root don't accept [.root_to_var x]),
-    then its varRef is fresh (not in pathEnv.refs).
-    This uses the varref_tracked invariant from WellFormed. -/
-lemma varRef_fresh_when_not_borrowed (x : Var) (pe : PathEnv) (hwf : PathEnv.WellFormed pe) :
-    (∀ r, ¬ Regex.interpret_regex (pe.paths (.root, r)) [.root_to_var x]) →
-    freshRefBool (Aref.varRef x) pe = true := by
-  intro hnotbor
-  -- We need to show varRef x ∉ pe.refs
-  unfold freshRefBool
-  simp only [Bool.not_eq_true', List.contains_eq_any_beq]
-  rw [List.any_eq_false]
-  intro r hr
-  simp only [beq_iff_eq]
-  intro heq
-  -- heq : varRef x = r, so r = varRef x
-  subst heq
-  -- By varref_tracked: varRef x ∈ pe.refs → isBorrowPath x (pe.paths (.root, varRef x))
-  have hborrow := hwf.varref_tracked x hr
-  -- isBorrowPath means the path is char (.root_to_var x) or concat ε (char (.root_to_var x))
-  -- Either way, the path accepts [.root_to_var x]
-  have haccepts : Regex.interpret_regex (pe.paths (.root, Aref.varRef x)) [.root_to_var x] := by
-    unfold isBorrowPath at hborrow
-    generalize hpath : pe.paths (.root, Aref.varRef x) = p at hborrow ⊢
-    cases p with
-    | char c =>
-      simp only [Regex.interpret_regex]
-      exact congrArg (fun c => [c]) hborrow.symm
-    | concat r1 r2 =>
-      cases r1 with
-      | ε =>
-        cases r2 with
-        | char c =>
-          simp only [Regex.interpret_regex]
-          exact ⟨[], [.root_to_var x], rfl, rfl, congrArg (fun c => [c]) hborrow.symm⟩
-        | _ => exact False.elim hborrow
-      | _ => exact False.elim hborrow
-    | _ => exact False.elim hborrow
-  -- But hnotbor says for all r, the path doesn't accept [.root_to_var x]
-  exact hnotbor (Aref.varRef x) haccepts
 
 /- ---------------------------------------------------- -/
 /-       call_connect_inputs_outputs WellFormed          -/
