@@ -216,7 +216,4 @@ def invalid_lenv : LabelEnv :=
 -- Note: proving this formally requires the completeness theorem (check_fun_complete),
 -- which is not yet fully proven. The algorithmic rejection above demonstrates the result.
 
--- theorem invalid_illtyped : ¬ (∃ lenv, typecheck_fun invalid lenv) := by
---   sorry
-
 end LeanMove.Examples.Expressivity.ImmBorrowAfterMutCallInvalid
