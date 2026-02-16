@@ -244,7 +244,7 @@ private theorem inv_call
       lookup env.funEnv fname = some ⟨params, rets⟩ ∧
       typecheck_stmt lenv (call_connect_inputs_outputs env results args) cont retType :=
   match h with
-  | .call _ _ _ _ _ params rets _ _ _ hfun _ _ _ _ hcont =>
+  | .call _ _ _ _ _ params rets _ _ _ hfun _ _ _ hcont =>
     ⟨params, rets, hfun, hcont⟩
 
 private theorem inv_unpack

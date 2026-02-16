@@ -109,26 +109,20 @@ lemma TypeEnv.equiv_bool_implies_equiv (env1 env2 : TypeEnv) :
 /-       not_borrowed soundness (WellFormed → Bool → Prop)   -/
 /- ---------------------------------------------------- -/
 
-/-- Soundness: if boolean check passes and path env is well-formed, semantic property holds.
-    Uses match_bool_complete for refs in the list, and refs_complete for refs not in the list. -/
+/-- Soundness: if boolean check passes, semantic property holds.
+    not_borrowed now only quantifies over r ∈ refs, matching the algorithmic check. -/
 lemma not_borrowed_bool_sound (x : Var) (env : TypeEnv)
     (hwf : PathEnv.WellFormed env.pathEnv) :
     not_borrowed_bool x env = true → not_borrowed x env := by
   intro hbool
   simp only [not_borrowed_bool, List.all_eq_true] at hbool
-  intro r
+  intro r hr
   show ¬ interpret_regex (env.pathEnv.paths (.root, r)) [.root_to_var x]
-  by_cases hr : r ∈ env.pathEnv.refs
-  · -- r ∈ refs: use match_bool_complete (contrapositive)
-    have h := hbool r hr
-    simp only [Bool.not_eq_true'] at h
-    intro haccept
-    have hmatch := @Regex.match_bool_complete _ _ _ _ haccept
-    simp [hmatch] at h
-  · -- r ∉ refs: path from root is empty by refs_complete
-    have hempty := hwf.refs_complete r hr
-    simp only [hempty, interpret_regex]
-    exact not_false
+  have h := hbool r hr
+  simp only [Bool.not_eq_true'] at h
+  intro haccept
+  have hmatch := @Regex.match_bool_complete _ _ _ _ haccept
+  simp [hmatch] at h
 
 /- ---------------------------------------------------- -/
 /-       no_locals_borrowed soundness                    -/
@@ -973,33 +967,95 @@ private lemma varenv_subst_equiv_bool_sound (σ : List (Aref × Aref)) (ve1 ve2 
         simp only at htype_cond
         exact ⟨MoveType_base_compatible_bool_sound τ1 τ2 htype_cond, rfl⟩
 
+/-- Soundness of siteenv_subst_equiv_bool: if it returns true, SiteEnvSubstEquiv holds. -/
+private lemma siteenv_subst_equiv_bool_sound (σ : List (Aref × Aref)) (se1 se2 : SiteEnv) :
+    siteenv_subst_equiv_bool σ se1 se2 = true →
+    SiteEnvSubstEquiv (applySubstArefList σ) se1 se2 := by
+  intro h
+  simp only [siteenv_subst_equiv_bool, Bool.and_eq_true, List.all_eq_true] at h
+  obtain ⟨hall1, hall2⟩ := h
+  intro k
+  cases hk1 : AssocMap.lookup se1 k with
+  | none =>
+    cases hk2 : AssocMap.lookup se2 k with
+    | none => simp
+    | some τ2 =>
+      exfalso
+      have hmem2 : (k, τ2) ∈ se2.entries := AssocMap.lookup_some se2 k τ2 hk2
+      have := hall2 (k, τ2) hmem2
+      simp only [Option.isSome] at this
+      rw [hk1] at this
+      simp at this
+  | some τ1 =>
+    cases hk2 : AssocMap.lookup se2 k with
+    | none =>
+      exfalso
+      have hmem1 : (k, τ1) ∈ se1.entries := AssocMap.lookup_some se1 k τ1 hk1
+      have hcond := hall1 (k, τ1) hmem1
+      simp only [hk2] at hcond
+      simp at hcond
+    | some τ2 =>
+      simp only
+      have hmem1 : (k, τ1) ∈ se1.entries := AssocMap.lookup_some se1 k τ1 hk1
+      have hcond := hall1 (k, τ1) hmem1
+      simp only [hk2] at hcond
+      have heq : applySubstMoveTypeList σ τ1 = τ2 := MoveType.eq_of_beq _ _ hcond
+      rw [applySubstMoveTypeList_eq] at heq
+      exact heq
+
 /-- Soundness of subsumes_bool: if it returns true, the semantic subsumption holds. -/
 theorem subsumes_bool_implies_subsumes (envL env : TypeEnv) :
     TypeEnv.subsumes_bool envL env = true → TypeEnv.subsumes envL env := by
   intro h
-  simp only [TypeEnv.subsumes_bool, Bool.and_eq_true] at h
-  obtain ⟨hse, hrest⟩ := h
+  simp only [TypeEnv.subsumes_bool] at h
   -- Case split on computeRefSubst result
-  split at hrest
-  · simp at hrest  -- none case: contradiction
+  split at h
+  · simp at h  -- none case: contradiction
   · rename_i pairs heq_subst
-    simp only [Bool.and_eq_true, List.all_eq_true] at hrest
-    obtain ⟨⟨hve, hrefs⟩, hpaths⟩ := hrest
+    -- Re-fold siteenv/varenv_subst_equiv_bool which got expanded by the split
+    have h' : (siteenv_subst_equiv_bool pairs envL.siteEnv env.siteEnv &&
+              varenv_subst_equiv_bool pairs envL.varEnv env.varEnv &&
+              (envL.pathEnv.refs.map (applySubstArefList pairs) == env.pathEnv.refs) &&
+              (env.pathEnv.refs.eraseDups.length == env.pathEnv.refs.length) &&
+              envL.pathEnv.refs.all fun u =>
+                envL.pathEnv.refs.all fun v =>
+                  regexSubsumedBy (env.pathEnv.paths (applySubstArefList pairs u, applySubstArefList pairs v))
+                    (envL.pathEnv.paths (u, v))) = true := h
+    -- Decompose the && chain using simple Bool helpers
+    have and_left  {a b : Bool} (h : (a && b) = true) : a = true := by cases a <;> simp_all
+    have and_right {a b : Bool} (h : (a && b) = true) : b = true := by cases a <;> simp_all
+    have hse := and_left (and_left (and_left (and_left h')))
+    have hve := and_right (and_left (and_left (and_left h')))
+    have hrefs := and_right (and_left (and_left h'))
+    have hnodup_raw := and_right (and_left h')
+    have hpaths_raw := and_right h'
+    simp only [List.all_eq_true] at hpaths_raw
     -- Define σ as the function version of the substitution
     let σ : Aref → Aref := fun r => applySubstArefList pairs r
-    refine ⟨lookup_equiv_bool_sound _ _ hse, σ, ?_, ?_, ?_, ?_⟩
+    refine ⟨σ, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- σ is identity on non-refid arefs
       intro r hr
       exact applySubstArefList_non_refid pairs
         (computeRefSubst_keys_refid envL.varEnv env.varEnv pairs heq_subst) r hr
     · -- VarEnvSubstEquiv σ envL.varEnv env.varEnv
       exact varenv_subst_equiv_bool_sound pairs envL.varEnv env.varEnv hve
+    · -- SiteEnvSubstEquiv σ envL.siteEnv env.siteEnv
+      exact siteenv_subst_equiv_bool_sound pairs envL.siteEnv env.siteEnv hse
     · -- envL.pathEnv.refs.map σ = env.pathEnv.refs
-      have : (envL.pathEnv.refs.map (applySubstArefList pairs) == env.pathEnv.refs) = true := hrefs
-      exact beq_iff_eq.mp this
+      exact beq_iff_eq.mp hrefs
+    · -- σ is injective on envL.pathEnv.refs
+      have hrefs_eq : envL.pathEnv.refs.map σ = env.pathEnv.refs :=
+        beq_iff_eq.mp hrefs
+      have hnodup_len : env.pathEnv.refs.length = env.pathEnv.refs.eraseDups.length :=
+        (beq_iff_eq.mp hnodup_raw).symm
+      have hnd : env.pathEnv.refs.Nodup :=
+        List.nodup_of_length_eraseDups env.pathEnv.refs hnodup_len
+      have hnd_map : (envL.pathEnv.refs.map σ).Nodup := hrefs_eq ▸ hnd
+      intro u v hu hv huv
+      exact List.inj_on_of_nodup_map hnd_map u hu v hv huv
     · -- Path inclusion: env ⊆ envL after σ
       intro u v hu hv path hinterp
-      have hu' := hpaths u hu
+      have hu' := hpaths_raw u hu
       have huv := hu' v hv
       exact regexSubsumedBy_sound _ _ huv path hinterp
 
@@ -1292,10 +1348,9 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
           have htc_bs' := types_conform_bool_sound env.siteEnv bs params htc_bs
           have htc_as' := types_conform_bool_sound env.siteEnv as rets htc_as
           have hiso' := check_mutable_inputs_isolated_bool_sound env bs hiso
-          have houtbound' := check_mutable_inputs_have_outbound_bool_sound env bs houtbound
           have hwf' := call_connect_inputs_outputs_wf env as bs hwf hfresh'
           apply typecheck_stmt.call lenv env fnName as bs params rets cont retType
-            hfresh' hlookup_fn htc_bs' htc_as' hiso' houtbound'
+            hfresh' hlookup_fn htc_bs' htc_as' hiso'
           exact ih_cont _ hwf' h
         · simp at h
     · simp at h

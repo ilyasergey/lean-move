@@ -289,3 +289,26 @@ theorem List.nodup_snd_pair_absurd {α β : Type} (l : List (α × β))
         exact absurd (List.mem_map_of_mem (f := Prod.snd) h₁') hnotmem
       | tail _ h₂' =>
         exact ih htl_nodup h₁' h₂'
+
+/-- If `(l.map f).Nodup`, then `f` is injective on `l`. -/
+theorem List.inj_on_of_nodup_map {α β : Type} {f : α → β} {l : List α}
+    (hnd : (l.map f).Nodup) :
+    ∀ x, x ∈ l → ∀ y, y ∈ l → f x = f y → x = y := by
+  induction l with
+  | nil => intros; contradiction
+  | cons a as ih =>
+    simp only [List.map_cons, List.nodup_cons] at hnd
+    obtain ⟨hnotmem, htl_nodup⟩ := hnd
+    intro x hx y hy hfxy
+    cases hx with
+    | head =>
+      cases hy with
+      | head => rfl
+      | tail _ hy' =>
+        exact absurd (hfxy ▸ List.mem_map_of_mem (f := f) hy') hnotmem
+    | tail _ hx' =>
+      cases hy with
+      | head =>
+        exact absurd (hfxy.symm ▸ List.mem_map_of_mem (f := f) hx') hnotmem
+      | tail _ hy' =>
+        exact ih htl_nodup x hx' y hy' hfxy

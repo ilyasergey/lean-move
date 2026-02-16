@@ -371,20 +371,31 @@ def VarEnvSubstEquiv (σ : Aref → Aref) (ve1 ve2 : VarEnv) : Prop :=
     | none, none => True
     | _, _ => False
 
+/-- SiteEnv entries match after applying substitution σ to the first SiteEnv's types. -/
+def SiteEnvSubstEquiv (σ : Aref → Aref) (se1 se2 : SiteEnv) : Prop :=
+  ∀ k, match AssocMap.lookup se1 k, AssocMap.lookup se2 k with
+    | some τ1, some τ2 => applySubstMoveType σ τ1 = τ2
+    | none, none => True
+    | _, _ => False
+
 /-- `envL.subsumes env` means there exists a refid substitution σ such that
-    after renaming envL's refid placeholders via σ, the VarEnvs match env's exactly,
-    the PathEnv refs match env's, and env's paths are included in envL's paths.
+    after renaming envL's refid placeholders via σ, the VarEnvs and SiteEnvs
+    match env's, the PathEnv refs match env's, and env's paths are included
+    in envL's paths.
     σ maps envL's .refid arefs → env's actual arefs (which may include .varRef).
     Used at jump/branch targets where envL is a label environment. -/
 def TypeEnv.subsumes (envL env : TypeEnv) : Prop :=
-  LookupEquiv env.siteEnv envL.siteEnv ∧
   ∃ σ : Aref → Aref,
     -- σ is identity on non-refid arefs (only .refid placeholders are renamed)
     (∀ r, (∀ n, r ≠ .refid n) → σ r = r) ∧
     -- After σ on envL, VarEnv entries match env's
     VarEnvSubstEquiv σ envL.varEnv env.varEnv ∧
+    -- After σ on envL, SiteEnv entries match env's
+    SiteEnvSubstEquiv σ envL.siteEnv env.siteEnv ∧
     -- After σ on envL, PathEnv refs match env's
     envL.pathEnv.refs.map σ = env.pathEnv.refs ∧
+    -- σ is injective on envL.pathEnv.refs (needed for path deletion cases)
+    (∀ u v, u ∈ envL.pathEnv.refs → v ∈ envL.pathEnv.refs → σ u = σ v → u = v) ∧
     -- Paths in env are included in envL (env ⊆ envL, after σ renaming)
     (∀ u v, u ∈ envL.pathEnv.refs → v ∈ envL.pathEnv.refs →
       ∀ path, interpret_regex (env.pathEnv.paths (σ u, σ v)) path →

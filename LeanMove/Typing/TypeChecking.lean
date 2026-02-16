@@ -46,12 +46,10 @@ open AssocMap
  -- Implementation: walk the graph from the local root and check that no outbound edge
  -- starts with variable x (as discussed with Todd)
  def not_borrowed (x: Var) (env: TypeEnv) : Prop :=
-  -- For x not to be borrowed, check all outbound edges from root
+  -- For x not to be borrowed, check all outbound edges from root to tracked refs
   -- and ensure none of them start with a path to x
-  ∀ (r : Aref),
-    let regex := env.pathEnv.paths (.root, r)
-    -- The regex should not accept a path that starts with root_to_var x
-    ¬ interpret_regex regex [.root_to_var x]
+  ∀ (r : Aref), r ∈ env.pathEnv.refs →
+    ¬ interpret_regex (env.pathEnv.paths (.root, r)) [.root_to_var x]
 
 def all_fresh_sites (env: TypeEnv) (as: List Site) : Prop :=
   List.all as (fun a ↦ notIn env.siteEnv a)
@@ -485,7 +483,6 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       types_conform env.siteEnv bs params →
       types_conform env.siteEnv as rets →
       check_mutable_inputs_isolated env bs →
-      check_mutable_inputs_have_outbound env bs →
       typecheck_stmt lenv (call_connect_inputs_outputs env as bs) cont retType →
       typecheck_stmt lenv env (.call as fnName bs cont) retType
 

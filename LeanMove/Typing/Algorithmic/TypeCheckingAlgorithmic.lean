@@ -131,19 +131,29 @@ def varenv_subst_equiv_bool (σ : List (Aref × Aref)) (ve1 ve2 : VarEnv) : Bool
     | none => false) &&
   ve2.entries.all (fun (x, _) => (lookup ve1 x).isSome)
 
+/-- Boolean check for SiteEnvSubstEquiv: site types match after σ-renaming. -/
+def siteenv_subst_equiv_bool (σ : List (Aref × Aref)) (se1 se2 : SiteEnv) : Bool :=
+  se1.entries.all (fun (k, τ1) =>
+    match lookup se2 k with
+    | some τ2 => applySubstMoveTypeList σ τ1 == τ2
+    | none => false) &&
+  se2.entries.all (fun (k, _) => (lookup se1 k).isSome)
+
 /-- Check that envL subsumes env with refid unification.
     Computes σ mapping envL's .refid placeholders to env's actual arefs, then checks:
-    1. SiteEnvs are equivalent
+    1. SiteEnvs match after σ
     2. VarEnvs match after σ (exact for valid, compatible for invalid)
     3. PathEnv refs match after σ
     4. env's paths are subsumed by envL's paths (env ⊆ envL, after σ renaming) -/
 def TypeEnv.subsumes_bool (envL env : TypeEnv) : Bool :=
-  lookup_equiv_bool env.siteEnv envL.siteEnv &&
   match computeRefSubst envL.varEnv env.varEnv with
   | none => false
   | some σ =>
+    siteenv_subst_equiv_bool σ envL.siteEnv env.siteEnv &&
     varenv_subst_equiv_bool σ envL.varEnv env.varEnv &&
     (envL.pathEnv.refs.map (applySubstArefList σ) == env.pathEnv.refs) &&
+    -- Check that env's refs have no duplicates (implies σ is injective on envL's refs)
+    (env.pathEnv.refs.eraseDups.length == env.pathEnv.refs.length) &&
     envL.pathEnv.refs.all fun u =>
       envL.pathEnv.refs.all fun v =>
         regexSubsumedBy (env.pathEnv.paths (applySubstArefList σ u, applySubstArefList σ v))
