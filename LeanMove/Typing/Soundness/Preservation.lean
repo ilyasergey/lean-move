@@ -251,11 +251,15 @@ private theorem inv_unpack
     (h : typecheck_stmt lenv env (.unpack fields src cont) retType) :
     ∃ fentries,
       lookup env.siteEnv src = some (.basic (.trecord fentries)) ∧
+      (∀ f a, (f, a) ∈ fields → AssocMap.notIn env.siteEnv a) ∧
+      (∀ a₁ a₂, (∃ f₁ f₂, (f₁, a₁) ∈ fields ∧ (f₂, a₂) ∈ fields ∧ f₁ ≠ f₂) → a₁ ≠ a₂) ∧
+      (∀ f a, (f, a) ∈ fields → ∃ bt, lookup fentries f = some bt) ∧
       typecheck_stmt lenv
         {env with siteEnv := addFieldSites fentries (delete env.siteEnv src) fields}
         cont retType :=
   match h with
-  | .unpack _ _ _ _ fentries _ _ hlookup _ _ _ hcont => ⟨fentries, hlookup, hcont⟩
+  | .unpack _ _ _ _ fentries _ _ hlookup hfresh hdistinct hfields hcont =>
+    ⟨fentries, hlookup, hfresh, hdistinct, hfields, hcont⟩
 
 private theorem inv_assign
     (h : typecheck_stmt lenv env (.assign x a cont) retType) :
@@ -2914,6 +2918,126 @@ private theorem preservation_writeRef (m m' : Machine) (env : TypeEnv) (lenv : L
         exact ⟨v_old, hread', hht_old⟩
   }
 
+-- ============================================================
+-- Unpack helpers: addFieldSites and runtime foldl lemmas
+-- ============================================================
+
+private theorem addFieldSites_nil (fentries : AssocMap Field BasicMoveType)
+    (se : AssocMap Site MoveType) :
+    addFieldSites fentries se [] = se := rfl
+
+private theorem addFieldSites_cons (fentries : AssocMap Field BasicMoveType)
+    (se : AssocMap Site MoveType) (f : Field) (s : Site) (rest : List (Field × Site)) :
+    addFieldSites fentries se ((f, s) :: rest) =
+    addFieldSites fentries
+      (match AssocMap.lookup fentries f with
+       | some bt => insert se s (.basic bt)
+       | none => se) rest := rfl
+
+private theorem addFieldSites_lookup_not_in_fields
+    (fentries : AssocMap Field BasicMoveType) (se : AssocMap Site MoveType)
+    (fields : List (Field × Site)) (a : Site)
+    (hnotin : a ∉ fields.map Prod.snd) :
+    lookup (addFieldSites fentries se fields) a = lookup se a := by
+  induction fields generalizing se with
+  | nil => simp [addFieldSites_nil]
+  | cons hd tl ih =>
+    obtain ⟨f, s⟩ := hd
+    simp only [List.map, List.mem_cons, not_or] at hnotin
+    obtain ⟨hne, hnotin_tl⟩ := hnotin
+    rw [addFieldSites_cons]
+    rw [ih _ hnotin_tl]
+    cases hlookup : lookup fentries f with
+    | none => rfl
+    | some bt => exact lookup_insert_ne se s a (.basic bt) hne
+
+private theorem addFieldSites_lookup_mem
+    (fentries : AssocMap Field BasicMoveType) (se : AssocMap Site MoveType)
+    (fields : List (Field × Site)) (f : Field) (a : Site) (bt : BasicMoveType)
+    (hmem : (f, a) ∈ fields)
+    (hftype : lookup fentries f = some bt)
+    (huniq : ∀ f', (f', a) ∈ fields → f' = f) :
+    lookup (addFieldSites fentries se fields) a = some (.basic bt) := by
+  induction fields generalizing se with
+  | nil => nomatch hmem
+  | cons hd tl ih =>
+    obtain ⟨f', s⟩ := hd
+    rw [addFieldSites_cons]
+    simp only [List.mem_cons, Prod.mk.injEq] at hmem
+    rcases hmem with ⟨rfl, rfl⟩ | hmem_tl
+    · -- head is (f, a)
+      rw [hftype]
+      by_cases ha_tl : a ∈ tl.map Prod.snd
+      · -- a appears again in tl
+        obtain ⟨⟨f'', _⟩, hmem_tl', heq⟩ := List.mem_map.mp ha_tl
+        simp at heq; subst heq
+        have hf'' : f'' = f := huniq f'' (List.mem_cons_of_mem _ hmem_tl')
+        subst hf''
+        exact ih _ hmem_tl' (fun f''' hf''' => huniq f''' (List.mem_cons_of_mem _ hf'''))
+      · -- a does not appear again
+        rw [addFieldSites_lookup_not_in_fields _ _ _ _ ha_tl]
+        exact lookup_insert_same se a (.basic bt)
+    · -- (f, a) ∈ tl
+      have huniq_tl : ∀ f', (f', a) ∈ tl → f' = f :=
+        fun f' hf' => huniq f' (List.mem_cons_of_mem _ hf')
+      cases hlookup : lookup fentries f' with
+      | none => exact ih se hmem_tl huniq_tl
+      | some bt' =>
+        exact ih _ hmem_tl huniq_tl
+
+private theorem unpack_foldl_lookup_not_in_fields
+    (recFields : List (Field × Value)) (siteStore : AssocMap Site Value)
+    (fields : List (Field × Site)) (a : Site)
+    (hnotin : a ∉ fields.map Prod.snd) :
+    lookup (fields.foldl (fun ss (fa : Field × Site) =>
+      match recFields.lookup fa.1 with
+      | some v => AssocMap.insert ss fa.2 v
+      | none => ss) siteStore) a = lookup siteStore a := by
+  induction fields generalizing siteStore with
+  | nil => simp [List.foldl]
+  | cons hd tl ih =>
+    obtain ⟨f, s⟩ := hd
+    simp only [List.map, List.mem_cons, not_or] at hnotin
+    obtain ⟨hne, hnotin_tl⟩ := hnotin
+    simp only [List.foldl]
+    rw [ih _ hnotin_tl]
+    cases hlookup : recFields.lookup f with
+    | none => rfl
+    | some v => exact lookup_insert_ne siteStore s a v hne
+
+private theorem unpack_foldl_lookup_mem
+    (recFields : List (Field × Value)) (siteStore : AssocMap Site Value)
+    (fields : List (Field × Site)) (f : Field) (a : Site) (v : Value)
+    (hmem : (f, a) ∈ fields)
+    (hfval : recFields.lookup f = some v)
+    (huniq : ∀ f', (f', a) ∈ fields → f' = f) :
+    lookup (fields.foldl (fun ss (fa : Field × Site) =>
+      match recFields.lookup fa.1 with
+      | some v => AssocMap.insert ss fa.2 v
+      | none => ss) siteStore) a = some v := by
+  induction fields generalizing siteStore with
+  | nil => nomatch hmem
+  | cons hd tl ih =>
+    obtain ⟨f', s⟩ := hd
+    simp only [List.foldl]
+    simp only [List.mem_cons, Prod.mk.injEq] at hmem
+    rcases hmem with ⟨rfl, rfl⟩ | hmem_tl
+    · -- head is (f, a)
+      rw [hfval]
+      by_cases ha_tl : a ∈ tl.map Prod.snd
+      · obtain ⟨⟨f'', _⟩, hmem_tl', heq⟩ := List.mem_map.mp ha_tl
+        simp at heq; subst heq
+        have hf'' : f'' = f := huniq f'' (List.mem_cons_of_mem _ hmem_tl')
+        subst hf''
+        exact ih _ hmem_tl' (fun f''' hf''' => huniq f''' (List.mem_cons_of_mem _ hf'''))
+      · rw [unpack_foldl_lookup_not_in_fields _ _ _ _ ha_tl]
+        exact lookup_insert_same siteStore a v
+    · have huniq_tl : ∀ f', (f', a) ∈ tl → f' = f :=
+        fun f' hf' => huniq f' (List.mem_cons_of_mem _ hf')
+      cases hlookup : recFields.lookup f' with
+      | none => exact ih siteStore hmem_tl huniq_tl
+      | some v' => exact ih _ hmem_tl huniq_tl
+
 /-- Helper: lookup on deleteAll returns some → lookup on original returns some -/
 private lemma lookup_deleteAll_some (l : AssocMap Site MoveType) (ks : List Site)
     (k : Site) (v : MoveType) (h : lookup (deleteAll l ks) k = some v) :
@@ -3967,6 +4091,172 @@ private theorem preservation_freeze (m m' : Machine) (env : TypeEnv) (lenv : Lab
   }
 
 -- ============================================================
+-- Part 8a-unpack: Preservation for unpack
+-- ============================================================
+
+private theorem preservation_unpack (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retType : MoveType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retType rmap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (fields : List (Field × Site)) (src : Site) (cont : Stmt)
+    (hstmt : m.frame.stmt = .unpack fields src cont)
+    (hstep : step (.running m) = .running m') :
+    ∃ env' lenv' retType' rmap',
+      WellTypedState m' env' lenv' retType' rmap' ∧
+      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+  -- 1. Invert typing
+  obtain ⟨fentries, hlookup_src, hfresh, hdistinct, hfield_exists, hcont⟩ :=
+    inv_unpack (by rw [← hstmt]; exact hwt.stmt_typed)
+  -- 2. Get record value from site_consistent
+  obtain ⟨vsrc, hvsrc, hmatch_src⟩ := hwt.site_consistent src _ hlookup_src
+  simp only [ValueMatchesType] at hmatch_src
+  obtain ⟨recFields, hrec_eq⟩ := HasType.record_fields hmatch_src
+  subst hrec_eq
+  -- 3. readSite succeeds → simplify step
+  have hrs : readSite m src = some (.record recFields) := by unfold readSite; exact hvsrc
+  simp only [step, hstmt, hrs, ExecState.running.injEq] at hstep; subst hstep
+  -- 4. Derive site uniqueness from distinctness
+  have huniq_site : ∀ (a : Site), ∀ f f', (f, a) ∈ fields → (f', a) ∈ fields → f' = f := by
+    intro a f f' hfa hf'a
+    by_contra hne
+    exact absurd rfl (hdistinct a a ⟨f, f', hfa, hf'a, Ne.symm hne⟩)
+  -- 5. Helper: any field site in addFieldSites has basic type
+  have field_site_lookup : ∀ sd fd,
+      (fd, sd) ∈ fields →
+      ∃ bt, lookup fentries fd = some bt ∧
+        lookup (addFieldSites fentries (delete env.siteEnv src) fields) sd = some (.basic bt) :=
+    fun sd fd hmem =>
+      let ⟨bt, hbt⟩ := hfield_exists fd sd hmem
+      ⟨bt, hbt, addFieldSites_lookup_mem fentries _ fields fd sd bt hmem hbt
+        (fun f' hf' => huniq_site sd fd f' hmem hf')⟩
+  -- 6. Construct new WellTypedState
+  refine ⟨{env with siteEnv := addFieldSites fentries (delete env.siteEnv src) fields},
+          lenv, retType, rmap, ?_, hss⟩
+  exact {
+    env_wf := by
+      constructor
+      · exact hwt.env_wf.pathEnv_wf
+      · exact addFieldSites_refs_not_root fentries _ fields
+              (SiteEnv.delete_refs_not_root env.siteEnv src hwt.env_wf.siteEnv_wf)
+      · exact hwt.env_wf.varEnv_wf
+    stmt_typed := hcont
+    var_consistent := hwt.var_consistent
+    site_consistent := by
+      intro s' τ' hlookup_s'
+      by_cases hs'_in : s' ∈ fields.map Prod.snd
+      · -- s' is one of the new field sites
+        obtain ⟨⟨fd, sd⟩, hmem_fd, heq_s'⟩ := List.mem_map.mp hs'_in
+        simp at heq_s'; subst heq_s'
+        obtain ⟨bt, hbt, hlookup_new⟩ := field_site_lookup sd fd hmem_fd
+        rw [hlookup_new] at hlookup_s'
+        cases hlookup_s'
+        -- τ' = .basic bt, need to find value in new siteStore
+        obtain ⟨vf, _, hvf_ht⟩ := HasType.readPath_field hmatch_src hbt
+        -- readPath (.record recFields) [fd] = some vf implies recFields.lookup fd = some vf
+        have hrf : recFields.lookup fd = some vf := by
+          simp only [readPath] at *
+          cases hrl : recFields.lookup fd with
+          | none => simp [hrl] at *
+          | some v' => simp [hrl] at *; assumption
+        have hlookup_ss := unpack_foldl_lookup_mem recFields m.frame.siteStore fields
+          fd sd vf hmem_fd hrf (fun f' hf' => huniq_site sd fd f' hmem_fd hf')
+        exact ⟨vf, hlookup_ss, hvf_ht⟩
+      · -- s' is not a new field site → delegates to old
+        have hlookup_env := addFieldSites_lookup_not_in_fields fentries
+          (delete env.siteEnv src) fields s' hs'_in
+        rw [hlookup_env] at hlookup_s'
+        have hne_src : s' ≠ src := by
+          intro h; subst h; rw [lookup_delete_same] at hlookup_s'; cases hlookup_s'
+        rw [lookup_delete_ne _ src s' hne_src] at hlookup_s'
+        obtain ⟨v, hv, hmatch⟩ := hwt.site_consistent s' τ' hlookup_s'
+        have hlookup_ss := unpack_foldl_lookup_not_in_fields recFields m.frame.siteStore
+          fields s' hs'_in
+        exact ⟨v, hlookup_ss ▸ hv, hmatch⟩
+    rmap_live := hwt.rmap_live
+    rmap_paths := hwt.rmap_paths
+    varEnv_refs_in_pathEnv := hwt.varEnv_refs_in_pathEnv
+    siteEnv_refs_in_pathEnv := by
+      intro s' bt r bk hlookup_s'
+      by_cases hs'_in : s' ∈ fields.map Prod.snd
+      · -- s' is a field site → type is .basic, not .ref
+        obtain ⟨⟨fd, sd⟩, hmem_fd, heq_s'⟩ := List.mem_map.mp hs'_in
+        simp at heq_s'; subst heq_s'
+        obtain ⟨bt', _, hlookup_new⟩ := field_site_lookup sd fd hmem_fd
+        rw [hlookup_new] at hlookup_s'; cases hlookup_s'
+      · -- s' is old → use old siteEnv_refs_in_pathEnv
+        have hlookup_env := addFieldSites_lookup_not_in_fields fentries
+          (delete env.siteEnv src) fields s' hs'_in
+        rw [hlookup_env] at hlookup_s'
+        have hne_src : s' ≠ src := by
+          intro h; subst h; rw [lookup_delete_same] at hlookup_s'; cases hlookup_s'
+        rw [lookup_delete_ne _ src s' hne_src] at hlookup_s'
+        exact hwt.siteEnv_refs_in_pathEnv s' bt r bk hlookup_s'
+    live_refs_unique := by
+      intro r
+      refine ⟨?_, ?_, ?_⟩
+      · -- var-site: no ref in new siteEnv maps to r from var
+        intro x bt bk ms s' bt' bk' hvar hlookup_s'
+        by_cases hs'_in : s' ∈ fields.map Prod.snd
+        · obtain ⟨⟨fd, sd⟩, hmem_fd, heq_s'⟩ := List.mem_map.mp hs'_in
+          simp at heq_s'; subst heq_s'
+          obtain ⟨_, _, hlookup_new⟩ := field_site_lookup sd fd hmem_fd
+          rw [hlookup_new] at hlookup_s'; cases hlookup_s'
+        · have hlookup_env := addFieldSites_lookup_not_in_fields fentries
+            (delete env.siteEnv src) fields s' hs'_in
+          rw [hlookup_env] at hlookup_s'
+          have hne_src : s' ≠ src := by
+            intro h; subst h; rw [lookup_delete_same] at hlookup_s'; cases hlookup_s'
+          rw [lookup_delete_ne _ src s' hne_src] at hlookup_s'
+          exact (hwt.live_refs_unique r).1 x bt bk ms s' bt' bk' hvar hlookup_s'
+      · -- site-site: no two different sites in new siteEnv map to same ref
+        intro s1 s2 bt1 bt2 bk1 bk2 hne12 hs1 hs2
+        -- Extract both lookups to old siteEnv
+        have get_old : ∀ s bt' bk', lookup (addFieldSites fentries (delete env.siteEnv src) fields) s
+            = some (.ref bt' r bk') → lookup env.siteEnv s = some (.ref bt' r bk') := by
+          intro s bt' bk' hs
+          by_cases hs_in : s ∈ fields.map Prod.snd
+          · obtain ⟨⟨fd, sd⟩, hmem_fd, heq_s⟩ := List.mem_map.mp hs_in
+            simp at heq_s; subst heq_s
+            obtain ⟨_, _, hlookup_new⟩ := field_site_lookup sd fd hmem_fd
+            rw [hlookup_new] at hs; cases hs
+          · rw [addFieldSites_lookup_not_in_fields _ _ _ _ hs_in] at hs
+            have hne_src : s ≠ src := by
+              intro h; subst h; rw [lookup_delete_same] at hs; cases hs
+            rw [lookup_delete_ne _ src s hne_src] at hs
+            exact hs
+        exact (hwt.live_refs_unique r).2.1 s1 s2 bt1 bt2 bk1 bk2 hne12
+          (get_old s1 bt1 bk1 hs1) (get_old s2 bt2 bk2 hs2)
+      · exact (hwt.live_refs_unique r).2.2
+    blocks_typed := hwt.blocks_typed
+    lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
+    funEnv_typed := hwt.funEnv_typed
+    heap_loc_bound := hwt.heap_loc_bound
+    rmap_root_none := hwt.rmap_root_none
+    no_paths_to_root := hwt.no_paths_to_root
+    root_path_coherence := hwt.root_path_coherence
+    paths_from_non_member_empty := hwt.paths_from_non_member_empty
+    paths_to_non_member_empty := hwt.paths_to_non_member_empty
+    self_loop_only_empty := hwt.self_loop_only_empty
+    rmap_has_type := by
+      intro r' bt' loc path hrmap hcond
+      apply hwt.rmap_has_type r' bt' loc path hrmap
+      rcases hcond with ⟨x, bk, ms, hvar⟩ | ⟨s', bk, hsite⟩
+      · exact Or.inl ⟨x, bk, ms, hvar⟩
+      · by_cases hs'_in : s' ∈ fields.map Prod.snd
+        · obtain ⟨⟨fd, sd⟩, hmem_fd, heq_s'⟩ := List.mem_map.mp hs'_in
+          simp at heq_s'; subst heq_s'
+          obtain ⟨_, _, hlookup_new⟩ := field_site_lookup sd fd hmem_fd
+          rw [hlookup_new] at hsite; cases hsite
+        · have hlookup_env := addFieldSites_lookup_not_in_fields fentries
+            (delete env.siteEnv src) fields s' hs'_in
+          rw [hlookup_env] at hsite
+          have hne_src : s' ≠ src := by
+            intro h; subst h; rw [lookup_delete_same] at hsite; cases hsite
+          rw [lookup_delete_ne _ src s' hne_src] at hsite
+          exact Or.inr ⟨s', bk, hsite⟩
+  }
+
+-- ============================================================
 -- Part 8b: Main Preservation Theorem (dispatches to case lemmas)
 -- ============================================================
 
@@ -4013,7 +4303,7 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     · exact preservation_assign_invalid m m' env lenv retType rmap hwt hss x site cont τ τ'
         hvar hsite hcompat hcont hstmt hstep
   | writeRef dst val cont => exact preservation_writeRef m m' env lenv retType rmap hwt hss dst val cont hstmt hstep
-  | unpack fields src cont => sorry
+  | unpack fields src cont => exact preservation_unpack m m' env lenv retType rmap hwt hss fields src cont hstmt hstep
   | jump label => sorry
   | branch c l1 l2 => sorry
   | ret sites => sorry
