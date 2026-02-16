@@ -4332,8 +4332,11 @@ private theorem preservation_jump (m m' : Machine) (env : TypeEnv) (lenv : Label
     -- 4. Get typing for block body via weakening
     have hblock := hwt.blocks_typed block hmem envL (hlabel ▸ hlenv)
     have hwfL := hwt.lenv_wf label envL hlenv
+    have hsite_empty := hwt.lenv_empty_siteEnv label envL hlenv
     have hstmt' := typecheck_stmt_weaken lenv envL env block.body retType
         hblock hsubsumes hwfL hwt.env_wf
+        (fun s _ _ _ h => absurd h (by rw [hsite_empty s]; simp))
+        (sorry) -- TODO: need lenv_var_refs_tracked invariant
     -- 5. env.siteEnv is empty (from subsumes + lenv_empty_siteEnv)
     have hse : ∀ s, lookup env.siteEnv s = none :=
       siteEnv_empty_from_subsumes envL env hsubsumes
@@ -4421,8 +4424,11 @@ private theorem preservation_branch (m m' : Machine) (env : TypeEnv) (lenv : Lab
         -- Get typing via weakening
         have hblock := hwt.blocks_typed block hmem envL1 (hlabel ▸ hl1)
         have hwfL := hwt.lenv_wf l1 envL1 hl1
+        have hsite_empty := hwt.lenv_empty_siteEnv l1 envL1 hl1
         have hstmt' := typecheck_stmt_weaken lenv envL1 env' block.body retType
             hblock hs1 hwfL hwf'
+            (fun s _ _ _ h => absurd h (by rw [hsite_empty s]; simp))
+            (sorry) -- TODO: need lenv_var_refs_tracked invariant
         -- Construct result
         refine ⟨env', lenv, retType, rmap, ?_, hss⟩
         exact {
@@ -4468,8 +4474,11 @@ private theorem preservation_branch (m m' : Machine) (env : TypeEnv) (lenv : Lab
         -- Get typing via weakening
         have hblock := hwt.blocks_typed block hmem envL2 (hlabel ▸ hl2)
         have hwfL := hwt.lenv_wf l2 envL2 hl2
+        have hsite_empty := hwt.lenv_empty_siteEnv l2 envL2 hl2
         have hstmt' := typecheck_stmt_weaken lenv envL2 env' block.body retType
             hblock hs2 hwfL hwf'
+            (fun s _ _ _ h => absurd h (by rw [hsite_empty s]; simp))
+            (sorry) -- TODO: need lenv_var_refs_tracked invariant
         -- Construct result
         refine ⟨env', lenv, retType, rmap, ?_, hss⟩
         exact {

@@ -550,17 +550,147 @@ private lemma σ_nonroot_of_inj (σ : Aref → Aref) (refs : List Aref)
   exact hne this
 
 -- ============================================================
+-- Helper lemmas: site_tracked / var_tracked preservation
+-- ============================================================
+
+/-- site_tracked is preserved by inserting a basic type (no refs) -/
+private lemma site_tracked_insert_basic (pe_refs : List Aref)
+    (se : SiteEnv) (a : Site) (bt : BasicMoveType)
+    (hst : ∀ s bbt r bk, lookup se s = some (.ref bbt r bk) → r ∈ pe_refs) :
+    ∀ s bbt r bk, lookup (insert se a (.basic bt)) s = some (.ref bbt r bk) → r ∈ pe_refs := by
+  intro s bbt r bk hlook
+  by_cases hs : s = a
+  · subst hs; rw [lookup_insert_same] at hlook; cases hlook
+  · rw [lookup_insert_ne _ _ _ _ hs] at hlook; exact hst _ _ _ _ hlook
+
+/-- site_tracked is preserved by delete -/
+private lemma site_tracked_delete (pe_refs : List Aref)
+    (se : SiteEnv) (a : Site)
+    (hst : ∀ s bbt r bk, lookup se s = some (.ref bbt r bk) → r ∈ pe_refs) :
+    ∀ s bbt r bk, lookup (delete se a) s = some (.ref bbt r bk) → r ∈ pe_refs := by
+  intro s bbt r bk hlook
+  by_cases hs : s = a
+  · subst hs; rw [lookup_delete_same] at hlook; cases hlook
+  · rw [lookup_delete_ne _ _ _ hs] at hlook; exact hst _ _ _ _ hlook
+
+/-- site_tracked for insert of a type that came from varEnv (e.g., move) -/
+private lemma site_tracked_insert_from_var (pe_refs : List Aref)
+    (ve : VarEnv) (se : SiteEnv) (x : Var) (a : Site) (τ : MoveType) (ms : Mut)
+    (hlook_x : lookup ve x = some (.validVar, τ, ms))
+    (hst : ∀ s bt r bk, lookup se s = some (.ref bt r bk) → r ∈ pe_refs)
+    (hvt : ∀ x' bt r bk ms', lookup ve x' = some (.validVar, .ref bt r bk, ms') → r ∈ pe_refs) :
+    ∀ s bt r bk, lookup (insert se a τ) s = some (.ref bt r bk) → r ∈ pe_refs := by
+  intro s bt r bk hlook
+  by_cases hs : s = a
+  · subst hs; rw [lookup_insert_same] at hlook
+    simp only [Option.some.injEq] at hlook; subst hlook
+    exact hvt _ _ _ _ _ hlook_x
+  · rw [lookup_insert_ne _ _ _ _ hs] at hlook; exact hst _ _ _ _ hlook
+
+/-- var_tracked is preserved by update to invalidVar -/
+private lemma var_tracked_update_invalid (pe_refs : List Aref)
+    (ve : VarEnv) (x : Var) (τ : MoveType) (ms : Mut)
+    (hvt : ∀ x' bt r bk ms', lookup ve x' = some (.validVar, .ref bt r bk, ms') → r ∈ pe_refs) :
+    ∀ x' bt r bk ms', lookup (update ve x (.invalidVar, τ, ms)) x' =
+      some (.validVar, .ref bt r bk, ms') → r ∈ pe_refs := by
+  intro x' bt r bk ms' hlook
+  change lookup (insert _ _ _) _ = _ at hlook
+  by_cases hx : x' = x
+  · subst hx; rw [lookup_insert_same] at hlook; simp at hlook
+  · rw [lookup_insert_ne _ _ _ _ hx] at hlook; exact hvt _ _ _ _ _ hlook
+
+/-- var_tracked is preserved by update to validVar when new type comes from siteEnv -/
+private lemma var_tracked_update_valid_from_site (pe_refs : List Aref)
+    (ve : VarEnv) (se : SiteEnv) (x : Var) (a : Site) (τ' : MoveType) (ms : Mut)
+    (hlook_a : lookup se a = some τ')
+    (hst : ∀ s bt r bk, lookup se s = some (.ref bt r bk) → r ∈ pe_refs)
+    (hvt : ∀ x' bt r bk ms', lookup ve x' = some (.validVar, .ref bt r bk, ms') → r ∈ pe_refs) :
+    ∀ x' bt r bk ms', lookup (update ve x (.validVar, τ', ms)) x' =
+      some (.validVar, .ref bt r bk, ms') → r ∈ pe_refs := by
+  intro x' bt r bk ms' hlook
+  change lookup (insert _ _ _) _ = _ at hlook
+  by_cases hx : x' = x
+  · subst hx; rw [lookup_insert_same] at hlook
+    simp only [Option.some.injEq, Prod.mk.injEq] at hlook
+    obtain ⟨-, rfl, -⟩ := hlook
+    exact hst _ _ _ _ hlook_a
+  · rw [lookup_insert_ne _ _ _ _ hx] at hlook; exact hvt _ _ _ _ _ hlook
+
+/-- SiteEnvSubstEquiv is preserved by deleteAll on both sides -/
+private lemma SiteEnvSubstEquiv_deleteAll (σ : Aref → Aref) (se1 se2 : SiteEnv) (keys : List Site) :
+    SiteEnvSubstEquiv σ se1 se2 →
+    SiteEnvSubstEquiv σ (deleteAll se1 keys) (deleteAll se2 keys) := by
+  intro hse
+  unfold SiteEnvSubstEquiv at hse ⊢
+  intro k
+  simp only [deleteAll, lookup]
+  by_cases hk : k ∈ keys
+  · rw [List.lookup_filter_mem_none se1.entries k keys hk,
+        List.lookup_filter_mem_none se2.entries k keys hk]; trivial
+  · rw [List.lookup_filter_notin se1.entries k keys hk,
+        List.lookup_filter_notin se2.entries k keys hk]
+    exact hse k
+
+/-- site_tracked is preserved by deleteAll -/
+private lemma site_tracked_deleteAll (pe_refs : List Aref)
+    (se : SiteEnv) (keys : List Site)
+    (hst : ∀ s bt r bk, lookup se s = some (.ref bt r bk) → r ∈ pe_refs) :
+    ∀ s bt r bk, lookup (deleteAll se keys) s = some (.ref bt r bk) → r ∈ pe_refs := by
+  intro s bt r bk hlook
+  simp only [deleteAll, lookup] at hlook
+  by_cases hs : s ∈ keys
+  · rw [List.lookup_filter_mem_none se.entries s keys hs] at hlook; cases hlook
+  · rw [List.lookup_filter_notin se.entries s keys hs] at hlook
+    exact hst s bt r bk (by simp only [lookup]; exact hlook)
+
+/-- SiteEnvSubstEquiv is preserved by addFieldSites (only basic types inserted) -/
+private lemma SiteEnvSubstEquiv_addFieldSites (σ : Aref → Aref)
+    (fentries : AssocMap Field BasicMoveType)
+    (se1 se2 : SiteEnv) (fields : List (Field × Site)) :
+    SiteEnvSubstEquiv σ se1 se2 →
+    SiteEnvSubstEquiv σ (addFieldSites fentries se1 fields) (addFieldSites fentries se2 fields) := by
+  intro hse
+  unfold addFieldSites
+  induction fields generalizing se1 se2 with
+  | nil => exact hse
+  | cons hd rest ih =>
+    simp only [List.foldl]
+    apply ih
+    cases hlook : lookup fentries hd.1 with
+    | none => exact hse
+    | some bt =>
+      exact SiteEnvSubstEquiv_insert σ _ _ _ _ _ hse (applySubstMoveType_basic σ bt)
+
+/-- site_tracked is preserved by addFieldSites (only basic types inserted) -/
+private lemma site_tracked_addFieldSites (pe_refs : List Aref)
+    (fentries : AssocMap Field BasicMoveType)
+    (se : SiteEnv) (fields : List (Field × Site))
+    (hst : ∀ s bt r bk, lookup se s = some (.ref bt r bk) → r ∈ pe_refs) :
+    ∀ s bt r bk, lookup (addFieldSites fentries se fields) s = some (.ref bt r bk) → r ∈ pe_refs := by
+  unfold addFieldSites
+  induction fields generalizing se with
+  | nil => exact hst
+  | cons hd rest ih =>
+    simp only [List.foldl]
+    apply ih
+    cases hlook : lookup fentries hd.1 with
+    | none => exact hst
+    | some bt => exact site_tracked_insert_basic _ _ _ _ hst
+
+-- ============================================================
 -- Main weakening theorem
 -- ============================================================
 
 /-- Weakening: if a statement type-checks under envL, and envL.subsumes env,
     then it also type-checks under env.
-    Requires both environments to be well-formed (always holds in practice). -/
+    Requires both environments to be well-formed and refs tracked (always holds in practice). -/
 theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) (retType : MoveType)
     (htyped : typecheck_stmt lenv envL s retType)
     (hsub : TypeEnv.subsumes envL env)
     (hwfL : TypeEnv.WellFormed envL)
-    (hwfE : TypeEnv.WellFormed env) :
+    (hwfE : TypeEnv.WellFormed env)
+    (hsite_tracked : ∀ s bt r bk, lookup envL.siteEnv s = some (.ref bt r bk) → r ∈ envL.pathEnv.refs)
+    (hvar_tracked : ∀ x bt r bk ms, lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) → r ∈ envL.pathEnv.refs) :
     typecheck_stmt lenv env s retType := by
   have hroot : Aref.root ∈ envL.pathEnv.refs := hwfL.pathEnv_wf.root_in_refs
   induction htyped generalizing env with
@@ -605,6 +735,8 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
           hrefs, hinj, hnonroot, hpaths⟩
       · exact TypeEnv.insert_siteEnv_wf _ _ _ hwfL trivial
       · exact TypeEnv.insert_siteEnv_wf _ _ _ hwfE trivial
+      · exact site_tracked_insert_basic _ _ _ _ hsite_tracked
+      · exact hvar_tracked
       · exact hroot
   | let_bind_copy_val _ _ _ _ _ _ _ hlookup hnotIn _ ih =>
     obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
@@ -619,6 +751,8 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
         hrefs, hinj, hnonroot, hpaths⟩
     · exact TypeEnv.insert_siteEnv_wf _ _ _ hwfL trivial
     · exact TypeEnv.insert_siteEnv_wf _ _ _ hwfE trivial
+    · exact site_tracked_insert_basic _ _ _ _ hsite_tracked
+    · exact hvar_tracked
     · exact hroot
   | let_bind_move _ _ _ _ _ _ _ hlookup hnb hnotIn _ ih =>
     obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
@@ -641,6 +775,8 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
               (moveTypeRefNotRoot_applySubst σ _ hτ_nr hnonroot),
             VarEnv.update_refs_not_root _ _ _ hwfE.varEnv_wf
               (moveTypeRefNotRoot_applySubst σ _ hτ_nr hnonroot)⟩
+    · exact site_tracked_insert_from_var _ _ _ _ _ _ _ hlookup hsite_tracked hvar_tracked
+    · exact var_tracked_update_invalid _ _ _ _ _ hvar_tracked
     · exact hroot
   | let_bind_binop _ _ _ _ _ sa sb sc _ _ hlook_a hlook_b hbinop hnotIn _ ih =>
     obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
@@ -657,6 +793,9 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
           hrefs, hinj, hnonroot, hpaths⟩
       · exact TypeEnv.delete_delete_insert_wf _ _ _ _ _ hwfL trivial
       · exact TypeEnv.delete_delete_insert_wf _ _ _ _ _ hwfE trivial
+      · exact site_tracked_insert_basic _ _ _ _
+          (site_tracked_delete _ _ sb (site_tracked_delete _ _ sa hsite_tracked))
+      · exact hvar_tracked
       · exact hroot
   | var_assign_invalid _ _ _ _ _ _ _ hlook_x hlook_a hcompat _ ih =>
     obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
@@ -683,6 +822,8 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
               SiteEnv.delete_refs_not_root _ _ hwfE.siteEnv_wf,
               VarEnv.update_refs_not_root _ _ _ hwfE.varEnv_wf
                 (moveTypeRefNotRoot_applySubst σ _ hτ'_nr hnonroot)⟩
+      · exact site_tracked_delete _ _ _ hsite_tracked
+      · exact var_tracked_update_valid_from_site _ _ _ _ _ _ _ hlook_a hsite_tracked hvar_tracked
       · exact hroot
   -- ==================== Cases with pathEnv changes (sorry for now) ====================
   | let_bind_copy_ref => sorry
@@ -697,7 +838,54 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
   | release => sorry
   | call => sorry
   -- ==================== Complex non-pathEnv cases ====================
-  | let_bind_pack => sorry
-  | unpack => sorry
+  | let_bind_pack _ _ _ _ _ _ _ hnotIn hft hfc hfi _ ih =>
+    obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
+    apply typecheck_stmt.let_bind_pack
+    · exact SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn
+    · intro f a hmem
+      obtain ⟨bt, hlook_a, hlook_f⟩ := hft f a hmem
+      have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
+      simp only [applySubstMoveType] at hlook_a_env
+      exact ⟨bt, hlook_a_env, hlook_f⟩
+    · exact hfc
+    · exact hfi
+    · apply ih
+      · exact ⟨σ, hid, hve,
+          SiteEnvSubstEquiv_insert σ _ _ _ _ _
+            (SiteEnvSubstEquiv_deleteAll σ _ _ _ hse) (applySubstMoveType_basic σ _),
+          hrefs, hinj, hnonroot, hpaths⟩
+      · exact TypeEnv.deleteAll_insert_wf _ _ _ _ hwfL trivial
+      · exact TypeEnv.deleteAll_insert_wf _ _ _ _ hwfE trivial
+      · exact site_tracked_insert_basic _ _ _ _
+          (site_tracked_deleteAll _ _ _ hsite_tracked)
+      · exact hvar_tracked
+      · exact hroot
+  | unpack _ _ _ _ _ _ hlook_b hfresh hinj_f hexist _ ih =>
+    obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
+    have hlook_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_b
+    simp only [applySubstMoveType] at hlook_env
+    apply typecheck_stmt.unpack lenv env _ _ _ _ _
+      hlook_env
+    · intro f a hmem
+      exact SiteEnvSubstEquiv_notIn σ _ _ _ hse (hfresh f a hmem)
+    · exact hinj_f
+    · exact hexist
+    · apply ih
+      · exact ⟨σ, hid, hve,
+          SiteEnvSubstEquiv_addFieldSites σ _ _ _ _
+            (SiteEnvSubstEquiv_delete σ _ _ _ hse),
+          hrefs, hinj, hnonroot, hpaths⟩
+      · exact ⟨hwfL.pathEnv_wf,
+          addFieldSites_refs_not_root _ _ _
+            (SiteEnv.delete_refs_not_root _ _ hwfL.siteEnv_wf),
+          hwfL.varEnv_wf⟩
+      · exact ⟨hwfE.pathEnv_wf,
+          addFieldSites_refs_not_root _ _ _
+            (SiteEnv.delete_refs_not_root _ _ hwfE.siteEnv_wf),
+          hwfE.varEnv_wf⟩
+      · exact site_tracked_addFieldSites _ _ _ _
+          (site_tracked_delete _ _ _ hsite_tracked)
+      · exact hvar_tracked
+      · exact hroot
 
 end LeanMove.Typing.TypeSoundness
