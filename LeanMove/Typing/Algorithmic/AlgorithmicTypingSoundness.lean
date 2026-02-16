@@ -863,6 +863,112 @@ private lemma computeRefSubst_keys_refid (ve1 ve2 : VarEnv) (pairs : List (Aref 
   split at hfm <;> simp at hfm
   exact ⟨_, hfm.2.1.symm⟩
 
+/-- The foldl in computeRefSubst preserves the property that all values are not root,
+    given that the input pairs all have non-root values. -/
+private lemma computeRefSubst_foldl_values_not_root
+    (input : List (Aref × Aref))
+    (hinput : ∀ k v, (k, v) ∈ input → v ≠ .root)
+    (acc : List (Aref × Aref))
+    (hacc : ∀ k v, (k, v) ∈ acc → v ≠ .root)
+    (result : List (Aref × Aref))
+    (hresult : input.foldl refSubstStep (some acc) = some result) :
+    ∀ k v, (k, v) ∈ result → v ≠ .root := by
+  induction input generalizing acc with
+  | nil =>
+    simp only [List.foldl_nil] at hresult
+    injection hresult with hresult
+    rw [← hresult]; exact hacc
+  | cons pair rest ih =>
+    simp only [List.foldl_cons] at hresult
+    obtain ⟨r1, r2⟩ := pair
+    simp only [refSubstStep] at hresult
+    have hinput_rest : ∀ k v, (k, v) ∈ rest → v ≠ .root :=
+      fun k v hm => hinput k v (List.mem_cons_of_mem _ hm)
+    cases hlk : List.lookup r1 acc with
+    | none =>
+      simp only [hlk] at hresult
+      cases hinj : (acc.any fun x => x.2 == r2) with
+      | false =>
+        simp only [hinj, Bool.false_eq_true, ite_false] at hresult
+        have hacc' : ∀ k v, (k, v) ∈ (r1, r2) :: acc → v ≠ .root := by
+          intro k v hm
+          cases List.mem_cons.mp hm with
+          | inl heq =>
+            rw [(Prod.mk.inj heq).2]
+            exact hinput r1 r2 (List.mem_cons.mpr (Or.inl rfl))
+          | inr htail => exact hacc k v htail
+        exact ih hinput_rest ((r1, r2) :: acc) hacc' hresult
+      | true =>
+        simp only [hinj, ite_true] at hresult
+        rw [refSubstStep_foldl_none] at hresult; simp at hresult
+    | some r2' =>
+      simp only [hlk] at hresult
+      by_cases hr2eq : r2 = r2'
+      · simp only [beq_iff_eq, hr2eq, ite_true] at hresult
+        exact ih hinput_rest acc hacc hresult
+      · have hne_beq : (r2 == r2') = false := beq_false_of_ne hr2eq
+        simp only [hne_beq, Bool.false_eq_true, ite_false] at hresult
+        rw [refSubstStep_foldl_none] at hresult; simp at hresult
+
+/-- All values in the substitution computed by computeRefSubst are not root,
+    given that the source VarEnv has no root refs. -/
+private lemma computeRefSubst_values_not_root (ve1 ve2 : VarEnv) (pairs : List (Aref × Aref))
+    (h : computeRefSubst ve1 ve2 = some pairs)
+    (hno_root : VarEnv.RefsNotRoot ve2) :
+    ∀ k v, (k, v) ∈ pairs → v ≠ .root := by
+  simp only [computeRefSubst] at h
+  change (ve1.entries.filterMap _).foldl refSubstStep (some []) = some pairs at h
+  apply computeRefSubst_foldl_values_not_root _ _ [] (fun _ _ hm => nomatch hm) _ h
+  -- Show that filterMap only produces non-root values
+  intro k v hm
+  simp only [List.mem_filterMap] at hm
+  obtain ⟨⟨x, ⟨isv, τ, ms⟩⟩, _, hfm⟩ := hm
+  -- Manual case analysis on isv and τ (the first match in the filterMap)
+  cases isv with
+  | invalidVar => simp at hfm
+  | validVar =>
+    cases τ with
+    | basic _ => simp at hfm
+    | ref bt ar bk =>
+      cases ar with
+      | root => simp at hfm
+      | varRef _ => simp at hfm
+      | refid n =>
+        -- Now: .validVar, .ref bt (.refid n) bk
+        -- hfm is about: match lookup ve2 x with | some (.validVar, .ref _ r2 _, _) => ...
+        simp only at hfm
+        cases hlookup_ve2 : lookup ve2 x with
+        | none => simp [hlookup_ve2] at hfm
+        | some val =>
+          rw [hlookup_ve2] at hfm
+          obtain ⟨isv2, τ2, ms2⟩ := val
+          cases isv2 with
+          | invalidVar => simp at hfm
+          | validVar =>
+            cases τ2 with
+            | basic _ => simp at hfm
+            | ref bt2 r2 bk2 =>
+              simp at hfm
+              obtain ⟨_, _, hv⟩ := hfm
+              subst hv
+              exact hno_root x (.validVar, .ref bt2 r2 bk2, ms2) hlookup_ve2
+
+/-- Helper: List.lookup returning some implies the pair is in the list -/
+private lemma List_lookup_mem {α β : Type} [BEq α] [LawfulBEq α]
+    (l : List (α × β)) (k : α) (v : β)
+    (h : l.lookup k = some v) : (k, v) ∈ l := by
+  induction l with
+  | nil => simp [List.lookup] at h
+  | cons p rest ih =>
+    obtain ⟨k', v'⟩ := p
+    simp only [List.lookup] at h
+    split at h
+    · rename_i hk
+      rw [beq_iff_eq] at hk; subst hk
+      injection h with h; subst h
+      exact .head _
+    · exact List.mem_cons_of_mem _ (ih h)
+
 /-- applySubstArefList is identity on arefs that are not refids,
     when the substitution comes from computeRefSubst. -/
 private lemma applySubstArefList_non_refid (pairs : List (Aref × Aref))
@@ -1003,8 +1109,10 @@ private lemma siteenv_subst_equiv_bool_sound (σ : List (Aref × Aref)) (se1 se2
       rw [applySubstMoveTypeList_eq] at heq
       exact heq
 
-/-- Soundness of subsumes_bool: if it returns true, the semantic subsumption holds. -/
-theorem subsumes_bool_implies_subsumes (envL env : TypeEnv) :
+/-- Soundness of subsumes_bool: if it returns true, the semantic subsumption holds.
+    Requires that env.varEnv has no root refs (always satisfied by TypeEnv.WellFormed). -/
+theorem subsumes_bool_implies_subsumes (envL env : TypeEnv)
+    (hno_root : VarEnv.RefsNotRoot env.varEnv) :
     TypeEnv.subsumes_bool envL env = true → TypeEnv.subsumes envL env := by
   intro h
   simp only [TypeEnv.subsumes_bool] at h
@@ -1053,11 +1161,30 @@ theorem subsumes_bool_implies_subsumes (envL env : TypeEnv) :
       have hnd_map : (envL.pathEnv.refs.map σ).Nodup := hrefs_eq ▸ hnd
       intro u v hu hv huv
       exact List.inj_on_of_nodup_map hnd_map u hu v hv huv
-    · -- Path inclusion: env ⊆ envL after σ
-      intro u v hu hv path hinterp
-      have hu' := hpaths_raw u hu
-      have huv := hu' v hv
-      exact regexSubsumedBy_sound _ _ huv path hinterp
+    · -- (nonroot ∧ paths) - last two fields
+      constructor
+      · -- σ doesn't create roots: applySubstArefList never maps non-root to root
+        intro r hr
+        simp only [σ]
+        have hkeys := computeRefSubst_keys_refid envL.varEnv env.varEnv pairs heq_subst
+        cases r with
+        | root => exact absurd rfl hr
+        | varRef v =>
+          have := applySubstArefList_non_refid pairs hkeys (.varRef v) (fun n h => by cases h)
+          rw [this]; intro h; cases h
+        | refid n =>
+          simp only [applySubstArefList]
+          cases hlook : pairs.lookup (.refid n) with
+          | none => intro h; cases h  -- identity: .refid n ≠ .root
+          | some r' =>
+            -- r' is a value from computeRefSubst, hence not root
+            have hvals := computeRefSubst_values_not_root envL.varEnv env.varEnv pairs heq_subst hno_root
+            exact hvals (.refid n) r' (List_lookup_mem pairs (.refid n) r' hlook)
+      · -- Path inclusion: env ⊆ envL after σ
+        intro u v hu hv path hinterp
+        have hu' := hpaths_raw u hu
+        have huv := hu' v hv
+        exact regexSubsumedBy_sound _ _ huv path hinterp
 
 /- ---------------------------------------------------- -/
 /-       Statement type checking soundness               -/
@@ -1082,7 +1209,7 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
       simp only [hlookup] at h
       split at h
       · apply typecheck_stmt.jump lenv env L envL retType hlookup
-        exact subsumes_bool_implies_subsumes envL env (by assumption)
+        exact subsumes_bool_implies_subsumes envL env hwf.varEnv_wf (by assumption)
       · simp at h
 
   | branch a L1 L2 =>
@@ -1108,8 +1235,8 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
               · rename_i hcond
                 simp only [Bool.and_eq_true] at hcond
                 apply typecheck_stmt.branch lenv env a L1 L2 envL1 envL2 retType ha hl1 hl2
-                · exact subsumes_bool_implies_subsumes envL1 _ hcond.1
-                · exact subsumes_bool_implies_subsumes envL2 _ hcond.2
+                · exact subsumes_bool_implies_subsumes envL1 _ hwf.varEnv_wf hcond.1
+                · exact subsumes_bool_implies_subsumes envL2 _ hwf.varEnv_wf hcond.2
               · simp at h
         | _ => simp at h
 

@@ -396,6 +396,9 @@ def TypeEnv.subsumes (envL env : TypeEnv) : Prop :=
     envL.pathEnv.refs.map σ = env.pathEnv.refs ∧
     -- σ is injective on envL.pathEnv.refs (needed for path deletion cases)
     (∀ u v, u ∈ envL.pathEnv.refs → v ∈ envL.pathEnv.refs → σ u = σ v → u = v) ∧
+    -- σ doesn't create roots: non-root arefs never map to root
+    -- (follows from the algorithmic construction; needed for MoveType.compatible preservation)
+    (∀ r, r ≠ .root → σ r ≠ .root) ∧
     -- Paths in env are included in envL (env ⊆ envL, after σ renaming)
     (∀ u v, u ∈ envL.pathEnv.refs → v ∈ envL.pathEnv.refs →
       ∀ path, interpret_regex (env.pathEnv.paths (σ u, σ v)) path →

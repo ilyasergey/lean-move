@@ -351,6 +351,9 @@ structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
   lenv_empty_siteEnv : ∀ L envL, lookup lenv L = some envL →
     ∀ s, lookup envL.siteEnv s = none
 
+  -- 9b. lenv entries are well-formed (needed for weakening in preservation_jump/branch)
+  lenv_wf : ∀ L envL, lookup lenv L = some envL → TypeEnv.WellFormed envL
+
   -- 10. All functions in funEnv are well-typed
   funEnv_typed : ∀ fname fdef,
     lookup m.frame.funEnv fname = some fdef →

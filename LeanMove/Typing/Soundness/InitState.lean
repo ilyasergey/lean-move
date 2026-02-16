@@ -1258,6 +1258,7 @@ theorem initState_safe (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunD
             intro b hmem benv hlookup_b
             exact hblocks_typed b hmem benv hlookup_b
           lenv_empty_siteEnv := ha.lenv_empty_sites
+          lenv_wf := ha.lenv_wf
           funEnv_typed := hfunEnv
           heap_loc_bound :=
             allocArgs_heap_loc_bound' heap f.params args heap' paramVarStore
