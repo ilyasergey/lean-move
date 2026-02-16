@@ -15,6 +15,7 @@
 -/
 
 import LeanMove.Typing.Soundness.Defs
+import LeanMove.Typing.Soundness.Weakening
 
 /-!
 # Type Soundness: Preservation
@@ -4271,6 +4272,240 @@ private theorem preservation_unpack (m m' : Machine) (env : TypeEnv) (lenv : Lab
   }
 
 -- ============================================================
+-- Part 8a-ii: Helpers for jump/branch preservation
+-- ============================================================
+
+/-- If envL has empty siteEnv and envL.subsumes env, then env also has empty siteEnv. -/
+private lemma siteEnv_empty_from_subsumes (envL env : TypeEnv)
+    (hsubsumes : TypeEnv.subsumes envL env)
+    (hempty : ∀ s, lookup envL.siteEnv s = none) :
+    ∀ s, lookup env.siteEnv s = none := by
+  intro s
+  obtain ⟨σ, _, _, hse, _, _, _, _⟩ := hsubsumes
+  unfold SiteEnvSubstEquiv at hse
+  specialize hse s
+  simp only [hempty s] at hse
+  cases hs : lookup env.siteEnv s with
+  | none => rfl
+  | some _ => simp only [hs] at hse
+
+/-- findBlock returns an element from the list with matching label. -/
+private lemma findBlock_spec (blocks : List Block) (label : Label) (block : Block)
+    (h : findBlock blocks label = some block) :
+    block ∈ blocks ∧ block.label = label := by
+  unfold findBlock at h
+  induction blocks with
+  | nil => simp at h
+  | cons hd tl ih =>
+    simp only [List.find?] at h
+    split at h
+    · rename_i htrue
+      simp only [Option.some.injEq] at h; subst h
+      exact ⟨List.mem_cons_self, beq_iff_eq.mp htrue⟩
+    · obtain ⟨hmem, hlbl⟩ := ih h
+      exact ⟨List.mem_cons_of_mem _ hmem, hlbl⟩
+
+-- ============================================================
+-- Part 8a-iii: Preservation for jump
+-- ============================================================
+
+private theorem preservation_jump (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retType : MoveType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retType rmap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (label : Label)
+    (hstmt : m.frame.stmt = .jump label)
+    (hstep : step (.running m) = .running m') :
+    ∃ env' lenv' retType' rmap',
+      WellTypedState m' env' lenv' retType' rmap' ∧
+      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+  -- 1. Extract typing info
+  obtain ⟨envL, hlenv, hsubsumes⟩ := inv_jump (by rw [← hstmt]; exact hwt.stmt_typed)
+  -- 2. Case split on findBlock (step requires it to succeed)
+  cases hfb : findBlock m.frame.blocks label with
+  | none =>
+    exfalso; simp only [step, hstmt, hfb] at hstep; contradiction
+  | some block =>
+    simp only [step, hstmt, hfb, ExecState.running.injEq] at hstep; subst hstep
+    -- 3. Block membership and label match
+    obtain ⟨hmem, hlabel⟩ := findBlock_spec m.frame.blocks label block hfb
+    -- 4. Get typing for block body via weakening
+    have hblock := hwt.blocks_typed block hmem envL (hlabel ▸ hlenv)
+    have hwfL := hwt.lenv_wf label envL hlenv
+    have hstmt' := typecheck_stmt_weaken lenv envL env block.body retType
+        hblock hsubsumes hwfL hwt.env_wf
+    -- 5. env.siteEnv is empty (from subsumes + lenv_empty_siteEnv)
+    have hse : ∀ s, lookup env.siteEnv s = none :=
+      siteEnv_empty_from_subsumes envL env hsubsumes
+        (hwt.lenv_empty_siteEnv label envL hlenv)
+    -- 6. Construct result
+    refine ⟨env, lenv, retType, rmap, ?_, hss⟩
+    exact {
+      env_wf := hwt.env_wf
+      stmt_typed := hstmt'
+      var_consistent := hwt.var_consistent
+      site_consistent := fun s τ h => by simp [hse s] at h
+      rmap_live := hwt.rmap_live
+      rmap_paths := hwt.rmap_paths
+      blocks_typed := hwt.blocks_typed
+      lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
+      lenv_wf := hwt.lenv_wf
+      funEnv_typed := hwt.funEnv_typed
+      heap_loc_bound := hwt.heap_loc_bound
+      varEnv_refs_in_pathEnv := hwt.varEnv_refs_in_pathEnv
+      siteEnv_refs_in_pathEnv := fun s _ _ _ h => by simp [hse s] at h
+      live_refs_unique := by
+        intro r'
+        exact ⟨fun _ _ _ _ s _ _ _ h => by simp [hse s] at h,
+               fun s _ _ _ _ _ _ h => by simp [hse s] at h,
+               (hwt.live_refs_unique r').2.2⟩
+      rmap_root_none := hwt.rmap_root_none
+      no_paths_to_root := hwt.no_paths_to_root
+      root_path_coherence := hwt.root_path_coherence
+      paths_from_non_member_empty := hwt.paths_from_non_member_empty
+      paths_to_non_member_empty := hwt.paths_to_non_member_empty
+      self_loop_only_empty := hwt.self_loop_only_empty
+      rmap_has_type := by
+        intro r bt loc path hrmap hcond
+        apply hwt.rmap_has_type r bt loc path hrmap
+        rcases hcond with ⟨x, bk, ms, hvar⟩ | ⟨s, bk, hsite⟩
+        · exact Or.inl ⟨x, bk, ms, hvar⟩
+        · simp [hse s] at hsite
+    }
+
+-- ============================================================
+-- Part 8a-iv: Preservation for branch
+-- ============================================================
+
+private theorem preservation_branch (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retType : MoveType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retType rmap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (c : Site) (l1 l2 : Label)
+    (hstmt : m.frame.stmt = .branch c l1 l2)
+    (hstep : step (.running m) = .running m') :
+    ∃ env' lenv' retType' rmap',
+      WellTypedState m' env' lenv' retType' rmap' ∧
+      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+  -- 1. Extract typing info
+  obtain ⟨envL1, envL2, hc_type, hl1, hl2, hs1, hs2⟩ :=
+    inv_branch (by rw [← hstmt]; exact hwt.stmt_typed)
+  -- 2. Get concrete bool value from site_consistent
+  obtain ⟨v, hv_store, hv_match⟩ := hwt.site_consistent c (.basic .tbool) hc_type
+  -- ValueMatchesType v (.basic .tbool) rmap = HasType v .tbool
+  cases hv_match with
+  | bool b =>
+    -- 3. Set up env' = {env with siteEnv := delete env.siteEnv c}
+    let env' : TypeEnv := {env with siteEnv := delete env.siteEnv c}
+    -- env'.siteEnv is empty (from subsumes + lenv_empty_siteEnv)
+    have hse' : ∀ s, lookup env'.siteEnv s = none :=
+      siteEnv_empty_from_subsumes envL1 env' hs1
+        (hwt.lenv_empty_siteEnv l1 envL1 hl1)
+    -- env' is well-formed
+    have hwf' : TypeEnv.WellFormed env' :=
+      ⟨hwt.env_wf.pathEnv_wf,
+       SiteEnv.delete_refs_not_root env.siteEnv c hwt.env_wf.siteEnv_wf,
+       hwt.env_wf.varEnv_wf⟩
+    -- readSite m c = some (.bool b)
+    have hrs : readSite m c = some (.bool b) := hv_store
+    -- 4. Case split on bool value and findBlock
+    cases b with
+    | true =>
+      -- step uses l1
+      simp only [step, hstmt, hrs] at hstep
+      cases hfb : findBlock m.frame.blocks l1 with
+      | none => exfalso; simp only [hfb] at hstep; contradiction
+      | some block =>
+        simp only [hfb, ExecState.running.injEq] at hstep; subst hstep
+        obtain ⟨hmem, hlabel⟩ := findBlock_spec m.frame.blocks l1 block hfb
+        -- Get typing via weakening
+        have hblock := hwt.blocks_typed block hmem envL1 (hlabel ▸ hl1)
+        have hwfL := hwt.lenv_wf l1 envL1 hl1
+        have hstmt' := typecheck_stmt_weaken lenv envL1 env' block.body retType
+            hblock hs1 hwfL hwf'
+        -- Construct result
+        refine ⟨env', lenv, retType, rmap, ?_, hss⟩
+        exact {
+          env_wf := hwf'
+          stmt_typed := hstmt'
+          var_consistent := hwt.var_consistent
+          site_consistent := fun s τ h => by simp [hse' s] at h
+          rmap_live := hwt.rmap_live
+          rmap_paths := hwt.rmap_paths
+          blocks_typed := hwt.blocks_typed
+          lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
+          lenv_wf := hwt.lenv_wf
+          funEnv_typed := hwt.funEnv_typed
+          heap_loc_bound := hwt.heap_loc_bound
+          varEnv_refs_in_pathEnv := hwt.varEnv_refs_in_pathEnv
+          siteEnv_refs_in_pathEnv := fun s _ _ _ h => by simp [hse' s] at h
+          live_refs_unique := by
+            intro r'
+            exact ⟨fun _ _ _ _ s _ _ _ h => by simp [hse' s] at h,
+                   fun s _ _ _ _ _ _ h => by simp [hse' s] at h,
+                   (hwt.live_refs_unique r').2.2⟩
+          rmap_root_none := hwt.rmap_root_none
+          no_paths_to_root := hwt.no_paths_to_root
+          root_path_coherence := hwt.root_path_coherence
+          paths_from_non_member_empty := hwt.paths_from_non_member_empty
+          paths_to_non_member_empty := hwt.paths_to_non_member_empty
+          self_loop_only_empty := hwt.self_loop_only_empty
+          rmap_has_type := by
+            intro r bt loc path hrmap hcond
+            apply hwt.rmap_has_type r bt loc path hrmap
+            rcases hcond with ⟨x, bk, ms, hvar⟩ | ⟨s, bk, hsite⟩
+            · exact Or.inl ⟨x, bk, ms, hvar⟩
+            · simp [hse' s] at hsite
+        }
+    | false =>
+      -- step uses l2
+      simp only [step, hstmt, hrs] at hstep
+      cases hfb : findBlock m.frame.blocks l2 with
+      | none => exfalso; simp only [hfb] at hstep; contradiction
+      | some block =>
+        simp only [hfb, ExecState.running.injEq] at hstep; subst hstep
+        obtain ⟨hmem, hlabel⟩ := findBlock_spec m.frame.blocks l2 block hfb
+        -- Get typing via weakening
+        have hblock := hwt.blocks_typed block hmem envL2 (hlabel ▸ hl2)
+        have hwfL := hwt.lenv_wf l2 envL2 hl2
+        have hstmt' := typecheck_stmt_weaken lenv envL2 env' block.body retType
+            hblock hs2 hwfL hwf'
+        -- Construct result
+        refine ⟨env', lenv, retType, rmap, ?_, hss⟩
+        exact {
+          env_wf := hwf'
+          stmt_typed := hstmt'
+          var_consistent := hwt.var_consistent
+          site_consistent := fun s τ h => by simp [hse' s] at h
+          rmap_live := hwt.rmap_live
+          rmap_paths := hwt.rmap_paths
+          blocks_typed := hwt.blocks_typed
+          lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
+          lenv_wf := hwt.lenv_wf
+          funEnv_typed := hwt.funEnv_typed
+          heap_loc_bound := hwt.heap_loc_bound
+          varEnv_refs_in_pathEnv := hwt.varEnv_refs_in_pathEnv
+          siteEnv_refs_in_pathEnv := fun s _ _ _ h => by simp [hse' s] at h
+          live_refs_unique := by
+            intro r'
+            exact ⟨fun _ _ _ _ s _ _ _ h => by simp [hse' s] at h,
+                   fun s _ _ _ _ _ _ h => by simp [hse' s] at h,
+                   (hwt.live_refs_unique r').2.2⟩
+          rmap_root_none := hwt.rmap_root_none
+          no_paths_to_root := hwt.no_paths_to_root
+          root_path_coherence := hwt.root_path_coherence
+          paths_from_non_member_empty := hwt.paths_from_non_member_empty
+          paths_to_non_member_empty := hwt.paths_to_non_member_empty
+          self_loop_only_empty := hwt.self_loop_only_empty
+          rmap_has_type := by
+            intro r bt loc path hrmap hcond
+            apply hwt.rmap_has_type r bt loc path hrmap
+            rcases hcond with ⟨x, bk, ms, hvar⟩ | ⟨s, bk, hsite⟩
+            · exact Or.inl ⟨x, bk, ms, hvar⟩
+            · simp [hse' s] at hsite
+        }
+
+-- ============================================================
 -- Part 8b: Main Preservation Theorem (dispatches to case lemmas)
 -- ============================================================
 
@@ -4318,8 +4553,8 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
         hvar hsite hcompat hcont hstmt hstep
   | writeRef dst val cont => exact preservation_writeRef m m' env lenv retType rmap hwt hss dst val cont hstmt hstep
   | unpack fields src cont => exact preservation_unpack m m' env lenv retType rmap hwt hss fields src cont hstmt hstep
-  | jump label => sorry
-  | branch c l1 l2 => sorry
+  | jump label => exact preservation_jump m m' env lenv retType rmap hwt hss label hstmt hstep
+  | branch c l1 l2 => exact preservation_branch m m' env lenv retType rmap hwt hss c l1 l2 hstmt hstep
   | ret sites => sorry
   | call results fname argSites cont => sorry
 
