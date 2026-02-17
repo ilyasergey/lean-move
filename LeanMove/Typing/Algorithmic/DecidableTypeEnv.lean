@@ -151,11 +151,31 @@ def PathEnvDec.wellFormed_bool (ped : PathEnvDec) : Bool :=
   ped.paths.entries.all (fun ((u, _), _) => ped.refs.contains u) &&
   ped.paths.entries.all (fun ((_, v), _) => ped.refs.contains v)
 
+/-- Boolean check: all valid var refs are tracked in pathEnv.refs -/
+def TypeEnvDec.varRefsTracked_bool (ted : TypeEnvDec) : Bool :=
+  ted.varEnv.entries.all fun (_, (isv, τ, _)) =>
+    match isv, τ with
+    | .validVar, .ref _ r _ => ted.pathEnv.refs.contains r
+    | _, _ => true
+
+/-- Boolean check: valid var refs are pairwise distinct (no two entries share a ref) -/
+def TypeEnvDec.varRefsUnique_bool (ted : TypeEnvDec) : Bool :=
+  ted.varEnv.entries.all fun (x, (isv1, τ1, _)) =>
+    match isv1, τ1 with
+    | .validVar, .ref _ r _ =>
+      ted.varEnv.entries.all fun (y, (isv2, τ2, _)) =>
+        match isv2, τ2 with
+        | .validVar, .ref _ r' _ => decide (x = y) || decide (r ≠ r')
+        | _, _ => true
+    | _, _ => true
+
 /-- Boolean well-formedness check for TypeEnvDec -/
 def TypeEnvDec.wellFormed_bool (ted : TypeEnvDec) : Bool :=
   ted.pathEnv.wellFormed_bool &&
   SiteEnv.refsNotRoot_bool ted.siteEnv &&
-  VarEnv.refsNotRoot_bool ted.varEnv
+  VarEnv.refsNotRoot_bool ted.varEnv &&
+  ted.varRefsTracked_bool &&
+  ted.varRefsUnique_bool
 
 /-- Boolean well-formedness check for all entries in a LabelEnvDec -/
 def LabelEnvDec.allWellFormed_bool (led : LabelEnvDec) : Bool :=
@@ -315,7 +335,7 @@ theorem TypeEnvDec.wellFormed_bool_sound (ted : TypeEnvDec) :
     ted.wellFormed_bool = true → TypeEnv.WellFormed ted.toTypeEnv := by
   intro h
   simp only [wellFormed_bool, Bool.and_eq_true] at h
-  obtain ⟨⟨hpe, hse⟩, hve⟩ := h
+  obtain ⟨⟨⟨⟨hpe, hse⟩, hve⟩, _⟩, _⟩ := h
   exact {
     pathEnv_wf := PathEnvDec.wellFormed_bool_sound ted.pathEnv hpe
     siteEnv_wf := SiteEnv_refsNotRoot_bool_sound ted.siteEnv hse
@@ -390,7 +410,7 @@ theorem check_fun_dec_lenv_non_member_from (f : FunDef) (lenvDec : LabelEnvDec) 
     have hmem := lookup_some lenvDec l ted hlenv
     have hwf := hwf_all (l, ted) hmem
     simp only [TypeEnvDec.wellFormed_bool, Bool.and_eq_true] at hwf
-    exact PathEnvDec.toPathEnv_non_member_from ted.pathEnv hwf.1.1
+    exact PathEnvDec.toPathEnv_non_member_from ted.pathEnv hwf.1.1.1.1
 
 /-- Non-member paths property (to) from a successful check_fun_dec -/
 theorem check_fun_dec_lenv_non_member_to (f : FunDef) (lenvDec : LabelEnvDec) :
@@ -411,7 +431,7 @@ theorem check_fun_dec_lenv_non_member_to (f : FunDef) (lenvDec : LabelEnvDec) :
     have hmem := lookup_some lenvDec l ted hlenv
     have hwf := hwf_all (l, ted) hmem
     simp only [TypeEnvDec.wellFormed_bool, Bool.and_eq_true] at hwf
-    exact PathEnvDec.toPathEnv_non_member_to ted.pathEnv hwf.1.1
+    exact PathEnvDec.toPathEnv_non_member_to ted.pathEnv hwf.1.1.1.1
 
 /-- Self-loops in toPathEnv are always ε, so they only accept p = [] -/
 theorem check_fun_dec_lenv_self_loop (f : FunDef) (lenvDec : LabelEnvDec) :
@@ -431,6 +451,77 @@ theorem check_fun_dec_lenv_self_loop (f : FunDef) (lenvDec : LabelEnvDec) :
     -- paths (u, u) = ε since u = u
     simp only [↓reduceIte, interpret_regex] at hp
     exact hp
+
+/-- Var refs tracked: all valid var refs are in pathEnv.refs -/
+theorem check_fun_dec_lenv_var_tracked (f : FunDef) (lenvDec : LabelEnvDec) :
+    check_fun_dec f lenvDec = true →
+    ∀ l env, lookup lenvDec.toLabelEnv l = some env →
+    ∀ x bt r bk ms, lookup env.varEnv x = some (.validVar, .ref bt r bk, ms) →
+    r ∈ env.pathEnv.refs := by
+  intro h l env hlookup
+  simp only [check_fun_dec, Bool.and_eq_true] at h
+  obtain ⟨hwf_all, _⟩ := h
+  simp only [LabelEnvDec.toLabelEnv, lookup_mapValues] at hlookup
+  cases hlenv : lookup lenvDec l with
+  | none => simp [hlenv] at hlookup
+  | some ted =>
+    simp [hlenv, Option.map] at hlookup
+    subst hlookup
+    simp only [LabelEnvDec.allWellFormed_bool, List.all_eq_true] at hwf_all
+    have hmem := lookup_some lenvDec l ted hlenv
+    have hwf := hwf_all (l, ted) hmem
+    simp only [TypeEnvDec.wellFormed_bool, Bool.and_eq_true] at hwf
+    obtain ⟨⟨⟨⟨_, _⟩, _⟩, hvrt⟩, _⟩ := hwf
+    -- hvrt : varRefsTracked_bool ted = true
+    simp only [TypeEnvDec.varRefsTracked_bool, List.all_eq_true] at hvrt
+    intro x bt r bk ms hlook
+    have hmem_entry := lookup_some ted.varEnv x (.validVar, .ref bt r bk, ms) hlook
+    have := hvrt (x, (.validVar, .ref bt r bk, ms)) hmem_entry
+    simp only at this
+    simp only [List.contains_eq_any_beq, List.any_eq_true, beq_iff_eq] at this
+    obtain ⟨r', hr'mem, hr'eq⟩ := this
+    simp only [TypeEnvDec.toTypeEnv, PathEnvDec.toPathEnv]
+    rw [hr'eq]; exact hr'mem
+
+/-- Var refs unique: no two distinct valid vars share a ref -/
+theorem check_fun_dec_lenv_var_unique (f : FunDef) (lenvDec : LabelEnvDec) :
+    check_fun_dec f lenvDec = true →
+    ∀ l env, lookup lenvDec.toLabelEnv l = some env →
+    ∀ r x y bt bt' bk bk' ms ms', x ≠ y →
+    lookup env.varEnv x = some (.validVar, .ref bt r bk, ms) →
+    lookup env.varEnv y = some (.validVar, .ref bt' r bk', ms') → False := by
+  intro h l env hlookup
+  simp only [check_fun_dec, Bool.and_eq_true] at h
+  obtain ⟨hwf_all, _⟩ := h
+  simp only [LabelEnvDec.toLabelEnv, lookup_mapValues] at hlookup
+  cases hlenv : lookup lenvDec l with
+  | none => simp [hlenv] at hlookup
+  | some ted =>
+    simp [hlenv, Option.map] at hlookup
+    subst hlookup
+    simp only [LabelEnvDec.allWellFormed_bool, List.all_eq_true] at hwf_all
+    have hmem := lookup_some lenvDec l ted hlenv
+    have hwf := hwf_all (l, ted) hmem
+    simp only [TypeEnvDec.wellFormed_bool, Bool.and_eq_true] at hwf
+    obtain ⟨⟨⟨⟨_, _⟩, _⟩, _⟩, hvru⟩ := hwf
+    -- hvru : varRefsUnique_bool ted = true
+    -- All-pairs check: for any two valid-var ref entries, either same key or different ref
+    unfold TypeEnvDec.varRefsUnique_bool at hvru
+    rw [List.all_eq_true] at hvru
+    intro r x y bt bt' bk bk' ms ms' hne hlook_x hlook_y
+    simp only [TypeEnvDec.toTypeEnv] at hlook_x hlook_y
+    have hmem_x := lookup_some ted.varEnv x _ hlook_x
+    have hmem_y := lookup_some ted.varEnv y _ hlook_y
+    have hx := hvru _ hmem_x
+    simp only [] at hx
+    rw [List.all_eq_true] at hx
+    have hy := hx _ hmem_y
+    simp only [] at hy
+    -- hy : decide (x = y) || decide (r ≠ r) = true
+    rw [Bool.or_eq_true, decide_eq_true_eq, decide_eq_true_eq] at hy
+    rcases hy with rfl | habs
+    · exact hne rfl
+    · exact habs rfl
 
 /- ---------------------------------------------------- -/
 /-       Decidable Function Environment                  -/

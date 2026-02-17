@@ -228,10 +228,5 @@ def call_and_write_invalid_lenv : LabelEnv :=
 -- Test: algorithmic checker rejects call_and_write_invalid
 #guard !check_fun call_and_write_invalid call_and_write_invalid_lenv
 
--- Theorem: call_and_write_invalid is ILL-typed (REJECTED by type checker)
--- Note: proving this formally requires the completeness theorem (check_fun_complete),
--- which is not yet fully proven. The algorithmic rejection above demonstrates the result.
--- theorem call_and_write_invalid_illtyped : ¬ (∃ lenv, typecheck_fun call_and_write_invalid lenv) := by
---   sorry
 
 end LeanMove.Examples.Expressivity.MutableBorrowsNotUniqueCallsInvalid

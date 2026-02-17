@@ -680,7 +680,7 @@ lemma PathEnv.init_fun_wellformed (f : FunDef) :
       | refid n => simp [heq]
       | varRef x =>
         have hni : Aref.varRef x ∉ _ := fun h => hr (List.mem_cons_of_mem _ h)
-        simp [heq, hni]
+        simp [heq]
   · -- root_in_refs
     unfold init_fun_pathEnv
     exact List.Mem.head _
@@ -849,7 +849,7 @@ lemma no_match_union [DecidableEq α] {r1 r2 : Regex α}
     In practice, z is always a fresh ref from nextFreshRef (never .root or varRef). -/
 lemma update_with_extension_wellformed (z x : Aref) (path : List PathElement) (pe : PathEnv)
     (hwf : PathEnv.WellFormed pe) (hz_not_root : z ≠ Aref.root)
-    (hz_not_varRef : ∀ v, z ≠ Aref.varRef v) :
+    (_ : ∀ v, z ≠ Aref.varRef v) :
     PathEnv.WellFormed (update_with_extension z x path pe) := by
   have hnotz : Aref.root ≠ z := fun h => hz_not_root h.symm
   constructor
@@ -961,7 +961,7 @@ lemma garbage_collect_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFo
     Transfers edges from r to r' and removes r. -/
 lemma consume_ref_transfer_wellformed (pe : PathEnv) (r r' : Aref) (hwf : PathEnv.WellFormed pe)
     (hr_not_root : r ≠ Aref.root)
-    (hr'_fresh : r' ∉ pe.refs) (hr'_not_varRef : ∀ v, r' ≠ Aref.varRef v) :
+    (hr'_fresh : r' ∉ pe.refs) (_ : ∀ v, r' ≠ Aref.varRef v) :
     PathEnv.WellFormed (consume_ref_transfer pe r r') := by
   constructor
   · -- refs_complete: refs not in new list have empty paths from root

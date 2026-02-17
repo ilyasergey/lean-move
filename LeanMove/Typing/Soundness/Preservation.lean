@@ -383,6 +383,8 @@ private theorem preservation_intLit (m m' : Machine) (env : TypeEnv) (lenv : Lab
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     lenv_wf := hwt.lenv_wf
+    lenv_var_tracked := hwt.lenv_var_tracked
+    lenv_var_unique := hwt.lenv_var_unique
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := hwt.heap_loc_bound
     rmap_root_none := hwt.rmap_root_none
@@ -432,6 +434,8 @@ private theorem preservation_copy_val (m m' : Machine) (env : TypeEnv) (lenv : L
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     lenv_wf := hwt.lenv_wf
+    lenv_var_tracked := hwt.lenv_var_tracked
+    lenv_var_unique := hwt.lenv_var_unique
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := hwt.heap_loc_bound
     rmap_root_none := hwt.rmap_root_none
@@ -779,6 +783,8 @@ private theorem preservation_copy_ref (m m' : Machine) (env : TypeEnv) (lenv : L
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     lenv_wf := hwt.lenv_wf
+    lenv_var_tracked := hwt.lenv_var_tracked
+    lenv_var_unique := hwt.lenv_var_unique
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := hwt.heap_loc_bound
     rmap_root_none := rmap_root_none_extend_fresh hwt.rmap_root_none t loc' path ht_not_root
@@ -1015,6 +1021,8 @@ private theorem preservation_move (m m' : Machine) (env : TypeEnv) (lenv : Label
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     lenv_wf := hwt.lenv_wf
+    lenv_var_tracked := hwt.lenv_var_tracked
+    lenv_var_unique := hwt.lenv_var_unique
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := hwt.heap_loc_bound
     rmap_root_none := hwt.rmap_root_none
@@ -1268,6 +1276,8 @@ private theorem preservation_borrow (m : Machine) (env : TypeEnv) (lenv : LabelE
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     lenv_wf := hwt.lenv_wf
+    lenv_var_tracked := hwt.lenv_var_tracked
+    lenv_var_unique := hwt.lenv_var_unique
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := hwt.heap_loc_bound
     rmap_root_none := rmap_root_none_extend_fresh hwt.rmap_root_none r loc [] hr_not_root
@@ -1652,6 +1662,8 @@ private theorem preservation_borrowField (m : Machine) (env : TypeEnv) (lenv : L
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     lenv_wf := hwt.lenv_wf
+    lenv_var_tracked := hwt.lenv_var_tracked
+    lenv_var_unique := hwt.lenv_var_unique
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := hwt.heap_loc_bound
     rmap_root_none := by
@@ -1951,6 +1963,8 @@ private theorem wellTypedState_heap_alloc
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     lenv_wf := hwt.lenv_wf
+    lenv_var_tracked := hwt.lenv_var_tracked
+    lenv_var_unique := hwt.lenv_var_unique
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := heap_loc_bound_after_alloc heap v hlb
     rmap_root_none := hwt.rmap_root_none
@@ -2127,6 +2141,8 @@ private theorem wellTypedState_heap_writeRef
         blocks_typed := hwt.blocks_typed
         lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
         lenv_wf := hwt.lenv_wf
+        lenv_var_tracked := hwt.lenv_var_tracked
+        lenv_var_unique := hwt.lenv_var_unique
         funEnv_typed := hwt.funEnv_typed
         heap_loc_bound := heap_loc_bound_after_writeRef heap loc wpath vval heap' hlb hwr_full
         rmap_root_none := hwt.rmap_root_none
@@ -2377,6 +2393,8 @@ private theorem preservation_readRef (m m' : Machine) (env : TypeEnv) (lenv : La
       blocks_typed := hwt.blocks_typed
       lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
       lenv_wf := hwt.lenv_wf
+      lenv_var_tracked := hwt.lenv_var_tracked
+      lenv_var_unique := hwt.lenv_var_unique
       funEnv_typed := hwt.funEnv_typed
       heap_loc_bound := hwt.heap_loc_bound
       rmap_root_none := hwt.rmap_root_none
@@ -2538,6 +2556,8 @@ private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : Labe
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     lenv_wf := hwt.lenv_wf
+    lenv_var_tracked := hwt.lenv_var_tracked
+    lenv_var_unique := hwt.lenv_var_unique
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := hwt.heap_loc_bound
     rmap_root_none := hwt.rmap_root_none
@@ -2596,6 +2616,8 @@ private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : La
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     lenv_wf := hwt.lenv_wf
+    lenv_var_tracked := hwt.lenv_var_tracked
+    lenv_var_unique := hwt.lenv_var_unique
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := hwt.heap_loc_bound
     rmap_root_none := hwt.rmap_root_none
@@ -2868,6 +2890,8 @@ private theorem preservation_writeRef (m m' : Machine) (env : TypeEnv) (lenv : L
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     lenv_wf := hwt.lenv_wf
+    lenv_var_tracked := hwt.lenv_var_tracked
+    lenv_var_unique := hwt.lenv_var_unique
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := heap_loc_bound_after_writeRef m.heap loc wpath vval heap' hwt.heap_loc_bound hwr
     rmap_root_none := hwt.rmap_root_none
@@ -3222,6 +3246,8 @@ private theorem preservation_pack (m m' : Machine) (env : TypeEnv) (lenv : Label
       blocks_typed := hwt.blocks_typed
       lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
       lenv_wf := hwt.lenv_wf
+      lenv_var_tracked := hwt.lenv_var_tracked
+      lenv_var_unique := hwt.lenv_var_unique
       funEnv_typed := hwt.funEnv_typed
       heap_loc_bound := hwt.heap_loc_bound
       rmap_root_none := hwt.rmap_root_none
@@ -3457,6 +3483,8 @@ private theorem preservation_assign_valid (m m' : Machine) (env : TypeEnv) (lenv
       blocks_typed := hwt.blocks_typed
       lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
       lenv_wf := hwt.lenv_wf
+      lenv_var_tracked := hwt.lenv_var_tracked
+      lenv_var_unique := hwt.lenv_var_unique
       funEnv_typed := hwt.funEnv_typed
       heap_loc_bound := heap_loc_bound_after_alloc m.heap v hwt.heap_loc_bound
       rmap_root_none := hwt.rmap_root_none
@@ -3725,6 +3753,8 @@ private theorem preservation_assign_invalid (m m' : Machine) (env : TypeEnv) (le
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     lenv_wf := hwt.lenv_wf
+    lenv_var_tracked := hwt.lenv_var_tracked
+    lenv_var_unique := hwt.lenv_var_unique
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := heap_loc_bound_after_alloc m.heap v hwt.heap_loc_bound
     rmap_root_none := hwt.rmap_root_none
@@ -3991,6 +4021,8 @@ private theorem preservation_freeze (m m' : Machine) (env : TypeEnv) (lenv : Lab
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     lenv_wf := hwt.lenv_wf
+    lenv_var_tracked := hwt.lenv_var_tracked
+    lenv_var_unique := hwt.lenv_var_unique
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := hwt.heap_loc_bound
     rmap_root_none := rmap_root_none_extend_fresh hwt.rmap_root_none r' loc path hr'_not_root
@@ -4244,6 +4276,8 @@ private theorem preservation_unpack (m m' : Machine) (env : TypeEnv) (lenv : Lab
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     lenv_wf := hwt.lenv_wf
+    lenv_var_tracked := hwt.lenv_var_tracked
+    lenv_var_unique := hwt.lenv_var_unique
     funEnv_typed := hwt.funEnv_typed
     heap_loc_bound := hwt.heap_loc_bound
     rmap_root_none := hwt.rmap_root_none
@@ -4336,7 +4370,10 @@ private theorem preservation_jump (m m' : Machine) (env : TypeEnv) (lenv : Label
     have hstmt' := typecheck_stmt_weaken lenv envL env block.body retType
         hblock hsubsumes hwfL hwt.env_wf
         (fun s _ _ _ h => absurd h (by rw [hsite_empty s]; simp))
-        (sorry) -- TODO: need lenv_var_refs_tracked invariant
+        (hwt.lenv_var_tracked label envL hlenv)
+        (fun r => ⟨fun _ _ _ _ s _ _ _ h => by rw [hsite_empty s] at h; simp at h,
+                   fun s _ _ _ _ _ _ h => by rw [hsite_empty s] at h; simp at h,
+                   hwt.lenv_var_unique label envL hlenv r⟩)
     -- 5. env.siteEnv is empty (from subsumes + lenv_empty_siteEnv)
     have hse : ∀ s, lookup env.siteEnv s = none :=
       siteEnv_empty_from_subsumes envL env hsubsumes
@@ -4353,6 +4390,8 @@ private theorem preservation_jump (m m' : Machine) (env : TypeEnv) (lenv : Label
       blocks_typed := hwt.blocks_typed
       lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
       lenv_wf := hwt.lenv_wf
+      lenv_var_tracked := hwt.lenv_var_tracked
+      lenv_var_unique := hwt.lenv_var_unique
       funEnv_typed := hwt.funEnv_typed
       heap_loc_bound := hwt.heap_loc_bound
       varEnv_refs_in_pathEnv := hwt.varEnv_refs_in_pathEnv
@@ -4428,7 +4467,10 @@ private theorem preservation_branch (m m' : Machine) (env : TypeEnv) (lenv : Lab
         have hstmt' := typecheck_stmt_weaken lenv envL1 env' block.body retType
             hblock hs1 hwfL hwf'
             (fun s _ _ _ h => absurd h (by rw [hsite_empty s]; simp))
-            (sorry) -- TODO: need lenv_var_refs_tracked invariant
+            (hwt.lenv_var_tracked l1 envL1 hl1)
+            (fun r => ⟨fun _ _ _ _ s _ _ _ h => by rw [hsite_empty s] at h; simp at h,
+                       fun s _ _ _ _ _ _ h => by rw [hsite_empty s] at h; simp at h,
+                       hwt.lenv_var_unique l1 envL1 hl1 r⟩)
         -- Construct result
         refine ⟨env', lenv, retType, rmap, ?_, hss⟩
         exact {
@@ -4441,6 +4483,8 @@ private theorem preservation_branch (m m' : Machine) (env : TypeEnv) (lenv : Lab
           blocks_typed := hwt.blocks_typed
           lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
           lenv_wf := hwt.lenv_wf
+          lenv_var_tracked := hwt.lenv_var_tracked
+          lenv_var_unique := hwt.lenv_var_unique
           funEnv_typed := hwt.funEnv_typed
           heap_loc_bound := hwt.heap_loc_bound
           varEnv_refs_in_pathEnv := hwt.varEnv_refs_in_pathEnv
@@ -4478,7 +4522,10 @@ private theorem preservation_branch (m m' : Machine) (env : TypeEnv) (lenv : Lab
         have hstmt' := typecheck_stmt_weaken lenv envL2 env' block.body retType
             hblock hs2 hwfL hwf'
             (fun s _ _ _ h => absurd h (by rw [hsite_empty s]; simp))
-            (sorry) -- TODO: need lenv_var_refs_tracked invariant
+            (hwt.lenv_var_tracked l2 envL2 hl2)
+            (fun r => ⟨fun _ _ _ _ s _ _ _ h => by rw [hsite_empty s] at h; simp at h,
+                       fun s _ _ _ _ _ _ h => by rw [hsite_empty s] at h; simp at h,
+                       hwt.lenv_var_unique l2 envL2 hl2 r⟩)
         -- Construct result
         refine ⟨env', lenv, retType, rmap, ?_, hss⟩
         exact {
@@ -4491,6 +4538,8 @@ private theorem preservation_branch (m m' : Machine) (env : TypeEnv) (lenv : Lab
           blocks_typed := hwt.blocks_typed
           lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
           lenv_wf := hwt.lenv_wf
+          lenv_var_tracked := hwt.lenv_var_tracked
+          lenv_var_unique := hwt.lenv_var_unique
           funEnv_typed := hwt.funEnv_typed
           heap_loc_bound := hwt.heap_loc_bound
           varEnv_refs_in_pathEnv := hwt.varEnv_refs_in_pathEnv

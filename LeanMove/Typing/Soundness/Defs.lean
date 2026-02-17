@@ -354,6 +354,17 @@ structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
   -- 9b. lenv entries are well-formed (needed for weakening in preservation_jump/branch)
   lenv_wf : ∀ L envL, lookup lenv L = some envL → TypeEnv.WellFormed envL
 
+  -- 9c. lenv entries have tracked var refs (valid var refs ∈ pathEnv.refs)
+  lenv_var_tracked : ∀ L envL, lookup lenv L = some envL →
+    ∀ x bt r bk ms, lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) →
+    r ∈ envL.pathEnv.refs
+
+  -- 9d. lenv entries have unique var refs (no two distinct vars share a ref)
+  lenv_var_unique : ∀ L envL, lookup lenv L = some envL →
+    ∀ r x y bt bt' bk bk' ms ms', x ≠ y →
+    lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) →
+    lookup envL.varEnv y = some (.validVar, .ref bt' r bk', ms') → False
+
   -- 10. All functions in funEnv are well-typed
   funEnv_typed : ∀ fname fdef,
     lookup m.frame.funEnv fname = some fdef →

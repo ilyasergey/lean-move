@@ -538,6 +538,17 @@ structure SoundnessAssumptions (f : FunDef) (lenv : LabelEnv) (heap : Heap) (arg
       In practice, established by `check_fun_dec_sound`. -/
   lenv_wf : ∀ l env, lookup lenv l = some env → TypeEnv.WellFormed env
 
+  /-- Valid var refs in lenv entries are tracked in pathEnv.refs -/
+  lenv_var_tracked : ∀ l env, lookup lenv l = some env →
+    ∀ x bt r bk ms, lookup env.varEnv x = some (.validVar, .ref bt r bk, ms) →
+    r ∈ env.pathEnv.refs
+
+  /-- No two distinct valid vars in an lenv entry share the same ref -/
+  lenv_var_unique : ∀ l env, lookup lenv l = some env →
+    ∀ r x y bt bt' bk bk' ms ms', x ≠ y →
+    lookup env.varEnv x = some (.validVar, .ref bt r bk, ms) →
+    lookup env.varEnv y = some (.validVar, .ref bt' r bk', ms') → False
+
   /-- Each argument matches its declared parameter type.
       For basic params: HasType v bt.
       For ref params: the arg is a .ref loc path, and the heap has a well-typed value there. -/
@@ -685,6 +696,14 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
     obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hcfd, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     exact check_fun_dec_lenv_wf f lenvDec hcfd
+  lenv_var_tracked := by
+    simp only [checkDecidable, Bool.and_eq_true] at hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hcfd, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    exact check_fun_dec_lenv_var_tracked f lenvDec hcfd
+  lenv_var_unique := by
+    simp only [checkDecidable, Bool.and_eq_true] at hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hcfd, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    exact check_fun_dec_lenv_var_unique f lenvDec hcfd
   args_compatible := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
     obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hac⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
@@ -737,7 +756,7 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     simp only [LabelEnvDec.allWellFormed_bool, List.all_eq_true] at hwf
     have hwf_ted := hwf (l, ted) (lookup_some lenvDec l ted hted)
     simp only [TypeEnvDec.wellFormed_bool, Bool.and_eq_true] at hwf_ted
-    exact PathEnvDec.toPathEnv_non_member_from ted.pathEnv hwf_ted.1.1
+    exact PathEnvDec.toPathEnv_non_member_from ted.pathEnv hwf_ted.1.1.1.1
   lenv_paths_to_non_member := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
     obtain ⟨⟨⟨_, hwf⟩, _⟩, _⟩ := hcheck
@@ -746,7 +765,7 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     simp only [LabelEnvDec.allWellFormed_bool, List.all_eq_true] at hwf
     have hwf_ted := hwf (l, ted) (lookup_some lenvDec l ted hted)
     simp only [TypeEnvDec.wellFormed_bool, Bool.and_eq_true] at hwf_ted
-    exact PathEnvDec.toPathEnv_non_member_to ted.pathEnv hwf_ted.1.1
+    exact PathEnvDec.toPathEnv_non_member_to ted.pathEnv hwf_ted.1.1.1.1
   lenv_self_loop := by
     intro l env hlookup u p hp
     obtain ⟨ted, _, rfl⟩ := toLabelEnv_lookup_some lenvDec l env hlookup
@@ -1259,6 +1278,8 @@ theorem initState_safe (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunD
             exact hblocks_typed b hmem benv hlookup_b
           lenv_empty_siteEnv := ha.lenv_empty_sites
           lenv_wf := ha.lenv_wf
+          lenv_var_tracked := ha.lenv_var_tracked
+          lenv_var_unique := ha.lenv_var_unique
           funEnv_typed := hfunEnv
           heap_loc_bound :=
             allocArgs_heap_loc_bound' heap f.params args heap' paramVarStore
