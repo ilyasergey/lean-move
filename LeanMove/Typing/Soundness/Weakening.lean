@@ -2482,6 +2482,690 @@ private theorem weaken_var_assign_valid
     rw [gc_uwe_eps_refs_eq envL.pathEnv r .root [.root_to_var x] hr_fresh_pe]
     exact hroot
 
+private theorem weaken_let_bind_intLit
+    (lenv : LabelEnv) (envL env : TypeEnv)
+    (a : Site) (n : Nat)
+    (cont : Stmt) (retType : MoveType)
+    (hnotIn : notIn envL.siteEnv a)
+    (hsub : TypeEnv.subsumes envL env)
+    (hwfL : TypeEnv.WellFormed envL) (hwfE : TypeEnv.WellFormed env)
+    (hsite_tracked : ∀ s bt r bk, lookup envL.siteEnv s = some (.ref bt r bk) → r ∈ envL.pathEnv.refs)
+    (hvar_tracked : ∀ x bt r bk ms, lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) → r ∈ envL.pathEnv.refs)
+    (huniq : RefsUnique envL.varEnv envL.siteEnv)
+    (hpaths_to_nm : ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hpaths_from_nm : ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
+    (hroot : Aref.root ∈ envL.pathEnv.refs)
+    (ih : WeakenIH lenv
+        {envL with siteEnv := insert envL.siteEnv a (.basic .u64)}
+        cont retType) :
+    typecheck_stmt lenv env (.letBind a (.intLit n) cont) retType := by
+  obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
+  apply typecheck_stmt.let_bind_intLit
+  · exact SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn
+  · apply ih
+    · exact ⟨σ, hid, hve,
+        SiteEnvSubstEquiv_insert σ _ _ _ _ _ hse (applySubstMoveType_basic σ _),
+        hrefs, hinj, hnonroot, hpaths⟩
+    · exact TypeEnv.insert_siteEnv_wf _ _ _ hwfL trivial
+    · exact TypeEnv.insert_siteEnv_wf _ _ _ hwfE trivial
+    · exact site_tracked_insert_basic _ _ _ _ hsite_tracked
+    · exact hvar_tracked
+    · exact RefsUnique_insert_basic _ _ _ _ huniq
+    · exact hpaths_to_nm
+    · exact hpaths_from_nm
+    · exact hself_loop_only_empty
+    · exact hroot
+
+private theorem weaken_let_bind_copy_val
+    (lenv : LabelEnv) (envL env : TypeEnv)
+    (a : Site) (x : Var) (bt : BasicMoveType) (ms : Mut)
+    (cont : Stmt) (retType : MoveType)
+    (hlookup : lookup envL.varEnv x = some (.validVar, .basic bt, ms))
+    (hnotIn : notIn envL.siteEnv a)
+    (hsub : TypeEnv.subsumes envL env)
+    (hwfL : TypeEnv.WellFormed envL) (hwfE : TypeEnv.WellFormed env)
+    (hsite_tracked : ∀ s bt r bk, lookup envL.siteEnv s = some (.ref bt r bk) → r ∈ envL.pathEnv.refs)
+    (hvar_tracked : ∀ x bt r bk ms, lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) → r ∈ envL.pathEnv.refs)
+    (huniq : RefsUnique envL.varEnv envL.siteEnv)
+    (hpaths_to_nm : ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hpaths_from_nm : ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
+    (hroot : Aref.root ∈ envL.pathEnv.refs)
+    (ih : WeakenIH lenv
+        {envL with siteEnv := insert envL.siteEnv a (.basic bt)}
+        cont retType) :
+    typecheck_stmt lenv env (.letBind a (.usage (.copy x)) cont) retType := by
+  obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
+  have hlook_env := VarEnvSubstEquiv_lookup_valid σ _ _ _ _ _ hve hlookup
+  simp only [applySubstMoveType] at hlook_env
+  apply typecheck_stmt.let_bind_copy_val lenv env _ _ _ _ _ _
+    hlook_env
+    (SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn)
+  apply ih
+  · exact ⟨σ, hid, hve,
+      SiteEnvSubstEquiv_insert σ _ _ _ _ _ hse (applySubstMoveType_basic σ _),
+      hrefs, hinj, hnonroot, hpaths⟩
+  · exact TypeEnv.insert_siteEnv_wf _ _ _ hwfL trivial
+  · exact TypeEnv.insert_siteEnv_wf _ _ _ hwfE trivial
+  · exact site_tracked_insert_basic _ _ _ _ hsite_tracked
+  · exact hvar_tracked
+  · exact RefsUnique_insert_basic _ _ _ _ huniq
+  · exact hpaths_to_nm
+  · exact hpaths_from_nm
+  · exact hself_loop_only_empty
+  · exact hroot
+
+private theorem weaken_let_bind_move
+    (lenv : LabelEnv) (envL env : TypeEnv)
+    (a : Site) (x : Var) (τ : MoveType) (ms : Mut)
+    (cont : Stmt) (retType : MoveType)
+    (hlookup : lookup envL.varEnv x = some (.validVar, τ, ms))
+    (hnb : not_borrowed x envL)
+    (hnotIn : notIn envL.siteEnv a)
+    (hsub : TypeEnv.subsumes envL env)
+    (hwfL : TypeEnv.WellFormed envL) (hwfE : TypeEnv.WellFormed env)
+    (hsite_tracked : ∀ s bt r bk, lookup envL.siteEnv s = some (.ref bt r bk) → r ∈ envL.pathEnv.refs)
+    (hvar_tracked : ∀ x bt r bk ms, lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) → r ∈ envL.pathEnv.refs)
+    (huniq : RefsUnique envL.varEnv envL.siteEnv)
+    (hpaths_to_nm : ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hpaths_from_nm : ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
+    (hroot : Aref.root ∈ envL.pathEnv.refs)
+    (ih : WeakenIH lenv
+        {envL with varEnv := update envL.varEnv x (.invalidVar, τ, ms)
+                   siteEnv := insert envL.siteEnv a τ}
+        cont retType) :
+    typecheck_stmt lenv env (.letBind a (.usage (.move x)) cont) retType := by
+  obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
+  have hlook_env := VarEnvSubstEquiv_lookup_valid σ _ _ _ _ _ hve hlookup
+  have hτ_nr := hwfL.varEnv_wf _ _ hlookup
+  apply typecheck_stmt.let_bind_move lenv env _ _ _ _ _ _
+    hlook_env
+    (not_borrowed_weaken σ _ env _ hnb hpaths hid hrefs hroot)
+    (SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn)
+  apply ih
+  · exact ⟨σ, hid,
+      VarEnvSubstEquiv_update_invalid σ _ _ _ _ _ hve,
+      SiteEnvSubstEquiv_insert σ _ _ _ _ _ hse rfl,
+      hrefs, hinj, hnonroot, hpaths⟩
+  · exact ⟨hwfL.pathEnv_wf,
+          SiteEnv.insert_refs_not_root _ _ _ hwfL.siteEnv_wf hτ_nr,
+          VarEnv.update_refs_not_root _ _ _ hwfL.varEnv_wf hτ_nr⟩
+  · exact ⟨hwfE.pathEnv_wf,
+          SiteEnv.insert_refs_not_root _ _ _ hwfE.siteEnv_wf
+            (moveTypeRefNotRoot_applySubst σ _ hτ_nr hnonroot),
+          VarEnv.update_refs_not_root _ _ _ hwfE.varEnv_wf
+            (moveTypeRefNotRoot_applySubst σ _ hτ_nr hnonroot)⟩
+  · exact site_tracked_insert_from_var _ _ _ _ _ _ _ hlookup hsite_tracked hvar_tracked
+  · exact var_tracked_update_invalid _ _ _ _ _ hvar_tracked
+  · exact RefsUnique_move_to_site _ _ _ _ _ _ hlookup huniq
+  · exact hpaths_to_nm
+  · exact hpaths_from_nm
+  · exact hself_loop_only_empty
+  · exact hroot
+
+private theorem weaken_let_bind_binop
+    (lenv : LabelEnv) (envL env : TypeEnv)
+    (bop : Binop) (bt1 bt2 bt3 : BasicMoveType) (sa sb sc : Site)
+    (cont : Stmt) (retType : MoveType)
+    (hlook_a : lookup envL.siteEnv sa = some (.basic bt1))
+    (hlook_b : lookup envL.siteEnv sb = some (.basic bt2))
+    (hbinop : binop_type bop bt1 bt2 = some bt3)
+    (hnotIn : notIn envL.siteEnv sc)
+    (hsub : TypeEnv.subsumes envL env)
+    (hwfL : TypeEnv.WellFormed envL) (hwfE : TypeEnv.WellFormed env)
+    (hsite_tracked : ∀ s bt r bk, lookup envL.siteEnv s = some (.ref bt r bk) → r ∈ envL.pathEnv.refs)
+    (hvar_tracked : ∀ x bt r bk ms, lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) → r ∈ envL.pathEnv.refs)
+    (huniq : RefsUnique envL.varEnv envL.siteEnv)
+    (hpaths_to_nm : ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hpaths_from_nm : ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
+    (hroot : Aref.root ∈ envL.pathEnv.refs)
+    (ih : WeakenIH lenv
+        {envL with siteEnv := insert (delete (delete envL.siteEnv sa) sb) sc (.basic bt3)}
+        cont retType) :
+    typecheck_stmt lenv env (.letBind sc (.binop bop sa sb) cont) retType := by
+  obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
+  have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
+  have hlook_b_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_b
+  simp only [applySubstMoveType] at hlook_a_env hlook_b_env
+  apply typecheck_stmt.let_bind_binop lenv env _ _ _ _ _ _ _ _ _
+    hlook_a_env hlook_b_env hbinop
+  · exact SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn
+  · apply ih
+    · exact ⟨σ, hid, hve,
+        SiteEnvSubstEquiv_insert σ _ _ _ _ _ (SiteEnvSubstEquiv_delete σ _ _ sb
+          (SiteEnvSubstEquiv_delete σ _ _ sa hse)) (applySubstMoveType_basic σ _),
+        hrefs, hinj, hnonroot, hpaths⟩
+    · exact TypeEnv.delete_delete_insert_wf _ _ _ _ _ hwfL trivial
+    · exact TypeEnv.delete_delete_insert_wf _ _ _ _ _ hwfE trivial
+    · exact site_tracked_insert_basic _ _ _ _
+        (site_tracked_delete _ _ sb (site_tracked_delete _ _ sa hsite_tracked))
+    · exact hvar_tracked
+    · exact RefsUnique_insert_basic _ _ _ _
+        (RefsUnique_delete_site _ _ _ (RefsUnique_delete_site _ _ _ huniq))
+    · exact hpaths_to_nm
+    · exact hpaths_from_nm
+    · exact hself_loop_only_empty
+    · exact hroot
+
+private theorem weaken_var_assign_invalid
+    (lenv : LabelEnv) (envL env : TypeEnv)
+    (x : Var) (a : Site) (τ τ' : MoveType)
+    (cont : Stmt) (retType : MoveType)
+    (hlook_x : lookup envL.varEnv x = some (.invalidVar, τ, .mutable))
+    (hlook_a : lookup envL.siteEnv a = some τ')
+    (hcompat : MoveType.compatible τ τ')
+    (hsub : TypeEnv.subsumes envL env)
+    (hwfL : TypeEnv.WellFormed envL) (hwfE : TypeEnv.WellFormed env)
+    (hsite_tracked : ∀ s bt r bk, lookup envL.siteEnv s = some (.ref bt r bk) → r ∈ envL.pathEnv.refs)
+    (hvar_tracked : ∀ x bt r bk ms, lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) → r ∈ envL.pathEnv.refs)
+    (huniq : RefsUnique envL.varEnv envL.siteEnv)
+    (hpaths_to_nm : ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hpaths_from_nm : ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
+    (hroot : Aref.root ∈ envL.pathEnv.refs)
+    (ih : WeakenIH lenv
+        {envL with varEnv := update envL.varEnv x (.validVar, τ', .mutable)
+                   siteEnv := delete envL.siteEnv a}
+        cont retType) :
+    typecheck_stmt lenv env (.assign x a cont) retType := by
+  obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
+  obtain ⟨τ_env, hlook_x_env, hbc⟩ := VarEnvSubstEquiv_lookup_invalid σ _ _ _ _ _ hve hlook_x
+  have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
+  have hτ'_nr := hwfL.siteEnv_wf _ _ hlook_a
+  apply typecheck_stmt.var_assign_invalid lenv env _ _ _ _ _ _
+    hlook_x_env hlook_a_env
+  · -- MoveType.compatible τ_env (applySubstMoveType σ τ')
+    exact MoveType_compatible_of_baseCompatible_subst σ _ _ _ hcompat hbc
+      (hwfE.varEnv_wf _ _ hlook_x_env)
+      hnonroot
+      hτ'_nr
+  · -- IH: continuation env subsumes
+    apply ih
+    · exact ⟨σ, hid,
+        VarEnvSubstEquiv_update_valid σ _ _ _ _ _ hve,
+        SiteEnvSubstEquiv_delete σ _ _ _ hse,
+        hrefs, hinj, hnonroot, hpaths⟩
+    · exact ⟨hwfL.pathEnv_wf,
+            SiteEnv.delete_refs_not_root _ _ hwfL.siteEnv_wf,
+            VarEnv.update_refs_not_root _ _ _ hwfL.varEnv_wf hτ'_nr⟩
+    · exact ⟨hwfE.pathEnv_wf,
+            SiteEnv.delete_refs_not_root _ _ hwfE.siteEnv_wf,
+            VarEnv.update_refs_not_root _ _ _ hwfE.varEnv_wf
+              (moveTypeRefNotRoot_applySubst σ _ hτ'_nr hnonroot)⟩
+    · exact site_tracked_delete _ _ _ hsite_tracked
+    · exact var_tracked_update_valid_from_site _ _ _ _ _ _ _ hlook_a hsite_tracked hvar_tracked
+    · exact RefsUnique_assign_from_site _ _ _ _ _ _ hlook_a huniq
+    · exact hpaths_to_nm
+    · exact hpaths_from_nm
+    · exact hself_loop_only_empty
+    · exact hroot
+
+private theorem weaken_let_bind_readRef
+    (lenv : LabelEnv) (envL env : TypeEnv)
+    (a c : Site) (r : Aref) (τ : BasicMoveType) (isBor : BorrowingKind)
+    (cont : Stmt) (retType : MoveType)
+    (hlook_a : lookup envL.siteEnv a = some (.ref τ r isBor))
+    (hnotIn : notIn envL.siteEnv c)
+    (hsub : TypeEnv.subsumes envL env)
+    (hwfL : TypeEnv.WellFormed envL) (hwfE : TypeEnv.WellFormed env)
+    (hsite_tracked : ∀ s bt r bk, lookup envL.siteEnv s = some (.ref bt r bk) → r ∈ envL.pathEnv.refs)
+    (hvar_tracked : ∀ x bt r bk ms, lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) → r ∈ envL.pathEnv.refs)
+    (huniq : RefsUnique envL.varEnv envL.siteEnv)
+    (hpaths_to_nm : ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hpaths_from_nm : ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
+    (hroot : Aref.root ∈ envL.pathEnv.refs)
+    (ih : WeakenIH lenv
+        {envL with siteEnv := insert (delete envL.siteEnv a) c (.basic τ)
+                   pathEnv := delete_ref_node envL.pathEnv r}
+        cont retType) :
+    typecheck_stmt lenv env (.letBind c (.readRef a) cont) retType := by
+  obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
+  have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
+  simp only [applySubstMoveType] at hlook_a_env
+  have hr_mem := hsite_tracked _ _ _ _ hlook_a
+  have hr_ne_root := hwfL.siteEnv_wf _ _ hlook_a
+  have hσr_ne_root : σ r ≠ .root := hnonroot r hr_ne_root
+  apply typecheck_stmt.let_bind_readRef lenv env _ _ _ _ _ _ _
+    hlook_a_env
+    (SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn)
+  apply ih
+  · -- subsumes
+    refine ⟨σ, hid, hve,
+      SiteEnvSubstEquiv_insert σ _ _ _ _ _
+        (SiteEnvSubstEquiv_delete σ _ _ _ hse) (applySubstMoveType_basic σ _),
+      ?_, ?_, hnonroot, ?_⟩
+    · simp only [delete_ref_node]; rw [map_filter_ne σ _ r hinj hr_mem, hrefs]
+    · intro u v hu hv
+      simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq] at hu hv
+      exact hinj u v hu.1 hv.1
+    · intro u v hu hv path hinterp
+      simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq] at hu hv
+      have hσu_ne : σ u ≠ σ r := fun h => hu.2 (hinj u r hu.1 hr_mem h)
+      have hσv_ne : σ v ≠ σ r := fun h => hv.2 (hinj v r hv.1 hr_mem h)
+      simp only [delete_ref_node] at hinterp ⊢
+      rw [if_neg (fun ⟨h, _⟩ => hu.2 h), if_neg (not_or.mpr ⟨hu.2, hv.2⟩)]
+      rw [if_neg (fun ⟨h, _⟩ => hσu_ne h), if_neg (not_or.mpr ⟨hσu_ne, hσv_ne⟩)] at hinterp
+      exact hpaths u v hu.1 hv.1 path hinterp
+  · exact TypeEnv.delete_insert_pathEnv_wf _ _ _ _ _ hwfL
+      (delete_ref_node_wellformed _ _ hwfL.pathEnv_wf hr_ne_root) trivial
+  · exact TypeEnv.delete_insert_pathEnv_wf _ _ _ _ _ hwfE
+      (delete_ref_node_wellformed _ _ hwfE.pathEnv_wf hσr_ne_root) trivial
+  · -- site_tracked
+    intro s' bt' r' bk' hlook_s'
+    simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq]
+    by_cases hs'c : s' = c
+    · subst hs'c; rw [lookup_insert_same] at hlook_s'; cases hlook_s'
+    · rw [lookup_insert_ne _ _ _ _ hs'c] at hlook_s'
+      by_cases hs'a : s' = a
+      · subst hs'a; rw [lookup_delete_same] at hlook_s'; cases hlook_s'
+      · rw [lookup_delete_ne _ _ _ hs'a] at hlook_s'
+        exact ⟨hsite_tracked _ _ _ _ hlook_s',
+          fun hr'_eq => by rw [hr'_eq] at hlook_s'; exact (huniq r).2.1 s' a _ _ _ _ hs'a hlook_s' hlook_a⟩
+  · -- var_tracked
+    intro x' bt' r' bk' ms' hlook_x'
+    simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq]
+    exact ⟨hvar_tracked _ _ _ _ _ hlook_x',
+      fun hr'_eq => by rw [hr'_eq] at hlook_x'; exact (huniq r).1 x' _ _ _ a _ _ hlook_x' hlook_a⟩
+  · exact RefsUnique_insert_basic _ _ _ _ (RefsUnique_delete_site _ _ _ huniq)
+  · exact delete_ref_node_paths_to_non_member _ _ hpaths_to_nm
+  · exact delete_ref_node_paths_from_non_member _ _ hpaths_from_nm
+  · exact self_loop_only_empty_drn env.pathEnv _ hself_loop_only_empty
+  · simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq]
+    exact ⟨hroot, Ne.symm hr_ne_root⟩
+
+private theorem weaken_write_ref
+    (lenv : LabelEnv) (envL env : TypeEnv)
+    (a b : Site) (τ : BasicMoveType) (r : Aref)
+    (cont : Stmt) (retType : MoveType)
+    (hlook_a : lookup envL.siteEnv a = some (.ref τ r .siteBorrowMut))
+    (hlook_b : lookup envL.siteEnv b = some (.basic τ))
+    (houtbound : check_outbound envL.pathEnv r (fun re => only_matches_empty (simplify re)))
+    (hsub : TypeEnv.subsumes envL env)
+    (hwfL : TypeEnv.WellFormed envL) (hwfE : TypeEnv.WellFormed env)
+    (hsite_tracked : ∀ s bt r bk, lookup envL.siteEnv s = some (.ref bt r bk) → r ∈ envL.pathEnv.refs)
+    (hvar_tracked : ∀ x bt r bk ms, lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) → r ∈ envL.pathEnv.refs)
+    (huniq : RefsUnique envL.varEnv envL.siteEnv)
+    (hpaths_to_nm : ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hpaths_from_nm : ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
+    (hroot : Aref.root ∈ envL.pathEnv.refs)
+    (ih : WeakenIH lenv
+        {envL with siteEnv := delete (delete envL.siteEnv b) a
+                   pathEnv := garbage_collect envL.pathEnv r}
+        cont retType) :
+    typecheck_stmt lenv env (.writeRef a b cont) retType := by
+  obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
+  have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
+  have hlook_b_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_b
+  simp only [applySubstMoveType] at hlook_a_env hlook_b_env
+  have hr_mem := hsite_tracked _ _ _ _ hlook_a
+  have hr_ne_root := hwfL.siteEnv_wf _ _ hlook_a
+  have hσr_ne_root : σ r ≠ .root := hnonroot r hr_ne_root
+  apply typecheck_stmt.write_ref lenv env _ _ _ (σ r) _ _
+    hlook_a_env hlook_b_env
+    (check_outbound_weaken σ _ _ r hrefs hpaths hr_mem houtbound)
+  apply ih
+  · -- subsumes: garbage_collect is the same as delete_ref_node
+    refine ⟨σ, hid, hve,
+      SiteEnvSubstEquiv_delete σ _ _ _ (SiteEnvSubstEquiv_delete σ _ _ _ hse),
+      ?_, ?_, hnonroot, ?_⟩
+    · -- refs
+      simp only [garbage_collect]
+      rw [map_filter_ne σ _ r hinj hr_mem, hrefs]
+    · -- injectivity
+      intro u v hu hv
+      simp only [garbage_collect, List.mem_filter, decide_eq_true_eq] at hu hv
+      exact hinj u v hu.1 hv.1
+    · -- path_inclusion
+      intro u v hu hv path hinterp
+      simp only [garbage_collect, List.mem_filter, decide_eq_true_eq] at hu hv
+      have hσu_ne : σ u ≠ σ r := fun h => hu.2 (hinj u r hu.1 hr_mem h)
+      have hσv_ne : σ v ≠ σ r := fun h => hv.2 (hinj v r hv.1 hr_mem h)
+      simp only [garbage_collect] at hinterp ⊢
+      rw [if_neg (fun ⟨h, _⟩ => hu.2 h), if_neg (not_or.mpr ⟨hu.2, hv.2⟩)]
+      rw [if_neg (fun ⟨h, _⟩ => hσu_ne h), if_neg (not_or.mpr ⟨hσu_ne, hσv_ne⟩)] at hinterp
+      exact hpaths u v hu.1 hv.1 path hinterp
+  · exact ⟨garbage_collect_wellformed _ _ hwfL.pathEnv_wf hr_ne_root,
+           SiteEnv.delete_refs_not_root _ _ (SiteEnv.delete_refs_not_root _ _ hwfL.siteEnv_wf),
+           hwfL.varEnv_wf⟩
+  · exact ⟨garbage_collect_wellformed _ _ hwfE.pathEnv_wf hσr_ne_root,
+           SiteEnv.delete_refs_not_root _ _ (SiteEnv.delete_refs_not_root _ _ hwfE.siteEnv_wf),
+           hwfE.varEnv_wf⟩
+  · -- site_tracked
+    intro s' bt' r' bk' hlook_s'
+    simp only [garbage_collect, List.mem_filter, decide_eq_true_eq]
+    by_cases hs'a : s' = a
+    · subst hs'a; rw [lookup_delete_same] at hlook_s'; cases hlook_s'
+    · rw [lookup_delete_ne _ _ _ hs'a] at hlook_s'
+      by_cases hs'b : s' = b
+      · subst hs'b; rw [lookup_delete_same] at hlook_s'; cases hlook_s'
+      · rw [lookup_delete_ne _ _ _ hs'b] at hlook_s'
+        exact ⟨hsite_tracked _ _ _ _ hlook_s',
+          fun hr'_eq => by rw [hr'_eq] at hlook_s'; exact (huniq r).2.1 s' a _ _ _ _ hs'a hlook_s' hlook_a⟩
+  · -- var_tracked
+    intro x' bt' r' bk' ms' hlook_x'
+    simp only [garbage_collect, List.mem_filter, decide_eq_true_eq]
+    exact ⟨hvar_tracked _ _ _ _ _ hlook_x',
+      fun hr'_eq => by rw [hr'_eq] at hlook_x'; exact (huniq r).1 x' _ _ _ a _ _ hlook_x' hlook_a⟩
+  · exact RefsUnique_delete_site _ _ _ (RefsUnique_delete_site _ _ _ huniq)
+  · exact garbage_collect_paths_to_non_member _ _ hpaths_to_nm
+  · exact garbage_collect_paths_from_non_member _ _ hpaths_from_nm
+  · exact self_loop_only_empty_gc env.pathEnv _ hself_loop_only_empty
+  · simp only [garbage_collect, List.mem_filter, decide_eq_true_eq]
+    exact ⟨hroot, Ne.symm hr_ne_root⟩
+
+private theorem weaken_release
+    (lenv : LabelEnv) (envL env : TypeEnv)
+    (a : Site) (τ : BasicMoveType) (r : Aref) (isBor : BorrowingKind)
+    (cont : Stmt) (retType : MoveType)
+    (hlook_a : lookup envL.siteEnv a = some (.ref τ r isBor))
+    (hsub : TypeEnv.subsumes envL env)
+    (hwfL : TypeEnv.WellFormed envL) (hwfE : TypeEnv.WellFormed env)
+    (hsite_tracked : ∀ s bt r bk, lookup envL.siteEnv s = some (.ref bt r bk) → r ∈ envL.pathEnv.refs)
+    (hvar_tracked : ∀ x bt r bk ms, lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) → r ∈ envL.pathEnv.refs)
+    (huniq : RefsUnique envL.varEnv envL.siteEnv)
+    (hpaths_to_nm : ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hpaths_from_nm : ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
+    (hroot : Aref.root ∈ envL.pathEnv.refs)
+    (ih : WeakenIH lenv
+        {envL with siteEnv := delete envL.siteEnv a
+                   pathEnv := delete_ref_node envL.pathEnv r}
+        cont retType) :
+    typecheck_stmt lenv env (.release a cont) retType := by
+  obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
+  have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
+  simp only [applySubstMoveType] at hlook_a_env
+  have hr_mem := hsite_tracked _ _ _ _ hlook_a
+  have hr_ne_root := hwfL.siteEnv_wf _ _ hlook_a
+  have hσr_ne_root : σ r ≠ .root := hnonroot r hr_ne_root
+  apply typecheck_stmt.release lenv env _ _ (σ r) _ _ _ hlook_a_env
+  apply ih
+  · -- subsumes
+    refine ⟨σ, hid, hve, SiteEnvSubstEquiv_delete σ _ _ _ hse, ?_, ?_, hnonroot, ?_⟩
+    · -- refs
+      simp only [delete_ref_node]
+      rw [map_filter_ne σ _ r hinj hr_mem, hrefs]
+    · -- injectivity
+      intro u v hu hv
+      simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq] at hu hv
+      exact hinj u v hu.1 hv.1
+    · -- path_inclusion
+      intro u v hu hv path hinterp
+      simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq] at hu hv
+      have hσu_ne : σ u ≠ σ r := fun h => hu.2 (hinj u r hu.1 hr_mem h)
+      have hσv_ne : σ v ≠ σ r := fun h => hv.2 (hinj v r hv.1 hr_mem h)
+      simp only [delete_ref_node] at hinterp ⊢
+      rw [if_neg (fun ⟨h, _⟩ => hu.2 h), if_neg (not_or.mpr ⟨hu.2, hv.2⟩)]
+      rw [if_neg (fun ⟨h, _⟩ => hσu_ne h), if_neg (not_or.mpr ⟨hσu_ne, hσv_ne⟩)] at hinterp
+      exact hpaths u v hu.1 hv.1 path hinterp
+  · -- WellFormed modified envL
+    exact ⟨delete_ref_node_wellformed _ _ hwfL.pathEnv_wf hr_ne_root,
+           SiteEnv.delete_refs_not_root _ _ hwfL.siteEnv_wf,
+           hwfL.varEnv_wf⟩
+  · -- WellFormed modified env
+    exact ⟨delete_ref_node_wellformed _ _ hwfE.pathEnv_wf hσr_ne_root,
+           SiteEnv.delete_refs_not_root _ _ hwfE.siteEnv_wf,
+           hwfE.varEnv_wf⟩
+  · -- site_tracked
+    intro s' bt' r' bk' hlook_s'
+    simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq]
+    by_cases hs' : s' = a
+    · subst hs'; rw [lookup_delete_same] at hlook_s'; cases hlook_s'
+    · rw [lookup_delete_ne _ _ _ hs'] at hlook_s'
+      exact ⟨hsite_tracked _ _ _ _ hlook_s',
+        fun hr'_eq => by rw [hr'_eq] at hlook_s'; exact (huniq r).2.1 s' a _ _ _ _ hs' hlook_s' hlook_a⟩
+  · -- var_tracked
+    intro x' bt' r' bk' ms' hlook_x'
+    simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq]
+    exact ⟨hvar_tracked _ _ _ _ _ hlook_x',
+      fun hr'_eq => by rw [hr'_eq] at hlook_x'; exact (huniq r).1 x' _ _ _ a _ _ hlook_x' hlook_a⟩
+  · exact RefsUnique_delete_site _ _ _ huniq
+  · exact delete_ref_node_paths_to_non_member _ _ hpaths_to_nm
+  · exact delete_ref_node_paths_from_non_member _ _ hpaths_from_nm
+  · exact self_loop_only_empty_drn env.pathEnv _ hself_loop_only_empty
+  · simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq]
+    exact ⟨hroot, Ne.symm hr_ne_root⟩
+
+private theorem weaken_let_bind_copy_ref
+    (lenv : LabelEnv) (envL env : TypeEnv)
+    (a : Site) (x : Var) (τ : BasicMoveType) (ms : Mut) (s t : Aref) (isBor : BorrowingKind)
+    (cont : Stmt) (retType : MoveType)
+    (hlookup : lookup envL.varEnv x = some (.validVar, .ref τ s isBor, ms))
+    (hnotIn : notIn envL.siteEnv a)
+    (hfresh : freshRefInEnvBool t envL)
+    (ht_not_varRef : ∀ v, t ≠ .varRef v)
+    (hsub : TypeEnv.subsumes envL env)
+    (hwfL : TypeEnv.WellFormed envL) (hwfE : TypeEnv.WellFormed env)
+    (hsite_tracked : ∀ s bt r bk, lookup envL.siteEnv s = some (.ref bt r bk) → r ∈ envL.pathEnv.refs)
+    (hvar_tracked : ∀ x bt r bk ms, lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) → r ∈ envL.pathEnv.refs)
+    (huniq : RefsUnique envL.varEnv envL.siteEnv)
+    (hpaths_to_nm : ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hpaths_from_nm : ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
+    (hroot : Aref.root ∈ envL.pathEnv.refs)
+    (ih : WeakenIH lenv
+        {envL with siteEnv := insert envL.siteEnv a (.ref τ t isBor)
+                   pathEnv := update_with_epsilon t s envL.pathEnv}
+        cont retType) :
+    typecheck_stmt lenv env (.letBind a (.usage (.copy x)) cont) retType := by
+  obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
+  have hlook_env := VarEnvSubstEquiv_lookup_valid σ _ _ _ _ _ hve hlookup
+  simp only [applySubstMoveType] at hlook_env
+  -- Freshness of t in envL
+  have ht_fresh_pe : t ∉ envL.pathEnv.refs := by
+    have := freshRefInEnvBool_implies_freshRefBool t _ hfresh
+    exact (freshRef_iff_freshRefBool t envL.pathEnv).mpr this
+  have ht_ne_root : t ≠ .root := fun h => ht_fresh_pe (h ▸ hroot)
+  -- t is a refid (from ht_ne_root + ht_not_varRef)
+  have ht_refid : ∃ n, t = .refid n := by
+    cases t with
+    | root => exact absurd rfl ht_ne_root
+    | refid n => exact ⟨n, rfl⟩
+    | varRef v => exact absurd rfl (ht_not_varRef v)
+  -- Pick fresh t' for env
+  let t' := nextFreshRefInEnv env
+  have ht'_fresh := nextFreshRefInEnv_fresh env
+  have ht'_fresh_pe := nextFreshRefInEnv_not_in_pathEnv env
+  have ht'_not_root := nextFreshRefInEnv_not_root env
+  have ht'_not_varRef := nextFreshRefInEnv_not_varRef env
+  have ht'_not_mapped : t' ∉ envL.pathEnv.refs.map σ := by rw [hrefs]; exact ht'_fresh_pe
+  -- s ∈ envL.pathEnv.refs (from var_tracked)
+  have hs_mem := hvar_tracked _ _ _ _ _ hlookup
+  -- Apply the copy_ref rule
+  apply typecheck_stmt.let_bind_copy_ref lenv env _ _ _ _ (σ s) t' _ _ _
+    hlook_env
+    (SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn)
+    ht'_fresh
+    (fun v => ht'_not_varRef v)
+  -- IH: need subsumes for modified envs
+  apply ih
+  · -- subsumes with extendSubst σ t t'
+    refine ⟨extendSubst σ t t',
+      extendSubst_id σ t t' hid ht_refid,
+      VarEnvSubstEquiv_extend σ t t' _ _ hve
+        (fun x' bt' s' bk' ms' hlook' =>
+          Ne.symm (freshRefInEnvBool_ne_varEnv_ref t _ x' .validVar bt' s' bk' ms' hfresh hlook')),
+      SiteEnvSubstEquiv_extend_insert_ref σ t t' _ _ _ _ _ hse
+        (fun k bt r bk hlook' =>
+          Ne.symm (freshRefInEnvBool_ne_siteEnv_ref t _ k bt r bk hfresh hlook')),
+      ?_, ?_, ?_, ?_⟩
+    · -- refs: (uwe t s [] peL).refs.map σ' = (uwe t' (σ s) [] peE).refs
+      simp only [uwe_epsilon_refs_fresh t s envL.pathEnv ht_fresh_pe,
+          uwe_epsilon_refs_fresh t' (σ s) env.pathEnv ht'_fresh_pe]
+      simp only [List.map, extendSubst, ite_true]
+      congr 1
+      rw [map_extendSubst_eq_map_σ σ t t' _ ht_fresh_pe, hrefs]
+    · -- injectivity
+      exact extendSubst_injective σ t t' _ hinj ht_fresh_pe ht'_not_mapped
+    · -- nonroot
+      exact extendSubst_nonroot σ t t' hnonroot ht'_not_root
+    · -- path_inclusion
+      exact path_inclusion_update_with_extension σ _ _ t t' s [] hpaths ht_fresh_pe ht'_not_mapped hs_mem
+  · -- WellFormed envL'
+    exact ⟨update_with_epsilon_wellformed t s envL.pathEnv hwfL.pathEnv_wf ht_ne_root ht_not_varRef,
+           SiteEnv.insert_refs_not_root _ _ _ hwfL.siteEnv_wf ht_ne_root,
+           hwfL.varEnv_wf⟩
+  · -- WellFormed env'
+    exact ⟨update_with_epsilon_wellformed t' (σ s) env.pathEnv hwfE.pathEnv_wf ht'_not_root (fun v => ht'_not_varRef v),
+           SiteEnv.insert_refs_not_root _ _ _ hwfE.siteEnv_wf ht'_not_root,
+           hwfE.varEnv_wf⟩
+  · -- site_tracked
+    intro s' bt r bk hlook_s'
+    simp only [uwe_epsilon_refs_fresh t s envL.pathEnv ht_fresh_pe]
+    by_cases hs' : s' = a
+    · subst hs'; rw [lookup_insert_same] at hlook_s'
+      simp only [Option.some.injEq, MoveType.ref.injEq] at hlook_s'
+      obtain ⟨-, rfl, -⟩ := hlook_s'
+      exact .head _
+    · rw [lookup_insert_ne _ _ _ _ hs'] at hlook_s'
+      exact .tail _ (hsite_tracked _ _ _ _ hlook_s')
+  · -- var_tracked
+    intro x' bt r bk ms' hlook_x'
+    simp only [uwe_epsilon_refs_fresh t s envL.pathEnv ht_fresh_pe]
+    exact .tail _ (hvar_tracked _ _ _ _ _ hlook_x')
+  · -- RefsUnique
+    exact RefsUnique_insert_fresh_ref _ _ _ _ _ _ huniq
+      (fun x' bt' r bk' ms' hlook' =>
+        Ne.symm (freshRefInEnvBool_ne_varEnv_ref t _ x' .validVar bt' r bk' ms' hfresh hlook'))
+      (fun s' bt' r bk' hlook' =>
+        Ne.symm (freshRefInEnvBool_ne_siteEnv_ref t _ s' bt' r bk' hfresh hlook'))
+  · exact update_with_extension_paths_to_non_member _ _ _ _ hpaths_to_nm
+      (Or.inl (by rw [← hrefs]; exact List.mem_map_of_mem hs_mem))
+  · exact update_with_extension_paths_from_non_member _ _ _ _ hpaths_from_nm
+      (Or.inl (by rw [← hrefs]; exact List.mem_map_of_mem hs_mem))
+  · exact self_loop_only_empty_uwe _ _ _ env.pathEnv hself_loop_only_empty
+  · -- root ∈ updated refs
+    simp only [uwe_epsilon_refs_fresh t s envL.pathEnv ht_fresh_pe]
+    exact .tail _ hroot
+
+private theorem weaken_let_bind_pack
+    (lenv : LabelEnv) (envL env : TypeEnv)
+    (b : Site) (recName : Id) (fields : List (Field × Site)) (fentries : AssocMap Field BasicMoveType)
+    (cont : Stmt) (retType : MoveType)
+    (hnotIn : notIn envL.siteEnv b)
+    (hft : ∀ f a, (f, a) ∈ fields →
+       ∃ (bt : BasicMoveType), lookup envL.siteEnv a = some (.basic bt) ∧
+                                lookup fentries f = some bt)
+    (hfc : ∀ f, lookup fentries f ≠ none → ∃ a, (f, a) ∈ fields)
+    (hfi : ∀ a₁ a₂, (∃ f₁ f₂, (f₁, a₁) ∈ fields ∧ (f₂, a₂) ∈ fields ∧ f₁ ≠ f₂) → a₁ ≠ a₂)
+    (hsub : TypeEnv.subsumes envL env)
+    (hwfL : TypeEnv.WellFormed envL) (hwfE : TypeEnv.WellFormed env)
+    (hsite_tracked : ∀ s bt r bk, lookup envL.siteEnv s = some (.ref bt r bk) → r ∈ envL.pathEnv.refs)
+    (hvar_tracked : ∀ x bt r bk ms, lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) → r ∈ envL.pathEnv.refs)
+    (huniq : RefsUnique envL.varEnv envL.siteEnv)
+    (hpaths_to_nm : ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hpaths_from_nm : ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
+    (hroot : Aref.root ∈ envL.pathEnv.refs)
+    (ih : WeakenIH lenv
+        {envL with siteEnv := insert (deleteAll envL.siteEnv (fields.map Prod.snd)) b (.basic (.trecord fentries))}
+        cont retType) :
+    typecheck_stmt lenv env (.letBind b (.pack recName fields) cont) retType := by
+  obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
+  apply typecheck_stmt.let_bind_pack
+  · exact SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn
+  · intro f a hmem
+    obtain ⟨bt, hlook_a, hlook_f⟩ := hft f a hmem
+    have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
+    simp only [applySubstMoveType] at hlook_a_env
+    exact ⟨bt, hlook_a_env, hlook_f⟩
+  · exact hfc
+  · exact hfi
+  · apply ih
+    · exact ⟨σ, hid, hve,
+        SiteEnvSubstEquiv_insert σ _ _ _ _ _
+          (SiteEnvSubstEquiv_deleteAll σ _ _ _ hse) (applySubstMoveType_basic σ _),
+        hrefs, hinj, hnonroot, hpaths⟩
+    · exact TypeEnv.deleteAll_insert_wf _ _ _ _ hwfL trivial
+    · exact TypeEnv.deleteAll_insert_wf _ _ _ _ hwfE trivial
+    · exact site_tracked_insert_basic _ _ _ _
+        (site_tracked_deleteAll _ _ _ hsite_tracked)
+    · exact hvar_tracked
+    · exact RefsUnique_insert_basic _ _ _ _ (RefsUnique_deleteAll _ _ _ huniq)
+    · exact hpaths_to_nm
+    · exact hpaths_from_nm
+    · exact hself_loop_only_empty
+    · exact hroot
+
+private theorem weaken_unpack
+    (lenv : LabelEnv) (envL env : TypeEnv)
+    (fields : List (Field × Site)) (b : Site) (fentries : AssocMap Field BasicMoveType)
+    (cont : Stmt) (retType : MoveType)
+    (hlook_b : lookup envL.siteEnv b = some (.basic (.trecord fentries)))
+    (hfresh : ∀ (f : Field) (a : Site), (f, a) ∈ fields → notIn envL.siteEnv a)
+    (hinj_f : ∀ a₁ a₂, (∃ f₁ f₂, (f₁, a₁) ∈ fields ∧ (f₂, a₂) ∈ fields ∧ f₁ ≠ f₂) → a₁ ≠ a₂)
+    (hexist : ∀ (f : Field) (a : Site), (f, a) ∈ fields → ∃ bt, lookup fentries f = some bt)
+    (hsub : TypeEnv.subsumes envL env)
+    (hwfL : TypeEnv.WellFormed envL) (hwfE : TypeEnv.WellFormed env)
+    (hsite_tracked : ∀ s bt r bk, lookup envL.siteEnv s = some (.ref bt r bk) → r ∈ envL.pathEnv.refs)
+    (hvar_tracked : ∀ x bt r bk ms, lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) → r ∈ envL.pathEnv.refs)
+    (huniq : RefsUnique envL.varEnv envL.siteEnv)
+    (hpaths_to_nm : ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hpaths_from_nm : ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
+    (hroot : Aref.root ∈ envL.pathEnv.refs)
+    (ih : WeakenIH lenv
+        {envL with siteEnv := addFieldSites fentries (delete envL.siteEnv b) fields}
+        cont retType) :
+    typecheck_stmt lenv env (.unpack fields b cont) retType := by
+  obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
+  have hlook_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_b
+  simp only [applySubstMoveType] at hlook_env
+  apply typecheck_stmt.unpack lenv env _ _ _ _ _
+    hlook_env
+  · intro f a hmem
+    exact SiteEnvSubstEquiv_notIn σ _ _ _ hse (hfresh f a hmem)
+  · exact hinj_f
+  · exact hexist
+  · apply ih
+    · exact ⟨σ, hid, hve,
+        SiteEnvSubstEquiv_addFieldSites σ _ _ _ _
+          (SiteEnvSubstEquiv_delete σ _ _ _ hse),
+        hrefs, hinj, hnonroot, hpaths⟩
+    · exact ⟨hwfL.pathEnv_wf,
+        addFieldSites_refs_not_root _ _ _
+          (SiteEnv.delete_refs_not_root _ _ hwfL.siteEnv_wf),
+        hwfL.varEnv_wf⟩
+    · exact ⟨hwfE.pathEnv_wf,
+        addFieldSites_refs_not_root _ _ _
+          (SiteEnv.delete_refs_not_root _ _ hwfE.siteEnv_wf),
+        hwfE.varEnv_wf⟩
+    · exact site_tracked_addFieldSites _ _ _ _
+        (site_tracked_delete _ _ _ hsite_tracked)
+    · exact hvar_tracked
+    · exact RefsUnique_addFieldSites _ _ _ _ (RefsUnique_delete_site _ _ _ huniq)
+    · exact hpaths_to_nm
+    · exact hpaths_from_nm
+    · exact hself_loop_only_empty
+    · exact hroot
+
 /-- Weakening: if a statement type-checks under envL, and envL.subsumes env,
     then it also type-checks under env.
     Requires both environments to be well-formed and refs tracked (always holds in practice). -/
@@ -2533,385 +3217,44 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
       (SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook)
   -- ==================== Non-terminal, no pathEnv change ====================
   | let_bind_intLit _ _ _ _ _ hnotIn _ ih =>
-    obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
-    apply typecheck_stmt.let_bind_intLit
-    · exact SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn
-    · apply ih
-      · exact ⟨σ, hid, hve,
-          SiteEnvSubstEquiv_insert σ _ _ _ _ _ hse (applySubstMoveType_basic σ _),
-          hrefs, hinj, hnonroot, hpaths⟩
-      · exact TypeEnv.insert_siteEnv_wf _ _ _ hwfL trivial
-      · exact TypeEnv.insert_siteEnv_wf _ _ _ hwfE trivial
-      · exact site_tracked_insert_basic _ _ _ _ hsite_tracked
-      · exact hvar_tracked
-      · exact RefsUnique_insert_basic _ _ _ _ huniq
-      · exact hpaths_to_nm
-      · exact hpaths_from_nm
-      · exact hself_loop_only_empty
-      · exact hroot
+    exact weaken_let_bind_intLit lenv _ env _ _ _ _ hnotIn
+      hsub hwfL hwfE hsite_tracked hvar_tracked huniq
+      hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   | let_bind_copy_val _ _ _ _ _ _ _ hlookup hnotIn _ ih =>
-    obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
-    have hlook_env := VarEnvSubstEquiv_lookup_valid σ _ _ _ _ _ hve hlookup
-    simp only [applySubstMoveType] at hlook_env
-    apply typecheck_stmt.let_bind_copy_val lenv env _ _ _ _ _ _
-      hlook_env
-      (SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn)
-    apply ih
-    · exact ⟨σ, hid, hve,
-        SiteEnvSubstEquiv_insert σ _ _ _ _ _ hse (applySubstMoveType_basic σ _),
-        hrefs, hinj, hnonroot, hpaths⟩
-    · exact TypeEnv.insert_siteEnv_wf _ _ _ hwfL trivial
-    · exact TypeEnv.insert_siteEnv_wf _ _ _ hwfE trivial
-    · exact site_tracked_insert_basic _ _ _ _ hsite_tracked
-    · exact hvar_tracked
-    · exact RefsUnique_insert_basic _ _ _ _ huniq
-    · exact hpaths_to_nm
-    · exact hpaths_from_nm
-    · exact hself_loop_only_empty
-    · exact hroot
+    exact weaken_let_bind_copy_val lenv _ env _ _ _ _ _ _ hlookup hnotIn
+      hsub hwfL hwfE hsite_tracked hvar_tracked huniq
+      hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   | let_bind_move _ _ _ _ _ _ _ hlookup hnb hnotIn _ ih =>
-    obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
-    have hlook_env := VarEnvSubstEquiv_lookup_valid σ _ _ _ _ _ hve hlookup
-    have hτ_nr := hwfL.varEnv_wf _ _ hlookup
-    apply typecheck_stmt.let_bind_move lenv env _ _ _ _ _ _
-      hlook_env
-      (not_borrowed_weaken σ _ env _ hnb hpaths hid hrefs hroot)
-      (SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn)
-    apply ih
-    · exact ⟨σ, hid,
-        VarEnvSubstEquiv_update_invalid σ _ _ _ _ _ hve,
-        SiteEnvSubstEquiv_insert σ _ _ _ _ _ hse rfl,
-        hrefs, hinj, hnonroot, hpaths⟩
-    · exact ⟨hwfL.pathEnv_wf,
-            SiteEnv.insert_refs_not_root _ _ _ hwfL.siteEnv_wf hτ_nr,
-            VarEnv.update_refs_not_root _ _ _ hwfL.varEnv_wf hτ_nr⟩
-    · exact ⟨hwfE.pathEnv_wf,
-            SiteEnv.insert_refs_not_root _ _ _ hwfE.siteEnv_wf
-              (moveTypeRefNotRoot_applySubst σ _ hτ_nr hnonroot),
-            VarEnv.update_refs_not_root _ _ _ hwfE.varEnv_wf
-              (moveTypeRefNotRoot_applySubst σ _ hτ_nr hnonroot)⟩
-    · exact site_tracked_insert_from_var _ _ _ _ _ _ _ hlookup hsite_tracked hvar_tracked
-    · exact var_tracked_update_invalid _ _ _ _ _ hvar_tracked
-    · exact RefsUnique_move_to_site _ _ _ _ _ _ hlookup huniq
-    · exact hpaths_to_nm
-    · exact hpaths_from_nm
-    · exact hself_loop_only_empty
-    · exact hroot
+    exact weaken_let_bind_move lenv _ env _ _ _ _ _ _ hlookup hnb hnotIn
+      hsub hwfL hwfE hsite_tracked hvar_tracked huniq
+      hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   | let_bind_binop _ _ _ _ _ sa sb sc _ _ hlook_a hlook_b hbinop hnotIn _ ih =>
-    obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
-    have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
-    have hlook_b_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_b
-    simp only [applySubstMoveType] at hlook_a_env hlook_b_env
-    apply typecheck_stmt.let_bind_binop lenv env _ _ _ _ _ _ _ _ _
-      hlook_a_env hlook_b_env hbinop
-    · exact SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn
-    · apply ih
-      · exact ⟨σ, hid, hve,
-          SiteEnvSubstEquiv_insert σ _ _ _ _ _ (SiteEnvSubstEquiv_delete σ _ _ sb
-            (SiteEnvSubstEquiv_delete σ _ _ sa hse)) (applySubstMoveType_basic σ _),
-          hrefs, hinj, hnonroot, hpaths⟩
-      · exact TypeEnv.delete_delete_insert_wf _ _ _ _ _ hwfL trivial
-      · exact TypeEnv.delete_delete_insert_wf _ _ _ _ _ hwfE trivial
-      · exact site_tracked_insert_basic _ _ _ _
-          (site_tracked_delete _ _ sb (site_tracked_delete _ _ sa hsite_tracked))
-      · exact hvar_tracked
-      · exact RefsUnique_insert_basic _ _ _ _
-          (RefsUnique_delete_site _ _ _ (RefsUnique_delete_site _ _ _ huniq))
-      · exact hpaths_to_nm
-      · exact hpaths_from_nm
-      · exact hself_loop_only_empty
-      · exact hroot
+    exact weaken_let_bind_binop lenv _ env _ _ _ _ sa sb sc _ _
+      hlook_a hlook_b hbinop hnotIn
+      hsub hwfL hwfE hsite_tracked hvar_tracked huniq
+      hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   | var_assign_invalid _ _ _ _ _ _ _ hlook_x hlook_a hcompat _ ih =>
-    obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
-    obtain ⟨τ_env, hlook_x_env, hbc⟩ := VarEnvSubstEquiv_lookup_invalid σ _ _ _ _ _ hve hlook_x
-    have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
-    have hτ'_nr := hwfL.siteEnv_wf _ _ hlook_a
-    apply typecheck_stmt.var_assign_invalid lenv env _ _ _ _ _ _
-      hlook_x_env hlook_a_env
-    · -- MoveType.compatible τ_env (applySubstMoveType σ τ')
-      exact MoveType_compatible_of_baseCompatible_subst σ _ _ _ hcompat hbc
-        (hwfE.varEnv_wf _ _ hlook_x_env)
-        hnonroot
-        hτ'_nr
-    · -- IH: continuation env subsumes
-      apply ih
-      · exact ⟨σ, hid,
-          VarEnvSubstEquiv_update_valid σ _ _ _ _ _ hve,
-          SiteEnvSubstEquiv_delete σ _ _ _ hse,
-          hrefs, hinj, hnonroot, hpaths⟩
-      · exact ⟨hwfL.pathEnv_wf,
-              SiteEnv.delete_refs_not_root _ _ hwfL.siteEnv_wf,
-              VarEnv.update_refs_not_root _ _ _ hwfL.varEnv_wf hτ'_nr⟩
-      · exact ⟨hwfE.pathEnv_wf,
-              SiteEnv.delete_refs_not_root _ _ hwfE.siteEnv_wf,
-              VarEnv.update_refs_not_root _ _ _ hwfE.varEnv_wf
-                (moveTypeRefNotRoot_applySubst σ _ hτ'_nr hnonroot)⟩
-      · exact site_tracked_delete _ _ _ hsite_tracked
-      · exact var_tracked_update_valid_from_site _ _ _ _ _ _ _ hlook_a hsite_tracked hvar_tracked
-      · exact RefsUnique_assign_from_site _ _ _ _ _ _ hlook_a huniq
-      · exact hpaths_to_nm
-      · exact hpaths_from_nm
-      · exact hself_loop_only_empty
-      · exact hroot
+    exact weaken_var_assign_invalid lenv _ env _ _ _ _ _ _
+      hlook_x hlook_a hcompat
+      hsub hwfL hwfE hsite_tracked hvar_tracked huniq
+      hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   -- ==================== Cases with pathEnv changes =============================
   | let_bind_readRef _ a c r _ _ _ _ hlook_a hnotIn _ ih =>
-    obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
-    have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
-    simp only [applySubstMoveType] at hlook_a_env
-    have hr_mem := hsite_tracked _ _ _ _ hlook_a
-    have hr_ne_root := hwfL.siteEnv_wf _ _ hlook_a
-    have hσr_ne_root : σ r ≠ .root := hnonroot r hr_ne_root
-    apply typecheck_stmt.let_bind_readRef lenv env _ _ _ _ _ _ _
-      hlook_a_env
-      (SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn)
-    apply ih
-    · -- subsumes
-      refine ⟨σ, hid, hve,
-        SiteEnvSubstEquiv_insert σ _ _ _ _ _
-          (SiteEnvSubstEquiv_delete σ _ _ _ hse) (applySubstMoveType_basic σ _),
-        ?_, ?_, hnonroot, ?_⟩
-      · simp only [delete_ref_node]; rw [map_filter_ne σ _ r hinj hr_mem, hrefs]
-      · intro u v hu hv
-        simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq] at hu hv
-        exact hinj u v hu.1 hv.1
-      · intro u v hu hv path hinterp
-        simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq] at hu hv
-        have hσu_ne : σ u ≠ σ r := fun h => hu.2 (hinj u r hu.1 hr_mem h)
-        have hσv_ne : σ v ≠ σ r := fun h => hv.2 (hinj v r hv.1 hr_mem h)
-        simp only [delete_ref_node] at hinterp ⊢
-        rw [if_neg (fun ⟨h, _⟩ => hu.2 h), if_neg (not_or.mpr ⟨hu.2, hv.2⟩)]
-        rw [if_neg (fun ⟨h, _⟩ => hσu_ne h), if_neg (not_or.mpr ⟨hσu_ne, hσv_ne⟩)] at hinterp
-        exact hpaths u v hu.1 hv.1 path hinterp
-    · exact TypeEnv.delete_insert_pathEnv_wf _ _ _ _ _ hwfL
-        (delete_ref_node_wellformed _ _ hwfL.pathEnv_wf hr_ne_root) trivial
-    · exact TypeEnv.delete_insert_pathEnv_wf _ _ _ _ _ hwfE
-        (delete_ref_node_wellformed _ _ hwfE.pathEnv_wf hσr_ne_root) trivial
-    · -- site_tracked
-      intro s' bt' r' bk' hlook_s'
-      simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq]
-      by_cases hs'c : s' = c
-      · subst hs'c; rw [lookup_insert_same] at hlook_s'; cases hlook_s'
-      · rw [lookup_insert_ne _ _ _ _ hs'c] at hlook_s'
-        by_cases hs'a : s' = a
-        · subst hs'a; rw [lookup_delete_same] at hlook_s'; cases hlook_s'
-        · rw [lookup_delete_ne _ _ _ hs'a] at hlook_s'
-          exact ⟨hsite_tracked _ _ _ _ hlook_s',
-            fun hr'_eq => by rw [hr'_eq] at hlook_s'; exact (huniq r).2.1 s' a _ _ _ _ hs'a hlook_s' hlook_a⟩
-    · -- var_tracked
-      intro x' bt' r' bk' ms' hlook_x'
-      simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq]
-      exact ⟨hvar_tracked _ _ _ _ _ hlook_x',
-        fun hr'_eq => by rw [hr'_eq] at hlook_x'; exact (huniq r).1 x' _ _ _ a _ _ hlook_x' hlook_a⟩
-    · exact RefsUnique_insert_basic _ _ _ _ (RefsUnique_delete_site _ _ _ huniq)
-    · exact delete_ref_node_paths_to_non_member _ _ hpaths_to_nm
-    · exact delete_ref_node_paths_from_non_member _ _ hpaths_from_nm
-    · exact self_loop_only_empty_drn env.pathEnv _ hself_loop_only_empty
-    · simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq]
-      exact ⟨hroot, Ne.symm hr_ne_root⟩
+    exact weaken_let_bind_readRef lenv _ env a c r _ _ _ _ hlook_a hnotIn
+      hsub hwfL hwfE hsite_tracked hvar_tracked huniq
+      hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   | write_ref _ a b τ r _ _ hlook_a hlook_b houtbound _ ih =>
-    obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
-    have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
-    have hlook_b_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_b
-    simp only [applySubstMoveType] at hlook_a_env hlook_b_env
-    have hr_mem := hsite_tracked _ _ _ _ hlook_a
-    have hr_ne_root := hwfL.siteEnv_wf _ _ hlook_a
-    have hσr_ne_root : σ r ≠ .root := hnonroot r hr_ne_root
-    apply typecheck_stmt.write_ref lenv env _ _ _ (σ r) _ _
-      hlook_a_env hlook_b_env
-      (check_outbound_weaken σ _ _ r hrefs hpaths hr_mem houtbound)
-    apply ih
-    · -- subsumes: garbage_collect is the same as delete_ref_node
-      refine ⟨σ, hid, hve,
-        SiteEnvSubstEquiv_delete σ _ _ _ (SiteEnvSubstEquiv_delete σ _ _ _ hse),
-        ?_, ?_, hnonroot, ?_⟩
-      · -- refs
-        simp only [garbage_collect]
-        rw [map_filter_ne σ _ r hinj hr_mem, hrefs]
-      · -- injectivity
-        intro u v hu hv
-        simp only [garbage_collect, List.mem_filter, decide_eq_true_eq] at hu hv
-        exact hinj u v hu.1 hv.1
-      · -- path_inclusion
-        intro u v hu hv path hinterp
-        simp only [garbage_collect, List.mem_filter, decide_eq_true_eq] at hu hv
-        have hσu_ne : σ u ≠ σ r := fun h => hu.2 (hinj u r hu.1 hr_mem h)
-        have hσv_ne : σ v ≠ σ r := fun h => hv.2 (hinj v r hv.1 hr_mem h)
-        simp only [garbage_collect] at hinterp ⊢
-        rw [if_neg (fun ⟨h, _⟩ => hu.2 h), if_neg (not_or.mpr ⟨hu.2, hv.2⟩)]
-        rw [if_neg (fun ⟨h, _⟩ => hσu_ne h), if_neg (not_or.mpr ⟨hσu_ne, hσv_ne⟩)] at hinterp
-        exact hpaths u v hu.1 hv.1 path hinterp
-    · exact ⟨garbage_collect_wellformed _ _ hwfL.pathEnv_wf hr_ne_root,
-             SiteEnv.delete_refs_not_root _ _ (SiteEnv.delete_refs_not_root _ _ hwfL.siteEnv_wf),
-             hwfL.varEnv_wf⟩
-    · exact ⟨garbage_collect_wellformed _ _ hwfE.pathEnv_wf hσr_ne_root,
-             SiteEnv.delete_refs_not_root _ _ (SiteEnv.delete_refs_not_root _ _ hwfE.siteEnv_wf),
-             hwfE.varEnv_wf⟩
-    · -- site_tracked
-      intro s' bt' r' bk' hlook_s'
-      simp only [garbage_collect, List.mem_filter, decide_eq_true_eq]
-      by_cases hs'a : s' = a
-      · subst hs'a; rw [lookup_delete_same] at hlook_s'; cases hlook_s'
-      · rw [lookup_delete_ne _ _ _ hs'a] at hlook_s'
-        by_cases hs'b : s' = b
-        · subst hs'b; rw [lookup_delete_same] at hlook_s'; cases hlook_s'
-        · rw [lookup_delete_ne _ _ _ hs'b] at hlook_s'
-          exact ⟨hsite_tracked _ _ _ _ hlook_s',
-            fun hr'_eq => by rw [hr'_eq] at hlook_s'; exact (huniq r).2.1 s' a _ _ _ _ hs'a hlook_s' hlook_a⟩
-    · -- var_tracked
-      intro x' bt' r' bk' ms' hlook_x'
-      simp only [garbage_collect, List.mem_filter, decide_eq_true_eq]
-      exact ⟨hvar_tracked _ _ _ _ _ hlook_x',
-        fun hr'_eq => by rw [hr'_eq] at hlook_x'; exact (huniq r).1 x' _ _ _ a _ _ hlook_x' hlook_a⟩
-    · exact RefsUnique_delete_site _ _ _ (RefsUnique_delete_site _ _ _ huniq)
-    · exact garbage_collect_paths_to_non_member _ _ hpaths_to_nm
-    · exact garbage_collect_paths_from_non_member _ _ hpaths_from_nm
-    · exact self_loop_only_empty_gc env.pathEnv _ hself_loop_only_empty
-    · simp only [garbage_collect, List.mem_filter, decide_eq_true_eq]
-      exact ⟨hroot, Ne.symm hr_ne_root⟩
+    exact weaken_write_ref lenv _ env a b τ r _ _ hlook_a hlook_b houtbound
+      hsub hwfL hwfE hsite_tracked hvar_tracked huniq
+      hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   | release _ a _ r _ _ _ hlook_a _ ih =>
-    obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
-    have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
-    simp only [applySubstMoveType] at hlook_a_env
-    have hr_mem := hsite_tracked _ _ _ _ hlook_a
-    have hr_ne_root := hwfL.siteEnv_wf _ _ hlook_a
-    have hσr_ne_root : σ r ≠ .root := hnonroot r hr_ne_root
-    apply typecheck_stmt.release lenv env _ _ (σ r) _ _ _ hlook_a_env
-    apply ih
-    · -- subsumes
-      refine ⟨σ, hid, hve, SiteEnvSubstEquiv_delete σ _ _ _ hse, ?_, ?_, hnonroot, ?_⟩
-      · -- refs
-        simp only [delete_ref_node]
-        rw [map_filter_ne σ _ r hinj hr_mem, hrefs]
-      · -- injectivity
-        intro u v hu hv
-        simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq] at hu hv
-        exact hinj u v hu.1 hv.1
-      · -- path_inclusion
-        intro u v hu hv path hinterp
-        simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq] at hu hv
-        have hσu_ne : σ u ≠ σ r := fun h => hu.2 (hinj u r hu.1 hr_mem h)
-        have hσv_ne : σ v ≠ σ r := fun h => hv.2 (hinj v r hv.1 hr_mem h)
-        simp only [delete_ref_node] at hinterp ⊢
-        rw [if_neg (fun ⟨h, _⟩ => hu.2 h), if_neg (not_or.mpr ⟨hu.2, hv.2⟩)]
-        rw [if_neg (fun ⟨h, _⟩ => hσu_ne h), if_neg (not_or.mpr ⟨hσu_ne, hσv_ne⟩)] at hinterp
-        exact hpaths u v hu.1 hv.1 path hinterp
-    · -- WellFormed modified envL
-      exact ⟨delete_ref_node_wellformed _ _ hwfL.pathEnv_wf hr_ne_root,
-             SiteEnv.delete_refs_not_root _ _ hwfL.siteEnv_wf,
-             hwfL.varEnv_wf⟩
-    · -- WellFormed modified env
-      exact ⟨delete_ref_node_wellformed _ _ hwfE.pathEnv_wf hσr_ne_root,
-             SiteEnv.delete_refs_not_root _ _ hwfE.siteEnv_wf,
-             hwfE.varEnv_wf⟩
-    · -- site_tracked
-      intro s' bt' r' bk' hlook_s'
-      simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq]
-      by_cases hs' : s' = a
-      · subst hs'; rw [lookup_delete_same] at hlook_s'; cases hlook_s'
-      · rw [lookup_delete_ne _ _ _ hs'] at hlook_s'
-        exact ⟨hsite_tracked _ _ _ _ hlook_s',
-          fun hr'_eq => by rw [hr'_eq] at hlook_s'; exact (huniq r).2.1 s' a _ _ _ _ hs' hlook_s' hlook_a⟩
-    · -- var_tracked
-      intro x' bt' r' bk' ms' hlook_x'
-      simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq]
-      exact ⟨hvar_tracked _ _ _ _ _ hlook_x',
-        fun hr'_eq => by rw [hr'_eq] at hlook_x'; exact (huniq r).1 x' _ _ _ a _ _ hlook_x' hlook_a⟩
-    · exact RefsUnique_delete_site _ _ _ huniq
-    · exact delete_ref_node_paths_to_non_member _ _ hpaths_to_nm
-    · exact delete_ref_node_paths_from_non_member _ _ hpaths_from_nm
-    · exact self_loop_only_empty_drn env.pathEnv _ hself_loop_only_empty
-    · simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq]
-      exact ⟨hroot, Ne.symm hr_ne_root⟩
+    exact weaken_release lenv _ env a _ r _ _ _ hlook_a
+      hsub hwfL hwfE hsite_tracked hvar_tracked huniq
+      hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   | let_bind_copy_ref envL a _ _ _ s t _ _ _ hlookup hnotIn hfresh ht_not_varRef _ ih =>
-    obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
-    have hlook_env := VarEnvSubstEquiv_lookup_valid σ _ _ _ _ _ hve hlookup
-    simp only [applySubstMoveType] at hlook_env
-    -- Freshness of t in envL
-    have ht_fresh_pe : t ∉ envL.pathEnv.refs := by
-      have := freshRefInEnvBool_implies_freshRefBool t _ hfresh
-      exact (freshRef_iff_freshRefBool t envL.pathEnv).mpr this
-    have ht_ne_root : t ≠ .root := fun h => ht_fresh_pe (h ▸ hroot)
-    -- t is a refid (from ht_ne_root + ht_not_varRef)
-    have ht_refid : ∃ n, t = .refid n := by
-      cases t with
-      | root => exact absurd rfl ht_ne_root
-      | refid n => exact ⟨n, rfl⟩
-      | varRef v => exact absurd rfl (ht_not_varRef v)
-    -- Pick fresh t' for env
-    let t' := nextFreshRefInEnv env
-    have ht'_fresh := nextFreshRefInEnv_fresh env
-    have ht'_fresh_pe := nextFreshRefInEnv_not_in_pathEnv env
-    have ht'_not_root := nextFreshRefInEnv_not_root env
-    have ht'_not_varRef := nextFreshRefInEnv_not_varRef env
-    have ht'_not_mapped : t' ∉ envL.pathEnv.refs.map σ := by rw [hrefs]; exact ht'_fresh_pe
-    -- s ∈ envL.pathEnv.refs (from var_tracked)
-    have hs_mem := hvar_tracked _ _ _ _ _ hlookup
-    -- Apply the copy_ref rule
-    apply typecheck_stmt.let_bind_copy_ref lenv env _ _ _ _ (σ s) t' _ _ _
-      hlook_env
-      (SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn)
-      ht'_fresh
-      (fun v => ht'_not_varRef v)
-    -- IH: need subsumes for modified envs
-    apply ih
-    · -- subsumes with extendSubst σ t t'
-      refine ⟨extendSubst σ t t',
-        extendSubst_id σ t t' hid ht_refid,
-        VarEnvSubstEquiv_extend σ t t' _ _ hve
-          (fun x' bt' s' bk' ms' hlook' =>
-            Ne.symm (freshRefInEnvBool_ne_varEnv_ref t _ x' .validVar bt' s' bk' ms' hfresh hlook')),
-        SiteEnvSubstEquiv_extend_insert_ref σ t t' _ _ _ _ _ hse
-          (fun k bt r bk hlook' =>
-            Ne.symm (freshRefInEnvBool_ne_siteEnv_ref t _ k bt r bk hfresh hlook')),
-        ?_, ?_, ?_, ?_⟩
-      · -- refs: (uwe t s [] peL).refs.map σ' = (uwe t' (σ s) [] peE).refs
-        simp only [uwe_epsilon_refs_fresh t s envL.pathEnv ht_fresh_pe,
-            uwe_epsilon_refs_fresh t' (σ s) env.pathEnv ht'_fresh_pe]
-        simp only [List.map, extendSubst, ite_true]
-        congr 1
-        rw [map_extendSubst_eq_map_σ σ t t' _ ht_fresh_pe, hrefs]
-      · -- injectivity
-        exact extendSubst_injective σ t t' _ hinj ht_fresh_pe ht'_not_mapped
-      · -- nonroot
-        exact extendSubst_nonroot σ t t' hnonroot ht'_not_root
-      · -- path_inclusion
-        exact path_inclusion_update_with_extension σ _ _ t t' s [] hpaths ht_fresh_pe ht'_not_mapped hs_mem
-    · -- WellFormed envL'
-      exact ⟨update_with_epsilon_wellformed t s envL.pathEnv hwfL.pathEnv_wf ht_ne_root ht_not_varRef,
-             SiteEnv.insert_refs_not_root _ _ _ hwfL.siteEnv_wf ht_ne_root,
-             hwfL.varEnv_wf⟩
-    · -- WellFormed env'
-      exact ⟨update_with_epsilon_wellformed t' (σ s) env.pathEnv hwfE.pathEnv_wf ht'_not_root (fun v => ht'_not_varRef v),
-             SiteEnv.insert_refs_not_root _ _ _ hwfE.siteEnv_wf ht'_not_root,
-             hwfE.varEnv_wf⟩
-    · -- site_tracked
-      intro s' bt r bk hlook_s'
-      simp only [uwe_epsilon_refs_fresh t s envL.pathEnv ht_fresh_pe]
-      by_cases hs' : s' = a
-      · subst hs'; rw [lookup_insert_same] at hlook_s'
-        simp only [Option.some.injEq, MoveType.ref.injEq] at hlook_s'
-        obtain ⟨-, rfl, -⟩ := hlook_s'
-        exact .head _
-      · rw [lookup_insert_ne _ _ _ _ hs'] at hlook_s'
-        exact .tail _ (hsite_tracked _ _ _ _ hlook_s')
-    · -- var_tracked
-      intro x' bt r bk ms' hlook_x'
-      simp only [uwe_epsilon_refs_fresh t s envL.pathEnv ht_fresh_pe]
-      exact .tail _ (hvar_tracked _ _ _ _ _ hlook_x')
-    · -- RefsUnique
-      exact RefsUnique_insert_fresh_ref _ _ _ _ _ _ huniq
-        (fun x' bt' r bk' ms' hlook' =>
-          Ne.symm (freshRefInEnvBool_ne_varEnv_ref t _ x' .validVar bt' r bk' ms' hfresh hlook'))
-        (fun s' bt' r bk' hlook' =>
-          Ne.symm (freshRefInEnvBool_ne_siteEnv_ref t _ s' bt' r bk' hfresh hlook'))
-    · exact update_with_extension_paths_to_non_member _ _ _ _ hpaths_to_nm
-        (Or.inl (by rw [← hrefs]; exact List.mem_map_of_mem hs_mem))
-    · exact update_with_extension_paths_from_non_member _ _ _ _ hpaths_from_nm
-        (Or.inl (by rw [← hrefs]; exact List.mem_map_of_mem hs_mem))
-    · exact self_loop_only_empty_uwe _ _ _ env.pathEnv hself_loop_only_empty
-    · -- root ∈ updated refs
-      simp only [uwe_epsilon_refs_fresh t s envL.pathEnv ht_fresh_pe]
-      exact .tail _ hroot
+    exact weaken_let_bind_copy_ref lenv envL env a _ _ _ s t _ _ _ hlookup hnotIn hfresh ht_not_varRef
+      hsub hwfL hwfE hsite_tracked hvar_tracked huniq
+      hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   | let_bind_borrowImm envL a x_var τ ms r cont retType hlookup hnotIn hfresh hr_not_varRef _ ih =>
     exact weaken_let_bind_borrowImm lenv envL env a x_var τ ms r _ _
       hlookup hnotIn hfresh hr_not_varRef
@@ -2945,61 +3288,12 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
   | call => sorry
   -- ==================== Complex non-pathEnv cases ====================
   | let_bind_pack _ _ _ _ _ _ _ hnotIn hft hfc hfi _ ih =>
-    obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
-    apply typecheck_stmt.let_bind_pack
-    · exact SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn
-    · intro f a hmem
-      obtain ⟨bt, hlook_a, hlook_f⟩ := hft f a hmem
-      have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
-      simp only [applySubstMoveType] at hlook_a_env
-      exact ⟨bt, hlook_a_env, hlook_f⟩
-    · exact hfc
-    · exact hfi
-    · apply ih
-      · exact ⟨σ, hid, hve,
-          SiteEnvSubstEquiv_insert σ _ _ _ _ _
-            (SiteEnvSubstEquiv_deleteAll σ _ _ _ hse) (applySubstMoveType_basic σ _),
-          hrefs, hinj, hnonroot, hpaths⟩
-      · exact TypeEnv.deleteAll_insert_wf _ _ _ _ hwfL trivial
-      · exact TypeEnv.deleteAll_insert_wf _ _ _ _ hwfE trivial
-      · exact site_tracked_insert_basic _ _ _ _
-          (site_tracked_deleteAll _ _ _ hsite_tracked)
-      · exact hvar_tracked
-      · exact RefsUnique_insert_basic _ _ _ _ (RefsUnique_deleteAll _ _ _ huniq)
-      · exact hpaths_to_nm
-      · exact hpaths_from_nm
-      · exact hself_loop_only_empty
-      · exact hroot
+    exact weaken_let_bind_pack lenv _ env _ _ _ _ _ _ hnotIn hft hfc hfi
+      hsub hwfL hwfE hsite_tracked hvar_tracked huniq
+      hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   | unpack _ _ _ _ _ _ hlook_b hfresh hinj_f hexist _ ih =>
-    obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
-    have hlook_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_b
-    simp only [applySubstMoveType] at hlook_env
-    apply typecheck_stmt.unpack lenv env _ _ _ _ _
-      hlook_env
-    · intro f a hmem
-      exact SiteEnvSubstEquiv_notIn σ _ _ _ hse (hfresh f a hmem)
-    · exact hinj_f
-    · exact hexist
-    · apply ih
-      · exact ⟨σ, hid, hve,
-          SiteEnvSubstEquiv_addFieldSites σ _ _ _ _
-            (SiteEnvSubstEquiv_delete σ _ _ _ hse),
-          hrefs, hinj, hnonroot, hpaths⟩
-      · exact ⟨hwfL.pathEnv_wf,
-          addFieldSites_refs_not_root _ _ _
-            (SiteEnv.delete_refs_not_root _ _ hwfL.siteEnv_wf),
-          hwfL.varEnv_wf⟩
-      · exact ⟨hwfE.pathEnv_wf,
-          addFieldSites_refs_not_root _ _ _
-            (SiteEnv.delete_refs_not_root _ _ hwfE.siteEnv_wf),
-          hwfE.varEnv_wf⟩
-      · exact site_tracked_addFieldSites _ _ _ _
-          (site_tracked_delete _ _ _ hsite_tracked)
-      · exact hvar_tracked
-      · exact RefsUnique_addFieldSites _ _ _ _ (RefsUnique_delete_site _ _ _ huniq)
-      · exact hpaths_to_nm
-      · exact hpaths_from_nm
-      · exact hself_loop_only_empty
-      · exact hroot
+    exact weaken_unpack lenv _ env _ _ _ _ _ hlook_b hfresh hinj_f hexist
+      hsub hwfL hwfE hsite_tracked hvar_tracked huniq
+      hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
 
 end LeanMove.Typing.TypeSoundness
