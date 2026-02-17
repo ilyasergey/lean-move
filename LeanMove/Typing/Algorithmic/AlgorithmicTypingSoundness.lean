@@ -112,7 +112,7 @@ lemma TypeEnv.equiv_bool_implies_equiv (env1 env2 : TypeEnv) :
 /-- Soundness: if boolean check passes, semantic property holds.
     not_borrowed now only quantifies over r ∈ refs, matching the algorithmic check. -/
 lemma not_borrowed_bool_sound (x : Var) (env : TypeEnv)
-    (hwf : PathEnv.WellFormed env.pathEnv) :
+    (_ : PathEnv.WellFormed env.pathEnv) :
     not_borrowed_bool x env = true → not_borrowed x env := by
   intro hbool
   simp only [not_borrowed_bool, List.all_eq_true] at hbool
