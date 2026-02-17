@@ -88,3 +88,39 @@ not `env` (original). This means `mo`/`io` filterMaps now find the output refs.
 | `AlgorithmicTypingSoundness.lean` | +25/-10 |
 | `TypesUtils.lean` | +10/-19 |
 | `Preservation.lean` | +9/-5 |
+
+---
+
+## Extract 6 large cases from `typecheck_stmt_weaken` into lemmas (Weakening.lean)
+
+### Summary
+
+Extracted 6 large induction case proofs (>80 lines each) from
+`typecheck_stmt_weaken` into standalone private theorems. Reduces the main
+theorem from ~1139 lines to ~517 lines.
+
+### Infrastructure
+
+- **`WeakenIH`** — type abbreviation for the induction hypothesis, capturing all
+  10 parameters (subsumes, WellFormed envL', WellFormed env', site_tracked,
+  var_tracked, RefsUnique, paths_to_nm, paths_from_nm, self_loop_only_empty,
+  root ∈ refs). Used to make extracted lemma signatures readable.
+
+### Extracted lemmas
+
+| Lemma | Case | Lines |
+|-------|------|-------|
+| `weaken_let_bind_borrowImm` | `let a = &x` | ~116 |
+| `weaken_let_bind_borrowMut` | `let a = &mut x` | ~101 |
+| `weaken_let_bind_borrowField` | `let af = &a.T::f` | ~101 |
+| `weaken_let_bind_borrowMutField` | `let af = &mut a.T::f` | ~85 |
+| `weaken_let_bind_freeze` | `let c = freeze(a)` | ~130 |
+| `weaken_var_assign_valid` | `x = a` (valid assign) | ~120 |
+
+Each case in the main theorem is now a single `exact weaken_*` call.
+
+### File stats
+
+- `Weakening.lean`: +851/-649 lines (net +202, from 2803 to 3005 lines)
+- Main theorem: 1139 → 517 lines
+- 6 extracted lemmas: ~810 lines total
