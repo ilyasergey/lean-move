@@ -197,6 +197,27 @@ lemma nextFreshRefInEnv_not_in_pathEnv (env : TypeEnv) :
     nextFreshRefInEnv env ∉ env.pathEnv.refs :=
   (nextFreshRefInEnv_fresh_prop env).1
 
+-- Any .refid n with n ≥ getRefId(nextFreshRefInEnv env) is fresh in the env
+lemma refid_ge_start_fresh (env : TypeEnv) (n : Nat)
+    (hge : n ≥ getRefId (nextFreshRefInEnv env)) :
+    freshRefInEnvBool (.refid n) env = true := by
+  unfold nextFreshRefInEnv at hge
+  simp only [getRefId] at hge
+  unfold freshRefInEnvBool freshRefBool
+  simp only [Bool.and_eq_true, Bool.not_eq_true', List.contains_eq_any_beq]
+  have hnotIn : ∀ r ∈ env.pathEnv.refs ++ collectVarEnvRefs env.varEnv ++
+      collectSiteEnvRefs env.siteEnv, r ≠ .refid n := by
+    intro r hr heq
+    have hmax := foldl_max_ge_elem _ 0 r hr
+    subst heq; simp only [getRefId] at hmax; omega
+  refine ⟨⟨?_, ?_⟩, ?_⟩
+  · rw [List.any_eq_false]; intro r hr; simp only [beq_iff_eq]
+    exact (hnotIn r (List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inl hr))))).symm
+  · rw [List.any_eq_false]; intro r hr; simp only [beq_iff_eq]
+    exact (hnotIn r (List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inr hr))))).symm
+  · rw [List.any_eq_false]; intro r hr; simp only [beq_iff_eq]
+    exact (hnotIn r (List.mem_append.mpr (Or.inr hr))).symm
+
 -- Key lemma: freshRefInEnvBool means the ref doesn't appear in any VarEnv entry
 lemma freshRefInEnvBool_ne_varEnv_ref (t : Aref) (env : TypeEnv) (x : Var)
     (isv : IsValid) (τ : BasicMoveType) (s : Aref) (isBor : BorrowingKind) (ms : Mut)
@@ -930,6 +951,65 @@ lemma update_with_epsilon_wellformed (s t : Aref) (pe : PathEnv) (hwf : PathEnv.
   unfold update_with_epsilon
   exact update_with_extension_wellformed s t [] pe hwf hs_not_root hs_not_varRef
 
+/-- extend_with_star preserves WellFormed when target ≠ .root -/
+lemma extend_with_star_wellformed (target source : Aref) (pe : PathEnv)
+    (hwf : PathEnv.WellFormed pe) (htarget_ne_root : target ≠ Aref.root) :
+    PathEnv.WellFormed (extend_with_star target source pe) := by
+  have hnotz : Aref.root ≠ target := fun h => htarget_ne_root h.symm
+  -- target is always in the extended refs
+  have htarget_mem : target ∈ (extend_with_star target source pe).refs := by
+    simp only [extend_with_star]
+    by_cases htin : target ∈ pe.refs
+    · simp only [htin, not_true_eq_false, ↓reduceIte]
+    · simp only [htin, not_false_eq_true, ↓reduceIte, List.mem_cons, true_or]
+  -- For any u ∉ extended refs: u ≠ target and u ∉ pe.refs
+  have hmem_ext : ∀ u, u ∉ (extend_with_star target source pe).refs →
+      u ≠ target ∧ u ∉ pe.refs := by
+    intro u hu
+    refine ⟨fun heq => hu (heq ▸ htarget_mem), fun hc => hu ?_⟩
+    simp only [extend_with_star]
+    by_cases htin : target ∈ pe.refs
+    · simp only [htin, not_true_eq_false, ↓reduceIte]; exact hc
+    · simp only [htin, not_false_eq_true, ↓reduceIte, List.mem_cons]; exact Or.inr hc
+  constructor
+  · -- refs_complete
+    intro r hr
+    obtain ⟨hr_ne, hr_notin⟩ := hmem_ext r hr
+    simp only [extend_with_star]
+    rw [if_neg (fun ⟨h, _⟩ => hnotz h), if_neg hr_ne, if_neg hnotz]
+    exact hwf.refs_complete r hr_notin
+  · -- root_in_refs
+    simp only [extend_with_star]
+    by_cases htin : target ∈ pe.refs
+    · simp only [htin, not_true_eq_false, ↓reduceIte]; exact hwf.root_in_refs
+    · simp only [htin, not_false_eq_true, ↓reduceIte, List.mem_cons]; exact Or.inr hwf.root_in_refs
+  · -- from_untracked_to_root_empty
+    intro u hu huroot
+    obtain ⟨hu_ne, hu_notin⟩ := hmem_ext u hu
+    simp only [extend_with_star]
+    rw [if_neg (fun ⟨_, h⟩ => hnotz h), if_neg hnotz, if_neg hu_ne]
+    exact hwf.from_untracked_to_root_empty u hu_notin huroot
+  · -- self_loop_accepts_nil
+    intro u
+    by_cases hut : u = target
+    · rw [hut]; simp only [extend_with_star, and_self, ↓reduceIte, interpret_regex]
+    · simp only [extend_with_star]
+      rw [if_neg (fun ⟨h, _⟩ => hut h), if_neg hut, if_neg hut]
+      exact hwf.self_loop_accepts_nil u
+
+/-- List.foldl preserves a property when each step preserves it for list elements -/
+private lemma foldl_preserves_wf_mem {α β : Type} {P : α → Prop} (f : α → β → α) (init : α)
+    (l : List β) (hinit : P init)
+    (hstep : ∀ acc b, b ∈ l → P acc → P (f acc b)) : P (l.foldl f init) := by
+  induction l generalizing init with
+  | nil => exact hinit
+  | cons x xs ih =>
+    simp only [List.foldl_cons]
+    apply ih
+    · exact hstep init x (List.mem_cons.mpr (Or.inl rfl)) hinit
+    · intro acc b hb hacc
+      exact hstep acc b (List.mem_cons.mpr (Or.inr hb)) hacc
+
 /-- garbage_collect preserves WellFormed.
     Removes ref r from refs and clears all paths involving r. -/
 lemma garbage_collect_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFormed pe)
@@ -1310,17 +1390,178 @@ lemma TypeEnv.equiv_refl (env : TypeEnv) : TypeEnv.equiv env env := by
 /-       call_connect_inputs_outputs WellFormed          -/
 /- ---------------------------------------------------- -/
 
-/-- call_connect_inputs_outputs preserves WellFormed when outputs are fresh -/
-lemma populate_call_outputs_wf (env env' : TypeEnv) (as : List Site) (rets : List ParamType)
-    (outRefs : List Aref)
-    (hwf : TypeEnv.WellFormed env)
-    (hpop : populate_call_outputs env as rets outRefs = some env') :
-    TypeEnv.WellFormed env' := by
-  sorry
+/-- Inner foldl of extend_with_star preserves PathEnv.WellFormed -/
+private lemma extend_star_inner_foldl_wf (targets : List Aref) (source : Aref) (pe : PathEnv)
+    (hwf : PathEnv.WellFormed pe) (h : ∀ t ∈ targets, t ≠ Aref.root) :
+    PathEnv.WellFormed (targets.foldl (fun acc t => extend_with_star t source acc) pe) :=
+  foldl_preserves_wf_mem _ pe targets hwf fun acc t ht hacc =>
+    extend_with_star_wellformed t source acc hacc (h t ht)
+
+/-- Refs extracted from SiteEnv by any-ref filterMap are not root -/
+private lemma siteEnv_filterMap_ref_not_root (senv : SiteEnv) (sites : List Site)
+    (hwf : SiteEnv.RefsNotRoot senv) :
+    ∀ r ∈ List.filterMap (fun a => match lookup senv a with
+      | some (.ref _ r _) => some r | _ => none) sites, r ≠ Aref.root := by
+  intro r hr
+  rw [List.mem_filterMap] at hr
+  obtain ⟨s, _, hs⟩ := hr
+  revert hs
+  cases hlookup : lookup senv s with
+  | none => simp
+  | some τ =>
+    cases τ with
+    | basic _ => simp
+    | ref bt r' bk => simp only [Option.some.injEq]; intro heq; subst heq; exact hwf s _ hlookup
+
+/-- Refs extracted from SiteEnv by mut-only filterMap are not root -/
+private lemma siteEnv_filterMap_mut_not_root (senv : SiteEnv) (sites : List Site)
+    (hwf : SiteEnv.RefsNotRoot senv) :
+    ∀ r ∈ List.filterMap (fun a => match lookup senv a with
+      | some (.ref _ r .siteBorrowMut) => some r | _ => none) sites, r ≠ Aref.root := by
+  intro r hr
+  rw [List.mem_filterMap] at hr
+  obtain ⟨s, _, hs⟩ := hr
+  revert hs
+  cases hlookup : lookup senv s with
+  | none => simp
+  | some τ =>
+    cases τ with
+    | basic _ => simp
+    | ref bt r' bk =>
+      cases bk
+      · simp  -- siteBorrowImm: none = some r
+      · simp only [Option.some.injEq]
+        intro heq; subst heq; exact hwf s _ hlookup
+
+/-- Refs extracted from SiteEnv by imm-only filterMap are not root -/
+private lemma siteEnv_filterMap_imm_not_root (senv : SiteEnv) (sites : List Site)
+    (hwf : SiteEnv.RefsNotRoot senv) :
+    ∀ r ∈ List.filterMap (fun a => match lookup senv a with
+      | some (.ref _ r .siteBorrowImm) => some r | _ => none) sites, r ≠ Aref.root := by
+  intro r hr
+  rw [List.mem_filterMap] at hr
+  obtain ⟨s, _, hs⟩ := hr
+  revert hs
+  cases hlookup : lookup senv s with
+  | none => simp
+  | some τ =>
+    cases τ with
+    | basic _ => simp
+    | ref bt r' bk =>
+      cases bk
+      · simp only [Option.some.injEq]
+        intro heq; subst heq; exact hwf s _ hlookup
+      · simp  -- siteBorrowMut: none = some r
 
 lemma call_connect_inputs_outputs_wf (env : TypeEnv) (as bs : List Site)
     (hwf : TypeEnv.WellFormed env) :
     TypeEnv.WellFormed (call_connect_inputs_outputs env as bs) := by
-  sorry
+  constructor
+  · -- pathEnv_wf: only pathEnv changes
+    show PathEnv.WellFormed (call_connect_inputs_outputs env as bs).pathEnv
+    simp only [call_connect_inputs_outputs]
+    -- Not-root facts for the ref lists
+    have h_inputs := siteEnv_filterMap_ref_not_root env.siteEnv bs hwf.siteEnv_wf
+    have h_mi := siteEnv_filterMap_mut_not_root env.siteEnv bs hwf.siteEnv_wf
+    have h_io := siteEnv_filterMap_imm_not_root env.siteEnv as hwf.siteEnv_wf
+    -- Rule 3 (outermost foldl over io)
+    apply foldl_preserves_wf_mem
+    · -- Rule 2 (middle foldl over mo)
+      apply foldl_preserves_wf_mem
+      · -- Rule 1 (innermost foldl over io)
+        apply foldl_preserves_wf_mem
+        · exact hwf.pathEnv_wf
+        · intro acc iout _ hacc
+          exact extend_star_inner_foldl_wf _ iout acc hacc h_inputs
+      · intro acc mout _ hacc
+        exact extend_star_inner_foldl_wf _ mout acc hacc h_mi
+    · intro acc io1 hio1 hacc
+      -- Rule 3 inner foldl: conditional extend_with_star
+      apply foldl_preserves_wf_mem
+      · exact hacc
+      · intro acc' io2 _ hacc'
+        simp only [ne_eq]
+        split
+        · exact extend_with_star_wellformed io1 io2 acc' hacc' (h_io io1 hio1)
+        · exact hacc'
+  · -- siteEnv_wf: unchanged
+    exact hwf.siteEnv_wf
+  · -- varEnv_wf: unchanged
+    exact hwf.varEnv_wf
+
+/-- populate_call_outputs preserves WellFormed -/
+lemma populate_call_outputs_wf (env env' : TypeEnv) (as : List Site) (rets : List ParamType)
+    (outRefs : List Aref)
+    (hwf : TypeEnv.WellFormed env)
+    (hout_not_root : ∀ r ∈ outRefs, r ≠ Aref.root)
+    (hout_not_varRef : ∀ r ∈ outRefs, ∀ v, r ≠ Aref.varRef v)
+    (hpop : populate_call_outputs env as rets outRefs = some env') :
+    TypeEnv.WellFormed env' := by
+  induction as generalizing env rets outRefs with
+  | nil =>
+    cases rets with
+    | nil =>
+      simp only [populate_call_outputs] at hpop
+      split at hpop
+      · simp only [Option.some.injEq] at hpop; subst hpop; exact hwf
+      · simp at hpop
+    | cons _ _ => simp [populate_call_outputs] at hpop
+  | cons site as' ih =>
+    cases rets with
+    | nil => simp [populate_call_outputs] at hpop
+    | cons pt rets' =>
+      obtain ⟨bt, isRefMut⟩ := pt
+      cases isRefMut with
+      | none =>
+        -- Basic return: only siteEnv changes
+        simp only [populate_call_outputs] at hpop
+        have hwf_mid : TypeEnv.WellFormed
+            { env with siteEnv := insert env.siteEnv site (.basic bt) } :=
+          ⟨hwf.pathEnv_wf,
+           SiteEnv.insert_refs_not_root env.siteEnv site (.basic bt) hwf.siteEnv_wf trivial,
+           hwf.varEnv_wf⟩
+        exact ih _ _ _ hwf_mid hout_not_root hout_not_varRef hpop
+      | some b =>
+        cases b with
+        | true =>
+          -- Mutable ref return: siteEnv + pathEnv change
+          cases outRefs with
+          | nil => simp [populate_call_outputs] at hpop
+          | cons r outRefs' =>
+            simp only [populate_call_outputs] at hpop
+            have hr_mem := List.mem_cons.mpr (Or.inl rfl : r = r ∨ r ∈ outRefs')
+            have hwf_mid : TypeEnv.WellFormed
+                { env with
+                  siteEnv := insert env.siteEnv site (.ref bt r .siteBorrowMut)
+                  pathEnv := update_with_epsilon r r env.pathEnv } :=
+              ⟨update_with_epsilon_wellformed r r env.pathEnv hwf.pathEnv_wf
+                (hout_not_root r hr_mem) (hout_not_varRef r hr_mem),
+               SiteEnv.insert_refs_not_root env.siteEnv site (.ref bt r .siteBorrowMut)
+                hwf.siteEnv_wf (hout_not_root r hr_mem),
+               hwf.varEnv_wf⟩
+            exact ih _ _ _ hwf_mid
+              (fun r' hr' => hout_not_root r' (List.mem_cons.mpr (Or.inr hr')))
+              (fun r' hr' => hout_not_varRef r' (List.mem_cons.mpr (Or.inr hr')))
+              hpop
+        | false =>
+          -- Immutable ref return: siteEnv + pathEnv change
+          cases outRefs with
+          | nil => simp [populate_call_outputs] at hpop
+          | cons r outRefs' =>
+            simp only [populate_call_outputs] at hpop
+            have hr_mem := List.mem_cons.mpr (Or.inl rfl : r = r ∨ r ∈ outRefs')
+            have hwf_mid : TypeEnv.WellFormed
+                { env with
+                  siteEnv := insert env.siteEnv site (.ref bt r .siteBorrowImm)
+                  pathEnv := update_with_epsilon r r env.pathEnv } :=
+              ⟨update_with_epsilon_wellformed r r env.pathEnv hwf.pathEnv_wf
+                (hout_not_root r hr_mem) (hout_not_varRef r hr_mem),
+               SiteEnv.insert_refs_not_root env.siteEnv site (.ref bt r .siteBorrowImm)
+                hwf.siteEnv_wf (hout_not_root r hr_mem),
+               hwf.varEnv_wf⟩
+            exact ih _ _ _ hwf_mid
+              (fun r' hr' => hout_not_root r' (List.mem_cons.mpr (Or.inr hr')))
+              (fun r' hr' => hout_not_varRef r' (List.mem_cons.mpr (Or.inr hr')))
+              hpop
 
 end LeanMove.Typing

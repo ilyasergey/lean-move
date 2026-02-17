@@ -1190,6 +1190,40 @@ theorem subsumes_bool_implies_subsumes (envL env : TypeEnv)
 /-       Statement type checking soundness               -/
 /- ---------------------------------------------------- -/
 
+-- generateFreshRefs produces refs that are all fresh in env
+private lemma generateFreshRefs_fresh (env : TypeEnv) (rets : List ParamType) :
+    all_refs_fresh_in_env env (generateFreshRefs env rets) := by
+  unfold all_refs_fresh_in_env generateFreshRefs
+  intro r hr
+  simp only [List.mem_map, List.mem_range] at hr
+  obtain ⟨i, _, rfl⟩ := hr
+  exact refid_ge_start_fresh env _ (Nat.le_add_right _ _)
+
+-- generateFreshRefs produces a list with no duplicates
+private lemma generateFreshRefs_nodup (env : TypeEnv) (rets : List ParamType) :
+    List.Nodup (generateFreshRefs env rets) := by
+  unfold generateFreshRefs
+  rw [List.nodup_iff_pairwise_ne, List.pairwise_map]
+  exact List.nodup_range.imp fun h => by simp only [Ne, Aref.refid.injEq]; omega
+
+-- generateFreshRefs produces only .refid refs (not root)
+private lemma generateFreshRefs_not_root (env : TypeEnv) (rets : List ParamType) :
+    ∀ r ∈ generateFreshRefs env rets, r ≠ Aref.root := by
+  unfold generateFreshRefs
+  intro r hr
+  simp only [List.mem_map, List.mem_range] at hr
+  obtain ⟨_, _, rfl⟩ := hr
+  exact Aref.noConfusion
+
+-- generateFreshRefs produces only .refid refs (not varRef)
+private lemma generateFreshRefs_not_varRef (env : TypeEnv) (rets : List ParamType) :
+    ∀ r ∈ generateFreshRefs env rets, ∀ v, r ≠ Aref.varRef v := by
+  unfold generateFreshRefs
+  intro r hr v
+  simp only [List.mem_map, List.mem_range] at hr
+  obtain ⟨_, _, rfl⟩ := hr
+  exact Aref.noConfusion
+
 /-- Soundness: If the algorithmic check succeeds, the relational judgment holds.
     This requires the type environment to be well-formed (pathEnv and siteEnv invariants).
 -/
@@ -1477,9 +1511,10 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
             have hfresh' := all_fresh_sites_bool_sound env as hfresh_bool
             have htc_bs' := types_conform_bool_sound env.siteEnv bs params htc_bs
             have hiso' := check_mutable_inputs_isolated_bool_sound env bs hiso
-            have hfresh_refs : all_refs_fresh_in_env env (generateFreshRefs env rets) := by sorry
-            have hnodup : List.Nodup (generateFreshRefs env rets) := by sorry
-            have hwf_env' := populate_call_outputs_wf env env' as rets (generateFreshRefs env rets) hwf hpop
+            have hfresh_refs := generateFreshRefs_fresh env rets
+            have hnodup := generateFreshRefs_nodup env rets
+            have hwf_env' := populate_call_outputs_wf env env' as rets (generateFreshRefs env rets)
+              hwf (generateFreshRefs_not_root env rets) (generateFreshRefs_not_varRef env rets) hpop
             have hwf' := call_connect_inputs_outputs_wf env' as bs hwf_env'
             apply typecheck_stmt.call lenv env fnName as bs params rets
               (generateFreshRefs env rets) env' cont retType
