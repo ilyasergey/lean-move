@@ -60,7 +60,7 @@ theorem type_soundness_dec (f : FunDef) (lenvDec : LabelEnvDec)
   have hcd := hdec
   unfold SoundnessAssumptions.checkDecidable at hcd
   simp only [Bool.and_eq_true] at hcd
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hcfd, hfe⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcd
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hcfd, hfe⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcd
   exact type_soundness f lenvDec.toLabelEnv funEnv args heap
     (check_fun_dec_sound f lenvDec hcfd)
     (checkFunEnv_sound funEnv fte hfe)
