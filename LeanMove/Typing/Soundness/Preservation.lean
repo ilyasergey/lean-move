@@ -3897,7 +3897,7 @@ private theorem preservation_freeze (m m' : Machine) (env : TypeEnv) (lenv : Lab
       -- Case split on r2 = r'
       by_cases hr2_r' : r2 = r'
       · -- Case B: r2 = r', paths = union(G(r1, r'), G(r1, r))
-        rw [hr2_r'] at hp ⊢; simp only [↓reduceIte, interpret_regex] at hp
+        rw [hr2_r'] at hp ⊢; simp only [↓reduceIte] at hp
         rcases hp with hp_old | hp_from_r
         · -- Sub-case: from G(r1, r')
           by_cases hr1_r' : r1 = r'
@@ -4030,8 +4030,9 @@ private theorem preservation_freeze (m m' : Machine) (env : TypeEnv) (lenv : Lab
     rmap_root_none := rmap_root_none_extend_fresh hwt.rmap_root_none r' loc path hr'_not_root
     no_paths_to_root := by
       intro u p hp
-      simp only [pe', consume_ref_transfer] at hp
       have hroot_ne_r : ¬(Aref.root = r) := Ne.symm hr_not_root
+      have h_and : ¬(u = r ∧ Aref.root = r) := fun ⟨_, h⟩ => hroot_ne_r h
+      simp only [pe', consume_ref_transfer, h_and, ↓reduceIte] at hp
       by_cases hu : u = r
       · subst hu; simp only [true_or, ↓reduceIte, interpret_regex] at hp
       · simp only [hu, hroot_ne_r, or_false, ↓reduceIte] at hp
@@ -4046,7 +4047,8 @@ private theorem preservation_freeze (m m' : Machine) (env : TypeEnv) (lenv : Lab
       have hv_ne_r : v ≠ r := by
         rw [hpe_refs] at hv_mem
         simp only [List.mem_filter, decide_eq_true_eq] at hv_mem; exact hv_mem.2
-      simp only [pe', consume_ref_transfer] at hp
+      have h_and_rpc : ¬(Aref.root = r ∧ v = r) := fun ⟨h, _⟩ => hroot_ne_r h
+      simp only [pe', consume_ref_transfer, h_and_rpc, ↓reduceIte] at hp
       simp only [hroot_ne_r, hv_ne_r, or_false, ↓reduceIte] at hp
       by_cases hv_r' : v = r'
       · -- v = r': paths(.root, r') = union(G(.root, r'), G(.root, r))
@@ -4084,10 +4086,13 @@ private theorem preservation_freeze (m m' : Machine) (env : TypeEnv) (lenv : Lab
       consume_ref_transfer_paths_to_non_member env.pathEnv r r' hwt.paths_to_non_member_empty
     self_loop_only_empty := by
       intro u p hp
-      simp only [pe', consume_ref_transfer] at hp
       by_cases hu_r : u = r
-      · subst hu_r; simp only [true_or, ↓reduceIte, interpret_regex] at hp
-      · simp only [hu_r, false_or, ↓reduceIte] at hp
+      · rw [hu_r] at hp
+        simp only [pe', consume_ref_transfer, and_self, ↓reduceIte, interpret_regex] at hp
+        exact hp
+      · have h_and_sl : ¬(u = r ∧ u = r) := fun ⟨h, _⟩ => hu_r h
+        simp only [pe', consume_ref_transfer, h_and_sl, ↓reduceIte] at hp
+        simp only [hu_r, false_or, ↓reduceIte] at hp
         by_cases hu_r' : u = r'
         · rw [hu_r'] at hp; simp only [↓reduceIte, interpret_regex] at hp
           rcases hp with hp_old | hp_r
@@ -4378,6 +4383,7 @@ private theorem preservation_jump (m m' : Machine) (env : TypeEnv) (lenv : Label
                    hwt.lenv_var_unique label envL hlenv r⟩)
         hwt.paths_to_non_member_empty
         hwt.paths_from_non_member_empty
+        hwt.self_loop_only_empty
     -- 5. env.siteEnv is empty (from subsumes + lenv_empty_siteEnv)
     have hse : ∀ s, lookup env.siteEnv s = none :=
       siteEnv_empty_from_subsumes envL env hsubsumes
@@ -4477,6 +4483,7 @@ private theorem preservation_branch (m m' : Machine) (env : TypeEnv) (lenv : Lab
                        hwt.lenv_var_unique l1 envL1 hl1 r⟩)
             hwt.paths_to_non_member_empty
             hwt.paths_from_non_member_empty
+            hwt.self_loop_only_empty
         -- Construct result
         refine ⟨env', lenv, retType, rmap, ?_, hss⟩
         exact {
@@ -4534,6 +4541,7 @@ private theorem preservation_branch (m m' : Machine) (env : TypeEnv) (lenv : Lab
                        hwt.lenv_var_unique l2 envL2 hl2 r⟩)
             hwt.paths_to_non_member_empty
             hwt.paths_from_non_member_empty
+            hwt.self_loop_only_empty
         -- Construct result
         refine ⟨env', lenv, retType, rmap, ?_, hss⟩
         exact {

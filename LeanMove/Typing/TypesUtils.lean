@@ -278,6 +278,7 @@ structure PathEnv.WellFormed (pe : PathEnv) : Prop where
   refs_complete : ∀ r, r ∉ pe.refs → pe.paths (.root, r) = .empty
   root_in_refs : Aref.root ∈ pe.refs
   from_untracked_to_root_empty : ∀ u, u ∉ pe.refs → u ≠ Aref.root → pe.paths (u, .root) = .empty
+  self_loop_accepts_nil : ∀ u, interpret_regex (pe.paths (u, u)) []
 
 lemma PathEnv.init_wellformed : PathEnv.WellFormed PathEnv.init := by
   constructor
@@ -293,6 +294,8 @@ lemma PathEnv.init_wellformed : PathEnv.WellFormed PathEnv.init := by
     intro u _hu huroot
     simp only [PathEnv.init]
     simp [huroot]
+  · -- self_loop_accepts_nil
+    intro u; simp only [PathEnv.init, ↓reduceIte, interpret_regex]
 
 /-- delete_ref_node preserves WellFormed when r ≠ root.
     In practice, we never delete root - it's only used for borrow references. -/
@@ -342,6 +345,13 @@ lemma delete_ref_node_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFo
       have hroot_ne_r : Aref.root ≠ r := fun h => hr_not_root h.symm
       rw [delete_ref_node_paths_not_involving_r pe r u .root hur (Ne.symm hr_not_root)]
       exact hwf.from_untracked_to_root_empty u hu_not_in huroot
+  · -- self_loop_accepts_nil
+    intro u
+    by_cases hur : u = r
+    · subst hur; simp only [delete_ref_node, and_self, ↓reduceIte, interpret_regex]
+    · simp only [delete_ref_node]
+      rw [if_neg (fun ⟨h, _⟩ => hur h), if_neg (not_or.mpr ⟨hur, hur⟩)]
+      exact hwf.self_loop_accepts_nil u
 
 /-- nextFreshRef always returns a .refid, never .root or .varRef -/
 lemma nextFreshRef_not_root (pe : PathEnv) : nextFreshRef pe ≠ Aref.root := by
@@ -693,6 +703,8 @@ lemma PathEnv.init_fun_wellformed (f : FunDef) :
     | root => exact absurd rfl huroot
     | refid _ => simp [huroot]
     | varRef _ => simp [huroot]
+  · -- self_loop_accepts_nil
+    intro u; simp only [init_fun_pathEnv, ↓reduceIte, interpret_regex]
 
 /-- Initial TypeEnv with empty siteEnv and PathEnv.init is well-formed
     when the provided varEnv satisfies RefsNotRoot -/
@@ -903,6 +915,13 @@ lemma update_with_extension_wellformed (z x : Aref) (path : List PathElement) (p
     have hroot_ne_z : ¬(Aref.root = z) := fun h => hz_not_root h.symm
     rw [if_neg hnotboth, if_neg hroot_ne_z, if_neg hu_ne_z]
     exact hwf.from_untracked_to_root_empty u hu_notin huroot
+  · -- self_loop_accepts_nil
+    intro u
+    by_cases huz : u = z
+    · rw [huz]; simp only [update_with_extension, and_self, ↓reduceIte, interpret_regex]
+    · simp only [update_with_extension]
+      rw [if_neg (fun ⟨h, _⟩ => huz h), if_neg huz, if_neg huz]
+      exact hwf.self_loop_accepts_nil u
 
 /-- update_with_epsilon preserves WellFormed -/
 lemma update_with_epsilon_wellformed (s t : Aref) (pe : PathEnv) (hwf : PathEnv.WellFormed pe)
@@ -963,6 +982,13 @@ lemma garbage_collect_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFo
       simp only [show ¬(u = r ∧ Aref.root = r) from (fun ⟨h, _⟩ => hur h),
         ↓reduceIte, hcond]
       exact hwf.from_untracked_to_root_empty u hu_notin huroot
+  · -- self_loop_accepts_nil
+    intro u
+    by_cases hur : u = r
+    · rw [hur]; simp only [garbage_collect, and_self, ↓reduceIte, interpret_regex]
+    · simp only [garbage_collect]
+      rw [if_neg (fun ⟨h, _⟩ => hur h), if_neg (not_or.mpr ⟨hur, hur⟩)]
+      exact hwf.self_loop_accepts_nil u
 
 /-- consume_ref_transfer preserves WellFormed.
     Transfers edges from r to r' and removes r. -/
@@ -973,7 +999,8 @@ lemma consume_ref_transfer_wellformed (pe : PathEnv) (r r' : Aref) (hwf : PathEn
   constructor
   · -- refs_complete: refs not in new list have empty paths from root
     intro v hv
-    simp only [consume_ref_transfer] at hv ⊢
+    have hroot_ne_and : ¬(Aref.root = r ∧ v = r) := fun ⟨h, _⟩ => hr_not_root h.symm
+    simp only [consume_ref_transfer, hroot_ne_and, ↓reduceIte] at hv ⊢
     -- Determine if root = r ∨ v = r
     by_cases hvr : Aref.root = r ∨ v = r
     · -- Path is empty
@@ -1009,10 +1036,11 @@ lemma consume_ref_transfer_wellformed (pe : PathEnv) (r r' : Aref) (hwf : PathEn
       exact ⟨Or.inr hwf.root_in_refs, hroot_ne_r⟩
   · -- from_untracked_to_root_empty
     intro u hu huroot
-    simp only [consume_ref_transfer] at hu ⊢
     -- .root ≠ r' (since .root ∈ pe.refs and r' ∉ pe.refs)
     have hroot_ne_r' : Aref.root ≠ r' := by
       intro h; exact hr'_fresh (h ▸ hwf.root_in_refs)
+    have hu_and : ¬(u = r ∧ Aref.root = r) := fun ⟨_, h⟩ => hr_not_root h.symm
+    simp only [consume_ref_transfer, hu_and, ↓reduceIte] at hu ⊢
     by_cases hur : u = r ∨ Aref.root = r
     · -- condition true → .empty
       simp only [hur, ↓reduceIte]
@@ -1031,6 +1059,18 @@ lemma consume_ref_transfer_wellformed (pe : PathEnv) (r r' : Aref) (hwf : PathEn
                       List.mem_cons]
           exact ⟨Or.inr hcontra, hu_ne_r⟩
       exact hwf.from_untracked_to_root_empty u hu_notin huroot
+  · -- self_loop_accepts_nil
+    intro u
+    by_cases hur : u = r
+    · subst hur; simp only [consume_ref_transfer, and_self, ↓reduceIte, interpret_regex]
+    · simp only [consume_ref_transfer, ↓reduceIte, hur, false_or]
+      by_cases hur' : u = r'
+      · -- u = r': crt paths(r', r') = union(pe.paths(r', r'), pe.paths(r', r))
+        rw [hur']; simp only [↓reduceIte]
+        exact Or.inl (hwf.self_loop_accepts_nil r')
+      · -- u ≠ r, u ≠ r': crt paths(u, u) = pe.paths(u, u)
+        simp only [hur', ↓reduceIte]
+        exact hwf.self_loop_accepts_nil u
 
 /- ---------------------------------------------------- -/
 /-  Standalone paths_from/to_non_member propagation      -/
@@ -1154,7 +1194,8 @@ lemma consume_ref_transfer_paths_from_non_member (pe : PathEnv) (r r' : Aref)
     ∀ u v p, u ∉ (consume_ref_transfer pe r r').refs → u ≠ .root → u ≠ v →
     ¬interpret_regex ((consume_ref_transfer pe r r').paths (u, v)) p := by
   intro u v p hu huroot huv
-  simp only [consume_ref_transfer] at hu ⊢
+  have huv_and : ¬(u = r ∧ v = r) := fun ⟨h1, h2⟩ => huv (h1.trans h2.symm)
+  simp only [consume_ref_transfer, huv_and, ↓reduceIte] at hu ⊢
   by_cases hur : u = r
   · simp only [hur, true_or, ↓reduceIte, interpret_regex, not_false_eq_true]
   · have hu_notin : u ∉ pe.refs := by
@@ -1193,7 +1234,8 @@ lemma consume_ref_transfer_paths_to_non_member (pe : PathEnv) (r r' : Aref)
     ∀ u v p, v ∉ (consume_ref_transfer pe r r').refs → v ≠ .root → u ≠ v →
     ¬interpret_regex ((consume_ref_transfer pe r r').paths (u, v)) p := by
   intro u v p hv hvroot huv
-  simp only [consume_ref_transfer] at hv ⊢
+  have huv_and : ¬(u = r ∧ v = r) := fun ⟨h1, h2⟩ => huv (h1.trans h2.symm)
+  simp only [consume_ref_transfer, huv_and, ↓reduceIte] at hv ⊢
   by_cases hvr : v = r
   · simp only [hvr, or_true, ↓reduceIte, interpret_regex, not_false_eq_true]
   · have hv_notin : v ∉ pe.refs := by

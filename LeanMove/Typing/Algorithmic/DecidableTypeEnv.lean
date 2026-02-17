@@ -302,6 +302,8 @@ theorem PathEnvDec.wellFormed_bool_sound (ped : PathEnvDec) :
     simp only [huroot, ↓reduceIte]
     have := lookup_none_of_non_member_from ped u .root hguard_from hu
     simp only [this]
+  · -- self_loop_accepts_nil
+    intro u; simp only [toPathEnv, ↓reduceIte, interpret_regex]
 
 /-- Non-member refs have no outgoing paths in a well-formed PathEnvDec -/
 theorem PathEnvDec.toPathEnv_non_member_from (ped : PathEnvDec)

@@ -1429,6 +1429,234 @@ private lemma path_inclusion_update_with_extension
       rw [uwe_paths_ne_ne _ _ _ _ _ _ hut hvt]
       exact hpaths u v hu' hv' pth hinterp
 
+-- ============================================================
+-- Helper: self_loop_only_empty preservation
+-- ============================================================
+
+/-- self_loop_only_empty is preserved by update_with_extension -/
+private lemma self_loop_only_empty_uwe (z x : Aref) (p : Path) (pe : PathEnv)
+    (h : ∀ u path, interpret_regex (pe.paths (u, u)) path → path = []) :
+    ∀ u path, interpret_regex ((update_with_extension z x p pe).paths (u, u)) path → path = [] := by
+  intro u path hinterp
+  simp only [update_with_extension] at hinterp
+  by_cases huz : u = z
+  · subst huz; simp only [and_self, ↓reduceIte, interpret_regex] at hinterp; exact hinterp
+  · simp only [↓reduceIte, show (u = z) = False from propext ⟨huz, False.elim⟩,
+               ↓reduceIte] at hinterp
+    exact h u path hinterp
+
+/-- self_loop_only_empty is preserved by delete_ref_node -/
+private lemma self_loop_only_empty_drn (pe : PathEnv) (r : Aref)
+    (h : ∀ u path, interpret_regex (pe.paths (u, u)) path → path = []) :
+    ∀ u path, interpret_regex ((delete_ref_node pe r).paths (u, u)) path → path = [] := by
+  intro u path hinterp
+  simp only [delete_ref_node] at hinterp
+  by_cases hur : u = r
+  · subst hur; simp only [and_self, ↓reduceIte, interpret_regex] at hinterp; exact hinterp
+  · simp only [show ¬(u = r ∧ u = r) from fun ⟨h, _⟩ => hur h, ↓reduceIte,
+               show ¬(u = r ∨ u = r) from not_or.mpr ⟨hur, hur⟩, ↓reduceIte] at hinterp
+    exact h u path hinterp
+
+/-- self_loop_only_empty is preserved by garbage_collect -/
+private lemma self_loop_only_empty_gc (pe : PathEnv) (r : Aref)
+    (h : ∀ u path, interpret_regex (pe.paths (u, u)) path → path = []) :
+    ∀ u path, interpret_regex ((garbage_collect pe r).paths (u, u)) path → path = [] := by
+  intro u path hinterp
+  simp only [garbage_collect] at hinterp
+  by_cases hur : u = r
+  · subst hur; simp only [and_self, ↓reduceIte, interpret_regex] at hinterp; exact hinterp
+  · simp only [show ¬(u = r ∧ u = r) from fun ⟨h, _⟩ => hur h, ↓reduceIte,
+               show ¬(u = r ∨ u = r) from not_or.mpr ⟨hur, hur⟩, ↓reduceIte] at hinterp
+    exact h u path hinterp
+
+/-- self_loop_only_empty is preserved by consume_ref_transfer
+    (requires paths_from_non_member_empty for the union case at fresh ref) -/
+private lemma self_loop_only_empty_crt (pe : PathEnv) (r r' : Aref)
+    (h : ∀ u path, interpret_regex (pe.paths (u, u)) path → path = [])
+    (hpaths_from_nm : ∀ u v p, u ∉ pe.refs → u ≠ .root → u ≠ v →
+      ¬interpret_regex (pe.paths (u, v)) p)
+    (hr'_fresh : r' ∉ pe.refs) (hr'_ne_root : r' ≠ .root) (hr'_ne_r : r' ≠ r) :
+    ∀ u path, interpret_regex ((consume_ref_transfer pe r r').paths (u, u)) path → path = [] := by
+  intro u path hinterp
+  simp only [consume_ref_transfer] at hinterp
+  by_cases hur : u = r
+  · subst hur; simp only [and_self, ↓reduceIte, interpret_regex] at hinterp; exact hinterp
+  · simp only [show ¬(u = r ∧ u = r) from fun ⟨h, _⟩ => hur h, ↓reduceIte,
+               show ¬(u = r ∨ u = r) from not_or.mpr ⟨hur, hur⟩, ↓reduceIte] at hinterp
+    by_cases hur' : u = r'
+    · subst hur'; simp only [ite_true, interpret_regex] at hinterp
+      cases hinterp with
+      | inl h_self => exact h u path h_self
+      | inr h_from => exact absurd h_from (hpaths_from_nm u r path hr'_fresh hr'_ne_root hr'_ne_r)
+    · simp only [show (u = r') = False from propext ⟨hur', False.elim⟩, ↓reduceIte] at hinterp
+      exact h u path hinterp
+
+-- ============================================================
+-- Helper: path inclusion through consume_ref_transfer
+-- ============================================================
+
+/-- Path inclusion is preserved through consume_ref_transfer with extendSubst.
+    This handles the freeze case where a mutable borrow is consumed and an immutable one created. -/
+private lemma path_inclusion_consume_ref_transfer
+    (σ : Aref → Aref) (peL peE : PathEnv) (r r' r'' : Aref)
+    (hpaths : ∀ u v, u ∈ peL.refs → v ∈ peL.refs →
+      ∀ path, interpret_regex (peE.paths (σ u, σ v)) path → interpret_regex (peL.paths (u, v)) path)
+    (hr_mem : r ∈ peL.refs)
+    (hr'_fresh : r' ∉ peL.refs)
+    (hr''_fresh : r'' ∉ peE.refs)
+    (hr''_not_mapped : r'' ∉ peL.refs.map σ)
+    (hinj : ∀ u v, u ∈ peL.refs → v ∈ peL.refs → σ u = σ v → u = v)
+    (hr'_ne_r : r' ≠ r)
+    (hr''_ne_σr : r'' ≠ σ r)
+    (hr''_not_root : r'' ≠ .root)
+    (hself_loop_env : ∀ u p, interpret_regex (peE.paths (u, u)) p → p = [])
+    (hpaths_from_nm : ∀ u v p, u ∉ peE.refs → u ≠ .root → u ≠ v →
+      ¬interpret_regex (peE.paths (u, v)) p)
+    (hpaths_to_nm : ∀ u v p, v ∉ peE.refs → v ≠ .root → u ≠ v →
+      ¬interpret_regex (peE.paths (u, v)) p)
+    (hself_loop_envL : ∀ u, interpret_regex (peL.paths (u, u)) []) :
+    ∀ u v, u ∈ (consume_ref_transfer peL r r').refs →
+           v ∈ (consume_ref_transfer peL r r').refs →
+      ∀ path, interpret_regex ((consume_ref_transfer peE (σ r) r'').paths
+                (extendSubst σ r' r'' u, extendSubst σ r' r'' v)) path →
+              interpret_regex ((consume_ref_transfer peL r r').paths (u, v)) path := by
+  intro u v hu hv pth hinterp
+  -- Membership in crt refs means u,v ∈ r' :: filter (≠ r) peL.refs
+  rw [crt_refs_fresh peL r r' hr'_fresh hr'_ne_r] at hu hv
+  -- Case split on u = r' and v = r'
+  by_cases hur' : u = r'
+  · by_cases hvr' : v = r'
+    · -- Case D: u = r', v = r' (both fresh, self-loop)
+      subst hur'; subst hvr'
+      simp only [extendSubst, ite_true] at hinterp
+      -- crt_peE.paths(r'', r''): v = r'' branch → union(peE.paths(r'', r''), peE.paths(r'', σ r))
+      have hr''_ne_σr_and : ¬(r'' = σ r ∧ r'' = σ r) :=
+        fun ⟨h, _⟩ => hr''_ne_σr h
+      have hr''_or : ¬(r'' = σ r ∨ r'' = σ r) :=
+        not_or.mpr ⟨hr''_ne_σr, hr''_ne_σr⟩
+      simp only [consume_ref_transfer, hr''_ne_σr_and, ↓reduceIte, hr''_or] at hinterp
+      -- hinterp : interpret_regex (Regex.union (peE.paths (r'', r'')) (peE.paths (r'', σ r))) pth
+      simp only [interpret_regex] at hinterp
+      cases hinterp with
+      | inl h_self =>
+        -- peE.paths(r'', r'') is a self-loop, so pth = []
+        have hpth_nil := hself_loop_env r'' pth h_self
+        -- After both substs, r' is now v. crt_peL.paths(v, v):
+        have hv_ne_r_and : ¬(v = r ∧ v = r) :=
+          fun ⟨h, _⟩ => hr'_ne_r h
+        have hv_or : ¬(v = r ∨ v = r) :=
+          not_or.mpr ⟨hr'_ne_r, hr'_ne_r⟩
+        simp only [consume_ref_transfer, hv_ne_r_and, ↓reduceIte, hv_or]
+        simp only [interpret_regex]
+        exact Or.inl (hpth_nil ▸ hself_loop_envL v)
+      | inr h_from_r =>
+        -- peE.paths(r'', σ r): r'' ∉ peE.refs, r'' ≠ root, r'' ≠ σ r → contradiction
+        exact absurd h_from_r (hpaths_from_nm r'' (σ r) pth hr''_fresh hr''_not_root hr''_ne_σr)
+    · -- Case B: u = r', v ≠ r' (u is fresh)
+      subst hur'
+      have hv_filter : v ∈ peL.refs.filter (· ≠ r) :=
+        (List.mem_cons.mp hv).resolve_left hvr'
+      have hv_filter' := List.mem_filter.mp hv_filter
+      simp only [decide_eq_true_eq] at hv_filter'
+      have ⟨hv_mem, hv_ne_r⟩ := hv_filter'
+      simp only [extendSubst, ite_true, if_neg hvr'] at hinterp
+      -- σ v ≠ r'' because v ∈ peL.refs → σ v ∈ peL.refs.map σ, and r'' ∉ peL.refs.map σ
+      have hσv_ne_r'' : σ v ≠ r'' := by
+        intro h; exact hr''_not_mapped (h ▸ List.mem_map_of_mem (f := σ) hv_mem)
+      -- σ v ≠ σ r because v ≠ r and both in peL.refs, by injectivity
+      have hσv_ne_σr : σ v ≠ σ r := by
+        intro h; exact hv_ne_r (hinj v r hv_mem hr_mem h)
+      -- crt_peE.paths(r'', σ v): ¬(r'' = σ r ∧ σ v = σ r), ¬(r'' = σ r ∨ σ v = σ r), σ v ≠ r''
+      -- So: crt_peE.paths(r'', σ v) = peE.paths(r'', σ v)
+      have hr''_σv_and : ¬(r'' = σ r ∧ σ v = σ r) :=
+        fun ⟨h, _⟩ => hr''_ne_σr h
+      have hr''_σv_or : ¬(r'' = σ r ∨ σ v = σ r) :=
+        not_or.mpr ⟨hr''_ne_σr, hσv_ne_σr⟩
+      simp only [consume_ref_transfer, hr''_σv_and, ↓reduceIte, hr''_σv_or,
+                  show (σ v = r'') = False from propext ⟨fun h => hσv_ne_r'' h, False.elim⟩,
+                  ↓reduceIte] at hinterp
+      -- hinterp : interpret_regex (peE.paths (r'', σ v)) pth
+      -- r'' ∉ peE.refs, r'' ≠ root, r'' ≠ σ v → contradiction
+      have hr''_ne_σv : r'' ≠ σ v := Ne.symm hσv_ne_r''
+      exact absurd hinterp (hpaths_from_nm r'' (σ v) pth hr''_fresh hr''_not_root hr''_ne_σv)
+  · by_cases hvr' : v = r'
+    · -- Case C: u ≠ r', v = r' (v is fresh)
+      subst hvr'
+      have hu_filter : u ∈ peL.refs.filter (· ≠ r) :=
+        (List.mem_cons.mp hu).resolve_left hur'
+      have hu_filter' := List.mem_filter.mp hu_filter
+      simp only [decide_eq_true_eq] at hu_filter'
+      have ⟨hu_mem, hu_ne_r⟩ := hu_filter'
+      simp only [extendSubst, if_neg hur', ite_true] at hinterp
+      -- σ u ≠ r'' because u ∈ peL.refs → σ u ∈ peL.refs.map σ, and r'' ∉ peL.refs.map σ
+      have hσu_ne_r'' : σ u ≠ r'' := by
+        intro h; exact hr''_not_mapped (h ▸ List.mem_map_of_mem (f := σ) hu_mem)
+      -- σ u ≠ σ r because u ≠ r and both in peL.refs, by injectivity
+      have hσu_ne_σr : σ u ≠ σ r := by
+        intro h; exact hu_ne_r (hinj u r hu_mem hr_mem h)
+      -- crt_peE.paths(σ u, r''): ¬(σ u = σ r ∧ r'' = σ r), ¬(σ u = σ r ∨ r'' = σ r), r'' = r'' → true
+      -- So: v=r'' branch → union(peE.paths(σ u, r''), peE.paths(σ u, σ r))
+      have hσu_r''_and : ¬(σ u = σ r ∧ r'' = σ r) :=
+        fun ⟨_, h⟩ => hr''_ne_σr h
+      have hσu_r''_or : ¬(σ u = σ r ∨ r'' = σ r) :=
+        not_or.mpr ⟨hσu_ne_σr, hr''_ne_σr⟩
+      simp only [consume_ref_transfer, hσu_r''_and, ↓reduceIte, hσu_r''_or] at hinterp
+      -- hinterp : interpret_regex (Regex.union (peE.paths (σ u, r'')) (peE.paths (σ u, σ r))) pth
+      simp only [interpret_regex] at hinterp
+      -- After subst hvr', r' is now v. crt_peL.paths(u, v):
+      have hu_v_and : ¬(u = r ∧ v = r) :=
+        fun ⟨_, h⟩ => hr'_ne_r h
+      have hu_v_or : ¬(u = r ∨ v = r) :=
+        not_or.mpr ⟨hu_ne_r, hr'_ne_r⟩
+      simp only [consume_ref_transfer, hu_v_and, ↓reduceIte, hu_v_or]
+      simp only [interpret_regex]
+      cases hinterp with
+      | inl h_to_r'' =>
+        -- peE.paths(σ u, r''): r'' ∉ peE.refs, r'' ≠ root, σ u ≠ r'' → contradiction
+        exact absurd h_to_r'' (hpaths_to_nm (σ u) r'' pth hr''_fresh hr''_not_root hσu_ne_r'')
+      | inr h_to_σr =>
+        -- peE.paths(σ u, σ r): by hpaths → peL.paths(u, r)
+        exact Or.inr (hpaths u r hu_mem hr_mem pth h_to_σr)
+    · -- Case A: u ≠ r', v ≠ r' (both from original refs with u ≠ r, v ≠ r)
+      have hu_filter : u ∈ peL.refs.filter (· ≠ r) :=
+        (List.mem_cons.mp hu).resolve_left hur'
+      have hv_filter : v ∈ peL.refs.filter (· ≠ r) :=
+        (List.mem_cons.mp hv).resolve_left hvr'
+      have hu_filter' := List.mem_filter.mp hu_filter
+      simp only [decide_eq_true_eq] at hu_filter'
+      have ⟨hu_mem, hu_ne_r⟩ := hu_filter'
+      have hv_filter' := List.mem_filter.mp hv_filter
+      simp only [decide_eq_true_eq] at hv_filter'
+      have ⟨hv_mem, hv_ne_r⟩ := hv_filter'
+      simp only [extendSubst, if_neg hur', if_neg hvr'] at hinterp
+      -- σ u ≠ σ r, σ v ≠ σ r by injectivity
+      have hσu_ne_σr : σ u ≠ σ r := fun h => hu_ne_r (hinj u r hu_mem hr_mem h)
+      have hσv_ne_σr : σ v ≠ σ r := fun h => hv_ne_r (hinj v r hv_mem hr_mem h)
+      -- σ v ≠ r'' (since σ v ∈ image, r'' ∉ image)
+      have hσv_ne_r'' : σ v ≠ r'' := by
+        intro h; exact hr''_not_mapped (h ▸ List.mem_map_of_mem (f := σ) hv_mem)
+      -- crt_peE.paths(σ u, σ v): ¬(σ u = σ r ∧ σ v = σ r), ¬(σ u = σ r ∨ σ v = σ r), σ v ≠ r''
+      -- So: crt_peE.paths(σ u, σ v) = peE.paths(σ u, σ v)
+      have hσuσv_and : ¬(σ u = σ r ∧ σ v = σ r) :=
+        fun ⟨h, _⟩ => hσu_ne_σr h
+      have hσuσv_or : ¬(σ u = σ r ∨ σ v = σ r) :=
+        not_or.mpr ⟨hσu_ne_σr, hσv_ne_σr⟩
+      simp only [consume_ref_transfer, hσuσv_and, ↓reduceIte, hσuσv_or,
+                  show (σ v = r'') = False from propext ⟨fun h => hσv_ne_r'' h, False.elim⟩,
+                  ↓reduceIte] at hinterp
+      -- hinterp : interpret_regex (peE.paths (σ u, σ v)) pth
+      -- crt_peL.paths(u, v): ¬(u = r ∧ v = r), ¬(u = r ∨ v = r), v ≠ r'
+      -- So: crt_peL.paths(u, v) = peL.paths(u, v)
+      have huv_and : ¬(u = r ∧ v = r) :=
+        fun ⟨h, _⟩ => hu_ne_r h
+      have huv_or : ¬(u = r ∨ v = r) :=
+        not_or.mpr ⟨hu_ne_r, hv_ne_r⟩
+      simp only [consume_ref_transfer, huv_and, ↓reduceIte, huv_or,
+                  show (v = r') = False from propext ⟨fun h => hvr' h, False.elim⟩,
+                  ↓reduceIte]
+      -- hinterp : interpret_regex (peE.paths (σ u, σ v)) pth
+      exact hpaths u v hu_mem hv_mem pth hinterp
+
 /-- Weakening: if a statement type-checks under envL, and envL.subsumes env,
     then it also type-checks under env.
     Requires both environments to be well-formed and refs tracked (always holds in practice). -/
@@ -1443,7 +1671,8 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
     (hpaths_to_nm : ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
       ¬interpret_regex (env.pathEnv.paths (u, v)) p)
     (hpaths_from_nm : ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
-      ¬interpret_regex (env.pathEnv.paths (u, v)) p) :
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = []) :
     typecheck_stmt lenv env s retType := by
   have hroot : Aref.root ∈ envL.pathEnv.refs := hwfL.pathEnv_wf.root_in_refs
   induction htyped generalizing env with
@@ -1493,6 +1722,7 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
       · exact RefsUnique_insert_basic _ _ _ _ huniq
       · exact hpaths_to_nm
       · exact hpaths_from_nm
+      · exact hself_loop_only_empty
       · exact hroot
   | let_bind_copy_val _ _ _ _ _ _ _ hlookup hnotIn _ ih =>
     obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
@@ -1512,6 +1742,7 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
     · exact RefsUnique_insert_basic _ _ _ _ huniq
     · exact hpaths_to_nm
     · exact hpaths_from_nm
+    · exact hself_loop_only_empty
     · exact hroot
   | let_bind_move _ _ _ _ _ _ _ hlookup hnb hnotIn _ ih =>
     obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
@@ -1539,6 +1770,7 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
     · exact RefsUnique_move_to_site _ _ _ _ _ _ hlookup huniq
     · exact hpaths_to_nm
     · exact hpaths_from_nm
+    · exact hself_loop_only_empty
     · exact hroot
   | let_bind_binop _ _ _ _ _ sa sb sc _ _ hlook_a hlook_b hbinop hnotIn _ ih =>
     obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
@@ -1562,6 +1794,7 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
           (RefsUnique_delete_site _ _ _ (RefsUnique_delete_site _ _ _ huniq))
       · exact hpaths_to_nm
       · exact hpaths_from_nm
+      · exact hself_loop_only_empty
       · exact hroot
   | var_assign_invalid _ _ _ _ _ _ _ hlook_x hlook_a hcompat _ ih =>
     obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
@@ -1593,6 +1826,7 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
       · exact RefsUnique_assign_from_site _ _ _ _ _ _ hlook_a huniq
       · exact hpaths_to_nm
       · exact hpaths_from_nm
+      · exact hself_loop_only_empty
       · exact hroot
   -- ==================== Cases with pathEnv changes =============================
   | let_bind_readRef _ a c r _ _ _ _ hlook_a hnotIn _ ih =>
@@ -1646,6 +1880,7 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
     · exact RefsUnique_insert_basic _ _ _ _ (RefsUnique_delete_site _ _ _ huniq)
     · exact delete_ref_node_paths_to_non_member _ _ hpaths_to_nm
     · exact delete_ref_node_paths_from_non_member _ _ hpaths_from_nm
+    · exact self_loop_only_empty_drn env.pathEnv _ hself_loop_only_empty
     · simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq]
       exact ⟨hroot, Ne.symm hr_ne_root⟩
   | write_ref _ a b τ r _ _ hlook_a hlook_b houtbound _ ih =>
@@ -1705,6 +1940,7 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
     · exact RefsUnique_delete_site _ _ _ (RefsUnique_delete_site _ _ _ huniq)
     · exact garbage_collect_paths_to_non_member _ _ hpaths_to_nm
     · exact garbage_collect_paths_from_non_member _ _ hpaths_from_nm
+    · exact self_loop_only_empty_gc env.pathEnv _ hself_loop_only_empty
     · simp only [garbage_collect, List.mem_filter, decide_eq_true_eq]
       exact ⟨hroot, Ne.symm hr_ne_root⟩
   | release _ a _ r _ _ _ hlook_a _ ih =>
@@ -1758,6 +1994,7 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
     · exact RefsUnique_delete_site _ _ _ huniq
     · exact delete_ref_node_paths_to_non_member _ _ hpaths_to_nm
     · exact delete_ref_node_paths_from_non_member _ _ hpaths_from_nm
+    · exact self_loop_only_empty_drn env.pathEnv _ hself_loop_only_empty
     · simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq]
       exact ⟨hroot, Ne.symm hr_ne_root⟩
   | let_bind_copy_ref envL a _ _ _ s t _ _ _ hlookup hnotIn hfresh ht_not_varRef _ ih =>
@@ -1846,6 +2083,7 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
         (Or.inl (by rw [← hrefs]; exact List.mem_map_of_mem hs_mem))
     · exact update_with_extension_paths_from_non_member _ _ _ _ hpaths_from_nm
         (Or.inl (by rw [← hrefs]; exact List.mem_map_of_mem hs_mem))
+    · exact self_loop_only_empty_uwe _ _ _ env.pathEnv hself_loop_only_empty
     · -- root ∈ updated refs
       simp only [uwe_epsilon_refs_fresh t s envL.pathEnv ht_fresh_pe]
       exact .tail _ hroot
@@ -1959,6 +2197,9 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
               hpaths_from_nm (Or.inr rfl))
         (Or.inl (by rw [uwe_epsilon_refs_fresh r' r' env.pathEnv hr'_fresh_pe]
                     exact List.mem_cons_of_mem _ hwfE.pathEnv_wf.root_in_refs))
+    · exact self_loop_only_empty_uwe _ _ _ _
+        (by unfold update_with_epsilon
+            exact self_loop_only_empty_uwe r' r' [] env.pathEnv hself_loop_only_empty)
     · -- root ∈ updated refs
       simp only [h_compound_refs]
       exact .tail _ hroot
@@ -2058,6 +2299,9 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
               hpaths_from_nm (Or.inr rfl))
         (Or.inl (by rw [uwe_epsilon_refs_fresh r' r' env.pathEnv hr'_fresh_pe]
                     exact List.mem_cons_of_mem _ hwfE.pathEnv_wf.root_in_refs))
+    · exact self_loop_only_empty_uwe _ _ _ _
+        (by unfold update_with_epsilon
+            exact self_loop_only_empty_uwe r' r' [] env.pathEnv hself_loop_only_empty)
     · simp only [h_compound_refs]
       exact .tail _ hroot
   | let_bind_borrowField envL a af f _ _ _ _ s rf _ _ hlookup_a hbt hlookup_f hnotIn hfresh hrf_not_varRef _ ih =>
@@ -2157,6 +2401,7 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
         (Or.inl (by rw [← hrefs]; exact List.mem_map_of_mem hs_mem))
     · exact update_with_extension_paths_from_non_member _ _ _ _ hpaths_from_nm
         (Or.inl (by rw [← hrefs]; exact List.mem_map_of_mem hs_mem))
+    · exact self_loop_only_empty_uwe _ _ _ env.pathEnv hself_loop_only_empty
     · -- root ∈ updated refs
       simp only [uwe_refs_fresh rf s _ envL.pathEnv hrf_fresh_pe]
       exact .tail _ hroot
@@ -2242,6 +2487,7 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
         (Or.inl (by rw [← hrefs]; exact List.mem_map_of_mem hs_mem))
     · exact update_with_extension_paths_from_non_member _ _ _ _ hpaths_from_nm
         (Or.inl (by rw [← hrefs]; exact List.mem_map_of_mem hs_mem))
+    · exact self_loop_only_empty_uwe _ _ _ env.pathEnv hself_loop_only_empty
     · simp only [uwe_refs_fresh rf s _ envL.pathEnv hrf_fresh_pe]
       exact .tail _ hroot
   | let_bind_freeze envL a c τ r r' isBor _ _ hlook hnotIn hfresh hr'_not_varRef _ ih =>
@@ -2315,7 +2561,11 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
       · -- nonroot
         exact extendSubst_nonroot σ r' r'' hnonroot hr''_not_root
       · -- path_inclusion
-        sorry -- TODO: path_inclusion_consume_ref_transfer (self-loop at fresh refs)
+        exact path_inclusion_consume_ref_transfer σ envL.pathEnv env.pathEnv r r' r''
+          hpaths hr_mem hr'_fresh_pe hr''_fresh_pe hr''_not_mapped hinj
+          (Ne.symm hr_ne_r') hr''_ne_σr hr''_not_root
+          hself_loop_only_empty hpaths_from_nm hpaths_to_nm
+          hwfL.pathEnv_wf.self_loop_accepts_nil
     · -- WellFormed envL'
       exact ⟨consume_ref_transfer_wellformed envL.pathEnv r r'
               hwfL.pathEnv_wf hr_ne_root hr'_fresh_pe hr'_not_varRef,
@@ -2365,6 +2615,8 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
       exact consume_ref_transfer_paths_to_non_member env.pathEnv (σ r) r'' hpaths_to_nm
     · -- hpaths_from_nm
       exact consume_ref_transfer_paths_from_non_member env.pathEnv (σ r) r'' hpaths_from_nm
+    · exact self_loop_only_empty_crt env.pathEnv (σ r) r'' hself_loop_only_empty
+        hpaths_from_nm hr''_fresh_pe hr''_not_root hr''_ne_σr
     · -- root ∈ updated refs
       rw [crt_refs_fresh envL.pathEnv r r' hr'_fresh_pe (Ne.symm hr_ne_r')]
       exact .tail _ (List.mem_filter.mpr ⟨hroot, decide_eq_true_eq.mpr (Ne.symm hr_ne_root)⟩)
@@ -2481,6 +2733,10 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
                 hpaths_from_nm (Or.inr rfl))
           (Or.inl (by rw [uwe_epsilon_refs_fresh r'' r'' env.pathEnv hr''_fresh_pe]
                       exact List.mem_cons_of_mem _ hwfE.pathEnv_wf.root_in_refs)))
+    · exact self_loop_only_empty_gc _ _
+        (self_loop_only_empty_uwe _ _ _ _
+          (by unfold update_with_epsilon
+              exact self_loop_only_empty_uwe r'' r'' [] env.pathEnv hself_loop_only_empty))
     · -- root ∈ gc'd refs = envL.pe.refs
       rw [gc_uwe_eps_refs_eq envL.pathEnv r .root [.root_to_var x] hr_fresh_pe]
       exact hroot
@@ -2510,6 +2766,7 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
       · exact RefsUnique_insert_basic _ _ _ _ (RefsUnique_deleteAll _ _ _ huniq)
       · exact hpaths_to_nm
       · exact hpaths_from_nm
+      · exact hself_loop_only_empty
       · exact hroot
   | unpack _ _ _ _ _ _ hlook_b hfresh hinj_f hexist _ ih =>
     obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
@@ -2540,6 +2797,7 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
       · exact RefsUnique_addFieldSites _ _ _ _ (RefsUnique_delete_site _ _ _ huniq)
       · exact hpaths_to_nm
       · exact hpaths_from_nm
+      · exact hself_loop_only_empty
       · exact hroot
 
 end LeanMove.Typing.TypeSoundness

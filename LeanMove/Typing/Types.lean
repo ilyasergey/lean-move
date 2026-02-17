@@ -232,7 +232,9 @@ def consume_ref_transfer (pe: PathEnv) (r r' : Aref) : PathEnv :=
   -- For each edge (u, r) with label L, create edge (u, r') with label L
   -- Remove all edges involving r
   let paths' := fun (u, v) =>
-    if u = r ∨ v = r then
+    if u = r ∧ v = r then
+      Regex.ε  -- preserve ε self-loop for non-member invariant
+    else if u = r ∨ v = r then
       Regex.empty
     else if v = r' then
       -- r' gets edges from: original edges to r' + edges that were to r
