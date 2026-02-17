@@ -246,19 +246,21 @@ lemma delete_ref_node_refs (pe : PathEnv) (r : Aref) :
     (delete_ref_node pe r).refs = List.filter (fun r' => r' ≠ r) pe.refs := by
   rfl
 
-lemma delete_ref_node_paths_involving_r (pe : PathEnv) (r : Aref) (u v : Aref) :
-    u = r ∨ v = r → (delete_ref_node pe r).paths (u, v) = Regex.empty := by
-  intro h
+lemma delete_ref_node_paths_involving_r (pe : PathEnv) (r : Aref) (u v : Aref)
+    (huv : u ≠ v) (h : u = r ∨ v = r) : (delete_ref_node pe r).paths (u, v) = Regex.empty := by
   simp only [delete_ref_node]
-  rcases h with hr | hr
-  · simp [hr]
-  · simp [hr]
+  rcases h with rfl | rfl
+  · rw [if_neg (fun ⟨_, h⟩ => huv h.symm), if_pos (Or.inl rfl)]
+  · rw [if_neg (fun ⟨h, _⟩ => huv h), if_pos (Or.inr rfl)]
 
-lemma delete_ref_node_paths_not_involving_r (pe : PathEnv) (r : Aref) (u v : Aref) :
-    u ≠ r → v ≠ r → (delete_ref_node pe r).paths (u, v) = pe.paths (u, v) := by
-  intro hu hv
+lemma delete_ref_node_paths_self (pe : PathEnv) (r : Aref) :
+    (delete_ref_node pe r).paths (r, r) = Regex.ε := by
+  simp [delete_ref_node]
+
+lemma delete_ref_node_paths_not_involving_r (pe : PathEnv) (r : Aref) (u v : Aref)
+    (hu : u ≠ r) (hv : v ≠ r) : (delete_ref_node pe r).paths (u, v) = pe.paths (u, v) := by
   simp only [delete_ref_node]
-  simp [hu, hv]
+  rw [if_neg (fun ⟨h, _⟩ => hu h), if_neg (not_or.mpr ⟨hu, hv⟩)]
 
 /-- A path from root is a "borrow path" for variable x if it accepts [.root_to_var x].
     This happens when the path is char (.root_to_var x) or concat ε (char (.root_to_var x)). -/
@@ -301,12 +303,12 @@ lemma delete_ref_node_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFo
   · -- refs_complete preservation
     intro r' hr'
     by_cases hr : Aref.root = r
-    · -- root = r
-      have := delete_ref_node_paths_involving_r pe r .root r' (Or.inl hr)
-      exact this
+    · -- root = r: contradicts hr_not_root
+      exact absurd hr.symm hr_not_root
     · by_cases hr'' : r' = r
       · -- r' = r
-        have := delete_ref_node_paths_involving_r pe r .root r' (Or.inr hr'')
+        have hne : Aref.root ≠ r' := fun h => hr (h.trans hr'')
+        have := delete_ref_node_paths_involving_r pe r .root r' hne (Or.inr hr'')
         exact this
       · -- r' ≠ r, so r' ∉ pe.refs by hr'
         -- hr' : r' ∉ (delete_ref_node pe r).refs
@@ -331,7 +333,7 @@ lemma delete_ref_node_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFo
     by_cases hur : u = r
     · -- u = r: paths from r are .empty after delete
       rw [hur]
-      exact delete_ref_node_paths_involving_r pe r r .root (Or.inl rfl)
+      exact delete_ref_node_paths_involving_r pe r r .root hr_not_root (Or.inl rfl)
     · -- u ≠ r: u ∉ pe.refs
       have hu_not_in : u ∉ pe.refs := by
         intro hcontra
@@ -921,9 +923,10 @@ lemma garbage_collect_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFo
     simp only [garbage_collect]
     -- v ∉ filter (≠ r) pe.refs means: ¬(v ∈ pe.refs ∧ v ≠ r) = v ∉ pe.refs ∨ v = r
     by_cases hvr : v = r
-    · -- v = r: path from root to r is empty (condition is true since r = r)
+    · -- v = r: path from root to r is empty (first ∧-condition fails since .root ≠ r)
       subst hvr
-      simp only [or_true, ↓reduceIte]
+      simp only [and_true, show ¬(Aref.root = v) from (fun h => hr_not_root h.symm),
+        ↓reduceIte, or_true]
     · -- v ≠ r: v ∉ pe.refs, so original path was empty
       have hvnotin : v ∉ pe.refs := by
         intro hcontra
@@ -935,7 +938,8 @@ lemma garbage_collect_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFo
         cases hcontra with
         | inl h => exact hr_not_root h.symm
         | inr h => exact hvr h
-      simp only [hcond, ↓reduceIte]
+      simp only [show ¬(Aref.root = r ∧ v = r) from (fun ⟨h, _⟩ => hr_not_root h.symm),
+        ↓reduceIte, hcond]
       exact horiginal
   · -- root_in_refs: .root survives filter since r ≠ .root
     simp only [garbage_collect, List.mem_filter, decide_eq_true_eq]
@@ -945,16 +949,19 @@ lemma garbage_collect_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFo
     simp only [garbage_collect] at hu ⊢
     simp only [List.mem_filter, decide_eq_true_eq, not_and] at hu
     by_cases hur : u = r
-    · -- u = r: condition u = r ∨ .root = r is true → .empty
-      simp only [hur, true_or, ↓reduceIte]
-    · -- u ≠ r: condition is false, paths unchanged
+    · -- u = r: ∧-condition (r = r ∧ .root = r) fails since .root ≠ r, but ∨-condition holds
+      subst hur
+      simp only [show ¬(Aref.root = u) from (fun h => hr_not_root h.symm),
+        and_false, ↓reduceIte, true_or]
+    · -- u ≠ r: both conditions false, paths unchanged
       have hu_notin : u ∉ pe.refs := by
         intro hcontra; exact hur (Decidable.not_not.mp (hu hcontra))
       have hcond : ¬(u = r ∨ Aref.root = r) := by
         intro h; cases h with
         | inl h => exact hur h
         | inr h => exact hr_not_root h.symm
-      simp only [hcond, ↓reduceIte]
+      simp only [show ¬(u = r ∧ Aref.root = r) from (fun ⟨h, _⟩ => hur h),
+        ↓reduceIte, hcond]
       exact hwf.from_untracked_to_root_empty u hu_notin huroot
 
 /-- consume_ref_transfer preserves WellFormed.
@@ -1037,12 +1044,16 @@ lemma delete_ref_node_paths_from_non_member (pe : PathEnv) (r : Aref)
   intro u v p hu huroot huv
   simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq, not_and] at hu
   by_cases hur : u = r
-  · rw [hur]; simp only [delete_ref_node, true_or, ↓reduceIte, interpret_regex, not_false_eq_true]
+  · have hvr : v ≠ r := fun h => huv (hur.trans h.symm)
+    simp only [delete_ref_node]; rw [hur]
+    rw [if_neg (fun ⟨_, h⟩ => hvr h), if_pos (Or.inl rfl)]
+    exact not_false
   · have hu_not_in : u ∉ pe.refs := fun hc => hur (Decidable.not_not.mp (hu hc))
     simp only [delete_ref_node]
     by_cases hvr : v = r
-    · simp only [hur, hvr, or_true, ↓reduceIte, interpret_regex, not_false_eq_true]
-    · simp only [hur, hvr, or_self, ↓reduceIte]
+    · rw [hvr, if_neg (fun ⟨h, _⟩ => hur h), if_pos (Or.inr rfl)]
+      exact not_false
+    · rw [if_neg (fun ⟨h, _⟩ => hur h), if_neg (not_or.mpr ⟨hur, hvr⟩)]
       exact h_from u v p hu_not_in huroot huv
 
 /-- delete_ref_node preserves paths_to_non_member_empty -/
@@ -1053,12 +1064,16 @@ lemma delete_ref_node_paths_to_non_member (pe : PathEnv) (r : Aref)
   intro u v p hv hvroot huv
   simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq, not_and] at hv
   by_cases hvr : v = r
-  · rw [hvr]; simp only [delete_ref_node, or_true, ↓reduceIte, interpret_regex, not_false_eq_true]
+  · have hur : u ≠ r := fun h => huv (h.trans hvr.symm)
+    simp only [delete_ref_node]; rw [hvr]
+    rw [if_neg (fun ⟨h, _⟩ => hur h), if_pos (Or.inr rfl)]
+    exact not_false
   · have hv_not_in : v ∉ pe.refs := fun hc => hvr (Decidable.not_not.mp (hv hc))
     simp only [delete_ref_node]
     by_cases hur : u = r
-    · simp only [hur, true_or, ↓reduceIte, interpret_regex, not_false_eq_true]
-    · simp only [hur, hvr, or_self, ↓reduceIte]
+    · rw [hur, if_neg (fun ⟨_, h⟩ => hvr h), if_pos (Or.inl rfl)]
+      exact not_false
+    · rw [if_neg (fun ⟨h, _⟩ => hur h), if_neg (not_or.mpr ⟨hur, hvr⟩)]
       exact h_to u v p hv_not_in hvroot huv
 
 /-- update_with_extension preserves paths_from_non_member_empty (requires hx_tracked). -/
@@ -1212,12 +1227,15 @@ lemma garbage_collect_paths_from_non_member (pe : PathEnv) (r : Aref)
   intro u v p hu huroot huv
   simp only [garbage_collect, List.mem_filter, decide_eq_true_eq, not_and] at hu
   by_cases hur : u = r
-  · rw [hur]; simp only [garbage_collect, true_or, ↓reduceIte, interpret_regex, not_false_eq_true]
+  · -- u = r: ∧-cond is (True ∧ v = r) = (v = r), which is False since u ≠ v
+    have hv_ne_r : ¬(v = r) := fun h => huv (hur ▸ h ▸ rfl)
+    rw [hur]; simp only [garbage_collect, hv_ne_r, and_false, ↓reduceIte,
+      true_or, interpret_regex, not_false_eq_true]
   · have hu_not_in : u ∉ pe.refs := fun hc => hur (Decidable.not_not.mp (hu hc))
     simp only [garbage_collect]
     by_cases hvr : v = r
-    · simp only [hur, hvr, or_true, ↓reduceIte, interpret_regex, not_false_eq_true]
-    · simp only [hur, hvr, or_self, ↓reduceIte]
+    · simp only [hur, hvr, and_true, ↓reduceIte, or_true, interpret_regex, not_false_eq_true]
+    · simp only [↓reduceIte, hur, hvr, or_self]
       exact h_from u v p hu_not_in huroot huv
 
 /-- garbage_collect preserves paths_to_non_member_empty -/
@@ -1228,12 +1246,15 @@ lemma garbage_collect_paths_to_non_member (pe : PathEnv) (r : Aref)
   intro u v p hv hvroot huv
   simp only [garbage_collect, List.mem_filter, decide_eq_true_eq, not_and] at hv
   by_cases hvr : v = r
-  · rw [hvr]; simp only [garbage_collect, or_true, ↓reduceIte, interpret_regex, not_false_eq_true]
+  · -- v = r: ∧-cond is (u = r ∧ True) = (u = r), which is False since u ≠ v
+    have hu_ne_r : ¬(u = r) := fun h => huv (h ▸ hvr ▸ rfl)
+    rw [hvr]; simp only [garbage_collect, hu_ne_r, false_and, ↓reduceIte,
+      or_true, interpret_regex, not_false_eq_true]
   · have hv_not_in : v ∉ pe.refs := fun hc => hvr (Decidable.not_not.mp (hv hc))
     simp only [garbage_collect]
     by_cases hur : u = r
-    · simp only [hur, true_or, ↓reduceIte, interpret_regex, not_false_eq_true]
-    · simp only [hur, hvr, or_self, ↓reduceIte]
+    · simp only [hur, hvr, and_false, ↓reduceIte, true_or, interpret_regex, not_false_eq_true]
+    · simp only [↓reduceIte, hur, hvr, or_self]
       exact h_to u v p hv_not_in hvroot huv
 
 /- ---------------------------------------------------- -/

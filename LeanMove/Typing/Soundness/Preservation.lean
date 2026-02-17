@@ -2205,7 +2205,9 @@ private lemma no_paths_to_root_delete_ref_node'
   intro u p hp
   simp only [delete_ref_node] at hp
   by_cases hu : u = r
-  · subst hu; simp only [true_or, ↓reduceIte, interpret_regex] at hp
+  · subst hu
+    rw [if_neg (fun ⟨_, h⟩ => hr_not_root h.symm), if_pos (Or.inl rfl)] at hp
+    exact hp.elim
   · by_cases hr' : Aref.root = r
     · exact absurd hr'.symm hr_not_root
     · simp only [hu, hr', or_false, ↓reduceIte] at hp
@@ -2408,7 +2410,7 @@ private theorem preservation_readRef (m m' : Machine) (env : TypeEnv) (lenv : La
         intro u p hp
         simp only [delete_ref_node] at hp
         by_cases hu : u = r
-        · subst hu; simp only [true_or, ↓reduceIte, interpret_regex] at hp
+        · subst hu; rw [if_pos ⟨rfl, rfl⟩] at hp; exact hp
         · simp only [hu, false_or, ↓reduceIte] at hp
           exact hwt.self_loop_only_empty u p hp
       rmap_has_type := by
@@ -2631,7 +2633,7 @@ private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : La
       intro u p hp
       simp only [delete_ref_node] at hp
       by_cases hu : u = r
-      · subst hu; simp only [true_or, ↓reduceIte, interpret_regex] at hp
+      · subst hu; rw [if_pos ⟨rfl, rfl⟩] at hp; exact hp
       · simp only [hu, false_or, ↓reduceIte] at hp
         exact hwt.self_loop_only_empty u p hp
     rmap_has_type := by
@@ -2905,7 +2907,7 @@ private theorem preservation_writeRef (m m' : Machine) (env : TypeEnv) (lenv : L
       intro u p hp
       simp only [delete_ref_node] at hp
       by_cases hu : u = r
-      · subst hu; simp only [true_or, ↓reduceIte, interpret_regex] at hp
+      · subst hu; rw [if_pos ⟨rfl, rfl⟩] at hp; exact hp
       · simp only [hu, false_or, ↓reduceIte] at hp
         exact hwt.self_loop_only_empty u p hp
     rmap_has_type := by
@@ -3497,7 +3499,7 @@ private theorem preservation_assign_valid (m m' : Machine) (env : TypeEnv) (lenv
           rw [hu] at hp
           have hempty : pe'.paths (r, .root) = .empty := by
             show (delete_ref_node _ r).paths (r, .root) = .empty
-            simp only [delete_ref_node, true_or, ↓reduceIte]
+            exact delete_ref_node_paths_involving_r _ r r .root hr_not_root (Or.inl rfl)
           rw [hempty] at hp; exact hp
         · -- u ≠ r: unchanged paths
           rw [hgc_paths u .root hu hroot_ne] at hp
@@ -3555,7 +3557,7 @@ private theorem preservation_assign_valid (m m' : Machine) (env : TypeEnv) (lenv
         intro u p hp
         unfold pe' garbage_collect at hp
         by_cases hu : u = r
-        · subst hu; simp only [true_or, ↓reduceIte, interpret_regex] at hp
+        · subst hu; simp only [and_self, ↓reduceIte, interpret_regex] at hp; exact hp
         · simp only [hu, false_or, ↓reduceIte] at hp
           unfold update_with_extension at hp
           simp only [show ¬(u = r) from hu, and_false, ↓reduceIte] at hp
@@ -4374,6 +4376,8 @@ private theorem preservation_jump (m m' : Machine) (env : TypeEnv) (lenv : Label
         (fun r => ⟨fun _ _ _ _ s _ _ _ h => by rw [hsite_empty s] at h; simp at h,
                    fun s _ _ _ _ _ _ h => by rw [hsite_empty s] at h; simp at h,
                    hwt.lenv_var_unique label envL hlenv r⟩)
+        hwt.paths_to_non_member_empty
+        hwt.paths_from_non_member_empty
     -- 5. env.siteEnv is empty (from subsumes + lenv_empty_siteEnv)
     have hse : ∀ s, lookup env.siteEnv s = none :=
       siteEnv_empty_from_subsumes envL env hsubsumes
@@ -4471,6 +4475,8 @@ private theorem preservation_branch (m m' : Machine) (env : TypeEnv) (lenv : Lab
             (fun r => ⟨fun _ _ _ _ s _ _ _ h => by rw [hsite_empty s] at h; simp at h,
                        fun s _ _ _ _ _ _ h => by rw [hsite_empty s] at h; simp at h,
                        hwt.lenv_var_unique l1 envL1 hl1 r⟩)
+            hwt.paths_to_non_member_empty
+            hwt.paths_from_non_member_empty
         -- Construct result
         refine ⟨env', lenv, retType, rmap, ?_, hss⟩
         exact {
@@ -4526,6 +4532,8 @@ private theorem preservation_branch (m m' : Machine) (env : TypeEnv) (lenv : Lab
             (fun r => ⟨fun _ _ _ _ s _ _ _ h => by rw [hsite_empty s] at h; simp at h,
                        fun s _ _ _ _ _ _ h => by rw [hsite_empty s] at h; simp at h,
                        hwt.lenv_var_unique l2 envL2 hl2 r⟩)
+            hwt.paths_to_non_member_empty
+            hwt.paths_from_non_member_empty
         -- Construct result
         refine ⟨env', lenv, retType, rmap, ?_, hss⟩
         exact {

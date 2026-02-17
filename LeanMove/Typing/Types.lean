@@ -181,7 +181,10 @@ def check_outbound (penv: PathEnv) (s: Aref) (p: Regex PathElement → Prop) :=
 -- Garbage collect the reference from penv
 def garbage_collect (penv: PathEnv) (r: Aref) : PathEnv :=
   let G := penv.paths
-  let paths' := fun (u, v) => if u = r ∨ v = r then Regex.empty else G (u, v)
+  let paths' := fun (u, v) =>
+    if u = r ∧ v = r then Regex.ε         -- preserve ε self-loop for non-member invariant
+    else if u = r ∨ v = r then Regex.empty -- clear all other edges involving r
+    else G (u, v)
   let refs' := List.filter (fun r' => r' ≠ r) penv.refs
   { penv with paths := paths', refs := refs' }
 
@@ -214,7 +217,10 @@ def update_with_epsilon (z x : Aref) (pe: PathEnv)  : PathEnv :=
 
 def delete_ref_node (pe: PathEnv) (r : Aref) : PathEnv :=
   let G := pe.paths
-  let paths' := fun (u, v) => if u = r ∨ v = r then Regex.empty else G (u, v)
+  let paths' := fun (u, v) =>
+    if u = r ∧ v = r then Regex.ε         -- preserve ε self-loop for non-member invariant
+    else if u = r ∨ v = r then Regex.empty -- clear all other edges involving r
+    else G (u, v)
   { pe with refs  := List.filter (fun r' => r' ≠ r) pe.refs,
             paths := paths' }
 
