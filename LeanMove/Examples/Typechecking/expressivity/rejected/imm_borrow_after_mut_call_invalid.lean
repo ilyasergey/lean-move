@@ -119,10 +119,18 @@ def var_imm1 : Var := ⟨"imm1"⟩
 -- Sites
 def s0 : Site := .site 0   -- integer literal 0 for a
 def s1 : Site := .site 1   -- &mut a
-def s2 : Site := .site 2   -- copy(r)
-def s3 : Site := .site 3   -- &a (for imm1)
-def s4 : Site := .site 4   -- copy(mut1)
-def s5 : Site := .site 5   -- integer literal 0 for write
+def s2 : Site := .site 2   -- copy(r) [input to id_mut]
+def s3 : Site := .site 3   -- output of id_mut
+def s4 : Site := .site 4   -- &a [input to id]
+def s5 : Site := .site 5   -- output of id
+def s6 : Site := .site 6   -- copy(mut1)
+def s7 : Site := .site 7   -- integer literal 0 for write
+
+-- Function signatures
+-- id_mut(r: &mut u64): &mut u64  { return move(r); }
+def id_mut_sig : FunSig := ⟨[⟨.u64, some true⟩], [⟨.u64, some true⟩]⟩
+-- id(r: &u64): &u64  { return move(r); }
+def id_sig : FunSig := ⟨[⟨.u64, some false⟩], [⟨.u64, some false⟩]⟩
 
 /-
   invalid module: "cannot write to mut1"
@@ -135,8 +143,8 @@ def s5 : Site := .site 5   -- integer literal 0 for write
   label b0:
       a = 0;
       r = &mut a;
-      mut1 = Self.id_mut(copy(r));  -- inlined as: mut1 = copy(r)
-      imm1 = Self.id(&a);           -- inlined as: imm1 = &a
+      mut1 = Self.id_mut(copy(r));  -- call id_mut
+      imm1 = Self.id(&a);           -- call id
       *copy(mut1) = 0;              -- ERROR: cannot write, a has immutable alias imm1
       return;
   }
@@ -159,17 +167,19 @@ def invalid : FunDef := {
         -- r = &mut a
         (letsite s1 ← &mut var_a) ;;
         (var_r ::= s1) ;;
-        -- mut1 = Self.id_mut(copy(r)) -- inlined as copy(r)
+        -- mut1 = Self.id_mut(copy(r))  [using Stmt.call]
         (letsite s2 ← copy var_r) ;;
-        (var_mut1 ::= s2) ;;
-        -- imm1 = Self.id(&a) -- inlined as &a
-        (letsite s3 ← &var_a) ;;
-        (var_imm1 ::= s3) ;;
-        -- *copy(mut1) = 0 -- ERROR: a is immutably borrowed via imm1
-        (letsite s4 ← copy var_mut1) ;;
-        (letsite s5 ← #0) ;;
-        Stmt.writeRef s4 s5 ;;
-        Stmt.ret []
+        Stmt.call [s3] "id_mut" [s2] (
+          (var_mut1 ::= s3) ;;
+          -- imm1 = Self.id(&a)  [using Stmt.call]
+          (letsite s4 ← &var_a) ;;
+          Stmt.call [s5] "id" [s4] (
+            (var_imm1 ::= s5) ;;
+            -- *copy(mut1) = 0 -- ERROR: a is immutably borrowed via imm1
+            (letsite s6 ← copy var_mut1) ;;
+            (letsite s7 ← #0) ;;
+            Stmt.writeRef s6 s7 ;;
+            Stmt.ret []))
     }
   ]
 }
@@ -177,11 +187,12 @@ def invalid : FunDef := {
 /-!
 ## Why this is rejected
 
-After `imm1 = &a`, the PathEnv records a path from `.root` (via variable `a`) to `imm1`'s
-reference. When `writeRef` on `copy(mut1)` is checked, `mut1`'s reference traces back to
-variable `a`, which also has the immutable borrow `imm1`. `check_outbound_bool` finds
-the path from `mut1`'s reference (through `a`) to `imm1`'s reference and rejects the
-write — you cannot write through a mutable ref when an immutable ref to the same root exists.
+After `Stmt.call [s3] "id_mut" [s2]`, `call_connect_inputs_outputs` creates paths
+connecting the mutable output ref (s3) to the mutable input ref (s2, which traces back
+to `r`'s borrow of `a`). Then after `Stmt.call [s5] "id" [s4]`, the immutable output
+ref (s5) is connected to the immutable input ref (s4 = &a). When `writeRef` on
+`copy(mut1)` is checked, `check_outbound_bool` finds paths from `mut1`'s ref (through
+`r` and `.root`) to `imm1`'s ref, rejecting the write.
 
 ## Runtime behavior
 
@@ -194,27 +205,25 @@ guarantee of `imm1`. The small-step semantics intentionally does not enforce bor
 -- -           Algorithmic Type Checking Tests        --
 -- -----------------------------------------------------
 
+-- Function environment with id_mut and id signatures
+def invalid_funEnv : FunEnv :=
+  AssocMap.insert (AssocMap.insert AssocMap.empty "id_mut" id_mut_sig) "id" id_sig
+
 -- Initial environment for invalid function
 def invalid_initEnv : TypeEnv := {
   siteEnv := AssocMap.empty
   varEnv := init_fun_varEnv invalid
-  pathEnv := PathEnv.init
-  funEnv := AssocMap.empty
+  pathEnv := init_fun_pathEnv invalid
+  funEnv := invalid_funEnv
 }
 
 -- LabelEnv for invalid
 def invalid_lenv : LabelEnv :=
   AssocMap.insert AssocMap.empty "b0" invalid_initEnv
 
--- Debug
 #eval check_fun invalid invalid_lenv
 
--- TODO: uncomment me when call rule is fixed
 -- Test: algorithmic checker rejects invalid
--- #guard !check_fun invalid invalid_lenv
-
--- Theorem: invalid is ILL-typed (REJECTED by type checker)
--- Note: proving this formally requires the completeness theorem (check_fun_complete),
--- which is not yet fully proven. The algorithmic rejection above demonstrates the result.
+#guard !check_fun invalid invalid_lenv
 
 end LeanMove.Examples.Expressivity.ImmBorrowAfterMutCallInvalid

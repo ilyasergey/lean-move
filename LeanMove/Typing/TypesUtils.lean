@@ -1461,20 +1461,27 @@ lemma call_connect_inputs_outputs_wf (env : TypeEnv) (as bs : List Site)
     show PathEnv.WellFormed (call_connect_inputs_outputs env as bs).pathEnv
     simp only [call_connect_inputs_outputs]
     -- Not-root facts for the ref lists
-    have h_inputs := siteEnv_filterMap_ref_not_root env.siteEnv bs hwf.siteEnv_wf
-    have h_mi := siteEnv_filterMap_mut_not_root env.siteEnv bs hwf.siteEnv_wf
     have h_io := siteEnv_filterMap_imm_not_root env.siteEnv as hwf.siteEnv_wf
+    have h_mo := siteEnv_filterMap_mut_not_root env.siteEnv as hwf.siteEnv_wf
     -- Rule 3 (outermost foldl over io)
     apply foldl_preserves_wf_mem
     · -- Rule 2 (middle foldl over mo)
       apply foldl_preserves_wf_mem
-      · -- Rule 1 (innermost foldl over io)
+      · -- Rule 1 (innermost foldl over io, inner over inputs)
         apply foldl_preserves_wf_mem
         · exact hwf.pathEnv_wf
-        · intro acc iout _ hacc
-          exact extend_star_inner_foldl_wf _ iout acc hacc h_inputs
-      · intro acc mout _ hacc
-        exact extend_star_inner_foldl_wf _ mout acc hacc h_mi
+        · intro acc iout hiout hacc
+          -- Inner foldl: target=iout (fixed), source=input (varies)
+          apply foldl_preserves_wf_mem
+          · exact hacc
+          · intro acc' input _ hacc'
+            exact extend_with_star_wellformed iout input acc' hacc' (h_io iout hiout)
+      · intro acc mout hmout hacc
+        -- Inner foldl: target=mout (fixed), source=minput (varies)
+        apply foldl_preserves_wf_mem
+        · exact hacc
+        · intro acc' minput _ hacc'
+          exact extend_with_star_wellformed mout minput acc' hacc' (h_mo mout hmout)
     · intro acc io1 hio1 hacc
       -- Rule 3 inner foldl: conditional extend_with_star
       apply foldl_preserves_wf_mem

@@ -1504,7 +1504,7 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
         split at h
         · rename_i hcond
           simp only [Bool.and_eq_true] at hcond
-          obtain ⟨⟨htc_bs, hiso⟩, houtbound⟩ := hcond
+          obtain ⟨htc_bs, hiso⟩ := hcond
           -- Handle match on populate_call_outputs inside the hypothesis
           split at h
           · rename_i env' hpop

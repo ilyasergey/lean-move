@@ -161,13 +161,15 @@ def call_connect_inputs_outputs (env: TypeEnv) (as bs: List Site) : TypeEnv :=
     | _ => none) as
 
   -- Rule 1: For any immutable output, it will be .*-extended from any input (mutable and immutable)
+  -- target=iout (output gets new paths), source=input (connectivity template)
   let with_io_from_inputs : PathEnv := List.foldl (fun penv iout ↦
-    List.foldl (fun penv' input ↦ extend_with_star input iout penv') penv inputs
+    List.foldl (fun penv' input ↦ extend_with_star iout input penv') penv inputs
   ) env.pathEnv io
 
   -- Rule 2: For any mutable output, it will be .*-extended from any mutable input only
+  -- target=mout (output gets new paths), source=minput (connectivity template)
   let with_mo_from_mi : PathEnv := List.foldl (fun penv mout ↦
-    List.foldl (fun penv' minput ↦ extend_with_star minput mout penv') penv mi
+    List.foldl (fun penv' minput ↦ extend_with_star mout minput penv') penv mi
   ) with_io_from_inputs mo
 
   -- Rule 3: Immutable outputs are .*-extended from each other

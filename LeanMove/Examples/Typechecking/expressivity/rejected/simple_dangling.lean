@@ -92,7 +92,8 @@ module 0x5.simple_call {
 }
 
 //# publish
-module 0x5.field_call {
+module 0x5.field_
+ {
     struct S has copy, drop { f: u64 }
 
     f(r: &mut Self.S): &u64 {
@@ -230,10 +231,15 @@ def nested_field_dangling : FunDef := {
 
 -- Module 3: vector - Skipped (MoveLight doesn't have native vector support)
 
+-- Function signature for f(r: &mut u64): &u64
+def simple_call_funSig : FunSig := ⟨[⟨.u64, some true⟩], [⟨.u64, some false⟩]⟩
+
 /-
   Module 4: simple_call
   Creates local, borrows it, passes to function returning immutable ref,
   then tries to write through the mutable ref.
+
+  f(r: &mut u64): &u64 { return freeze(move(r)); }
 
   t() {
       let a: u64;
@@ -246,8 +252,6 @@ def nested_field_dangling : FunDef := {
       *copy(m) = 0;             // ERROR: can't write while i exists
       return;
   }
-
-  We inline the call to f() as: i = freeze(copy(m))
 -/
 def simple_call_dangling : FunDef := {
   params := []
@@ -266,23 +270,28 @@ def simple_call_dangling : FunDef := {
         -- m = &mut a
         (letsite s1 ← &mut var_a) ;;
         (var_m ::= s1) ;;
-        -- i = freeze(copy(m)) (inlined call to f)
+        -- i = Self.f(copy(m))  [using Stmt.call]
         (letsite s2 ← copy var_m) ;;
-        Stmt.letBind s3 (Expr.freeze s2) ;;
-        (var_i ::= s3) ;;
-        -- *copy(m) = 0 -- ERROR: m has immutable alias i
-        (letsite s4 ← copy var_m) ;;
-        (letsite s5 ← #0) ;;
-        Stmt.writeRef s4 s5 ;;
-        Stmt.ret []
+        Stmt.call [s3] "f" [s2] (
+          (var_i ::= s3) ;;
+          -- *copy(m) = 0 -- ERROR: m has immutable alias i
+          (letsite s4 ← copy var_m) ;;
+          (letsite s5 ← #0) ;;
+          Stmt.writeRef s4 s5 ;;
+          Stmt.ret [])
     }
   ]
 }
+
+-- Function signature for f(r: &mut S): &u64
+def field_call_funSig : FunSig := ⟨[⟨.trecord s_entries, some true⟩], [⟨.u64, some false⟩]⟩
 
 /-
   Module 5: field_call
   Takes mutable ref to struct, calls function that borrows field immutably,
   then tries to write through the original ref.
+
+  f(r: &mut Self.S): &u64 { return &move(r).S::f; }
 
   t(s: &mut Self.S) {
       let f: &u64;
@@ -291,8 +300,6 @@ def simple_call_dangling : FunDef := {
       *copy(s) = S { f: 0 };    // ERROR: s borrowed via f
       return;
   }
-
-  We inline the call as: f = &copy(s).S::f
 -/
 def field_call_dangling : FunDef := {
   params := [(var_s, .ref (.trecord s_entries) (.varRef var_s) .siteBorrowMut)]
@@ -303,16 +310,16 @@ def field_call_dangling : FunDef := {
   blocks := [
     { label := "b0"
       body :=
-        -- f = &copy(s).S::f (inlined call)
+        -- f = Self.f(copy(s))  [using Stmt.call]
         (letsite s0 ← copy var_s) ;;
-        Stmt.letBind s1 (Expr.borrowField s0 (.trecord s_entries) field_f) ;;
-        (var_f ::= s1) ;;
-        -- *copy(s) = S { f: 0 } -- ERROR: s is borrowed via f
-        (letsite s2 ← copy var_s) ;;
-        (letsite s3 ← #0) ;;
-        Stmt.letBind s4 (Expr.pack "S" [(field_f, s3)]) ;;
-        Stmt.writeRef s2 s4 ;;
-        Stmt.ret []
+        Stmt.call [s1] "f" [s0] (
+          (var_f ::= s1) ;;
+          -- *copy(s) = S { f: 0 } -- ERROR: s is borrowed via f
+          (letsite s2 ← copy var_s) ;;
+          (letsite s3 ← #0) ;;
+          Stmt.letBind s4 (Expr.pack "S" [(field_f, s3)]) ;;
+          Stmt.writeRef s2 s4 ;;
+          Stmt.ret [])
     }
   ]
 }
@@ -322,8 +329,8 @@ def field_call_dangling : FunDef := {
 
 All four functions are rejected at `writeRef` by `check_outbound_bool`, which checks
 whether the written-through reference has any outbound edges in the PathEnv. In each case,
-a field borrow (or freeze-derived immutable ref) creates a non-empty path from the
-write target's reference to another live reference, so the write is rejected:
+a field borrow or call-derived output ref creates a non-empty path from the write target's
+reference to another live reference, so the write is rejected:
 
 - **field_dangling:** After `f = &copy(s).S::f`, the PathEnv records that `f`'s reference
   extends `s`'s reference via `[.field "f"]`. The `writeRef` through `move(s)` fails because
@@ -333,12 +340,14 @@ write target's reference to another live reference, so the write is rejected:
   reference has outbound paths to both `s`'s and (transitively) `f`'s references. The
   `writeRef` through `move(p)` fails.
 
-- **simple_call_dangling:** After `i = freeze(copy(m))`, `consume_ref_transfer` transfers
-  `m`'s borrow paths to `i`'s new immutable reference. The PathEnv shows outbound edges
-  from `m`'s reference to `i`'s reference, so `writeRef` through `copy(m)` is rejected.
+- **simple_call_dangling:** After `Stmt.call [s3] "f" [s2]`, `call_connect_inputs_outputs`
+  creates paths from the input ref (via copy(m)) to the immutable output ref (s3).
+  `check_outbound_bool` on the subsequent `copy(m)` finds these outbound edges, so the
+  `writeRef` is rejected.
 
-- **field_call_dangling:** Same mechanism as `field_dangling` — borrows field via `s`,
-  then tries to write through `s` while the field borrow is live.
+- **field_call_dangling:** After `Stmt.call [s1] "f" [s0]`, the output ref (s1) is
+  connected to the input ref (via copy(s)). `check_outbound_bool` on the subsequent
+  `copy(s)` finds the path to the output ref and rejects the `writeRef`.
 
 ## Runtime behavior
 
@@ -356,7 +365,7 @@ mechanism — the small-step semantics intentionally does not enforce it.
 def field_dangling_initEnv : TypeEnv := {
   siteEnv := AssocMap.empty
   varEnv := init_fun_varEnv field_dangling
-  pathEnv := PathEnv.init
+  pathEnv := init_fun_pathEnv field_dangling
   funEnv := AssocMap.empty
 }
 
@@ -371,7 +380,7 @@ def field_dangling_lenv : LabelEnv :=
 def nested_field_dangling_initEnv : TypeEnv := {
   siteEnv := AssocMap.empty
   varEnv := init_fun_varEnv nested_field_dangling
-  pathEnv := PathEnv.init
+  pathEnv := init_fun_pathEnv nested_field_dangling
   funEnv := AssocMap.empty
 }
 
@@ -382,12 +391,16 @@ def nested_field_dangling_lenv : LabelEnv :=
 
 #guard !check_fun nested_field_dangling nested_field_dangling_lenv
 
+-- Function environment for simple_call (contains signature of f)
+def simple_call_funEnv : FunEnv :=
+  AssocMap.insert AssocMap.empty "f" simple_call_funSig
+
 -- Initial environment for simple_call_dangling
 def simple_call_dangling_initEnv : TypeEnv := {
   siteEnv := AssocMap.empty
   varEnv := init_fun_varEnv simple_call_dangling
-  pathEnv := PathEnv.init
-  funEnv := AssocMap.empty
+  pathEnv := init_fun_pathEnv simple_call_dangling
+  funEnv := simple_call_funEnv
 }
 
 def simple_call_dangling_lenv : LabelEnv :=
@@ -395,15 +408,18 @@ def simple_call_dangling_lenv : LabelEnv :=
 
 #eval check_fun simple_call_dangling simple_call_dangling_lenv
 
--- TODO: uncomment me when call rule is fixed
--- #guard !check_fun simple_call_dangling simple_call_dangling_lenv
+#guard !check_fun simple_call_dangling simple_call_dangling_lenv
+
+-- Function environment for field_call (contains signature of f)
+def field_call_funEnv : FunEnv :=
+  AssocMap.insert AssocMap.empty "f" field_call_funSig
 
 -- Initial environment for field_call_dangling
 def field_call_dangling_initEnv : TypeEnv := {
   siteEnv := AssocMap.empty
   varEnv := init_fun_varEnv field_call_dangling
-  pathEnv := PathEnv.init
-  funEnv := AssocMap.empty
+  pathEnv := init_fun_pathEnv field_call_dangling
+  funEnv := field_call_funEnv
 }
 
 def field_call_dangling_lenv : LabelEnv :=

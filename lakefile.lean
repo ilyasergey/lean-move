@@ -22,7 +22,7 @@ lean_lib «LeanMove» where
 lean_lib «litmus» where
   srcDir := "LeanMove/Examples/Typechecking/litmus"
   roots := #[`accepted.borrow_in_loop_fixed_ok, `accepted.deref_borrow_field_ok,
-             `rejected.borrow_in_loop]
+             `accepted.call_rule_ok, `rejected.borrow_in_loop]
 
 -- Build target for expressivity examples
 -- Build with: lake build expressivity
@@ -41,7 +41,7 @@ lean_lib «expressivity» where
 lean_lib «examples» where
   srcDir := "LeanMove/Examples/Typechecking"
   roots := #[`litmus.accepted.borrow_in_loop_fixed_ok, `litmus.accepted.deref_borrow_field_ok,
-             `litmus.rejected.borrow_in_loop,
+             `litmus.rejected.borrow_in_loop, `litmus.accepted.call_rule_ok,
              `expressivity.accepted.alias_write_after_join, `expressivity.accepted.alias_writes,
              `expressivity.accepted.extension_after_call, `expressivity.accepted.extension_writes_after_join,
              `expressivity.accepted.imm_borrow_after_mut, `expressivity.accepted.multible_mutable_return_values,

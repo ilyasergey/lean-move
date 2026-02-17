@@ -478,8 +478,7 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType : MoveType)
       match lookup env.funEnv fnName with
       | some ⟨params, rets⟩ =>
         if types_conform_bool env.siteEnv bs params &&
-           check_mutable_inputs_isolated_bool env bs &&
-           check_mutable_inputs_have_outbound_bool env bs then
+           check_mutable_inputs_isolated_bool env bs then
           let outRefs := generateFreshRefs env rets
           match populate_call_outputs env as rets outRefs with
           | some env' =>
