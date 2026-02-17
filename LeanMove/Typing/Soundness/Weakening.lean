@@ -978,6 +978,17 @@ private lemma extendSubst_nonroot (σ : Aref → Aref) (t t' : Aref)
   · exact ht'_ne_root
   · exact hnonroot r hr
 
+/-- List.map with extendSubst reduces to List.map with σ when t ∉ l -/
+private lemma map_extendSubst_eq_map_σ (σ : Aref → Aref) (t t' : Aref) (l : List Aref)
+    (ht : t ∉ l) :
+    l.map (extendSubst σ t t') = l.map σ := by
+  induction l with
+  | nil => rfl
+  | cons hd tl ih =>
+    have hne : hd ≠ t := fun h => ht (h ▸ .head tl)
+    have ht' : t ∉ tl := fun h => ht (.tail hd h)
+    simp only [List.map, extendSubst, if_neg hne, ih ht']
+
 -- ============================================================
 -- Main weakening theorem
 -- ============================================================
@@ -1258,6 +1269,10 @@ private lemma uwe_paths_ne_ne (z x : Aref) (p : Path) (pe : PathEnv) (u v : Aref
 private lemma uwe_refs_fresh (z x : Aref) (p : Path) (pe : PathEnv) (h : z ∉ pe.refs) :
     (update_with_extension z x p pe).refs = z :: pe.refs := by
   simp [update_with_extension, h]
+
+private lemma uwe_epsilon_refs_fresh (z x : Aref) (pe : PathEnv) (h : z ∉ pe.refs) :
+    (update_with_epsilon z x pe).refs = z :: pe.refs :=
+  uwe_refs_fresh z x [] pe h
 
 -- ============================================================
 -- Helper: path inclusion through update_with_extension
@@ -1627,7 +1642,91 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
     · exact RefsUnique_delete_site _ _ _ huniq
     · simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq]
       exact ⟨hroot, Ne.symm hr_ne_root⟩
-  | let_bind_copy_ref => sorry
+  | let_bind_copy_ref envL a _ _ _ s t _ _ _ hlookup hnotIn hfresh ht_not_varRef _ ih =>
+    obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
+    have hlook_env := VarEnvSubstEquiv_lookup_valid σ _ _ _ _ _ hve hlookup
+    simp only [applySubstMoveType] at hlook_env
+    -- Freshness of t in envL
+    have ht_fresh_pe : t ∉ envL.pathEnv.refs := by
+      have := freshRefInEnvBool_implies_freshRefBool t _ hfresh
+      exact (freshRef_iff_freshRefBool t envL.pathEnv).mpr this
+    have ht_ne_root : t ≠ .root := fun h => ht_fresh_pe (h ▸ hroot)
+    -- t is a refid (from ht_ne_root + ht_not_varRef)
+    have ht_refid : ∃ n, t = .refid n := by
+      cases t with
+      | root => exact absurd rfl ht_ne_root
+      | refid n => exact ⟨n, rfl⟩
+      | varRef v => exact absurd rfl (ht_not_varRef v)
+    -- Pick fresh t' for env
+    let t' := nextFreshRefInEnv env
+    have ht'_fresh := nextFreshRefInEnv_fresh env
+    have ht'_fresh_pe := nextFreshRefInEnv_not_in_pathEnv env
+    have ht'_not_root := nextFreshRefInEnv_not_root env
+    have ht'_not_varRef := nextFreshRefInEnv_not_varRef env
+    have ht'_not_mapped : t' ∉ envL.pathEnv.refs.map σ := by rw [hrefs]; exact ht'_fresh_pe
+    -- s ∈ envL.pathEnv.refs (from var_tracked)
+    have hs_mem := hvar_tracked _ _ _ _ _ hlookup
+    -- Apply the copy_ref rule
+    apply typecheck_stmt.let_bind_copy_ref lenv env _ _ _ _ (σ s) t' _ _ _
+      hlook_env
+      (SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn)
+      ht'_fresh
+      (fun v => ht'_not_varRef v)
+    -- IH: need subsumes for modified envs
+    apply ih
+    · -- subsumes with extendSubst σ t t'
+      refine ⟨extendSubst σ t t',
+        extendSubst_id σ t t' hid ht_refid,
+        VarEnvSubstEquiv_extend σ t t' _ _ hve
+          (fun x' bt' s' bk' ms' hlook' =>
+            Ne.symm (freshRefInEnvBool_ne_varEnv_ref t _ x' .validVar bt' s' bk' ms' hfresh hlook')),
+        SiteEnvSubstEquiv_extend_insert_ref σ t t' _ _ _ _ _ hse
+          (fun k bt r bk hlook' =>
+            Ne.symm (freshRefInEnvBool_ne_siteEnv_ref t _ k bt r bk hfresh hlook')),
+        ?_, ?_, ?_, ?_⟩
+      · -- refs: (uwe t s [] peL).refs.map σ' = (uwe t' (σ s) [] peE).refs
+        simp only [uwe_epsilon_refs_fresh t s envL.pathEnv ht_fresh_pe,
+            uwe_epsilon_refs_fresh t' (σ s) env.pathEnv ht'_fresh_pe]
+        simp only [List.map, extendSubst, ite_true]
+        congr 1
+        rw [map_extendSubst_eq_map_σ σ t t' _ ht_fresh_pe, hrefs]
+      · -- injectivity
+        exact extendSubst_injective σ t t' _ hinj ht_fresh_pe ht'_not_mapped
+      · -- nonroot
+        exact extendSubst_nonroot σ t t' hnonroot ht'_not_root
+      · -- path_inclusion
+        exact path_inclusion_update_with_extension σ _ _ t t' s [] hpaths ht_fresh_pe ht'_not_mapped hs_mem
+    · -- WellFormed envL'
+      exact ⟨update_with_epsilon_wellformed t s envL.pathEnv hwfL.pathEnv_wf ht_ne_root ht_not_varRef,
+             SiteEnv.insert_refs_not_root _ _ _ hwfL.siteEnv_wf ht_ne_root,
+             hwfL.varEnv_wf⟩
+    · -- WellFormed env'
+      exact ⟨update_with_epsilon_wellformed t' (σ s) env.pathEnv hwfE.pathEnv_wf ht'_not_root (fun v => ht'_not_varRef v),
+             SiteEnv.insert_refs_not_root _ _ _ hwfE.siteEnv_wf ht'_not_root,
+             hwfE.varEnv_wf⟩
+    · -- site_tracked
+      intro s' bt r bk hlook_s'
+      simp only [uwe_epsilon_refs_fresh t s envL.pathEnv ht_fresh_pe]
+      by_cases hs' : s' = a
+      · subst hs'; rw [lookup_insert_same] at hlook_s'
+        simp only [Option.some.injEq, MoveType.ref.injEq] at hlook_s'
+        obtain ⟨-, rfl, -⟩ := hlook_s'
+        exact .head _
+      · rw [lookup_insert_ne _ _ _ _ hs'] at hlook_s'
+        exact .tail _ (hsite_tracked _ _ _ _ hlook_s')
+    · -- var_tracked
+      intro x' bt r bk ms' hlook_x'
+      simp only [uwe_epsilon_refs_fresh t s envL.pathEnv ht_fresh_pe]
+      exact .tail _ (hvar_tracked _ _ _ _ _ hlook_x')
+    · -- RefsUnique
+      exact RefsUnique_insert_fresh_ref _ _ _ _ _ _ huniq
+        (fun x' bt' r bk' ms' hlook' =>
+          Ne.symm (freshRefInEnvBool_ne_varEnv_ref t _ x' .validVar bt' r bk' ms' hfresh hlook'))
+        (fun s' bt' r bk' hlook' =>
+          Ne.symm (freshRefInEnvBool_ne_siteEnv_ref t _ s' bt' r bk' hfresh hlook'))
+    · -- root ∈ updated refs
+      simp only [uwe_epsilon_refs_fresh t s envL.pathEnv ht_fresh_pe]
+      exact .tail _ hroot
   | let_bind_borrowImm => sorry
   | let_bind_borrowMut => sorry
   | let_bind_borrowField => sorry
