@@ -191,8 +191,12 @@ def t_lenvDec : LabelEnvDec :=
     "l3" { siteEnv := AssocMap.empty, varEnv := t_l3_varEnv,
            pathEnv := init_fun_pathEnvDec t.params, funEnv := AssocMap.empty }
 
+-- Debug
+#eval t_lenvDec.allWellFormed_bool
+#eval check_fun t t_lenvDec.toLabelEnv
+
 -- Theorem: t is well-typed (algorithmic, decidable)
-theorem t_check : check_fun_dec t t_lenvDec = true := by rfl
+theorem t_check : check_fun_dec t t_lenvDec = true := by native_decide
 
 -- Main theorem: t is well-typed (relational)
 theorem t_welltyped : ∃ lenv, typecheck_fun t lenv :=

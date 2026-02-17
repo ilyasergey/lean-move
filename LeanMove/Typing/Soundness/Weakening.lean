@@ -789,6 +789,35 @@ private lemma only_matches_empty_complete_deriv_free [Inhabited α] [DecidableEq
   | deriv _ _ _ => exact absurd hdf id
 
 -- ============================================================
+-- Helper: Regex monotonicity for extend and der
+-- ============================================================
+
+/-- Monotonicity of `extend` (∘): if re2 ⊆ re1, then extend re2 p ⊆ extend re1 p -/
+private lemma extend_mono (re1 re2 : Regex PathElement) (p : Path)
+    (h : ∀ s, interpret_regex re2 s → interpret_regex re1 s) :
+    ∀ s, interpret_regex (re2 ∘ p) s → interpret_regex (re1 ∘ p) s := by
+  induction p generalizing re1 re2 with
+  | nil => exact h
+  | cons a p ih =>
+    apply ih
+    intro s hs
+    simp only [interpret_regex] at hs ⊢
+    obtain ⟨s1, s2, heq, h1, h2⟩ := hs
+    exact ⟨s1, s2, heq, h s1 h1, h2⟩
+
+/-- Monotonicity of `der`: if re2 ⊆ re1, then der re2 p ⊆ der re1 p -/
+private lemma der_mono (re1 re2 : Regex PathElement) (p : Path)
+    (h : ∀ s, interpret_regex re2 s → interpret_regex re1 s) :
+    ∀ s, interpret_regex (der re2 p) s → interpret_regex (der re1 p) s := by
+  induction p generalizing re1 re2 with
+  | nil => exact h
+  | cons a p ih =>
+    apply ih
+    intro s hs
+    simp only [interpret_regex] at hs ⊢
+    exact h (a :: s) hs
+
+-- ============================================================
 -- Helper: check_outbound weakening
 -- ============================================================
 
@@ -818,6 +847,136 @@ private lemma check_outbound_weaken (σ : Aref → Aref) (peL peE : PathEnv)
   apply only_matches_empty_complete_deriv_free _ (simplify_deriv_free _)
   intro s hs
   exact hE_only_empty s ((simplify_preserves_semantics (peE.paths (σ r, σ v)) s).mp hs)
+
+-- ============================================================
+-- Helper: extending σ with a fresh ref mapping
+-- ============================================================
+
+/-- Extend σ with t ↦ t' -/
+private abbrev extendSubst (σ : Aref → Aref) (t t' : Aref) : Aref → Aref :=
+  fun r => if r = t then t' else σ r
+
+/-- extendSubst is identity on non-refid when t is a refid -/
+private lemma extendSubst_id (σ : Aref → Aref) (t t' : Aref)
+    (hid : ∀ r, (∀ n, r ≠ .refid n) → σ r = r)
+    (ht_refid : ∃ n, t = .refid n) :
+    ∀ r, (∀ n, r ≠ .refid n) → extendSubst σ t t' r = r := by
+  intro r hr
+  obtain ⟨n, hn⟩ := ht_refid
+  have hrt : r ≠ t := by subst hn; exact fun h => hr n h
+  simp only [extendSubst, if_neg hrt]
+  exact hid r hr
+
+/-- VarEnvSubstEquiv is preserved by extendSubst when t doesn't appear in varEnv refs -/
+private lemma VarEnvSubstEquiv_extend (σ : Aref → Aref) (t t' : Aref)
+    (ve1 ve2 : VarEnv)
+    (hve : VarEnvSubstEquiv σ ve1 ve2)
+    (ht_fresh_ve : ∀ x bt s bk ms, lookup ve1 x = some (.validVar, .ref bt s bk, ms) → s ≠ t) :
+    VarEnvSubstEquiv (extendSubst σ t t') ve1 ve2 := by
+  unfold VarEnvSubstEquiv at hve ⊢
+  intro k; specialize hve k
+  cases hk1 : lookup ve1 k with
+  | none =>
+    simp only [hk1] at hve ⊢
+    cases hk2 : lookup ve2 k with
+    | none => simp only [hk2] at hve ⊢
+    | some _ => simp only [hk2] at hve
+  | some val1 =>
+    obtain ⟨isv1, τ1, ms1⟩ := val1
+    simp only [hk1] at hve ⊢
+    cases hk2 : lookup ve2 k with
+    | none => simp only [hk2] at hve
+    | some val2 =>
+      obtain ⟨isv2, τ2, ms2⟩ := val2
+      simp only [hk2] at hve ⊢
+      cases isv1 <;> cases isv2 <;> try exact hve
+      -- Only validVar/validVar case remains
+      obtain ⟨hτ, hms⟩ := hve
+      refine ⟨?_, hms⟩
+      cases τ1 with
+      | basic _ => exact hτ
+      | ref bt s bk =>
+        simp only [applySubstMoveType] at hτ ⊢
+        have hst : s ≠ t := ht_fresh_ve k bt s bk ms1 hk1
+        simp only [extendSubst, if_neg hst]; exact hτ
+
+/-- SiteEnvSubstEquiv for insert of ref type with extendSubst -/
+private lemma SiteEnvSubstEquiv_extend_insert_ref (σ : Aref → Aref) (t t' : Aref)
+    (se1 se2 : SiteEnv) (a : Site) (τ : BasicMoveType) (bk : BorrowingKind)
+    (hse : SiteEnvSubstEquiv σ se1 se2)
+    (ht_fresh_se : ∀ k bt r bk, lookup se1 k = some (.ref bt r bk) → r ≠ t) :
+    SiteEnvSubstEquiv (extendSubst σ t t')
+      (insert se1 a (.ref τ t bk))
+      (insert se2 a (.ref τ t' bk)) := by
+  unfold SiteEnvSubstEquiv at hse ⊢
+  intro k
+  by_cases hka : k = a
+  · subst hka; simp only [lookup_insert_same, applySubstMoveType, extendSubst]
+    simp
+  · rw [lookup_insert_ne _ _ _ _ hka, lookup_insert_ne _ _ _ _ hka]
+    specialize hse k
+    cases hk1 : lookup se1 k with
+    | none =>
+      simp only [hk1] at hse ⊢
+      cases hk2 : lookup se2 k with
+      | none => simp only [hk2] at hse ⊢
+      | some _ => simp only [hk2] at hse
+    | some τk =>
+      simp only [hk1] at hse ⊢
+      cases hk2 : lookup se2 k with
+      | none => simp only [hk2] at hse
+      | some τk2 =>
+        simp only [hk2] at hse ⊢
+        cases τk with
+        | basic bt => simp only [applySubstMoveType]; exact hse
+        | ref bt r bk' =>
+          simp only [applySubstMoveType] at hse ⊢
+          have hrt : r ≠ t := ht_fresh_se k bt r bk' hk1
+          simp only [extendSubst, if_neg hrt]
+          exact hse
+
+/-- extendSubst is injective on extended refs when t' is fresh in env -/
+private lemma extendSubst_injective (σ : Aref → Aref) (t t' : Aref) (refs : List Aref)
+    (hinj : ∀ u v, u ∈ refs → v ∈ refs → σ u = σ v → u = v)
+    (ht_not_in : t ∉ refs)
+    (ht'_not_in_mapped : t' ∉ refs.map σ) :
+    ∀ u v, u ∈ (if t ∉ refs then t :: refs else refs) →
+           v ∈ (if t ∉ refs then t :: refs else refs) →
+           extendSubst σ t t' u = extendSubst σ t t' v → u = v := by
+  rw [if_pos ht_not_in]
+  intro u v hu hv heq
+  rcases List.mem_cons.mp hu with hut | hu'
+  · -- hut : u = t
+    rcases List.mem_cons.mp hv with hvt | hv'
+    · exact hut.trans hvt.symm
+    · have hvne : v ≠ t := fun h => ht_not_in (h ▸ hv')
+      have h1 : extendSubst σ t t' u = t' := by rw [hut]; simp [extendSubst]
+      have h2 : extendSubst σ t t' v = σ v := by simp only [extendSubst, if_neg hvne]
+      rw [h1, h2] at heq
+      exact absurd (heq ▸ List.mem_map_of_mem (f := σ) hv') ht'_not_in_mapped
+  · -- hu' : u ∈ refs
+    have hune : u ≠ t := fun h => ht_not_in (h ▸ hu')
+    rcases List.mem_cons.mp hv with hvt | hv'
+    · -- hvt : v = t
+      have h1 : extendSubst σ t t' u = σ u := by simp only [extendSubst, if_neg hune]
+      have h2 : extendSubst σ t t' v = t' := by rw [hvt]; simp [extendSubst]
+      rw [h1, h2] at heq
+      exact absurd (heq.symm ▸ List.mem_map_of_mem (f := σ) hu') ht'_not_in_mapped
+    · -- hv' : v ∈ refs
+      have hvne : v ≠ t := fun h => ht_not_in (h ▸ hv')
+      simp only [extendSubst, if_neg hune, if_neg hvne] at heq
+      exact hinj u v hu' hv' heq
+
+/-- extendSubst preserves nonroot -/
+private lemma extendSubst_nonroot (σ : Aref → Aref) (t t' : Aref)
+    (hnonroot : ∀ r, r ≠ .root → σ r ≠ .root)
+    (ht'_ne_root : t' ≠ .root) :
+    ∀ r, r ≠ .root → extendSubst σ t t' r ≠ .root := by
+  intro r hr
+  simp only [extendSubst]
+  split
+  · exact ht'_ne_root
+  · exact hnonroot r hr
 
 -- ============================================================
 -- Main weakening theorem
@@ -1020,6 +1179,143 @@ private lemma RefsUnique_addFieldSites (ve : VarEnv) (se : SiteEnv)
     | none => exact h
     | some bt => exact RefsUnique_insert_basic _ _ _ _ h
 
+/-- RefsUnique is preserved by inserting a ref type with a fresh aref -/
+private lemma RefsUnique_insert_fresh_ref (ve : VarEnv) (se : SiteEnv) (a : Site)
+    (τ : BasicMoveType) (t : Aref) (bk : BorrowingKind)
+    (huniq : RefsUnique ve se)
+    (ht_ne_var : ∀ x bt r bk' ms, lookup ve x = some (.validVar, .ref bt r bk', ms) → r ≠ t)
+    (ht_ne_site : ∀ s bt r bk', lookup se s = some (.ref bt r bk') → r ≠ t) :
+    RefsUnique ve (insert se a (.ref τ t bk)) := by
+  intro r; obtain ⟨hvs, hss, hvv⟩ := huniq r
+  refine ⟨fun x bt' bk' ms s bt'' bk'' hv hs => ?_,
+          fun s s' bt' bt'' bk' bk'' hne hs hs' => ?_, hvv⟩
+  · -- var-site
+    by_cases hsa : s = a
+    · rw [hsa, lookup_insert_same] at hs
+      simp only [Option.some.injEq, MoveType.ref.injEq] at hs
+      obtain ⟨-, htr, -⟩ := hs  -- htr : t = r
+      exact absurd htr.symm (ht_ne_var x bt' r bk' ms hv)
+    · rw [lookup_insert_ne _ _ _ _ hsa] at hs; exact hvs _ _ _ _ _ _ _ hv hs
+  · -- site-site
+    by_cases hsa : s = a
+    · rw [hsa, lookup_insert_same] at hs
+      simp only [Option.some.injEq, MoveType.ref.injEq] at hs
+      obtain ⟨-, htr, -⟩ := hs  -- htr : t = r
+      by_cases hsa' : s' = a
+      · exact absurd (hsa.trans hsa'.symm) hne
+      · rw [lookup_insert_ne _ _ _ _ hsa'] at hs'
+        exact absurd htr.symm (ht_ne_site s' bt'' r bk'' hs')
+    · by_cases hsa' : s' = a
+      · rw [hsa', lookup_insert_same] at hs'
+        simp only [Option.some.injEq, MoveType.ref.injEq] at hs'
+        obtain ⟨-, htr', -⟩ := hs'
+        rw [lookup_insert_ne _ _ _ _ hsa] at hs
+        exact absurd htr'.symm (ht_ne_site s bt' r bk' hs)
+      · rw [lookup_insert_ne _ _ _ _ hsa] at hs; rw [lookup_insert_ne _ _ _ _ hsa'] at hs'
+        exact hss _ _ _ _ _ _ hne hs hs'
+
+/-- RefsUnique for delete-then-insert-ref pattern (e.g., freeze, borrowField) -/
+private lemma RefsUnique_delete_insert_fresh_ref (ve : VarEnv) (se : SiteEnv) (a af : Site)
+    (τ : BasicMoveType) (t : Aref) (bk : BorrowingKind)
+    (huniq : RefsUnique ve se)
+    (ht_ne_var : ∀ x bt r bk' ms, lookup ve x = some (.validVar, .ref bt r bk', ms) → r ≠ t)
+    (ht_ne_site : ∀ s bt r bk', lookup se s = some (.ref bt r bk') → r ≠ t) :
+    RefsUnique ve (insert (delete se a) af (.ref τ t bk)) :=
+  RefsUnique_insert_fresh_ref ve (delete se a) af τ t bk
+    (RefsUnique_delete_site ve se a huniq)
+    ht_ne_var
+    (fun s bt r bk' hs => by
+      by_cases hsa : s = a
+      · subst hsa; rw [lookup_delete_same] at hs; cases hs
+      · rw [lookup_delete_ne _ _ _ hsa] at hs; exact ht_ne_site s bt r bk' hs)
+
+-- ============================================================
+-- Helper lemmas: update_with_extension characterization
+-- ============================================================
+
+/-- Characterize paths of update_with_extension when both args equal z -/
+private lemma uwe_paths_eq_eq (z x : Aref) (p : Path) (pe : PathEnv) :
+    (update_with_extension z x p pe).paths (z, z) = Regex.ε := by
+  simp [update_with_extension]
+
+/-- Characterize paths of update_with_extension when first arg ≠ z, second = z -/
+private lemma uwe_paths_ne_eq (z x : Aref) (p : Path) (pe : PathEnv) (u : Aref) (h : u ≠ z) :
+    (update_with_extension z x p pe).paths (u, z) = pe.paths (u, x) ∘ p := by
+  simp [update_with_extension, h]
+
+/-- Characterize paths of update_with_extension when first arg = z, second ≠ z -/
+private lemma uwe_paths_eq_ne (z x : Aref) (p : Path) (pe : PathEnv) (v : Aref) (h : v ≠ z) :
+    (update_with_extension z x p pe).paths (z, v) = der (pe.paths (x, v)) p := by
+  simp [update_with_extension, h]
+
+/-- Characterize paths of update_with_extension when both args ≠ z -/
+private lemma uwe_paths_ne_ne (z x : Aref) (p : Path) (pe : PathEnv) (u v : Aref)
+    (hu : u ≠ z) (hv : v ≠ z) :
+    (update_with_extension z x p pe).paths (u, v) = pe.paths (u, v) := by
+  simp [update_with_extension, hu, hv]
+
+/-- Characterize refs of update_with_extension when z is fresh -/
+private lemma uwe_refs_fresh (z x : Aref) (p : Path) (pe : PathEnv) (h : z ∉ pe.refs) :
+    (update_with_extension z x p pe).refs = z :: pe.refs := by
+  simp [update_with_extension, h]
+
+-- ============================================================
+-- Helper: path inclusion through update_with_extension
+-- ============================================================
+
+/-- Path inclusion is preserved through update_with_extension with extendSubst.
+    This handles all fresh-ref cases (copy_ref, borrowImm, borrowMut, borrowField, borrowMutField). -/
+private lemma path_inclusion_update_with_extension
+    (σ : Aref → Aref) (peL peE : PathEnv) (t t' x : Aref) (p : Path)
+    (hpaths : ∀ u v, u ∈ peL.refs → v ∈ peL.refs →
+      ∀ path, interpret_regex (peE.paths (σ u, σ v)) path → interpret_regex (peL.paths (u, v)) path)
+    (ht_fresh : t ∉ peL.refs)
+    (ht'_not_mapped : t' ∉ peL.refs.map σ)
+    (hx_mem : x ∈ peL.refs) :
+    ∀ u v, u ∈ (update_with_extension t x p peL).refs →
+           v ∈ (update_with_extension t x p peL).refs →
+      ∀ path, interpret_regex ((update_with_extension t' (σ x) p peE).paths
+                (extendSubst σ t t' u, extendSubst σ t t' v)) path →
+              interpret_regex ((update_with_extension t x p peL).paths (u, v)) path := by
+  intro u v hu hv pth hinterp
+  rw [uwe_refs_fresh _ _ _ _ ht_fresh] at hu hv
+  -- Derive membership and inequality facts
+  by_cases hut : u = t
+  · by_cases hvt : v = t
+    · -- Case 1: u = t, v = t → both sides are ε
+      rw [hut, hvt] at hinterp ⊢
+      simp only [extendSubst, ite_true] at hinterp
+      rw [uwe_paths_eq_eq] at hinterp
+      rw [uwe_paths_eq_eq]
+      exact hinterp
+    · -- Case 2: u = t, v ≠ t → der monotonicity
+      have hv' : v ∈ peL.refs := (List.mem_cons.mp hv).resolve_left hvt
+      have hσv_ne : σ v ≠ t' := by
+        intro h; exact ht'_not_mapped (h ▸ List.mem_map_of_mem (f := σ) hv')
+      rw [hut] at hinterp ⊢
+      simp only [extendSubst, ite_true, if_neg hvt] at hinterp
+      rw [uwe_paths_eq_ne _ _ _ _ _ hσv_ne] at hinterp
+      rw [uwe_paths_eq_ne _ _ _ _ _ hvt]
+      exact der_mono _ _ p (hpaths x v hx_mem hv') pth hinterp
+  · have hu' : u ∈ peL.refs := (List.mem_cons.mp hu).resolve_left hut
+    have hσu_ne : σ u ≠ t' := by
+      intro h; exact ht'_not_mapped (h ▸ List.mem_map_of_mem (f := σ) hu')
+    by_cases hvt : v = t
+    · -- Case 3: u ≠ t, v = t → extend monotonicity
+      rw [hvt] at hinterp ⊢
+      simp only [extendSubst, if_neg hut, ite_true] at hinterp
+      rw [uwe_paths_ne_eq _ _ _ _ _ hσu_ne] at hinterp
+      rw [uwe_paths_ne_eq _ _ _ _ _ hut]
+      exact extend_mono _ _ p (hpaths u x hu' hx_mem) pth hinterp
+    · -- Case 4: u ≠ t, v ≠ t → direct from original
+      have hv' : v ∈ peL.refs := (List.mem_cons.mp hv).resolve_left hvt
+      have hσv_ne : σ v ≠ t' := by
+        intro h; exact ht'_not_mapped (h ▸ List.mem_map_of_mem (f := σ) hv')
+      simp only [extendSubst, if_neg hut, if_neg hvt] at hinterp
+      rw [uwe_paths_ne_ne _ _ _ _ _ _ hσu_ne hσv_ne] at hinterp
+      rw [uwe_paths_ne_ne _ _ _ _ _ _ hut hvt]
+      exact hpaths u v hu' hv' pth hinterp
+
 /-- Weakening: if a statement type-checks under envL, and envL.subsumes env,
     then it also type-checks under env.
     Requires both environments to be well-formed and refs tracked (always holds in practice). -/
@@ -1171,12 +1467,7 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
       · exact var_tracked_update_valid_from_site _ _ _ _ _ _ _ hlook_a hsite_tracked hvar_tracked
       · exact RefsUnique_assign_from_site _ _ _ _ _ _ hlook_a huniq
       · exact hroot
-  -- ==================== Cases with pathEnv changes (sorry for now) ====================
-  | let_bind_copy_ref => sorry
-  | let_bind_borrowImm => sorry
-  | let_bind_borrowMut => sorry
-  | let_bind_borrowField => sorry
-  | let_bind_borrowMutField => sorry
+  -- ==================== Cases with pathEnv changes =============================
   | let_bind_readRef _ a c r _ _ _ _ hlook_a hnotIn _ ih =>
     obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
     have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
@@ -1228,7 +1519,6 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
     · exact RefsUnique_insert_basic _ _ _ _ (RefsUnique_delete_site _ _ _ huniq)
     · simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq]
       exact ⟨hroot, Ne.symm hr_ne_root⟩
-  | let_bind_freeze => sorry
   | write_ref _ a b τ r _ _ hlook_a hlook_b houtbound _ ih =>
     obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
     have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
@@ -1286,7 +1576,6 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
     · exact RefsUnique_delete_site _ _ _ (RefsUnique_delete_site _ _ _ huniq)
     · simp only [garbage_collect, List.mem_filter, decide_eq_true_eq]
       exact ⟨hroot, Ne.symm hr_ne_root⟩
-  | var_assign_valid => sorry
   | release _ a _ r _ _ _ hlook_a _ ih =>
     obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
     have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
@@ -1338,6 +1627,13 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
     · exact RefsUnique_delete_site _ _ _ huniq
     · simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq]
       exact ⟨hroot, Ne.symm hr_ne_root⟩
+  | let_bind_copy_ref => sorry
+  | let_bind_borrowImm => sorry
+  | let_bind_borrowMut => sorry
+  | let_bind_borrowField => sorry
+  | let_bind_borrowMutField => sorry
+  | let_bind_freeze => sorry
+  | var_assign_valid => sorry
   | call => sorry
   -- ==================== Complex non-pathEnv cases ====================
   | let_bind_pack _ _ _ _ _ _ _ hnotIn hft hfc hfi _ ih =>

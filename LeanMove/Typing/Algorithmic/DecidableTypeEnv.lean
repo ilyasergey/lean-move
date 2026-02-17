@@ -173,9 +173,7 @@ def TypeEnvDec.varRefsUnique_bool (ted : TypeEnvDec) : Bool :=
 def TypeEnvDec.wellFormed_bool (ted : TypeEnvDec) : Bool :=
   ted.pathEnv.wellFormed_bool &&
   SiteEnv.refsNotRoot_bool ted.siteEnv &&
-  VarEnv.refsNotRoot_bool ted.varEnv &&
-  ted.varRefsTracked_bool &&
-  ted.varRefsUnique_bool
+  VarEnv.refsNotRoot_bool ted.varEnv
 
 /-- Boolean well-formedness check for all entries in a LabelEnvDec -/
 def LabelEnvDec.allWellFormed_bool (led : LabelEnvDec) : Bool :=
@@ -335,7 +333,7 @@ theorem TypeEnvDec.wellFormed_bool_sound (ted : TypeEnvDec) :
     ted.wellFormed_bool = true → TypeEnv.WellFormed ted.toTypeEnv := by
   intro h
   simp only [wellFormed_bool, Bool.and_eq_true] at h
-  obtain ⟨⟨⟨⟨hpe, hse⟩, hve⟩, _⟩, _⟩ := h
+  obtain ⟨⟨hpe, hse⟩, hve⟩ := h
   exact {
     pathEnv_wf := PathEnvDec.wellFormed_bool_sound ted.pathEnv hpe
     siteEnv_wf := SiteEnv_refsNotRoot_bool_sound ted.siteEnv hse
@@ -410,7 +408,7 @@ theorem check_fun_dec_lenv_non_member_from (f : FunDef) (lenvDec : LabelEnvDec) 
     have hmem := lookup_some lenvDec l ted hlenv
     have hwf := hwf_all (l, ted) hmem
     simp only [TypeEnvDec.wellFormed_bool, Bool.and_eq_true] at hwf
-    exact PathEnvDec.toPathEnv_non_member_from ted.pathEnv hwf.1.1.1.1
+    exact PathEnvDec.toPathEnv_non_member_from ted.pathEnv hwf.1.1
 
 /-- Non-member paths property (to) from a successful check_fun_dec -/
 theorem check_fun_dec_lenv_non_member_to (f : FunDef) (lenvDec : LabelEnvDec) :
@@ -431,7 +429,7 @@ theorem check_fun_dec_lenv_non_member_to (f : FunDef) (lenvDec : LabelEnvDec) :
     have hmem := lookup_some lenvDec l ted hlenv
     have hwf := hwf_all (l, ted) hmem
     simp only [TypeEnvDec.wellFormed_bool, Bool.and_eq_true] at hwf
-    exact PathEnvDec.toPathEnv_non_member_to ted.pathEnv hwf.1.1.1.1
+    exact PathEnvDec.toPathEnv_non_member_to ted.pathEnv hwf.1.1
 
 /-- Self-loops in toPathEnv are always ε, so they only accept p = [] -/
 theorem check_fun_dec_lenv_self_loop (f : FunDef) (lenvDec : LabelEnvDec) :
@@ -452,27 +450,30 @@ theorem check_fun_dec_lenv_self_loop (f : FunDef) (lenvDec : LabelEnvDec) :
     simp only [↓reduceIte, interpret_regex] at hp
     exact hp
 
+/-- Boolean check: all label env entries have tracked var refs -/
+def LabelEnvDec.allVarRefsTracked_bool (led : LabelEnvDec) : Bool :=
+  led.entries.all fun (_, ted) => ted.varRefsTracked_bool
+
+/-- Boolean check: all label env entries have unique var refs -/
+def LabelEnvDec.allVarRefsUnique_bool (led : LabelEnvDec) : Bool :=
+  led.entries.all fun (_, ted) => ted.varRefsUnique_bool
+
 /-- Var refs tracked: all valid var refs are in pathEnv.refs -/
-theorem check_fun_dec_lenv_var_tracked (f : FunDef) (lenvDec : LabelEnvDec) :
-    check_fun_dec f lenvDec = true →
+theorem lenvDec_var_tracked (lenvDec : LabelEnvDec)
+    (h : lenvDec.allVarRefsTracked_bool = true) :
     ∀ l env, lookup lenvDec.toLabelEnv l = some env →
     ∀ x bt r bk ms, lookup env.varEnv x = some (.validVar, .ref bt r bk, ms) →
     r ∈ env.pathEnv.refs := by
-  intro h l env hlookup
-  simp only [check_fun_dec, Bool.and_eq_true] at h
-  obtain ⟨hwf_all, _⟩ := h
+  intro l env hlookup
   simp only [LabelEnvDec.toLabelEnv, lookup_mapValues] at hlookup
   cases hlenv : lookup lenvDec l with
   | none => simp [hlenv] at hlookup
   | some ted =>
     simp [hlenv, Option.map] at hlookup
     subst hlookup
-    simp only [LabelEnvDec.allWellFormed_bool, List.all_eq_true] at hwf_all
+    simp only [LabelEnvDec.allVarRefsTracked_bool, List.all_eq_true] at h
     have hmem := lookup_some lenvDec l ted hlenv
-    have hwf := hwf_all (l, ted) hmem
-    simp only [TypeEnvDec.wellFormed_bool, Bool.and_eq_true] at hwf
-    obtain ⟨⟨⟨⟨_, _⟩, _⟩, hvrt⟩, _⟩ := hwf
-    -- hvrt : varRefsTracked_bool ted = true
+    have hvrt := h (l, ted) hmem
     simp only [TypeEnvDec.varRefsTracked_bool, List.all_eq_true] at hvrt
     intro x bt r bk ms hlook
     have hmem_entry := lookup_some ted.varEnv x (.validVar, .ref bt r bk, ms) hlook
@@ -484,26 +485,22 @@ theorem check_fun_dec_lenv_var_tracked (f : FunDef) (lenvDec : LabelEnvDec) :
     rw [hr'eq]; exact hr'mem
 
 /-- Var refs unique: no two distinct valid vars share a ref -/
-theorem check_fun_dec_lenv_var_unique (f : FunDef) (lenvDec : LabelEnvDec) :
-    check_fun_dec f lenvDec = true →
+theorem lenvDec_var_unique (lenvDec : LabelEnvDec)
+    (h : lenvDec.allVarRefsUnique_bool = true) :
     ∀ l env, lookup lenvDec.toLabelEnv l = some env →
     ∀ r x y bt bt' bk bk' ms ms', x ≠ y →
     lookup env.varEnv x = some (.validVar, .ref bt r bk, ms) →
     lookup env.varEnv y = some (.validVar, .ref bt' r bk', ms') → False := by
-  intro h l env hlookup
-  simp only [check_fun_dec, Bool.and_eq_true] at h
-  obtain ⟨hwf_all, _⟩ := h
+  intro l env hlookup
   simp only [LabelEnvDec.toLabelEnv, lookup_mapValues] at hlookup
   cases hlenv : lookup lenvDec l with
   | none => simp [hlenv] at hlookup
   | some ted =>
     simp [hlenv, Option.map] at hlookup
     subst hlookup
-    simp only [LabelEnvDec.allWellFormed_bool, List.all_eq_true] at hwf_all
+    simp only [LabelEnvDec.allVarRefsUnique_bool, List.all_eq_true] at h
     have hmem := lookup_some lenvDec l ted hlenv
-    have hwf := hwf_all (l, ted) hmem
-    simp only [TypeEnvDec.wellFormed_bool, Bool.and_eq_true] at hwf
-    obtain ⟨⟨⟨⟨_, _⟩, _⟩, _⟩, hvru⟩ := hwf
+    have hvru := h (l, ted) hmem
     -- hvru : varRefsUnique_bool ted = true
     -- All-pairs check: for any two valid-var ref entries, either same key or different ref
     unfold TypeEnvDec.varRefsUnique_bool at hvru
