@@ -239,6 +239,21 @@ def check_unpack_fields_exist (fields : List (Field × Site)) (fentries : AssocM
     | some _ => true
     | none => false
 
+/-- Count the number of reference-typed returns in a list of ParamTypes. -/
+def countRefReturns (rets : List ParamType) : Nat :=
+  rets.foldl (fun acc pt => match pt.isRefMut with | some _ => acc + 1 | none => acc) 0
+
+/-- Generate a list of fresh refs for reference-typed outputs.
+    Allocates sequential refids starting from nextFreshRefInEnv. -/
+def generateFreshRefs (env : TypeEnv) (rets : List ParamType) : List Aref :=
+  let start := getRefId (nextFreshRefInEnv env)
+  let n := countRefReturns rets
+  (List.range n).map fun i => .refid (start + i)
+
+/-- Boolean check for all_refs_fresh_in_env. -/
+def all_refs_fresh_in_env_bool (env : TypeEnv) (refs : List Aref) : Bool :=
+  refs.all (fun r => freshRefInEnvBool r env)
+
 /-- Algorithmic type checking for statements.
     Returns the output TypeEnv if type checking succeeds, None otherwise. -/
 def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType : MoveType) : Option TypeEnv :=
@@ -463,11 +478,14 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType : MoveType)
       match lookup env.funEnv fnName with
       | some ⟨params, rets⟩ =>
         if types_conform_bool env.siteEnv bs params &&
-           types_conform_bool env.siteEnv as rets &&
            check_mutable_inputs_isolated_bool env bs &&
            check_mutable_inputs_have_outbound_bool env bs then
-          let env' := call_connect_inputs_outputs env as bs
-          check_stmt lenv env' cont retType
+          let outRefs := generateFreshRefs env rets
+          match populate_call_outputs env as rets outRefs with
+          | some env' =>
+            let env'' := call_connect_inputs_outputs env' as bs
+            check_stmt lenv env'' cont retType
+          | none => none
         else none
       | none => none
     else none

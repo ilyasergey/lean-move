@@ -1470,15 +1470,22 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
         split at h
         · rename_i hcond
           simp only [Bool.and_eq_true] at hcond
-          obtain ⟨⟨⟨htc_bs, htc_as⟩, hiso⟩, houtbound⟩ := hcond
-          have hfresh' := all_fresh_sites_bool_sound env as hfresh_bool
-          have htc_bs' := types_conform_bool_sound env.siteEnv bs params htc_bs
-          have htc_as' := types_conform_bool_sound env.siteEnv as rets htc_as
-          have hiso' := check_mutable_inputs_isolated_bool_sound env bs hiso
-          have hwf' := call_connect_inputs_outputs_wf env as bs hwf hfresh'
-          apply typecheck_stmt.call lenv env fnName as bs params rets cont retType
-            hfresh' hlookup_fn htc_bs' htc_as' hiso'
-          exact ih_cont _ hwf' h
+          obtain ⟨⟨htc_bs, hiso⟩, houtbound⟩ := hcond
+          -- Handle match on populate_call_outputs inside the hypothesis
+          split at h
+          · rename_i env' hpop
+            have hfresh' := all_fresh_sites_bool_sound env as hfresh_bool
+            have htc_bs' := types_conform_bool_sound env.siteEnv bs params htc_bs
+            have hiso' := check_mutable_inputs_isolated_bool_sound env bs hiso
+            have hfresh_refs : all_refs_fresh_in_env env (generateFreshRefs env rets) := by sorry
+            have hnodup : List.Nodup (generateFreshRefs env rets) := by sorry
+            have hwf_env' := populate_call_outputs_wf env env' as rets (generateFreshRefs env rets) hwf hpop
+            have hwf' := call_connect_inputs_outputs_wf env' as bs hwf_env'
+            apply typecheck_stmt.call lenv env fnName as bs params rets
+              (generateFreshRefs env rets) env' cont retType
+              hlookup_fn htc_bs' hfresh' hfresh_refs hnodup hpop hiso'
+            exact ih_cont _ hwf' h
+          · simp at h
         · simp at h
     · simp at h
 

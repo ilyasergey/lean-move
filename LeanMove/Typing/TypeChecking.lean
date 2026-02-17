@@ -104,6 +104,39 @@ def addFieldSites (fentries : AssocMap Field BasicMoveType) (se : AssocMap Site 
     | some bt => insert acc fa.2 (.basic bt)
     | none => acc) se fields
 
+/-- Check that all refs in the list are fresh in the environment. -/
+def all_refs_fresh_in_env (env : TypeEnv) (refs : List Aref) : Prop :=
+  ∀ r ∈ refs, freshRefInEnvBool r env = true
+
+/-- Populate output sites in the environment with types from return type specs.
+    Basic returns: insert (.basic bt), consume no ref.
+    Reference returns: insert (.ref bt r bk), consume one ref from outRefs,
+    add r to pathEnv.refs via update_with_epsilon. -/
+def populate_call_outputs (env : TypeEnv) (as : List Site) (rets : List ParamType)
+    (outRefs : List Aref) : Option TypeEnv :=
+  match as, rets with
+  | [], [] => if outRefs.isEmpty then some env else none
+  | site :: as', ⟨bt, none⟩ :: rets' =>
+    let env' := { env with siteEnv := insert env.siteEnv site (.basic bt) }
+    populate_call_outputs env' as' rets' outRefs
+  | site :: as', ⟨bt, some true⟩ :: rets' =>
+    match outRefs with
+    | r :: outRefs' =>
+      let env' := { env with
+        siteEnv := insert env.siteEnv site (.ref bt r .siteBorrowMut)
+        pathEnv := update_with_epsilon r r env.pathEnv }
+      populate_call_outputs env' as' rets' outRefs'
+    | [] => none
+  | site :: as', ⟨bt, some false⟩ :: rets' =>
+    match outRefs with
+    | r :: outRefs' =>
+      let env' := { env with
+        siteEnv := insert env.siteEnv site (.ref bt r .siteBorrowImm)
+        pathEnv := update_with_epsilon r r env.pathEnv }
+      populate_call_outputs env' as' rets' outRefs'
+    | [] => none
+  | _, _ => none
+
 def call_connect_inputs_outputs (env: TypeEnv) (as bs: List Site) : TypeEnv :=
   -- Extract reference arefs from inputs (bs) and outputs (as)
   -- We only care about reference types; basic types are disregarded
@@ -477,13 +510,24 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       typecheck_stmt lenv env (.assign x a cont) retType
 
   -- let (a1, ..., an) = f(b1, ..., bm); cont // Call
-  | call : ∀ (lenv : LabelEnv) (env : TypeEnv) fnName (as bs: List Site) (params rets : List ParamType) cont retType,
-      all_fresh_sites env as →
+  | call : ∀ (lenv : LabelEnv) (env : TypeEnv) fnName (as bs : List Site)
+        (params rets : List ParamType) (outRefs : List Aref) (env' : TypeEnv)
+        cont retType,
+      -- Function signature
       AssocMap.lookup env.funEnv fnName = some ⟨params, rets⟩ →
+      -- Inputs conform to parameter types
       types_conform env.siteEnv bs params →
-      types_conform env.siteEnv as rets →
+      -- Output sites are fresh
+      all_fresh_sites env as →
+      -- Fresh abstract refs for reference-typed outputs
+      all_refs_fresh_in_env env outRefs →
+      List.Nodup outRefs →
+      -- Populate output sites → env'
+      populate_call_outputs env as rets outRefs = some env' →
+      -- Mutable inputs isolated
       check_mutable_inputs_isolated env bs →
-      typecheck_stmt lenv (call_connect_inputs_outputs env as bs) cont retType →
+      -- Continuation typed in env after output population + path connections
+      typecheck_stmt lenv (call_connect_inputs_outputs env' as bs) cont retType →
       typecheck_stmt lenv env (.call as fnName bs cont) retType
 
   -- release(a); cont

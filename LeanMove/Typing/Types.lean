@@ -204,8 +204,7 @@ def extend_with_star (target source : Aref) (pe: PathEnv) : PathEnv :=
   let paths' := fun (u, v) =>
     if u = target ∧ v = target then Regex.ε  else
     if v = target then Regex.concat (G (u, source)) (Regex.star (Regex.dot)) else
-    -- [TODO] [Q2] Discuss what is going on here compared ot the previous case.
-    -- if u = target then der (G (source, v)) p else
+    if u = target then Regex.concat (Regex.star (Regex.dot)) (G (source, v)) else
     G (u, v)
   let refs' := if target ∉ pe.refs then target :: pe.refs else pe.refs
   { pe with paths := paths', refs := refs' }

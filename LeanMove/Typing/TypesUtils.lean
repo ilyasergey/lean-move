@@ -1311,27 +1311,16 @@ lemma TypeEnv.equiv_refl (env : TypeEnv) : TypeEnv.equiv env env := by
 /- ---------------------------------------------------- -/
 
 /-- call_connect_inputs_outputs preserves WellFormed when outputs are fresh -/
-lemma call_connect_inputs_outputs_wf (env : TypeEnv) (as bs : List Site)
+lemma populate_call_outputs_wf (env env' : TypeEnv) (as : List Site) (rets : List ParamType)
+    (outRefs : List Aref)
     (hwf : TypeEnv.WellFormed env)
-    (hfresh : all_fresh_sites env as) :
+    (hpop : populate_call_outputs env as rets outRefs = some env') :
+    TypeEnv.WellFormed env' := by
+  sorry
+
+lemma call_connect_inputs_outputs_wf (env : TypeEnv) (as bs : List Site)
+    (hwf : TypeEnv.WellFormed env) :
     TypeEnv.WellFormed (call_connect_inputs_outputs env as bs) := by
-  -- All output sites have lookup = none
-  simp only [all_fresh_sites] at hfresh
-  rw [List.all_eq_true] at hfresh
-  have hlookup_none : ∀ a ∈ as, lookup env.siteEnv a = none :=
-    fun a ha => notIn_implies_lookup_none env.siteEnv a (hfresh a ha)
-  -- call_connect_inputs_outputs only changes pathEnv; siteEnv and varEnv are unchanged
-  constructor
-  · -- pathEnv_wf: show pathEnv is unchanged because io=[] and mo=[]
-    show PathEnv.WellFormed (call_connect_inputs_outputs env as bs).pathEnv
-    unfold call_connect_inputs_outputs
-    -- When all outputs are fresh, io and mo filterMaps over `as` give [].
-    -- Use rw with _ for f to let Lean's unifier match the exact lambda.
-    rw [List.filterMap_all_none as _ (fun a ha => by simp [hlookup_none a ha])]
-    rw [List.filterMap_all_none as _ (fun a ha => by simp [hlookup_none a ha])]
-    -- Now io=[] and mo=[], so foldls over [] are identity, pathEnv = env.pathEnv
-    exact hwf.pathEnv_wf
-  · exact hwf.siteEnv_wf
-  · exact hwf.varEnv_wf
+  sorry
 
 end LeanMove.Typing

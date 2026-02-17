@@ -241,12 +241,13 @@ private theorem inv_ret
 
 private theorem inv_call
     (h : typecheck_stmt lenv env (.call results fname args cont) retType) :
-    ∃ params rets,
+    ∃ params rets outRefs env',
       lookup env.funEnv fname = some ⟨params, rets⟩ ∧
-      typecheck_stmt lenv (call_connect_inputs_outputs env results args) cont retType :=
+      populate_call_outputs env results rets outRefs = some env' ∧
+      typecheck_stmt lenv (call_connect_inputs_outputs env' results args) cont retType :=
   match h with
-  | .call _ _ _ _ _ params rets _ _ _ hfun _ _ _ hcont =>
-    ⟨params, rets, hfun, hcont⟩
+  | .call _ _ _ _ _ params rets outRefs env' _ _ hfun _ _ _ _ hpop _ hcont =>
+    ⟨params, rets, outRefs, env', hfun, hpop, hcont⟩
 
 private theorem inv_unpack
     (h : typecheck_stmt lenv env (.unpack fields src cont) retType) :
