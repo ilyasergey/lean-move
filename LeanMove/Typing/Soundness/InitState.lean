@@ -549,6 +549,13 @@ structure SoundnessAssumptions (f : FunDef) (lenv : LabelEnv) (heap : Heap) (arg
     lookup env.varEnv x = some (.validVar, .ref bt r bk, ms) →
     lookup env.varEnv y = some (.validVar, .ref bt' r bk', ms') → False
 
+  /-- All label environment entries have the same funEnv.
+      Since funEnv never changes during execution or type checking, all environments
+      in lenv should share the same function signature table. -/
+  lenv_funEnv_consistent : ∀ l1 l2 env1 env2,
+    lookup lenv l1 = some env1 → lookup lenv l2 = some env2 →
+    env1.funEnv = env2.funEnv
+
   /-- Each argument matches its declared parameter type.
       For basic params: HasType v bt.
       For ref params: the arg is a .ref loc path, and the heap has a well-typed value there. -/
@@ -653,7 +660,9 @@ def SoundnessAssumptions.checkDecidable (f : FunDef) (lenvDec : LabelEnvDec)
      match AssocMap.lookup lenvDec block.label with
      | some ted => lookup_equiv_bool ted.varEnv (init_fun_varEnv f)
      | none => true
-   | none => true)
+   | none => true) &&
+  -- lenv_funEnvConsistent: all lenv entries share the same funEnv
+  LabelEnvDec.checkFunEnvConsistent lenvDec
 
 -- Helper: if some entry has a matching key, List.lookup succeeds
 private theorem any_beq_implies_list_lookup {K V : Type} [DecidableEq K]
@@ -692,26 +701,30 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     (heap : Heap) (args : List Value)
     (hcheck : SoundnessAssumptions.checkDecidable f lenvDec funEnv fte heap args = true) :
     SoundnessAssumptions f lenvDec.toLabelEnv heap args where
-  -- checkDecidable has 13 conjuncts (12 &&):
+  -- checkDecidable has 14 conjuncts (13 &&):
   -- 1:check_fun_dec 2:checkFunEnv 3:checkArgsCompatible 4:param_refs_distinct
   -- 5:param_refs_not_root 6:heap_wf 7:lenv_empty_sites 8:lenv_complete
   -- 9:allWellFormed_bool 10:allVarRefsTracked_bool 11:allVarRefsUnique_bool
-  -- 12:params_nodup 13:entry_varEnv_exact
+  -- 12:params_nodup 13:entry_varEnv_exact 14:checkFunEnvConsistent
   lenv_wf := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hcfd, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hcfd, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     exact check_fun_dec_lenv_wf f lenvDec hcfd
   lenv_var_tracked := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨_, hvrt⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨_, hvrt⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     exact lenvDec_var_tracked lenvDec hvrt
   lenv_var_unique := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨_, hvru⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨_, hvru⟩, _⟩, _⟩, _⟩ := hcheck
     exact lenvDec_var_unique lenvDec hvru
+  lenv_funEnv_consistent := by
+    simp only [checkDecidable, Bool.and_eq_true] at hcheck
+    obtain ⟨_, hfec⟩ := hcheck
+    exact LabelEnvDec.checkFunEnvConsistent_sound lenvDec hfec
   args_compatible := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hac⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hac⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     simp only [checkArgsCompatible, List.all_eq_true] at hac
     intro x τ v hmem
     have hentry := hac ((x, τ), v) hmem
@@ -729,11 +742,11 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
           exact ⟨loc, path, rfl, val, hr, hasType_bool_sound _ _ hentry⟩
   param_refs_distinct := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hd⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hd⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     exact decide_eq_true_eq.mp hd
   param_refs_not_root := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hnr⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hnr⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     simp only [List.all_eq_true] at hnr
     intro x bt r bk hmem
     have := hnr (x, .ref bt r bk) hmem
@@ -743,11 +756,11 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     | varRef _ => exact Aref.noConfusion
   params_nodup := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨_, hnd⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨_, hnd⟩, _⟩, _⟩ := hcheck
     exact decide_eq_true_eq.mp hnd
   entry_varEnv_exact := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨_, heve⟩ := hcheck
+    obtain ⟨⟨_, heve⟩, _⟩ := hcheck
     intro block env hhead hlookup
     obtain ⟨ted, hted, rfl⟩ := toLabelEnv_lookup_some lenvDec block.label env hlookup
     show LookupEquiv ted.varEnv (init_fun_varEnv f)
@@ -755,7 +768,7 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     revert heve; rw [hhead]; dsimp; rw [hted]; exact id
   lenv_paths_from_non_member := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨_, hwf⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨_, hwf⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     intro l env hlookup
     obtain ⟨ted, hted, rfl⟩ := toLabelEnv_lookup_some lenvDec l env hlookup
     simp only [LabelEnvDec.allWellFormed_bool, List.all_eq_true] at hwf
@@ -764,7 +777,7 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     exact PathEnvDec.toPathEnv_non_member_from ted.pathEnv hwf_ted.1.1
   lenv_paths_to_non_member := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨_, hwf⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨_, hwf⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     intro l env hlookup
     obtain ⟨ted, hted, rfl⟩ := toLabelEnv_lookup_some lenvDec l env hlookup
     simp only [LabelEnvDec.allWellFormed_bool, List.all_eq_true] at hwf
@@ -779,7 +792,7 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     exact hp
   heap_wf := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨_, hh⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hh⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     simp only [List.all_eq_true] at hh
     intro loc hread
     unfold Heap.read at hread
@@ -789,7 +802,7 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
       exact decide_eq_true_eq.mp (hh (loc, v) (lookup_some heap.store loc v hlookup))
   lenv_empty_sites := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨⟨_, hs⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨_, hs⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     simp only [List.all_eq_true] at hs
     intro l env hlookup s
     obtain ⟨ted, hted, rfl⟩ := toLabelEnv_lookup_some lenvDec l env hlookup
@@ -802,7 +815,7 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     simp only [AssocMap.lookup, hempty, List.lookup]
   lenv_complete := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨_, hc⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨_, hc⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     simp only [List.all_eq_true] at hc
     intro block hmem
     have hany := hc block hmem
@@ -1285,6 +1298,7 @@ theorem initState_safe (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunD
           lenv_wf := ha.lenv_wf
           lenv_var_tracked := ha.lenv_var_tracked
           lenv_var_unique := ha.lenv_var_unique
+          lenv_funEnv_eq := fun L envL h => ha.lenv_funEnv_consistent L entryLabel envL blockEnv h hlookup
           funEnv_typed := hfunEnv
           heap_loc_bound :=
             allocArgs_heap_loc_bound' heap f.params args heap' paramVarStore

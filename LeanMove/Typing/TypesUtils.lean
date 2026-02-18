@@ -883,8 +883,7 @@ lemma no_match_union [DecidableEq α] {r1 r2 : Regex α}
 /-- update_with_extension preserves WellFormed when z ≠ root and z is not a varRef.
     In practice, z is always a fresh ref from nextFreshRef (never .root or varRef). -/
 lemma update_with_extension_wellformed (z x : Aref) (path : List PathElement) (pe : PathEnv)
-    (hwf : PathEnv.WellFormed pe) (hz_not_root : z ≠ Aref.root)
-    (_ : ∀ v, z ≠ Aref.varRef v) :
+    (hwf : PathEnv.WellFormed pe) (hz_not_root : z ≠ Aref.root) :
     PathEnv.WellFormed (update_with_extension z x path pe) := by
   have hnotz : Aref.root ≠ z := fun h => hz_not_root h.symm
   constructor
@@ -946,10 +945,10 @@ lemma update_with_extension_wellformed (z x : Aref) (path : List PathElement) (p
 
 /-- update_with_epsilon preserves WellFormed -/
 lemma update_with_epsilon_wellformed (s t : Aref) (pe : PathEnv) (hwf : PathEnv.WellFormed pe)
-    (hs_not_root : s ≠ Aref.root) (hs_not_varRef : ∀ v, s ≠ Aref.varRef v) :
+    (hs_not_root : s ≠ Aref.root) :
     PathEnv.WellFormed (update_with_epsilon s t pe) := by
   unfold update_with_epsilon
-  exact update_with_extension_wellformed s t [] pe hwf hs_not_root hs_not_varRef
+  exact update_with_extension_wellformed s t [] pe hwf hs_not_root
 
 /-- extend_with_star preserves WellFormed when target ≠ .root -/
 lemma extend_with_star_wellformed (target source : Aref) (pe : PathEnv)
@@ -1380,6 +1379,137 @@ lemma garbage_collect_paths_to_non_member (pe : PathEnv) (r : Aref)
       exact h_to u v p hv_not_in hvroot huv
 
 /- ---------------------------------------------------- -/
+/-       extend_with_star path/refs preservation         -/
+/- ---------------------------------------------------- -/
+
+/-- extend_with_star preserves paths_from_non_member_empty (requires source tracked). -/
+lemma extend_with_star_paths_from_non_member (target source : Aref) (pe : PathEnv)
+    (h_from : ∀ u v p, u ∉ pe.refs → u ≠ .root → u ≠ v → ¬interpret_regex (pe.paths (u, v)) p)
+    (hsource_tracked : source ∈ pe.refs ∨ source = target) :
+    ∀ u v p, u ∉ (extend_with_star target source pe).refs → u ≠ .root → u ≠ v →
+    ¬interpret_regex ((extend_with_star target source pe).paths (u, v)) p := by
+  have htarget_mem : target ∈ (extend_with_star target source pe).refs := by
+    simp only [extend_with_star]
+    by_cases htin : target ∈ pe.refs
+    · simp only [htin, not_true_eq_false, ↓reduceIte]
+    · simp only [htin, not_false_eq_true, ↓reduceIte, List.mem_cons, true_or]
+  have hmem_ext : ∀ u, u ∉ (extend_with_star target source pe).refs →
+      u ≠ target ∧ u ∉ pe.refs := by
+    intro u hu
+    refine ⟨fun heq => hu (heq ▸ htarget_mem), fun hc => hu ?_⟩
+    simp only [extend_with_star]
+    by_cases htin : target ∈ pe.refs
+    · simp only [htin, not_true_eq_false, ↓reduceIte]; exact hc
+    · simp only [htin, not_false_eq_true, ↓reduceIte, List.mem_cons]; exact Or.inr hc
+  intro u v p hu huroot huv
+  obtain ⟨hu_ne_target, hu_notin⟩ := hmem_ext u hu
+  have hu_ne_source : u ≠ source := by
+    cases hsource_tracked with
+    | inl h => intro heq; exact hu_notin (heq ▸ h)
+    | inr h => intro heq; exact hu_ne_target (heq ▸ h)
+  simp only [extend_with_star]
+  rw [if_neg (fun ⟨h, _⟩ => hu_ne_target h)]
+  by_cases hvt : v = target
+  · rw [if_pos hvt]
+    intro hp; simp only [interpret_regex] at hp
+    obtain ⟨p1, _, _, h1, _⟩ := hp
+    exact h_from u source p1 hu_notin huroot hu_ne_source h1
+  · rw [if_neg hvt, if_neg hu_ne_target]
+    exact h_from u v p hu_notin huroot huv
+
+/-- extend_with_star preserves paths_to_non_member_empty (requires source tracked). -/
+lemma extend_with_star_paths_to_non_member (target source : Aref) (pe : PathEnv)
+    (h_to : ∀ u v p, v ∉ pe.refs → v ≠ .root → u ≠ v → ¬interpret_regex (pe.paths (u, v)) p)
+    (hsource_tracked : source ∈ pe.refs ∨ source = target) :
+    ∀ u v p, v ∉ (extend_with_star target source pe).refs → v ≠ .root → u ≠ v →
+    ¬interpret_regex ((extend_with_star target source pe).paths (u, v)) p := by
+  have htarget_mem : target ∈ (extend_with_star target source pe).refs := by
+    simp only [extend_with_star]
+    by_cases htin : target ∈ pe.refs
+    · simp only [htin, not_true_eq_false, ↓reduceIte]
+    · simp only [htin, not_false_eq_true, ↓reduceIte, List.mem_cons, true_or]
+  have hmem_ext : ∀ v, v ∉ (extend_with_star target source pe).refs →
+      v ≠ target ∧ v ∉ pe.refs := by
+    intro v hv
+    refine ⟨fun heq => hv (heq ▸ htarget_mem), fun hc => hv ?_⟩
+    simp only [extend_with_star]
+    by_cases htin : target ∈ pe.refs
+    · simp only [htin, not_true_eq_false, ↓reduceIte]; exact hc
+    · simp only [htin, not_false_eq_true, ↓reduceIte, List.mem_cons]; exact Or.inr hc
+  intro u v p hv hvroot huv
+  obtain ⟨hv_ne_target, hv_notin⟩ := hmem_ext v hv
+  have hv_ne_source : v ≠ source := by
+    cases hsource_tracked with
+    | inl h => intro heq; exact hv_notin (heq ▸ h)
+    | inr h => intro heq; exact hv_ne_target (heq ▸ h)
+  simp only [extend_with_star]
+  rw [if_neg (fun ⟨_, h⟩ => hv_ne_target h), if_neg hv_ne_target]
+  by_cases hut : u = target
+  · rw [if_pos hut]
+    intro hp; simp only [interpret_regex] at hp
+    obtain ⟨_, p2, _, _, h2⟩ := hp
+    exact h_to source v p2 hv_notin hvroot hv_ne_source.symm h2
+  · rw [if_neg hut]
+    exact h_to u v p hv_notin hvroot huv
+
+/-- extend_with_star preserves self_loop_only_empty. -/
+lemma extend_with_star_self_loop_only_empty (target source : Aref) (pe : PathEnv)
+    (hsl : ∀ u p, interpret_regex (pe.paths (u, u)) p → p = []) :
+    ∀ u p, interpret_regex ((extend_with_star target source pe).paths (u, u)) p → p = [] := by
+  intro u p hip
+  simp only [extend_with_star] at hip
+  by_cases hut : u = target
+  · rw [hut] at hip; simp only [and_self, ↓reduceIte, interpret_regex] at hip; exact hip
+  · rw [if_neg (fun ⟨h, _⟩ => hut h), if_neg hut, if_neg hut] at hip
+    exact hsl u p hip
+
+/-- update_with_extension preserves self_loop_only_empty. -/
+lemma update_with_extension_self_loop_only_empty (z x : Aref) (path : List PathElement)
+    (pe : PathEnv)
+    (hsl : ∀ u p, interpret_regex (pe.paths (u, u)) p → p = []) :
+    ∀ u p, interpret_regex ((update_with_extension z x path pe).paths (u, u)) p → p = [] := by
+  intro u p hip
+  simp only [update_with_extension] at hip
+  by_cases huz : u = z
+  · rw [huz] at hip; simp only [and_self, ↓reduceIte, interpret_regex] at hip; exact hip
+  · rw [if_neg (fun ⟨h, _⟩ => huz h), if_neg huz, if_neg huz] at hip
+    exact hsl u p hip
+
+/-- extend_with_star refs are monotone: old refs ⊆ new refs. -/
+lemma extend_with_star_refs_mono (target source : Aref) (pe : PathEnv) :
+    ∀ r ∈ pe.refs, r ∈ (extend_with_star target source pe).refs := by
+  intro r hr
+  simp only [extend_with_star]
+  by_cases htin : target ∈ pe.refs
+  · simp only [htin, not_true_eq_false, ↓reduceIte]; exact hr
+  · simp only [htin, not_false_eq_true, ↓reduceIte, List.mem_cons]; exact Or.inr hr
+
+/-- extend_with_star target is always in new refs. -/
+lemma extend_with_star_target_mem (target source : Aref) (pe : PathEnv) :
+    target ∈ (extend_with_star target source pe).refs := by
+  simp only [extend_with_star]
+  by_cases htin : target ∈ pe.refs
+  · simp only [htin, not_true_eq_false, ↓reduceIte]
+  · simp only [htin, not_false_eq_true, ↓reduceIte, List.mem_cons, true_or]
+
+/-- update_with_extension refs are monotone: old refs ⊆ new refs. -/
+lemma update_with_extension_refs_mono (z x : Aref) (path : List PathElement) (pe : PathEnv) :
+    ∀ r ∈ pe.refs, r ∈ (update_with_extension z x path pe).refs := by
+  intro r hr
+  simp only [update_with_extension]
+  by_cases hzin : z ∈ pe.refs
+  · simp only [hzin, not_true_eq_false, ↓reduceIte]; exact hr
+  · simp only [hzin, not_false_eq_true, ↓reduceIte, List.mem_cons]; exact Or.inr hr
+
+/-- update_with_extension z is always in new refs. -/
+lemma update_with_extension_z_mem (z x : Aref) (path : List PathElement) (pe : PathEnv) :
+    z ∈ (update_with_extension z x path pe).refs := by
+  simp only [update_with_extension]
+  by_cases hzin : z ∈ pe.refs
+  · simp only [hzin, not_true_eq_false, ↓reduceIte]
+  · simp only [hzin, not_false_eq_true, ↓reduceIte, List.mem_cons, true_or]
+
+/- ---------------------------------------------------- -/
 /-       TypeEnv.equiv lemmas                            -/
 /- ---------------------------------------------------- -/
 
@@ -1501,7 +1631,6 @@ lemma populate_call_outputs_wf (env env' : TypeEnv) (as : List Site) (rets : Lis
     (outRefs : List Aref)
     (hwf : TypeEnv.WellFormed env)
     (hout_not_root : ∀ r ∈ outRefs, r ≠ Aref.root)
-    (hout_not_varRef : ∀ r ∈ outRefs, ∀ v, r ≠ Aref.varRef v)
     (hpop : populate_call_outputs env as rets outRefs = some env') :
     TypeEnv.WellFormed env' := by
   induction as generalizing env rets outRefs with
@@ -1527,7 +1656,7 @@ lemma populate_call_outputs_wf (env env' : TypeEnv) (as : List Site) (rets : Lis
           ⟨hwf.pathEnv_wf,
            SiteEnv.insert_refs_not_root env.siteEnv site (.basic bt) hwf.siteEnv_wf trivial,
            hwf.varEnv_wf⟩
-        exact ih _ _ _ hwf_mid hout_not_root hout_not_varRef hpop
+        exact ih _ _ _ hwf_mid hout_not_root hpop
       | some b =>
         cases b with
         | true =>
@@ -1542,13 +1671,12 @@ lemma populate_call_outputs_wf (env env' : TypeEnv) (as : List Site) (rets : Lis
                   siteEnv := insert env.siteEnv site (.ref bt r .siteBorrowMut)
                   pathEnv := update_with_epsilon r r env.pathEnv } :=
               ⟨update_with_epsilon_wellformed r r env.pathEnv hwf.pathEnv_wf
-                (hout_not_root r hr_mem) (hout_not_varRef r hr_mem),
+                (hout_not_root r hr_mem),
                SiteEnv.insert_refs_not_root env.siteEnv site (.ref bt r .siteBorrowMut)
                 hwf.siteEnv_wf (hout_not_root r hr_mem),
                hwf.varEnv_wf⟩
             exact ih _ _ _ hwf_mid
               (fun r' hr' => hout_not_root r' (List.mem_cons.mpr (Or.inr hr')))
-              (fun r' hr' => hout_not_varRef r' (List.mem_cons.mpr (Or.inr hr')))
               hpop
         | false =>
           -- Immutable ref return: siteEnv + pathEnv change
@@ -1562,13 +1690,12 @@ lemma populate_call_outputs_wf (env env' : TypeEnv) (as : List Site) (rets : Lis
                   siteEnv := insert env.siteEnv site (.ref bt r .siteBorrowImm)
                   pathEnv := update_with_epsilon r r env.pathEnv } :=
               ⟨update_with_epsilon_wellformed r r env.pathEnv hwf.pathEnv_wf
-                (hout_not_root r hr_mem) (hout_not_varRef r hr_mem),
+                (hout_not_root r hr_mem),
                SiteEnv.insert_refs_not_root env.siteEnv site (.ref bt r .siteBorrowImm)
                 hwf.siteEnv_wf (hout_not_root r hr_mem),
                hwf.varEnv_wf⟩
             exact ih _ _ _ hwf_mid
               (fun r' hr' => hout_not_root r' (List.mem_cons.mpr (Or.inr hr')))
-              (fun r' hr' => hout_not_varRef r' (List.mem_cons.mpr (Or.inr hr')))
               hpop
 
 end LeanMove.Typing

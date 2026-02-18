@@ -554,4 +554,51 @@ theorem checkFunEnv_sound (funEnv : AssocMap Id FunDef) (fte : FunTypingEnv) :
     simp [hlenv] at hentry
     exact ⟨lenvDec.toLabelEnv, check_fun_dec_sound fdef lenvDec hentry⟩
 
+/- ---------------------------------------------------- -/
+/-       FunEnv consistency across lenv entries           -/
+/- ---------------------------------------------------- -/
+
+/-- Boolean check: all TypeEnvDec entries in a LabelEnvDec have the same funEnv. -/
+def LabelEnvDec.checkFunEnvConsistent (led : LabelEnvDec) : Bool :=
+  match led.entries with
+  | [] => true
+  | (_, first) :: rest =>
+    rest.all (fun (_, ted) => decide (ted.funEnv = first.funEnv))
+
+/-- Soundness: if all entries have the same funEnv, then any two lookups
+    in the converted toLabelEnv agree on funEnv. -/
+theorem LabelEnvDec.checkFunEnvConsistent_sound (led : LabelEnvDec)
+    (h : led.checkFunEnvConsistent = true) :
+    ∀ l1 l2 env1 env2,
+      lookup led.toLabelEnv l1 = some env1 →
+      lookup led.toLabelEnv l2 = some env2 →
+      env1.funEnv = env2.funEnv := by
+  intro l1 l2 env1 env2 h1 h2
+  simp only [LabelEnvDec.toLabelEnv, lookup_mapValues] at h1 h2
+  cases hl1 : lookup led l1 with
+  | none => simp [hl1] at h1
+  | some ted1 =>
+    simp [hl1, Option.map] at h1; subst h1
+    cases hl2 : lookup led l2 with
+    | none => simp [hl2] at h2
+    | some ted2 =>
+      simp [hl2, Option.map] at h2; subst h2
+      simp only [TypeEnvDec.toTypeEnv]
+      have hm1 := lookup_some led l1 ted1 hl1
+      have hm2 := lookup_some led l2 ted2 hl2
+      unfold checkFunEnvConsistent at h
+      cases hes : led.entries with
+      | nil => simp [hes] at hm1
+      | cons first rest =>
+        rw [hes] at h hm1 hm2
+        simp only [List.all_eq_true, decide_eq_true_eq] at h
+        simp only [List.mem_cons] at hm1 hm2
+        rcases hm1 with ⟨rfl, rfl⟩ | hm1
+        · rcases hm2 with ⟨rfl, rfl⟩ | hm2
+          · rfl
+          · exact (h _ hm2).symm
+        · rcases hm2 with ⟨rfl, rfl⟩ | hm2
+          · exact h _ hm1
+          · exact (h _ hm1).trans (h _ hm2).symm
+
 end LeanMove.Typing

@@ -284,13 +284,13 @@ structure ParamType where
   -- immmutable = some false
   -- not a reference = none
   isRefMut : Option Bool
-deriving Repr, Inhabited, Hashable
+deriving Repr, Inhabited, Hashable, DecidableEq
 
 -- Function table
 structure FunSig where
   params : List ParamType
   returnType : List ParamType
-deriving Repr, Inhabited, Hashable
+deriving Repr, Inhabited, Hashable, DecidableEq
 
 abbrev FunEnv := AssocMap Id FunSig
 

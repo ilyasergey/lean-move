@@ -58,12 +58,10 @@ theorem type_soundness_dec (f : FunDef) (lenvDec : LabelEnvDec)
     (hdec : SoundnessAssumptions.checkDecidable f lenvDec funEnv fte heap args = true) :
     ∀ n loc, Semantics.run n (initState f funEnv args heap) ≠ .error (.danglingRef loc) := by
   have hcd := hdec
-  unfold SoundnessAssumptions.checkDecidable at hcd
-  simp only [Bool.and_eq_true] at hcd
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hcfd, hfe⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcd
+  simp only [SoundnessAssumptions.checkDecidable, Bool.and_eq_true] at hcd
   exact type_soundness f lenvDec.toLabelEnv funEnv args heap
-    (check_fun_dec_sound f lenvDec hcfd)
-    (checkFunEnv_sound funEnv fte hfe)
+    (check_fun_dec_sound f lenvDec hcd.1.1.1.1.1.1.1.1.1.1.1.1.1)
+    (checkFunEnv_sound funEnv fte hcd.1.1.1.1.1.1.1.1.1.1.1.1.2)
     (SoundnessAssumptions.of_check f lenvDec funEnv fte heap args hdec)
 
 end LeanMove.Typing.TypeSoundness

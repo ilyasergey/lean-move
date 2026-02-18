@@ -65,6 +65,13 @@ def isEmpty {K V : Type} (self : AssocMap K V) : Bool :=
 def size {K V : Type} (self : AssocMap K V) : Nat :=
   self.entries.length
 
+instance {K V : Type} [DecidableEq K] [DecidableEq V] : DecidableEq (AssocMap K V) :=
+  fun m1 m2 =>
+    if h : m1.entries = m2.entries then
+      isTrue (by cases m1; cases m2; simp only [mk.injEq]; exact h)
+    else
+      isFalse (by cases m1; cases m2; simp only [mk.injEq]; exact h)
+
 instance {K V : Type} [Repr K] [Repr V] : Repr (AssocMap K V) where
   reprPrec m _ := "{" ++ (String.intercalate ", " (m.entries.map (fun (k, v) => reprStr k ++ " ↦ " ++ reprStr v))) ++ "}"
 

@@ -201,7 +201,7 @@ def check_mutable_inputs_isolated (env: TypeEnv) (bs: List Site) : Prop :=
         ∀ (other_bt : BasicMoveType) (other_ref : Aref) (bk : BorrowingKind),
           AssocMap.lookup env.siteEnv other_site = some (.ref other_bt other_ref bk) →
           mi_site ≠ other_site →
-            only_matches_empty (env.pathEnv.paths (mi_ref, other_ref))
+            ∀ p, interpret_regex (env.pathEnv.paths (mi_ref, other_ref)) p → p = []
 
 /-- Check that all mutable inputs have non-trivial outbound edges.
 
@@ -524,6 +524,8 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       -- Fresh abstract refs for reference-typed outputs
       all_refs_fresh_in_env env outRefs →
       List.Nodup outRefs →
+      -- outRefs are not variable references (only refids or root)
+      (∀ r ∈ outRefs, ∀ v, r ≠ .varRef v) →
       -- Populate output sites → env'
       populate_call_outputs env as rets outRefs = some env' →
       -- Mutable inputs isolated

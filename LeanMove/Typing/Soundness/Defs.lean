@@ -365,6 +365,9 @@ structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) →
     lookup envL.varEnv y = some (.validVar, .ref bt' r bk', ms') → False
 
+  -- 9e. lenv entries have the same funEnv as the current env
+  lenv_funEnv_eq : ∀ L envL, lookup lenv L = some envL → envL.funEnv = env.funEnv
+
   -- 10. All functions in funEnv are well-typed
   funEnv_typed : ∀ fname fdef,
     lookup m.frame.funEnv fname = some fdef →
