@@ -22,7 +22,9 @@ lean_lib «LeanMove» where
 lean_lib «litmus» where
   srcDir := "LeanMove/Examples/Typechecking/litmus"
   roots := #[`accepted.borrow_in_loop_fixed_ok, `accepted.deref_borrow_field_ok,
-             `accepted.call_rule_ok, `rejected.borrow_in_loop]
+             `accepted.call_rule_ok, `accepted.return_param_ref_ok,
+             `rejected.borrow_in_loop, `rejected.return_local_borrow,
+             `rejected.return_aliased_mut, `rejected.return_mut_with_outstanding_borrow]
 
 -- Build target for expressivity examples
 -- Build with: lake build expressivity
@@ -41,7 +43,10 @@ lean_lib «expressivity» where
 lean_lib «examples» where
   srcDir := "LeanMove/Examples/Typechecking"
   roots := #[`litmus.accepted.borrow_in_loop_fixed_ok, `litmus.accepted.deref_borrow_field_ok,
-             `litmus.rejected.borrow_in_loop, `litmus.accepted.call_rule_ok,
+             `litmus.accepted.call_rule_ok, `litmus.accepted.return_param_ref_ok,
+             `litmus.rejected.borrow_in_loop, `litmus.rejected.return_local_borrow,
+             `litmus.rejected.return_aliased_mut,
+             `litmus.rejected.return_mut_with_outstanding_borrow,
              `expressivity.accepted.alias_write_after_join, `expressivity.accepted.alias_writes,
              `expressivity.accepted.extension_after_call, `expressivity.accepted.extension_writes_after_join,
              `expressivity.accepted.imm_borrow_after_mut, `expressivity.accepted.multible_mutable_return_values,

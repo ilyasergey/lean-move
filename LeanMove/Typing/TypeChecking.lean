@@ -265,7 +265,7 @@ Components:
 - `lenv`: Label environment mapping labels to expected entry TypeEnvs
 - `env`: Input type environment before executing the statement
 - `Stmt`: The statement being type checked
-- `retType`: The function's return type (for ret checking)
+- `retTypes`: The function's return type (for ret checking)
 
 Key environment transformations (passed to continuations):
 ⋆ **varEnv updates**: Assignments update variable bindings; moves invalidate variables
@@ -282,72 +282,83 @@ Linear resource tracking:
 ⋆ Variables can be invalidated (moved) or preserved (copied/borrowed)
 ⋆ PathEnv tracks which variables are borrowed (via not_borrowed check)
 -/
-inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop where
+inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → Prop where
   -- ==================== Terminal Statements ====================
 
   -- skip // No-op terminal
-  | skip : ∀ (lenv : LabelEnv) (env : TypeEnv) retType,
-      typecheck_stmt lenv env .skip retType
+  | skip : ∀ (lenv : LabelEnv) (env : TypeEnv) retTypes,
+      typecheck_stmt lenv env .skip retTypes
 
   -- jump L // Unconditional jump to label L
   -- The target label's environment subsumes the current environment
   -- (envL may be a join of multiple predecessors with wider paths)
-  | jump : ∀ (lenv : LabelEnv) (env : TypeEnv) (L : Label) (envL : TypeEnv) retType,
+  | jump : ∀ (lenv : LabelEnv) (env : TypeEnv) (L : Label) (envL : TypeEnv) retTypes,
       AssocMap.lookup lenv L = some envL →
       TypeEnv.subsumes envL env →
-      typecheck_stmt lenv env (.jump L) retType
+      typecheck_stmt lenv env (.jump L) retTypes
 
   -- branch a L1 L2 // If (a) goto L1 else goto L2
   -- Each target label's environment subsumes the post-branch environment
-  | branch : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) (L1 L2 : Label) (envL1 envL2 : TypeEnv) retType,
+  | branch : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) (L1 L2 : Label) (envL1 envL2 : TypeEnv) retTypes,
       AssocMap.lookup env.siteEnv a = some (.basic .tbool) →
       AssocMap.lookup lenv L1 = some envL1 →
       AssocMap.lookup lenv L2 = some envL2 →
       TypeEnv.subsumes envL1 {env with siteEnv := delete env.siteEnv a} →
       TypeEnv.subsumes envL2 {env with siteEnv := delete env.siteEnv a} →
-      typecheck_stmt lenv env (.branch a L1 L2) retType
+      typecheck_stmt lenv env (.branch a L1 L2) retTypes
 
   -- return (a1, ..., an) // Return from function
-  -- Uses MoveType.compatible to compare return site types with the declared return type.
-  -- This allows the checker to be agnostic to exact Aref refid values in declared types.
-  -- Note: no_locals_borrowed is NOT checked here — consistent with Move VM semantics
-  -- where `return` implicitly drops all locals, releasing their borrows.
-
-  -- TODO: needs to check that all reference-typed sites are reachable from the parameters (varRef)
-  -- This might require tracking those in the PathEnv
-  | ret : ∀ (lenv : LabelEnv) (env : TypeEnv) (as : List Site) retType,
-      (∀ a, a ∈ as → ∃ τ, AssocMap.lookup env.siteEnv a = some τ ∧ MoveType.compatible τ retType) →
-      typecheck_stmt lenv env (.ret as) retType
+  -- Checks four conditions:
+  -- 1. Types conform: positional matching of returned sites against declared return types
+  -- 2. No local borrowing: returned refs don't borrow locals (no path from root to returned ref)
+  -- 3. Writability: mutable returned refs have only trivial outbound paths
+  -- 4. No aliasing: no other returned ref reaches a mutable return
+  | ret : ∀ (lenv : LabelEnv) (env : TypeEnv) (as : List Site) retTypes,
+      -- 1. Types conform
+      types_conform env.siteEnv as retTypes →
+      -- 2. No local borrowing: returned refs don't borrow locals
+      (∀ a ∈ as, ∀ bt r bk, AssocMap.lookup env.siteEnv a = some (.ref bt r bk) →
+        ∀ p, ¬interpret_regex (env.pathEnv.paths (.root, r)) p) →
+      -- 3. Writability: mutable returned refs have only trivial outbound paths
+      (∀ a ∈ as, ∀ bt r, AssocMap.lookup env.siteEnv a = some (.ref bt r .siteBorrowMut) →
+        ∀ y, y ∈ env.pathEnv.refs →
+          ∀ p, interpret_regex (env.pathEnv.paths (r, y)) p → p = []) →
+      -- 4. No aliasing: no other returned ref reaches a mutable return
+      (∀ a₁ ∈ as, ∀ bt₁ r₁, AssocMap.lookup env.siteEnv a₁ = some (.ref bt₁ r₁ .siteBorrowMut) →
+        ∀ a₂ ∈ as, a₁ ≠ a₂ →
+          ∀ bt₂ r₂ bk₂, AssocMap.lookup env.siteEnv a₂ = some (.ref bt₂ r₂ bk₂) →
+            ∀ p, ¬interpret_regex (env.pathEnv.paths (r₂, r₁)) p) →
+      typecheck_stmt lenv env (.ret as) retTypes
 
   -- abort a // Abort execution with error value
-  | abort : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) τ retType,
+  | abort : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) τ retTypes,
       AssocMap.lookup env.siteEnv a = some τ →
-      typecheck_stmt lenv env (.abort a) retType
+      typecheck_stmt lenv env (.abort a) retTypes
 
   -- ==================== Non-terminal Statements ====================
 
   -- let a = move(x); cont
-  | let_bind_move : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) x τ ms cont retType,
+  | let_bind_move : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) x τ ms cont retTypes,
       lookup env.varEnv x = some (.validVar, τ, ms) →
       not_borrowed x env →
       notIn env.siteEnv a →
       typecheck_stmt lenv
         {env with varEnv := update env.varEnv x (.invalidVar, τ, ms)
                   siteEnv := insert env.siteEnv a τ}
-        cont retType →
-      typecheck_stmt lenv env (.letBind a (.usage (.move x)) cont) retType
+        cont retTypes →
+      typecheck_stmt lenv env (.letBind a (.usage (.move x)) cont) retTypes
 
   -- let a = copy(x); cont where x has basic type
-  | let_bind_copy_val : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) x bt ms cont retType,
+  | let_bind_copy_val : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) x bt ms cont retTypes,
       lookup env.varEnv x = some (.validVar, .basic bt, ms) →
       notIn env.siteEnv a →
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.basic bt)}
-        cont retType →
-      typecheck_stmt lenv env (.letBind a (.usage (.copy x)) cont) retType
+        cont retTypes →
+      typecheck_stmt lenv env (.letBind a (.usage (.copy x)) cont) retTypes
 
   -- let a = copy(x); cont where x has reference type
-  | let_bind_copy_ref : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) x τ ms (s t : Aref) isBor cont retType,
+  | let_bind_copy_ref : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) x τ ms (s t : Aref) isBor cont retTypes,
       lookup env.varEnv x = some (.validVar, .ref τ s isBor, ms) →
       notIn env.siteEnv a →
       freshRefInEnvBool t env →
@@ -355,11 +366,11 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.ref τ t isBor)
                   pathEnv := update_with_epsilon t s env.pathEnv}
-        cont retType →
-      typecheck_stmt lenv env (.letBind a (.usage (.copy x)) cont) retType
+        cont retTypes →
+      typecheck_stmt lenv env (.letBind a (.usage (.copy x)) cont) retTypes
 
   -- let a = &x; cont (immutable borrow)
-  | let_bind_borrowImm : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) x τ ms (r : Aref) cont retType,
+  | let_bind_borrowImm : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) x τ ms (r : Aref) cont retTypes,
       lookup env.varEnv x = some (.validVar, .basic τ, ms) →
       notIn env.siteEnv a →
       freshRefInEnvBool r env →
@@ -368,11 +379,11 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
         {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowImm)
                   pathEnv := update_with_epsilon r r env.pathEnv |>
                              update_with_extension r .root [.root_to_var x]}
-        cont retType →
-      typecheck_stmt lenv env (.letBind a (.usage (.borrowImm x)) cont) retType
+        cont retTypes →
+      typecheck_stmt lenv env (.letBind a (.usage (.borrowImm x)) cont) retTypes
 
   -- let a = &mut x; cont (mutable borrow)
-  | let_bind_borrowMut : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) x τ ms (r : Aref) cont retType,
+  | let_bind_borrowMut : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) x τ ms (r : Aref) cont retTypes,
       LE.le .mutable ms →
       lookup env.varEnv x = some (.validVar, .basic τ, ms) →
       notIn env.siteEnv a →
@@ -382,19 +393,19 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
         {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowMut)
                   pathEnv := update_with_epsilon r r env.pathEnv |>
                              update_with_extension r .root [.root_to_var x]}
-        cont retType →
-      typecheck_stmt lenv env (.letBind a (.usage (.borrowMut x)) cont) retType
+        cont retTypes →
+      typecheck_stmt lenv env (.letBind a (.usage (.borrowMut x)) cont) retTypes
 
   -- let a = n; cont (integer literal)
-  | let_bind_intLit : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) (n : Nat) cont retType,
+  | let_bind_intLit : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) (n : Nat) cont retTypes,
       notIn env.siteEnv a →
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.basic .u64)}
-        cont retType →
-      typecheck_stmt lenv env (.letBind a (.intLit n) cont) retType
+        cont retTypes →
+      typecheck_stmt lenv env (.letBind a (.intLit n) cont) retTypes
 
   -- let af = &a.T::f; cont (field borrow)
-  | let_bind_borrowField : ∀ (lenv : LabelEnv) (env : TypeEnv) (a af : Site) f bt bt' isBor fentries s (rf : Aref) cont retType,
+  | let_bind_borrowField : ∀ (lenv : LabelEnv) (env : TypeEnv) (a af : Site) f bt bt' isBor fentries s (rf : Aref) cont retTypes,
       lookup env.siteEnv a = some (.ref bt s isBor) →
       bt = .trecord fentries →
       lookup fentries f = some bt' →
@@ -404,11 +415,11 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       typecheck_stmt lenv
         {env with siteEnv := insert (delete env.siteEnv a) af (.ref bt' rf isBor)
                   pathEnv := update_with_extension rf s [.field f] env.pathEnv}
-        cont retType →
-      typecheck_stmt lenv env (.letBind af (.borrowField a bt f) cont) retType
+        cont retTypes →
+      typecheck_stmt lenv env (.letBind af (.borrowField a bt f) cont) retTypes
 
   -- let af = &mut a.T::f; cont (mutable field borrow)
-  | let_bind_borrowMutField : ∀ (lenv : LabelEnv) (env : TypeEnv) (a af : Site) f bt btf fentries (s rf : Aref) cont retType,
+  | let_bind_borrowMutField : ∀ (lenv : LabelEnv) (env : TypeEnv) (a af : Site) f bt btf fentries (s rf : Aref) cont retTypes,
       lookup env.siteEnv a = some (.ref bt s .siteBorrowMut) →
       bt = .trecord fentries →
       lookup fentries f = some btf →
@@ -418,32 +429,32 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       typecheck_stmt lenv
         {env with siteEnv := insert (delete env.siteEnv a) af (.ref btf rf .siteBorrowMut)
                   pathEnv := update_with_extension rf s [.field f] env.pathEnv}
-        cont retType →
-      typecheck_stmt lenv env (.letBind af (.borrowMutField a bt f) cont) retType
+        cont retTypes →
+      typecheck_stmt lenv env (.letBind af (.borrowMutField a bt f) cont) retTypes
 
   -- let c = a ⊕ b; cont (binary operation)
-  | let_bind_binop : ∀ (lenv : LabelEnv) (env : TypeEnv) bop bt1 bt2 bt3 (a b c : Site) cont retType,
+  | let_bind_binop : ∀ (lenv : LabelEnv) (env : TypeEnv) bop bt1 bt2 bt3 (a b c : Site) cont retTypes,
       lookup env.siteEnv a = some (.basic bt1) →
       lookup env.siteEnv b = some (.basic bt2) →
       binop_type bop bt1 bt2 = some bt3 →
       notIn env.siteEnv c →
       typecheck_stmt lenv
         {env with siteEnv := insert (delete (delete env.siteEnv a) b) c (.basic bt3)}
-        cont retType →
-      typecheck_stmt lenv env (.letBind c (.binop bop a b) cont) retType
+        cont retTypes →
+      typecheck_stmt lenv env (.letBind c (.binop bop a b) cont) retTypes
 
   -- let c = *a; cont (dereference)
-  | let_bind_readRef : ∀ (lenv : LabelEnv) (env : TypeEnv) (a c : Site) r (τ : BasicMoveType) isBor cont retType,
+  | let_bind_readRef : ∀ (lenv : LabelEnv) (env : TypeEnv) (a c : Site) r (τ : BasicMoveType) isBor cont retTypes,
       lookup env.siteEnv a = some (.ref τ r isBor) →
       notIn env.siteEnv c →
       typecheck_stmt lenv
         {env with siteEnv := insert (delete env.siteEnv a) c (.basic τ)
                   pathEnv := delete_ref_node env.pathEnv r}
-        cont retType →
-      typecheck_stmt lenv env (.letBind c (.readRef a) cont) retType
+        cont retTypes →
+      typecheck_stmt lenv env (.letBind c (.readRef a) cont) retTypes
 
   -- let c = freeze a; cont
-  | let_bind_freeze : ∀ (lenv : LabelEnv) (env : TypeEnv) (a c : Site) (τ : BasicMoveType) (r r' : Aref) isBor cont retType,
+  | let_bind_freeze : ∀ (lenv : LabelEnv) (env : TypeEnv) (a c : Site) (τ : BasicMoveType) (r r' : Aref) isBor cont retTypes,
       lookup env.siteEnv a = some (.ref τ r isBor) →
       notIn env.siteEnv c →
       freshRefInEnv r' env →
@@ -451,12 +462,12 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       typecheck_stmt lenv
         {env with siteEnv := insert (delete env.siteEnv a) c (.ref τ r' .siteBorrowImm)
                   pathEnv := consume_ref_transfer env.pathEnv r r'}
-        cont retType →
-      typecheck_stmt lenv env (.letBind c (.freeze a) cont) retType
+        cont retTypes →
+      typecheck_stmt lenv env (.letBind c (.freeze a) cont) retTypes
 
   -- let b = T { f1: a1, ..., fn: an }; cont (pack)
   | let_bind_pack : ∀ (lenv : LabelEnv) (env : TypeEnv) (b : Site) (recName : Id)
-      (fields : List (Field × Site)) (fentries : AssocMap Field BasicMoveType) cont retType,
+      (fields : List (Field × Site)) (fentries : AssocMap Field BasicMoveType) cont retTypes,
       notIn env.siteEnv b →
       (∀ f a, (f, a) ∈ fields →
          ∃ (bt : BasicMoveType), lookup env.siteEnv a = some (.basic bt) ∧
@@ -465,25 +476,25 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       (∀ a₁ a₂, (∃ f₁ f₂, (f₁, a₁) ∈ fields ∧ (f₂, a₂) ∈ fields ∧ f₁ ≠ f₂) → a₁ ≠ a₂) →
       typecheck_stmt lenv
         {env with siteEnv := insert (deleteAll env.siteEnv (fields.map Prod.snd)) b (.basic (.trecord fentries))}
-        cont retType →
-      typecheck_stmt lenv env (.letBind b (.pack recName fields) cont) retType
+        cont retTypes →
+      typecheck_stmt lenv env (.letBind b (.pack recName fields) cont) retTypes
 
   -- *a = b; cont
-  | write_ref : ∀ (lenv : LabelEnv) (env : TypeEnv) a b τ (r: Aref) cont retType,
+  | write_ref : ∀ (lenv : LabelEnv) (env : TypeEnv) a b τ (r: Aref) cont retTypes,
       AssocMap.lookup env.siteEnv a = some (.ref τ r .siteBorrowMut) →
       AssocMap.lookup env.siteEnv b = some (.basic τ) →
       check_outbound env.pathEnv r (λ re ↦ only_matches_empty (simplify re)) →
       typecheck_stmt lenv
         {env with siteEnv := delete (delete env.siteEnv b) a
                   pathEnv := garbage_collect env.pathEnv r}
-        cont retType →
-      typecheck_stmt lenv env (.writeRef a b cont) retType
+        cont retTypes →
+      typecheck_stmt lenv env (.writeRef a b cont) retTypes
 
   -- x = a; cont // x is a valid var
   -- Inlines typecheck_usage.t_uborrowMut_val for the mutable borrow of x
   -- Intermediate env has: ax bound to mutable ref, pathEnv updated with borrow
   -- Final env has: ax and a consumed, r garbage collected
-  | var_assign_valid : ∀ (lenv : LabelEnv) (env : TypeEnv) x a ax τ ms (r : Aref) cont retType,
+  | var_assign_valid : ∀ (lenv : LabelEnv) (env : TypeEnv) x a ax τ ms (r : Aref) cont retTypes,
       LE.le .mutable ms →
       lookup env.varEnv x = some (.validVar, .basic τ, ms) →
       lookup env.siteEnv a = some (.basic τ) →
@@ -497,24 +508,24 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       typecheck_stmt lenv
         {env with siteEnv := delete (delete (insert env.siteEnv ax (.ref τ r .siteBorrowMut)) a) ax
                   pathEnv := garbage_collect (update_with_extension r .root [.root_to_var x] (update_with_epsilon r r env.pathEnv)) r}
-        cont retType →
-      typecheck_stmt lenv env (.assign x a cont) retType
+        cont retTypes →
+      typecheck_stmt lenv env (.assign x a cont) retTypes
 
   -- x = a; cont // x is an invalid variable
-  | var_assign_invalid : ∀ (lenv : LabelEnv) (env : TypeEnv) x a τ τ' cont retType,
+  | var_assign_invalid : ∀ (lenv : LabelEnv) (env : TypeEnv) x a τ τ' cont retTypes,
       AssocMap.lookup env.varEnv x = some (.invalidVar, τ, .mutable) →
       AssocMap.lookup env.siteEnv a = some τ' →
       MoveType.compatible τ τ' →
       typecheck_stmt lenv
         {env with varEnv := update env.varEnv x (.validVar, τ', .mutable)
                   siteEnv := delete env.siteEnv a}
-        cont retType →
-      typecheck_stmt lenv env (.assign x a cont) retType
+        cont retTypes →
+      typecheck_stmt lenv env (.assign x a cont) retTypes
 
   -- let (a1, ..., an) = f(b1, ..., bm); cont // Call
   | call : ∀ (lenv : LabelEnv) (env : TypeEnv) fnName (as bs : List Site)
         (params rets : List ParamType) (outRefs : List Aref) (env' : TypeEnv)
-        cont retType,
+        cont retTypes,
       -- Function signature
       AssocMap.lookup env.funEnv fnName = some ⟨params, rets⟩ →
       -- Inputs conform to parameter types
@@ -531,29 +542,29 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → MoveType → Prop w
       -- Mutable inputs isolated
       check_mutable_inputs_isolated env bs →
       -- Continuation typed in env after output population + path connections
-      typecheck_stmt lenv (call_connect_inputs_outputs env' as bs) cont retType →
-      typecheck_stmt lenv env (.call as fnName bs cont) retType
+      typecheck_stmt lenv (call_connect_inputs_outputs env' as bs) cont retTypes →
+      typecheck_stmt lenv env (.call as fnName bs cont) retTypes
 
   -- release(a); cont
-  | release : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) (τ : BasicMoveType) (r : Aref) isBor cont retType,
+  | release : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) (τ : BasicMoveType) (r : Aref) isBor cont retTypes,
       AssocMap.lookup env.siteEnv a = some (.ref τ r isBor) →
       typecheck_stmt lenv
         {env with siteEnv := delete env.siteEnv a
                   pathEnv := delete_ref_node env.pathEnv r}
-        cont retType →
-      typecheck_stmt lenv env (.release a cont) retType
+        cont retTypes →
+      typecheck_stmt lenv env (.release a cont) retTypes
 
   -- T { f1: a1, ..., fn: an } = b; cont
   | unpack : ∀ (lenv : LabelEnv) (env : TypeEnv) (fields : List (Field × Site)) (b : Site)
-      (fentries : AssocMap Field BasicMoveType) cont retType,
+      (fentries : AssocMap Field BasicMoveType) cont retTypes,
       AssocMap.lookup env.siteEnv b = some (.basic (.trecord fentries)) →
       (∀ (f : Field) (a : Site), (f, a) ∈ fields → AssocMap.notIn env.siteEnv a) →
       (∀ a₁ a₂, (∃ f₁ f₂, (f₁, a₁) ∈ fields ∧ (f₂, a₂) ∈ fields ∧ f₁ ≠ f₂) → a₁ ≠ a₂) →
       (∀ (f : Field) (a : Site), (f, a) ∈ fields → ∃ bt, AssocMap.lookup fentries f = some bt) →
       typecheck_stmt lenv
         {env with siteEnv := addFieldSites fentries (delete env.siteEnv b) fields}
-        cont retType →
-      typecheck_stmt lenv env (.unpack fields b cont) retType
+        cont retTypes →
+      typecheck_stmt lenv env (.unpack fields b cont) retTypes
 
 
 /- ---------------------------------------------------- -/
@@ -586,8 +597,8 @@ def build_labelEnv (blocks : List Block) (expectedEnvs : List TypeEnv) : LabelEn
   The block's body (which includes the terminal statement) is type checked
   starting from the expected environment for its label.
 -/
-def typecheck_block (lenv : LabelEnv) (block : Block) (expectedEnv : TypeEnv) (retType : MoveType) : Prop :=
-  typecheck_stmt lenv expectedEnv block.body retType
+def typecheck_block (lenv : LabelEnv) (block : Block) (expectedEnv : TypeEnv) (retTypes : List ParamType) : Prop :=
+  typecheck_stmt lenv expectedEnv block.body retTypes
 
 /--
   Compute the initial VarEnv for a function from its parameters and locals.

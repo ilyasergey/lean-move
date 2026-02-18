@@ -135,7 +135,7 @@ def s6 : Site := .site 6   -- S { f: 0 } packed struct
 -/
 def invalid_write : FunDef := {
   params := [(var_s, .basic (.trecord s_entries))]  -- s is an owned parameter
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_s_imm, type := .ref (.trecord s_entries) (.varRef var_s) .siteBorrowImm },
     { name := var_s_mut, type := .ref (.trecord s_entries) (.varRef var_s) .siteBorrowMut },

@@ -67,7 +67,7 @@ def s3 : Site := .site 3   -- borrowField s2 — ERROR
 
 def foo : FunDef := {
   params := []
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_x, type := .basic (.trecord s_entries) },
     { name := var_f_ref, type := .ref .u64 (.varRef var_x) .siteBorrowImm }

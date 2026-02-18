@@ -408,23 +408,6 @@ private lemma Aref_Compatible_subst {r r' : Aref} {σ : Aref → Aref}
       | refid _ => trivial
       | varRef _ => trivial
 
-/-- MoveType.compatible is preserved by applySubstMoveType when σ doesn't create roots -/
-private lemma MoveType_compatible_subst (σ : Aref → Aref) (τ retType : MoveType)
-    (hcompat : MoveType.compatible τ retType)
-    (hσroot : σ .root = .root)
-    (hσ : ∀ r, r ≠ .root → σ r ≠ .root) :
-    MoveType.compatible (applySubstMoveType σ τ) retType := by
-  cases τ with
-  | basic bt =>
-    simp [applySubstMoveType]
-    exact hcompat
-  | ref bt r bk =>
-    cases retType with
-    | basic _ => exact hcompat
-    | ref bt' r' bk' =>
-      simp only [MoveType.compatible, applySubstMoveType] at hcompat ⊢
-      exact ⟨hcompat.1, Aref_Compatible_subst hcompat.2.1 hσroot (hσ r), hcompat.2.2⟩
-
 -- ============================================================
 -- Helper: MoveType.compatible through baseCompatible + σ
 -- ============================================================
@@ -1658,7 +1641,7 @@ private lemma path_inclusion_consume_ref_transfer
       exact hpaths u v hu_mem hv_mem pth hinterp
 
 /-- Helper abbreviation for the modified envL in weakening IH calls -/
-private abbrev WeakenIH (lenv : LabelEnv) (envL_mod : TypeEnv) (cont : Stmt) (retType : MoveType) :=
+private abbrev WeakenIH (lenv : LabelEnv) (envL_mod : TypeEnv) (cont : Stmt) (retTypes : List ParamType) :=
   ∀ (env' : TypeEnv),
     TypeEnv.subsumes envL_mod env' →
     envL_mod.funEnv = env'.funEnv →
@@ -1673,12 +1656,12 @@ private abbrev WeakenIH (lenv : LabelEnv) (envL_mod : TypeEnv) (cont : Stmt) (re
       ¬interpret_regex (env'.pathEnv.paths (u, v)) p) →
     (∀ u p, interpret_regex (env'.pathEnv.paths (u, u)) p → p = []) →
     Aref.root ∈ envL_mod.pathEnv.refs →
-    typecheck_stmt lenv env' cont retType
+    typecheck_stmt lenv env' cont retTypes
 
 private theorem weaken_let_bind_borrowImm
     (lenv : LabelEnv) (envL env : TypeEnv)
     (a : Site) (x_var : Var) (τ : BasicMoveType) (ms : Mut) (r : Aref)
-    (cont : Stmt) (retType : MoveType)
+    (cont : Stmt) (retTypes : List ParamType)
     (hlookup : lookup envL.varEnv x_var = some (.validVar, .basic τ, ms))
     (hnotIn : notIn envL.siteEnv a)
     (hfresh : freshRefInEnvBool r envL)
@@ -1699,8 +1682,8 @@ private theorem weaken_let_bind_borrowImm
         {envL with siteEnv := insert envL.siteEnv a (.ref τ r .siteBorrowImm)
                    pathEnv := update_with_epsilon r r envL.pathEnv |>
                               update_with_extension r .root [.root_to_var x_var]}
-        cont retType) :
-    typecheck_stmt lenv env (.letBind a (.usage (.borrowImm x_var)) cont) retType := by
+        cont retTypes) :
+    typecheck_stmt lenv env (.letBind a (.usage (.borrowImm x_var)) cont) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
   have hlook_env := VarEnvSubstEquiv_lookup_valid σ _ _ _ _ _ hve hlookup
   simp only [applySubstMoveType] at hlook_env
@@ -1820,7 +1803,7 @@ private theorem weaken_let_bind_borrowImm
 private theorem weaken_let_bind_borrowMut
     (lenv : LabelEnv) (envL env : TypeEnv)
     (a : Site) (x_var : Var) (τ : BasicMoveType) (ms : Mut) (r : Aref)
-    (cont : Stmt) (retType : MoveType)
+    (cont : Stmt) (retTypes : List ParamType)
     (hle : LE.le .mutable ms)
     (hlookup : lookup envL.varEnv x_var = some (.validVar, .basic τ, ms))
     (hnotIn : notIn envL.siteEnv a)
@@ -1842,8 +1825,8 @@ private theorem weaken_let_bind_borrowMut
         {envL with siteEnv := insert envL.siteEnv a (.ref τ r .siteBorrowMut)
                    pathEnv := update_with_epsilon r r envL.pathEnv |>
                               update_with_extension r .root [.root_to_var x_var]}
-        cont retType) :
-    typecheck_stmt lenv env (.letBind a (.usage (.borrowMut x_var)) cont) retType := by
+        cont retTypes) :
+    typecheck_stmt lenv env (.letBind a (.usage (.borrowMut x_var)) cont) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
   have hlook_env := VarEnvSubstEquiv_lookup_valid σ _ _ _ _ _ hve hlookup
   simp only [applySubstMoveType] at hlook_env
@@ -1949,7 +1932,7 @@ private theorem weaken_let_bind_borrowField
     (lenv : LabelEnv) (envL env : TypeEnv)
     (a af : Site) (f : Field) (bt bt' : BasicMoveType) (isBor : BorrowingKind)
     (fentries : AssocMap Field BasicMoveType) (s : Aref) (rf : Aref)
-    (cont : Stmt) (retType : MoveType)
+    (cont : Stmt) (retTypes : List ParamType)
     (hlookup_a : lookup envL.siteEnv a = some (.ref bt s isBor))
     (hbt : bt = .trecord fentries)
     (hlookup_f : lookup fentries f = some bt')
@@ -1971,8 +1954,8 @@ private theorem weaken_let_bind_borrowField
     (ih : WeakenIH lenv
         {envL with siteEnv := insert (delete envL.siteEnv a) af (.ref bt' rf isBor)
                    pathEnv := update_with_extension rf s [.field f] envL.pathEnv}
-        cont retType) :
-    typecheck_stmt lenv env (.letBind af (.borrowField a bt f) cont) retType := by
+        cont retTypes) :
+    typecheck_stmt lenv env (.letBind af (.borrowField a bt f) cont) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
   -- Site lookup in env
   have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlookup_a
@@ -2079,7 +2062,7 @@ private theorem weaken_let_bind_borrowMutField
     (lenv : LabelEnv) (envL env : TypeEnv)
     (a af : Site) (f : Field) (bt btf : BasicMoveType)
     (fentries : AssocMap Field BasicMoveType) (s rf : Aref)
-    (cont : Stmt) (retType : MoveType)
+    (cont : Stmt) (retTypes : List ParamType)
     (hlookup_a : lookup envL.siteEnv a = some (.ref bt s .siteBorrowMut))
     (hbt : bt = .trecord fentries)
     (hlookup_f : lookup fentries f = some btf)
@@ -2101,8 +2084,8 @@ private theorem weaken_let_bind_borrowMutField
     (ih : WeakenIH lenv
         {envL with siteEnv := insert (delete envL.siteEnv a) af (.ref btf rf .siteBorrowMut)
                    pathEnv := update_with_extension rf s [.field f] envL.pathEnv}
-        cont retType) :
-    typecheck_stmt lenv env (.letBind af (.borrowMutField a bt f) cont) retType := by
+        cont retTypes) :
+    typecheck_stmt lenv env (.letBind af (.borrowMutField a bt f) cont) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
   have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlookup_a
   simp only [applySubstMoveType] at hlook_a_env
@@ -2192,7 +2175,7 @@ private theorem weaken_let_bind_borrowMutField
 private theorem weaken_let_bind_freeze
     (lenv : LabelEnv) (envL env : TypeEnv)
     (a c : Site) (τ : BasicMoveType) (r r' : Aref) (isBor : BorrowingKind)
-    (cont : Stmt) (retType : MoveType)
+    (cont : Stmt) (retTypes : List ParamType)
     (hlook : lookup envL.siteEnv a = some (.ref τ r isBor))
     (hnotIn : notIn envL.siteEnv c)
     (hfresh : freshRefInEnv r' envL)
@@ -2212,8 +2195,8 @@ private theorem weaken_let_bind_freeze
     (ih : WeakenIH lenv
         {envL with siteEnv := insert (delete envL.siteEnv a) c (.ref τ r' .siteBorrowImm)
                    pathEnv := consume_ref_transfer envL.pathEnv r r'}
-        cont retType) :
-    typecheck_stmt lenv env (.letBind c (.freeze a) cont) retType := by
+        cont retTypes) :
+    typecheck_stmt lenv env (.letBind c (.freeze a) cont) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
   -- Site lookup in env
   have hlook_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook
@@ -2348,7 +2331,7 @@ private theorem weaken_let_bind_freeze
 private theorem weaken_var_assign_valid
     (lenv : LabelEnv) (envL env : TypeEnv)
     (x : Var) (a ax : Site) (τ : BasicMoveType) (ms : Mut) (r : Aref)
-    (cont : Stmt) (retType : MoveType)
+    (cont : Stmt) (retTypes : List ParamType)
     (hms : LE.le .mutable ms)
     (hlook_x : lookup envL.varEnv x = some (.validVar, .basic τ, ms))
     (hlook_a : lookup envL.siteEnv a = some (.basic τ))
@@ -2370,8 +2353,8 @@ private theorem weaken_var_assign_valid
     (ih : WeakenIH lenv
         {envL with siteEnv := delete (delete (insert envL.siteEnv ax (.ref τ r .siteBorrowMut)) a) ax
                    pathEnv := garbage_collect (update_with_extension r .root [.root_to_var x] (update_with_epsilon r r envL.pathEnv)) r}
-        cont retType) :
-    typecheck_stmt lenv env (.assign x a cont) retType := by
+        cont retTypes) :
+    typecheck_stmt lenv env (.assign x a cont) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
   -- Var lookup in env (basic type, so σ doesn't affect it)
   have hlook_x_env := VarEnvSubstEquiv_lookup_valid σ _ _ _ _ _ hve hlook_x
@@ -2495,7 +2478,7 @@ private theorem weaken_var_assign_valid
 private theorem weaken_let_bind_intLit
     (lenv : LabelEnv) (envL env : TypeEnv)
     (a : Site) (n : Nat)
-    (cont : Stmt) (retType : MoveType)
+    (cont : Stmt) (retTypes : List ParamType)
     (hnotIn : notIn envL.siteEnv a)
     (hsub : TypeEnv.subsumes envL env)
     (hfuneq : envL.funEnv = env.funEnv)
@@ -2511,8 +2494,8 @@ private theorem weaken_let_bind_intLit
     (hroot : Aref.root ∈ envL.pathEnv.refs)
     (ih : WeakenIH lenv
         {envL with siteEnv := insert envL.siteEnv a (.basic .u64)}
-        cont retType) :
-    typecheck_stmt lenv env (.letBind a (.intLit n) cont) retType := by
+        cont retTypes) :
+    typecheck_stmt lenv env (.letBind a (.intLit n) cont) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
   apply typecheck_stmt.let_bind_intLit
   · exact SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn
@@ -2534,7 +2517,7 @@ private theorem weaken_let_bind_intLit
 private theorem weaken_let_bind_copy_val
     (lenv : LabelEnv) (envL env : TypeEnv)
     (a : Site) (x : Var) (bt : BasicMoveType) (ms : Mut)
-    (cont : Stmt) (retType : MoveType)
+    (cont : Stmt) (retTypes : List ParamType)
     (hlookup : lookup envL.varEnv x = some (.validVar, .basic bt, ms))
     (hnotIn : notIn envL.siteEnv a)
     (hsub : TypeEnv.subsumes envL env)
@@ -2551,8 +2534,8 @@ private theorem weaken_let_bind_copy_val
     (hroot : Aref.root ∈ envL.pathEnv.refs)
     (ih : WeakenIH lenv
         {envL with siteEnv := insert envL.siteEnv a (.basic bt)}
-        cont retType) :
-    typecheck_stmt lenv env (.letBind a (.usage (.copy x)) cont) retType := by
+        cont retTypes) :
+    typecheck_stmt lenv env (.letBind a (.usage (.copy x)) cont) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
   have hlook_env := VarEnvSubstEquiv_lookup_valid σ _ _ _ _ _ hve hlookup
   simp only [applySubstMoveType] at hlook_env
@@ -2577,7 +2560,7 @@ private theorem weaken_let_bind_copy_val
 private theorem weaken_let_bind_move
     (lenv : LabelEnv) (envL env : TypeEnv)
     (a : Site) (x : Var) (τ : MoveType) (ms : Mut)
-    (cont : Stmt) (retType : MoveType)
+    (cont : Stmt) (retTypes : List ParamType)
     (hlookup : lookup envL.varEnv x = some (.validVar, τ, ms))
     (hnb : not_borrowed x envL)
     (hnotIn : notIn envL.siteEnv a)
@@ -2596,8 +2579,8 @@ private theorem weaken_let_bind_move
     (ih : WeakenIH lenv
         {envL with varEnv := update envL.varEnv x (.invalidVar, τ, ms)
                    siteEnv := insert envL.siteEnv a τ}
-        cont retType) :
-    typecheck_stmt lenv env (.letBind a (.usage (.move x)) cont) retType := by
+        cont retTypes) :
+    typecheck_stmt lenv env (.letBind a (.usage (.move x)) cont) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
   have hlook_env := VarEnvSubstEquiv_lookup_valid σ _ _ _ _ _ hve hlookup
   have hτ_nr := hwfL.varEnv_wf _ _ hlookup
@@ -2630,7 +2613,7 @@ private theorem weaken_let_bind_move
 private theorem weaken_let_bind_binop
     (lenv : LabelEnv) (envL env : TypeEnv)
     (bop : Binop) (bt1 bt2 bt3 : BasicMoveType) (sa sb sc : Site)
-    (cont : Stmt) (retType : MoveType)
+    (cont : Stmt) (retTypes : List ParamType)
     (hlook_a : lookup envL.siteEnv sa = some (.basic bt1))
     (hlook_b : lookup envL.siteEnv sb = some (.basic bt2))
     (hbinop : binop_type bop bt1 bt2 = some bt3)
@@ -2649,8 +2632,8 @@ private theorem weaken_let_bind_binop
     (hroot : Aref.root ∈ envL.pathEnv.refs)
     (ih : WeakenIH lenv
         {envL with siteEnv := insert (delete (delete envL.siteEnv sa) sb) sc (.basic bt3)}
-        cont retType) :
-    typecheck_stmt lenv env (.letBind sc (.binop bop sa sb) cont) retType := by
+        cont retTypes) :
+    typecheck_stmt lenv env (.letBind sc (.binop bop sa sb) cont) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
   have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
   have hlook_b_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_b
@@ -2679,7 +2662,7 @@ private theorem weaken_let_bind_binop
 private theorem weaken_var_assign_invalid
     (lenv : LabelEnv) (envL env : TypeEnv)
     (x : Var) (a : Site) (τ τ' : MoveType)
-    (cont : Stmt) (retType : MoveType)
+    (cont : Stmt) (retTypes : List ParamType)
     (hlook_x : lookup envL.varEnv x = some (.invalidVar, τ, .mutable))
     (hlook_a : lookup envL.siteEnv a = some τ')
     (hcompat : MoveType.compatible τ τ')
@@ -2698,8 +2681,8 @@ private theorem weaken_var_assign_invalid
     (ih : WeakenIH lenv
         {envL with varEnv := update envL.varEnv x (.validVar, τ', .mutable)
                    siteEnv := delete envL.siteEnv a}
-        cont retType) :
-    typecheck_stmt lenv env (.assign x a cont) retType := by
+        cont retTypes) :
+    typecheck_stmt lenv env (.assign x a cont) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
   obtain ⟨τ_env, hlook_x_env, hbc⟩ := VarEnvSubstEquiv_lookup_invalid σ _ _ _ _ _ hve hlook_x
   have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
@@ -2736,7 +2719,7 @@ private theorem weaken_var_assign_invalid
 private theorem weaken_let_bind_readRef
     (lenv : LabelEnv) (envL env : TypeEnv)
     (a c : Site) (r : Aref) (τ : BasicMoveType) (isBor : BorrowingKind)
-    (cont : Stmt) (retType : MoveType)
+    (cont : Stmt) (retTypes : List ParamType)
     (hlook_a : lookup envL.siteEnv a = some (.ref τ r isBor))
     (hnotIn : notIn envL.siteEnv c)
     (hsub : TypeEnv.subsumes envL env)
@@ -2754,8 +2737,8 @@ private theorem weaken_let_bind_readRef
     (ih : WeakenIH lenv
         {envL with siteEnv := insert (delete envL.siteEnv a) c (.basic τ)
                    pathEnv := delete_ref_node envL.pathEnv r}
-        cont retType) :
-    typecheck_stmt lenv env (.letBind c (.readRef a) cont) retType := by
+        cont retTypes) :
+    typecheck_stmt lenv env (.letBind c (.readRef a) cont) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
   have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
   simp only [applySubstMoveType] at hlook_a_env
@@ -2814,7 +2797,7 @@ private theorem weaken_let_bind_readRef
 private theorem weaken_write_ref
     (lenv : LabelEnv) (envL env : TypeEnv)
     (a b : Site) (τ : BasicMoveType) (r : Aref)
-    (cont : Stmt) (retType : MoveType)
+    (cont : Stmt) (retTypes : List ParamType)
     (hlook_a : lookup envL.siteEnv a = some (.ref τ r .siteBorrowMut))
     (hlook_b : lookup envL.siteEnv b = some (.basic τ))
     (houtbound : check_outbound envL.pathEnv r (fun re => only_matches_empty (simplify re)))
@@ -2833,8 +2816,8 @@ private theorem weaken_write_ref
     (ih : WeakenIH lenv
         {envL with siteEnv := delete (delete envL.siteEnv b) a
                    pathEnv := garbage_collect envL.pathEnv r}
-        cont retType) :
-    typecheck_stmt lenv env (.writeRef a b cont) retType := by
+        cont retTypes) :
+    typecheck_stmt lenv env (.writeRef a b cont) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
   have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
   have hlook_b_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_b
@@ -2899,7 +2882,7 @@ private theorem weaken_write_ref
 private theorem weaken_release
     (lenv : LabelEnv) (envL env : TypeEnv)
     (a : Site) (τ : BasicMoveType) (r : Aref) (isBor : BorrowingKind)
-    (cont : Stmt) (retType : MoveType)
+    (cont : Stmt) (retTypes : List ParamType)
     (hlook_a : lookup envL.siteEnv a = some (.ref τ r isBor))
     (hsub : TypeEnv.subsumes envL env)
     (hfuneq : envL.funEnv = env.funEnv)
@@ -2916,8 +2899,8 @@ private theorem weaken_release
     (ih : WeakenIH lenv
         {envL with siteEnv := delete envL.siteEnv a
                    pathEnv := delete_ref_node envL.pathEnv r}
-        cont retType) :
-    typecheck_stmt lenv env (.release a cont) retType := by
+        cont retTypes) :
+    typecheck_stmt lenv env (.release a cont) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
   have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
   simp only [applySubstMoveType] at hlook_a_env
@@ -2976,7 +2959,7 @@ private theorem weaken_release
 private theorem weaken_let_bind_copy_ref
     (lenv : LabelEnv) (envL env : TypeEnv)
     (a : Site) (x : Var) (τ : BasicMoveType) (ms : Mut) (s t : Aref) (isBor : BorrowingKind)
-    (cont : Stmt) (retType : MoveType)
+    (cont : Stmt) (retTypes : List ParamType)
     (hlookup : lookup envL.varEnv x = some (.validVar, .ref τ s isBor, ms))
     (hnotIn : notIn envL.siteEnv a)
     (hfresh : freshRefInEnvBool t envL)
@@ -2996,8 +2979,8 @@ private theorem weaken_let_bind_copy_ref
     (ih : WeakenIH lenv
         {envL with siteEnv := insert envL.siteEnv a (.ref τ t isBor)
                    pathEnv := update_with_epsilon t s envL.pathEnv}
-        cont retType) :
-    typecheck_stmt lenv env (.letBind a (.usage (.copy x)) cont) retType := by
+        cont retTypes) :
+    typecheck_stmt lenv env (.letBind a (.usage (.copy x)) cont) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
   have hlook_env := VarEnvSubstEquiv_lookup_valid σ _ _ _ _ _ hve hlookup
   simp only [applySubstMoveType] at hlook_env
@@ -3092,7 +3075,7 @@ private theorem weaken_let_bind_copy_ref
 private theorem weaken_let_bind_pack
     (lenv : LabelEnv) (envL env : TypeEnv)
     (b : Site) (recName : Id) (fields : List (Field × Site)) (fentries : AssocMap Field BasicMoveType)
-    (cont : Stmt) (retType : MoveType)
+    (cont : Stmt) (retTypes : List ParamType)
     (hnotIn : notIn envL.siteEnv b)
     (hft : ∀ f a, (f, a) ∈ fields →
        ∃ (bt : BasicMoveType), lookup envL.siteEnv a = some (.basic bt) ∧
@@ -3113,8 +3096,8 @@ private theorem weaken_let_bind_pack
     (hroot : Aref.root ∈ envL.pathEnv.refs)
     (ih : WeakenIH lenv
         {envL with siteEnv := insert (deleteAll envL.siteEnv (fields.map Prod.snd)) b (.basic (.trecord fentries))}
-        cont retType) :
-    typecheck_stmt lenv env (.letBind b (.pack recName fields) cont) retType := by
+        cont retTypes) :
+    typecheck_stmt lenv env (.letBind b (.pack recName fields) cont) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
   apply typecheck_stmt.let_bind_pack
   · exact SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn
@@ -3145,7 +3128,7 @@ private theorem weaken_let_bind_pack
 private theorem weaken_unpack
     (lenv : LabelEnv) (envL env : TypeEnv)
     (fields : List (Field × Site)) (b : Site) (fentries : AssocMap Field BasicMoveType)
-    (cont : Stmt) (retType : MoveType)
+    (cont : Stmt) (retTypes : List ParamType)
     (hlook_b : lookup envL.siteEnv b = some (.basic (.trecord fentries)))
     (hfresh : ∀ (f : Field) (a : Site), (f, a) ∈ fields → notIn envL.siteEnv a)
     (hinj_f : ∀ a₁ a₂, (∃ f₁ f₂, (f₁, a₁) ∈ fields ∧ (f₂, a₂) ∈ fields ∧ f₁ ≠ f₂) → a₁ ≠ a₂)
@@ -3164,8 +3147,8 @@ private theorem weaken_unpack
     (hroot : Aref.root ∈ envL.pathEnv.refs)
     (ih : WeakenIH lenv
         {envL with siteEnv := addFieldSites fentries (delete envL.siteEnv b) fields}
-        cont retType) :
-    typecheck_stmt lenv env (.unpack fields b cont) retType := by
+        cont retTypes) :
+    typecheck_stmt lenv env (.unpack fields b cont) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
   have hlook_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_b
   simp only [applySubstMoveType] at hlook_env
@@ -4982,7 +4965,7 @@ private theorem weaken_call
     (lenv : LabelEnv) (envL env : TypeEnv)
     (fnName : Id) (as bs : List Site) (params rets : List ParamType)
     (outRefsL : List Aref) (envL' : TypeEnv)
-    (cont : Stmt) (retType : MoveType)
+    (cont : Stmt) (retTypes : List ParamType)
     (hfunL : lookup envL.funEnv fnName = some ⟨params, rets⟩)
     (htcL : types_conform envL.siteEnv bs params)
     (hfreshSitesL : all_fresh_sites envL as)
@@ -5003,8 +4986,8 @@ private theorem weaken_call
       ¬interpret_regex (env.pathEnv.paths (u, v)) p)
     (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
     (hroot : Aref.root ∈ envL.pathEnv.refs)
-    (ih : WeakenIH lenv (call_connect_inputs_outputs envL' as bs) cont retType) :
-    typecheck_stmt lenv env (.call as fnName bs cont) retType := by
+    (ih : WeakenIH lenv (call_connect_inputs_outputs envL' as bs) cont retTypes) :
+    typecheck_stmt lenv env (.call as fnName bs cont) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths_incl⟩ := hsub
   -- Transfer preconditions to env
   have hfunE : lookup env.funEnv fnName = some ⟨params, rets⟩ := hfuneq ▸ hfunL
@@ -5053,7 +5036,7 @@ private theorem weaken_call
   have hto_E' := populate_call_outputs_paths_to_nm env envE' as rets outRefsE hpaths_to_nm hpopE
   have hfrom_E' := populate_call_outputs_paths_from_nm env envE' as rets outRefsE hpaths_from_nm hpopE
   -- Apply call rule
-  exact typecheck_stmt.call lenv env fnName as bs params rets outRefsE envE' cont retType
+  exact typecheck_stmt.call lenv env fnName as bs params rets outRefsE envE' cont retTypes
     hfunE htcE hfreshSitesE hfreshRefsE hnodupE (makeFreshRefs_not_varRef env outRefsL.length) hpopE hisoE
     (ih (call_connect_inputs_outputs envE' as bs)
       (call_connect_subsumes envL' envE' as bs
@@ -5089,8 +5072,8 @@ private theorem weaken_call
 /-- Weakening: if a statement type-checks under envL, and envL.subsumes env,
     then it also type-checks under env.
     Requires both environments to be well-formed and refs tracked (always holds in practice). -/
-theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) (retType : MoveType)
-    (htyped : typecheck_stmt lenv envL s retType)
+theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) (retTypes : List ParamType)
+    (htyped : typecheck_stmt lenv envL s retTypes)
     (hsub : TypeEnv.subsumes envL env)
     (hfuneq : envL.funEnv = env.funEnv)
     (hwfL : TypeEnv.WellFormed envL)
@@ -5103,7 +5086,7 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
     (hpaths_from_nm : ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
       ¬interpret_regex (env.pathEnv.paths (u, v)) p)
     (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = []) :
-    typecheck_stmt lenv env s retType := by
+    typecheck_stmt lenv env s retTypes := by
   have hroot : Aref.root ∈ envL.pathEnv.refs := hwfL.pathEnv_wf.root_in_refs
   induction htyped generalizing env with
   -- ==================== Terminal cases ====================
@@ -5123,15 +5106,13 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
     exact typecheck_stmt.branch lenv env _ _ _ _ _ _ hsite_env hl1 hl2
       (TypeEnv.subsumes_trans _ _ _ hs1 hdel_sub)
       (TypeEnv.subsumes_trans _ _ _ hs2 hdel_sub)
-  | ret _ _ _ hret =>
-    obtain ⟨σ, hid, _, hse, _, _, hnonroot, _⟩ := hsub
-    apply typecheck_stmt.ret
-    intro a ha
-    obtain ⟨τ, hlook, hcompat⟩ := hret a ha
-    have hlook_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook
-    refine ⟨applySubstMoveType σ τ, hlook_env, ?_⟩
-    have hσroot : σ .root = .root := hid .root (fun n h => by cases h)
-    exact MoveType_compatible_subst σ τ _ hcompat hσroot hnonroot
+  | ret _ _ _ hconf _ _ _ =>
+    obtain ⟨σ, _, _, hse, _, _, _, _⟩ := hsub
+    exact typecheck_stmt.ret lenv env _ _
+      (types_conform_SiteEnvSubstEquiv σ _ _ _ _ hse hconf)
+      (by sorry) -- no local borrowing: anti-monotone in paths
+      (by sorry) -- writability: anti-monotone in paths
+      (by sorry) -- no aliasing: anti-monotone in paths
   | abort _ _ _ _ hlook =>
     obtain ⟨σ, _, _, hse, _, _, _⟩ := hsub
     exact typecheck_stmt.abort lenv env _ _ _
@@ -5176,7 +5157,7 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
     exact weaken_let_bind_copy_ref lenv envL env a _ _ _ s t _ _ _ hlookup hnotIn hfresh ht_not_varRef
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
-  | let_bind_borrowImm envL a x_var τ ms r cont retType hlookup hnotIn hfresh hr_not_varRef _ ih =>
+  | let_bind_borrowImm envL a x_var τ ms r cont retTypes hlookup hnotIn hfresh hr_not_varRef _ ih =>
     exact weaken_let_bind_borrowImm lenv envL env a x_var τ ms r _ _
       hlookup hnotIn hfresh hr_not_varRef
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
@@ -5196,7 +5177,7 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
       hlookup_a hbt hlookup_f hnotIn hfresh hrf_not_varRef
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
-  | let_bind_freeze envL a c τ r r' isBor cont retType hlook hnotIn hfresh hr'_not_varRef _ ih =>
+  | let_bind_freeze envL a c τ r r' isBor cont retTypes hlook hnotIn hfresh hr'_not_varRef _ ih =>
     exact weaken_let_bind_freeze lenv envL env a c τ r r' isBor _ _
       hlook hnotIn hfresh hr'_not_varRef
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
@@ -5206,9 +5187,9 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
       hms hlook_x hlook_a hnotIn hfresh hr_not_varRef
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
-  | call envL fnName as bs params rets outRefsL envL' cont retType
+  | call envL fnName as bs params rets outRefsL envL' cont retTypes
       hfunL htcL hfreshSitesL hfreshRefsL hnodupL hnotVarRefL hpopL hisoL _ ih =>
-    exact weaken_call lenv envL env fnName as bs params rets outRefsL envL' cont retType
+    exact weaken_call lenv envL env fnName as bs params rets outRefsL envL' cont retTypes
       hfunL htcL hfreshSitesL hfreshRefsL hnodupL hnotVarRefL hpopL hisoL
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih

@@ -22,6 +22,7 @@ import LeanMove.Typing.TypeSoundness
 import LeanMove.Examples.Typechecking.litmus.accepted.borrow_in_loop_fixed_ok
 import LeanMove.Examples.Typechecking.litmus.accepted.deref_borrow_field_ok
 import LeanMove.Examples.Typechecking.litmus.accepted.call_rule_ok
+import LeanMove.Examples.Typechecking.litmus.accepted.return_param_ref_ok
 import LeanMove.Examples.Typechecking.expressivity.accepted.alias_writes
 import LeanMove.Examples.Typechecking.expressivity.accepted.alias_write_after_join
 import LeanMove.Examples.Typechecking.expressivity.accepted.extension_after_call
@@ -39,6 +40,9 @@ import LeanMove.Examples.Typechecking.litmus.rejected.uninitialized_var
 import LeanMove.Examples.Typechecking.litmus.rejected.deref_non_ref
 import LeanMove.Examples.Typechecking.litmus.rejected.unpack_non_record
 import LeanMove.Examples.Typechecking.litmus.rejected.borrow_field_non_ref
+import LeanMove.Examples.Typechecking.litmus.rejected.return_local_borrow
+import LeanMove.Examples.Typechecking.litmus.rejected.return_aliased_mut
+import LeanMove.Examples.Typechecking.litmus.rejected.return_mut_with_outstanding_borrow
 import LeanMove.Examples.Typechecking.expressivity.rejected.simple_dangling
 import LeanMove.Examples.Typechecking.expressivity.rejected.imm_borrow_after_mut_call_invalid
 import LeanMove.Examples.Typechecking.expressivity.rejected.imm_borrow_after_mut_fields_invalid
@@ -360,6 +364,45 @@ set_option maxRecDepth 16384 in
 private theorem subtree_t_false_no_danglingRef :
     ∀ n loc, run n (initState t empty [.bool false, .ref treeHeap.2 []] treeHeap.1) ≠ .error (.danglingRef loc) :=
   type_soundness_dec t t_lenvDec empty empty [.bool false, .ref treeHeap.2 []] treeHeap.1 (by rfl)
+
+end
+
+-- ============================================================
+-- 12. return_param_ref_ok — return reference tests
+-- ============================================================
+section
+open LeanMove.Examples.Litmus.ReturnParamRefOk
+
+-- fn_return_basic(a: u64): u64 — returns basic value, halts
+#guard (run 100 (initState fn_return_basic AssocMap.empty [.int 42])).isHalted
+
+-- Type soundness: fn_return_basic never produces a danglingRef error
+private theorem fn_return_basic_no_danglingRef :
+    ∀ n loc, run n (initState fn_return_basic AssocMap.empty [.int 42]) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec fn_return_basic fn_return_basic_lenvDec empty empty [.int 42] Heap.empty (by rfl)
+
+-- fn_return_param_ref(r: &mut u64): &mut u64 — returns moved param ref
+private def u64Heap : Heap × Loc := Heap.empty.alloc (.int 99)
+
+#guard (run 100 (initState fn_return_param_ref AssocMap.empty [.ref u64Heap.2 []] u64Heap.1)).isHalted
+
+-- Type soundness: fn_return_param_ref never produces a danglingRef error
+private theorem fn_return_param_ref_no_danglingRef :
+    ∀ n loc, run n (initState fn_return_param_ref AssocMap.empty [.ref u64Heap.2 []] u64Heap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec fn_return_param_ref fn_return_param_ref_lenvDec empty empty [.ref u64Heap.2 []] u64Heap.1 (by rfl)
+
+-- fn_return_two(r1: &mut u64, r2: &mut u64): (&mut u64, &mut u64)
+private def twoU64Heap : Heap × Loc × Loc :=
+  let (h1, l1) := Heap.empty.alloc (.int 1)
+  let (h2, l2) := h1.alloc (.int 2)
+  (h2, l1, l2)
+
+#guard (run 100 (initState fn_return_two AssocMap.empty [.ref twoU64Heap.2.1 [], .ref twoU64Heap.2.2 []] twoU64Heap.1)).isHalted
+
+-- Type soundness: fn_return_two never produces a danglingRef error
+private theorem fn_return_two_no_danglingRef :
+    ∀ n loc, run n (initState fn_return_two AssocMap.empty [.ref twoU64Heap.2.1 [], .ref twoU64Heap.2.2 []] twoU64Heap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec fn_return_two fn_return_two_lenvDec empty empty [.ref twoU64Heap.2.1 [], .ref twoU64Heap.2.2 []] twoU64Heap.1 (by rfl)
 
 end
 

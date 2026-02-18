@@ -88,7 +88,7 @@ def s11 : Site := .site 11 -- integer literal 0 for *y write
 -/
 def fn_borrow : FunDef := {
   params := [(var_b, .ref (.trecord box_entries) (.varRef var_b) .siteBorrowMut)]
-  returnType := .ref (.trecord point_entries) (.refid 4) .siteBorrowMut
+  returnType := [⟨.trecord point_entries, some true⟩]
   locals := [
     { name := var_tl, type := .ref (.trecord point_entries) (.refid 1) .siteBorrowMut }
   ]
@@ -120,7 +120,7 @@ def fn_borrow : FunDef := {
 -/
 def fn_write : FunDef := {
   params := [(var_b, .ref (.trecord box_entries) (.varRef var_b) .siteBorrowMut)]
-  returnType := .ref (.trecord point_entries) (.refid 4) .siteBorrowMut
+  returnType := [⟨.trecord point_entries, some true⟩]
   locals := [
     { name := var_tl, type := .ref (.trecord point_entries) (.refid 1) .siteBorrowMut },
     { name := var_x, type := .ref .u64 (.refid 2) .siteBorrowMut },

@@ -197,7 +197,7 @@ def s36 : Site := .site 36 -- packed S for s2_2 write
 -/
 def fields : FunDef := {
   params := [(var_p, .ref (.trecord pair_entries) r0 .siteBorrowMut)]
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_p2, type := .ref (.trecord pair_entries) (.refid 5) .siteBorrowMut },
     { name := var_s1_1, type := .ref (.trecord s_entries) (.refid 1) .siteBorrowMut },
@@ -259,7 +259,7 @@ def fields : FunDef := {
 -/
 def fields_write : FunDef := {
   params := [(var_p, .ref (.trecord pair_entries) r0 .siteBorrowMut)]
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_p2, type := .ref (.trecord pair_entries) (.refid 5) .siteBorrowMut },
     { name := var_s1_1, type := .ref (.trecord s_entries) (.refid 1) .siteBorrowMut },

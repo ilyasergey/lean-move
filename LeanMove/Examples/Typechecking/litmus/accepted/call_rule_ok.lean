@@ -69,7 +69,7 @@ def id_mut_sig : FunSig := ⟨[⟨.u64, some true⟩], [⟨.u64, some true⟩]�
 
 def fn_deref : FunDef := {
   params := [(var_r, .ref .u64 (.varRef var_r) .siteBorrowMut)]
-  returnType := .basic .u64
+  returnType := [⟨.u64, none⟩]
   locals := []
   blocks := [
     { label := "b0"
@@ -94,7 +94,7 @@ theorem fn_deref_check : check_fun_dec fn_deref fn_deref_lenvDec = true := by rf
 
 def fn_id_mut : FunDef := {
   params := [(var_r, .ref .u64 (.varRef var_r) .siteBorrowMut)]
-  returnType := .ref .u64 (.refid 0) .siteBorrowMut
+  returnType := [⟨.u64, some true⟩]
   locals := []
   blocks := [
     { label := "b0"
@@ -130,7 +130,7 @@ theorem fn_id_mut_check : check_fun_dec fn_id_mut fn_id_mut_lenvDec = true := by
 -/
 def basic_return_then_write : FunDef := {
   params := []
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_a, type := .basic .u64 },
     { name := var_m, type := .ref .u64 (.refid 0) .siteBorrowMut }
@@ -185,7 +185,7 @@ theorem basic_return_then_write_welltyped :
 -/
 def read_call_output : FunDef := {
   params := []
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_a, type := .basic .u64 },
     { name := var_m, type := .ref .u64 (.refid 0) .siteBorrowMut },

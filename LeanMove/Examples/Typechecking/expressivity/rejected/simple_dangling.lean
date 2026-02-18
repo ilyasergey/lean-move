@@ -165,7 +165,7 @@ def s9 : Site := .site 9
 -/
 def field_dangling : FunDef := {
   params := [(var_s, .ref (.trecord s_entries) (.varRef var_s) .siteBorrowMut)]
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_f, type := .ref .u64 (.refid 0) .siteBorrowImm }
   ]
@@ -202,7 +202,7 @@ def field_dangling : FunDef := {
 -/
 def nested_field_dangling : FunDef := {
   params := [(var_p, .ref (.trecord p_entries) (.varRef var_p) .siteBorrowMut)]
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_s, type := .ref (.trecord s_entries) (.refid 1) .siteBorrowMut },
     { name := var_f, type := .ref .u64 (.refid 2) .siteBorrowImm }
@@ -255,7 +255,7 @@ def simple_call_funSig : FunSig := ⟨[⟨.u64, some true⟩], [⟨.u64, some fa
 -/
 def simple_call_dangling : FunDef := {
   params := []
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_a, type := .basic .u64 },
     { name := var_m, type := .ref .u64 (.refid 5) .siteBorrowMut },
@@ -303,7 +303,7 @@ def field_call_funSig : FunSig := ⟨[⟨.trecord s_entries, some true⟩], [⟨
 -/
 def field_call_dangling : FunDef := {
   params := [(var_s, .ref (.trecord s_entries) (.varRef var_s) .siteBorrowMut)]
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_f, type := .ref .u64 (.refid 0) .siteBorrowImm }
   ]

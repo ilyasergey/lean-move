@@ -151,7 +151,7 @@ def id_sig : FunSig := ⟨[⟨.u64, some false⟩], [⟨.u64, some false⟩]⟩
 -/
 def invalid : FunDef := {
   params := []
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_a, type := .basic .u64 },
     { name := var_r, type := .ref .u64 (.refid 0) .siteBorrowMut },

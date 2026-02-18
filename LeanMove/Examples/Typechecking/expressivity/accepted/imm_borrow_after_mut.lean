@@ -76,7 +76,7 @@ def s7 : Site := .site 7   -- second constant 0 (for copy_and_freeze write)
 -/
 def direct : FunDef := {
   params := []
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_a, type := .basic .u64 },
     { name := var_rmut, type := .ref .u64 (.refid 1) .siteBorrowMut },
@@ -120,7 +120,7 @@ def direct : FunDef := {
 -/
 def copy_and_freeze : FunDef := {
   params := []
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_a, type := .basic .u64 },
     { name := var_rmut, type := .ref .u64 (.refid 1) .siteBorrowMut },

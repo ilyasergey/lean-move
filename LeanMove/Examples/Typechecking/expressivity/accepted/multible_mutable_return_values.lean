@@ -94,7 +94,7 @@ def s11 : Site := .site 11 -- integer literal 0 for fourth write
 -/
 def borrow : FunDef := {
   params := [(var_p, .ref (.trecord point_entries) r0 .siteBorrowMut)]
-  returnType := .basic .tunit
+  returnType := []
   locals := []  -- No local variables needed for this simplified version
   blocks := [
     { label := "l0"
@@ -126,7 +126,7 @@ def borrow : FunDef := {
 -/
 def write : FunDef := {
   params := [(var_p, .ref (.trecord point_entries) r0 .siteBorrowMut)]
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     -- Algorithmic checker generates .refid 1 for first borrowMutField (x = &mut p.x)
     { name := var_x, type := .ref .u64 (.refid 1) .siteBorrowMut },

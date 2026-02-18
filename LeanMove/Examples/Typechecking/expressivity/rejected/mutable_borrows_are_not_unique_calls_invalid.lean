@@ -160,7 +160,7 @@ def s7 : Site := .site 7   -- integer literal 0 for second write
 -/
 def call_and_write_invalid : FunDef := {
   params := [(var_s, .ref (.trecord s_entries) (.varRef var_s) .siteBorrowMut)]
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_call, type := .ref .u64 (.varRef var_s) .siteBorrowMut },
     { name := var_f, type := .ref .u64 (.varRef var_s) .siteBorrowMut }

@@ -40,8 +40,8 @@ open Regex
     and error states are not danglingRef errors. -/
 def SafeExecState (state : ExecState) : Prop :=
   match state with
-  | .running m => ∃ env lenv retType rmap,
-      WellTypedState m env lenv retType rmap ∧
+  | .running m => ∃ env lenv retTypes rmap,
+      WellTypedState m env lenv retTypes rmap ∧
       StackSafe m.stack m.frame.returnInfo m.heap
   | .halted _ => True
   | .error (.danglingRef _) => False
@@ -57,18 +57,18 @@ theorem safe_step (state : ExecState)
   | halted v => simp [step, SafeExecState]
   | error e => simp only [step]; exact hsafe
   | running m =>
-    obtain ⟨env, lenv, retType, rmap, hwt, hss⟩ := hsafe
+    obtain ⟨env, lenv, retTypes, rmap, hwt, hss⟩ := hsafe
     show SafeExecState (step (.running m))
     generalize hres : step (.running m) = result
     cases result with
     | running m' =>
       simp only [SafeExecState]
-      exact preservation m m' env lenv retType rmap hwt hss hres
+      exact preservation m m' env lenv retTypes rmap hwt hss hres
     | halted v => simp [SafeExecState]
     | error e =>
       cases e with
       | danglingRef loc =>
-        exact absurd hres (no_danglingRef_progress m env lenv retType rmap hwt loc)
+        exact absurd hres (no_danglingRef_progress m env lenv retTypes rmap hwt loc)
       | uninitializedVar _ => simp [SafeExecState]
       | uninitializedSite _ => simp [SafeExecState]
       | typeMismatch _ => simp [SafeExecState]

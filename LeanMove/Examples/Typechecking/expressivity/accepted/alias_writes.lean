@@ -78,7 +78,7 @@ def s6 : Site := .site 6   -- integer literal 0 (for second write)
 -/
 def borrow_local_twice : FunDef := {
   params := []
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_a, type := .basic .u64 },
     { name := var_x, type := .ref .u64 (.refid 1) .siteBorrowMut },
@@ -111,7 +111,7 @@ def borrow_local_twice : FunDef := {
 -/
 def borrow_local_twice_reverse : FunDef := {
   params := []
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_a, type := .basic .u64 },
     { name := var_x, type := .ref .u64 (.refid 1) .siteBorrowMut },
@@ -156,7 +156,7 @@ def borrow_local_twice_reverse : FunDef := {
 -/
 def borrow_local_and_copy_ref : FunDef := {
   params := []
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_a, type := .basic .u64 },
     { name := var_x, type := .ref .u64 (.refid 1) .siteBorrowMut },
@@ -189,7 +189,7 @@ def borrow_local_and_copy_ref : FunDef := {
 -/
 def borrow_local_and_copy_ref_reverse : FunDef := {
   params := []
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_a, type := .basic .u64 },
     { name := var_x, type := .ref .u64 (.refid 1) .siteBorrowMut },

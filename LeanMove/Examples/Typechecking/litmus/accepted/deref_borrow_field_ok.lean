@@ -123,7 +123,7 @@ def module_funEnv : AssocMap Id FunSig :=
 -/
 def M_new : FunDef := {
   params := [(var_g, .basic .u64)]
-  returnType := M_T
+  returnType := [⟨M_T_basic, none⟩]
   locals := []
   blocks := [
     { label := "b0"
@@ -171,7 +171,7 @@ theorem M_new_welltyped : ∃ lenv, typecheck_fun M_new lenv :=
 -/
 def M_t : FunDef := {
   params := [(var_this, .ref M_T_basic (.varRef var_this) .siteBorrowImm)]
-  returnType := .basic .tunit
+  returnType := []
   locals := [{ name := var_y, type := .basic .u64 }]
   blocks := [
     { label := "b0"
@@ -218,7 +218,7 @@ theorem M_t_welltyped : ∃ lenv, typecheck_fun M_t lenv :=
 -/
 def foo : FunDef := {
   params := []
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_x, type := M_T },
     { name := var_x_ref, type := .ref M_T_basic (.refid 1) .siteBorrowImm }

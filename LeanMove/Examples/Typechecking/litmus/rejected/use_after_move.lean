@@ -61,7 +61,7 @@ def s2 : Site := .site 2   -- copy(x) — ERROR
 
 def foo : FunDef := {
   params := []
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_x, type := .basic .u64 },
     { name := var_y, type := .basic .u64 }

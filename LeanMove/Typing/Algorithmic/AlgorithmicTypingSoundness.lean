@@ -224,6 +224,56 @@ lemma types_conform_bool_complete (siteEnv : SiteEnv) (sites : List Site) (param
               · exact ih paramTypes' hrest
 
 /- ---------------------------------------------------- -/
+/-       Return checking boolean soundness               -/
+/- ---------------------------------------------------- -/
+
+lemma ret_refs_not_from_locals_bool_sound (env : TypeEnv) (as : List Site) :
+    ret_refs_not_from_locals_bool env as = true →
+    (∀ a ∈ as, ∀ bt r bk, lookup env.siteEnv a = some (.ref bt r bk) →
+      ∀ p, ¬interpret_regex (env.pathEnv.paths (.root, r)) p) := by
+  intro h a ha bt r bk hlook p hp
+  simp only [ret_refs_not_from_locals_bool, List.all_eq_true] at h
+  have ha' := h a ha
+  simp only [hlook] at ha'
+  have := is_empty_sound _ ha' p
+  rw [simplify_preserves_semantics] at this
+  exact this hp
+
+lemma ret_mutable_writable_bool_sound (env : TypeEnv) (as : List Site) :
+    ret_mutable_writable_bool env as = true →
+    (∀ a ∈ as, ∀ bt r, lookup env.siteEnv a = some (.ref bt r .siteBorrowMut) →
+      ∀ y, y ∈ env.pathEnv.refs →
+        ∀ p, interpret_regex (env.pathEnv.paths (r, y)) p → p = []) := by
+  intro h a ha bt r hlook y hy p hp
+  simp only [ret_mutable_writable_bool, List.all_eq_true] at h
+  have ha' := h a ha
+  simp only [hlook] at ha'
+  have hall := List.all_eq_true.mp ha'
+  have hy' := hall y hy
+  have := only_matches_empty_sound _ hy' p
+  rw [simplify_preserves_semantics] at this
+  exact this hp
+
+lemma ret_mutable_no_aliases_bool_sound (env : TypeEnv) (as : List Site) :
+    ret_mutable_no_aliases_bool env as = true →
+    (∀ a₁ ∈ as, ∀ bt₁ r₁, lookup env.siteEnv a₁ = some (.ref bt₁ r₁ .siteBorrowMut) →
+      ∀ a₂ ∈ as, a₁ ≠ a₂ →
+        ∀ bt₂ r₂ bk₂, lookup env.siteEnv a₂ = some (.ref bt₂ r₂ bk₂) →
+          ∀ p, ¬interpret_regex (env.pathEnv.paths (r₂, r₁)) p) := by
+  intro h a₁ ha₁ bt₁ r₁ hlook₁ a₂ ha₂ hne bt₂ r₂ bk₂ hlook₂ p hp
+  simp only [ret_mutable_no_aliases_bool, List.all_eq_true] at h
+  have ha₁' := h a₁ ha₁
+  simp only [hlook₁] at ha₁'
+  have hall := List.all_eq_true.mp ha₁'
+  have ha₂' := hall a₂ ha₂
+  simp only [bne_iff_ne] at ha₂'
+  rw [if_pos hne] at ha₂'
+  simp only [hlook₂] at ha₂'
+  have := is_empty_sound _ ha₂' p
+  rw [simplify_preserves_semantics] at this
+  exact this hp
+
+/- ---------------------------------------------------- -/
 /-       all_fresh_sites equivalence                     -/
 /- ---------------------------------------------------- -/
 
@@ -429,12 +479,12 @@ private lemma check_fields_distinct_implies_fnames_nodup (fields : List (Field �
     2. Fresh reference generation must be shown to produce valid fresh refs
     3. WellFormed preservation for path environment updates
     4. Argument order differences between algorithmic checker and relational rules -/
-lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr) (cont : Stmt) (retType : MoveType)
+lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr) (cont : Stmt) (retTypes : List ParamType)
     (hwf : TypeEnv.WellFormed env)
     (ih_cont : ∀ env', TypeEnv.WellFormed env' →
-        (check_stmt lenv env' cont retType).isSome = true → typecheck_stmt lenv env' cont retType)
-    (h : (check_stmt lenv env (.letBind a e cont) retType).isSome = true) :
-    typecheck_stmt lenv env (.letBind a e cont) retType := by
+        (check_stmt lenv env' cont retTypes).isSome = true → typecheck_stmt lenv env' cont retTypes)
+    (h : (check_stmt lenv env (.letBind a e cont) retTypes).isSome = true) :
+    typecheck_stmt lenv env (.letBind a e cont) retTypes := by
   -- Case split on expression type
   cases e with
   -- Integer literal: simple case
@@ -1222,12 +1272,12 @@ private lemma generateFreshRefs_not_varRef (env : TypeEnv) (rets : List ParamTyp
 /-- Soundness: If the algorithmic check succeeds, the relational judgment holds.
     This requires the type environment to be well-formed (pathEnv and siteEnv invariants).
 -/
-theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType : MoveType)
+theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List ParamType)
     (hwf : TypeEnv.WellFormed env) :
-    (check_stmt lenv env s retType).isSome = true → typecheck_stmt lenv env s retType := by
+    (check_stmt lenv env s retTypes).isSome = true → typecheck_stmt lenv env s retTypes := by
   -- Use induction on the statement structure to get IH for recursive cases
   induction s generalizing env with
-  | skip => intro _; exact typecheck_stmt.skip lenv env retType
+  | skip => intro _; exact typecheck_stmt.skip lenv env retTypes
 
   | jump L =>
     intro h
@@ -1237,7 +1287,7 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
     | some envL =>
       simp only [hlookup] at h
       split at h
-      · apply typecheck_stmt.jump lenv env L envL retType hlookup
+      · apply typecheck_stmt.jump lenv env L envL retTypes hlookup
         exact subsumes_bool_implies_subsumes envL env hwf.varEnv_wf (by assumption)
       · simp at h
 
@@ -1263,7 +1313,7 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
               split at h
               · rename_i hcond
                 simp only [Bool.and_eq_true] at hcond
-                apply typecheck_stmt.branch lenv env a L1 L2 envL1 envL2 retType ha hl1 hl2
+                apply typecheck_stmt.branch lenv env a L1 L2 envL1 envL2 retTypes ha hl1 hl2
                 · exact subsumes_bool_implies_subsumes envL1 _ hwf.varEnv_wf hcond.1
                 · exact subsumes_bool_implies_subsumes envL2 _ hwf.varEnv_wf hcond.2
               · simp at h
@@ -1272,19 +1322,22 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
   | ret as =>
     intro h
     simp only [check_stmt] at h
-    -- The check_stmt for ret tests: all sites have compatible retType
+    -- The check_stmt for ret tests four conditions via &&
     split at h
     · rename_i hcond
-      have hall := List.all_eq_true.mp hcond
-      apply typecheck_stmt.ret lenv env as retType
-      · intro a ha
-        have hcompat := hall a ha
-        -- hcompat : (match lookup env.siteEnv a with | some τ => compatible_bool τ retType | none => false) = true
-        cases hlookup : lookup env.siteEnv a with
-        | none => simp [hlookup] at hcompat
-        | some τ =>
-          simp only [hlookup] at hcompat
-          exact ⟨τ, rfl, MoveType.compatible_bool_sound τ retType hcompat⟩
+      have h1 : types_conform_bool env.siteEnv as retTypes = true := by
+        simp only [Bool.and_eq_true] at hcond; exact hcond.1.1.1
+      have h2 : ret_refs_not_from_locals_bool env as = true := by
+        simp only [Bool.and_eq_true] at hcond; exact hcond.1.1.2
+      have h3 : ret_mutable_writable_bool env as = true := by
+        simp only [Bool.and_eq_true] at hcond; exact hcond.1.2
+      have h4 : ret_mutable_no_aliases_bool env as = true := by
+        simp only [Bool.and_eq_true] at hcond; exact hcond.2
+      exact typecheck_stmt.ret lenv env as retTypes
+        (types_conform_bool_sound env.siteEnv as retTypes h1)
+        (ret_refs_not_from_locals_bool_sound env as h2)
+        (ret_mutable_writable_bool_sound env as h3)
+        (ret_mutable_no_aliases_bool_sound env as h4)
     · simp at h
 
   | abort a =>
@@ -1292,7 +1345,7 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
     simp only [check_stmt] at h
     cases hlookup : lookup env.siteEnv a with
     | none => simp [hlookup] at h
-    | some τ => exact typecheck_stmt.abort lenv env a τ retType hlookup
+    | some τ => exact typecheck_stmt.abort lenv env a τ retTypes hlookup
 
   | release a cont ih_cont =>
     intro h
@@ -1304,7 +1357,7 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
       | basic _ => simp [hlookup] at h
       | ref bt r isBor =>
         simp only [hlookup] at h
-        -- h : (check_stmt lenv env' cont retType).isSome = true
+        -- h : (check_stmt lenv env' cont retTypes).isSome = true
         -- where env' = {env with siteEnv := delete env.siteEnv a, pathEnv := delete_ref_node env.pathEnv r}
         let env' : TypeEnv := {env with siteEnv := delete env.siteEnv a,
                                          pathEnv := delete_ref_node env.pathEnv r}
@@ -1313,13 +1366,13 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
         have hpe' := delete_ref_node_wellformed env.pathEnv r hwf.pathEnv_wf hr_not_root
         have hsenv' := SiteEnv.delete_refs_not_root env.siteEnv a hwf.siteEnv_wf
         have hwf' : TypeEnv.WellFormed env' := ⟨hpe', hsenv', hwf.varEnv_wf⟩
-        apply typecheck_stmt.release lenv env a bt r isBor cont retType hlookup
+        apply typecheck_stmt.release lenv env a bt r isBor cont retTypes hlookup
         exact ih_cont env' hwf' h
 
   -- letBind case: use the check_letBind_sound helper lemma
   | letBind a e cont ih_cont =>
     intro h
-    exact check_letBind_sound lenv env a e cont retType hwf ih_cont h
+    exact check_letBind_sound lenv env a e cont retTypes hwf ih_cont h
 
   | assign x a cont ih_cont =>
     intro h
@@ -1414,7 +1467,7 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
             simp only [Bool.and_eq_true] at hcond
             obtain ⟨⟨hfresh, hdistinct⟩, hexist⟩ := hcond
             -- Apply the relational rule
-            apply typecheck_stmt.unpack lenv env fields b fentries cont retType hlookup
+            apply typecheck_stmt.unpack lenv env fields b fentries cont retTypes hlookup
             · -- freshness: ∀ (f : Field) (a : Site), (f, a) ∈ fields → notIn env.siteEnv a
               intro f a hfa
               simp only [check_unpack_fields_fresh, List.all_eq_true] at hfresh
@@ -1481,7 +1534,7 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
                                       pathEnv := garbage_collect env.pathEnv r}
                 have hwf' : TypeEnv.WellFormed env' := ⟨hpe', hsenv_del2, hwf.varEnv_wf⟩
                 -- Apply relational rule and IH
-                apply typecheck_stmt.write_ref lenv env a b bt r cont retType hlookup_a hlookup_b hout
+                apply typecheck_stmt.write_ref lenv env a b bt r cont retTypes hlookup_a hlookup_b hout
                 exact ih_cont env' hwf' h
               · simp at h
 
@@ -1511,7 +1564,7 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retType :
               hwf (generateFreshRefs_not_root env rets) hpop
             have hwf' := call_connect_inputs_outputs_wf env' as bs hwf_env'
             apply typecheck_stmt.call lenv env fnName as bs params rets
-              (generateFreshRefs env rets) env' cont retType
+              (generateFreshRefs env rets) env' cont retTypes
               hlookup_fn htc_bs' hfresh' hfresh_refs hnodup
               (generateFreshRefs_not_varRef env rets) hpop hiso'
             exact ih_cont _ hwf' h

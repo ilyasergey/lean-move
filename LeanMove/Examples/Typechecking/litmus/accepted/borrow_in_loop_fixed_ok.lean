@@ -93,7 +93,7 @@ def s1 : Site := .site 1  -- move(r) for release
 -/
 def foo : FunDef := {
   params := [(var_x, .basic .u64)]  -- x is a parameter, starts valid
-  returnType := .basic .tunit
+  returnType := []
   locals := []  -- no locals needed for this simplified version
   blocks := [
     { label := "l0"

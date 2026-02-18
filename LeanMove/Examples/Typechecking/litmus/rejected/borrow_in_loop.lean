@@ -65,7 +65,7 @@ def s1 : Site := .site 1  -- &x
 -/
 def foo : FunDef := {
   params := []
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_x, type := .basic .u64 },
     { name := var_r, type := .ref .u64 (.varRef var_x) .siteBorrowImm }

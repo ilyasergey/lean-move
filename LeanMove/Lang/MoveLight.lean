@@ -104,10 +104,20 @@ structure Block where
   body : Stmt
 deriving Repr, Inhabited
 
+-- Parameter type: basic type + optional reference mutability
+structure ParamType where
+  -- inner type
+  basicType : BasicMoveType
+  -- mutable    = some true
+  -- immmutable = some false
+  -- not a reference = none
+  isRefMut : Option Bool
+deriving Repr, Inhabited, Hashable, DecidableEq
+
 -- Function definition
 structure FunDef where
   params : List (Var × MoveType)  -- (x : T)*
-  returnType : MoveType  -- Tr
+  returnType : List ParamType  -- Return type specifications
   locals : List LocalVar  -- (let v : T)*
   blocks : List Block  -- List of labeled blocks; first block is entry point
 deriving Repr, Inhabited

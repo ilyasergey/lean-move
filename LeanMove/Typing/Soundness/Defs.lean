@@ -305,12 +305,12 @@ def PathReflectedInHeap (rmap : RefMap) (heap : Heap)
 /-- The central invariant: a running machine state is well-typed with respect to
     a type environment, label environment, return type, and reference map. -/
 structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
-    (retType : MoveType) (rmap : RefMap) : Prop where
+    (retTypes : List ParamType) (rmap : RefMap) : Prop where
   -- 1. TypeEnv is well-formed
   env_wf : TypeEnv.WellFormed env
 
   -- 2. Current statement type-checks in the given environment
-  stmt_typed : typecheck_stmt lenv env m.frame.stmt retType
+  stmt_typed : typecheck_stmt lenv env m.frame.stmt retTypes
 
   -- 3. Variable consistency: VarEnv tracks what VarStore has
   --    For valid vars, also tracks that the heap value matches the type via rmap
@@ -345,7 +345,7 @@ structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
   -- 7. All blocks in the current frame type-check in their lenv environments
   blocks_typed : ∀ b, b ∈ m.frame.blocks → ∀ blockEnv,
     lookup lenv b.label = some blockEnv →
-    typecheck_stmt lenv blockEnv b.body retType
+    typecheck_stmt lenv blockEnv b.body retTypes
 
   -- 9. lenv entries have empty siteEnv (sites are block-local, reset on jump)
   lenv_empty_siteEnv : ∀ L envL, lookup lenv L = some envL →
@@ -440,10 +440,10 @@ def StackSafe : List Frame → Option ReturnInfo → Heap → Prop
   | callerFrame :: rest, some ri, heap =>
     (∀ vals newSiteStore,
       bindReturnValues callerFrame.siteStore ri.resultSites vals = some newSiteStore →
-      ∃ env' lenv' retType' rmap',
+      ∃ env' lenv' retTypes' rmap',
         WellTypedState
           ⟨{callerFrame with siteStore := newSiteStore, stmt := ri.callerStmt}, rest, heap⟩
-          env' lenv' retType' rmap' ∧
+          env' lenv' retTypes' rmap' ∧
         StackSafe rest callerFrame.returnInfo heap) ∧
     StackSafe rest callerFrame.returnInfo heap
 

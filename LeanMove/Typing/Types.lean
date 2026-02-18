@@ -277,14 +277,7 @@ def collectSiteEnvRefs (se : SiteEnv) : List Aref :=
 /-       Function Signatures                            -/
 /- ---------------------------------------------------- -/
 
-structure ParamType where
-  -- inner type
-  basicType : BasicMoveType
-  -- mutable    = some true
-  -- immmutable = some false
-  -- not a reference = none
-  isRefMut : Option Bool
-deriving Repr, Inhabited, Hashable, DecidableEq
+-- ParamType is defined in LeanMove/Lang/MoveLight.lean (imported transitively)
 
 -- Function table
 structure FunSig where

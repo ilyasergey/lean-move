@@ -95,7 +95,7 @@ def s11 : Site := .site 11 -- integer literal 0 for third write
 -/
 def t : FunDef := {
   params := [(var_cond, .basic .tbool)]
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_a, type := .basic .u64 },
     { name := var_b, type := .basic .u64 },

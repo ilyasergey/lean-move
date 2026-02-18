@@ -158,8 +158,8 @@ theorem step_danglingRef_source (m : Machine) (loc : Loc) :
     Uses site_consistent to get the concrete reference, siteEnv_refs_tracked
     to connect to pathEnv, and rmap_live to show the heap read succeeds. -/
 theorem no_danglingRef_readRef (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
-    (retType : MoveType) (rmap : RefMap)
-    (hwt : WellTypedState m env lenv retType rmap)
+    (retTypes : List ParamType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retTypes rmap)
     (s src : Site) (cont : Stmt)
     (hstmt : m.frame.stmt = .letBind s (.readRef src) cont)
     (loc : Loc) (path : List Field)
@@ -189,8 +189,8 @@ theorem no_danglingRef_readRef (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
 /-- A writeRef that is well-typed always succeeds (heap write exists).
     Uses the same chain as readRef, plus readRef_ne_none_implies_writeRef_ne_none. -/
 theorem no_danglingRef_writeRef (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
-    (retType : MoveType) (rmap : RefMap)
-    (hwt : WellTypedState m env lenv retType rmap)
+    (retTypes : List ParamType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retTypes rmap)
     (dst val : Site) (cont : Stmt)
     (hstmt : m.frame.stmt = .writeRef dst val cont)
     (loc : Loc) (path : List Field) (v : Value)
@@ -225,8 +225,8 @@ theorem no_danglingRef_writeRef (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
 /-- A well-typed running state never produces a danglingRef error.
     This is the key progress lemma — it only needs the readRef and writeRef cases. -/
 theorem no_danglingRef_progress (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
-    (retType : MoveType) (rmap : RefMap)
-    (hwt : WellTypedState m env lenv retType rmap) :
+    (retTypes : List ParamType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retTypes rmap) :
     ∀ loc, step (.running m) ≠ .error (.danglingRef loc) := by
   intro loc habs
   -- Extract which case of step produced the danglingRef
@@ -234,9 +234,9 @@ theorem no_danglingRef_progress (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
   cases hcases with
   | inl hread =>
     obtain ⟨s, src, cont, hstmt, path, hsrc, hheap⟩ := hread
-    exact no_danglingRef_readRef m env lenv retType rmap hwt s src cont hstmt loc path hsrc hheap
+    exact no_danglingRef_readRef m env lenv retTypes rmap hwt s src cont hstmt loc path hsrc hheap
   | inr hwrite =>
     obtain ⟨dst, val, cont, hstmt, path, v, hdst, hval, hheap⟩ := hwrite
-    exact no_danglingRef_writeRef m env lenv retType rmap hwt dst val cont hstmt loc path v hdst hval hheap
+    exact no_danglingRef_writeRef m env lenv retTypes rmap hwt dst val cont hstmt loc path v hdst hval hheap
 
 end LeanMove.Typing.TypeSoundness

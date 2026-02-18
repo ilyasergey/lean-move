@@ -110,7 +110,7 @@ def s9 : Site := .site 9   -- *copy(f_ref) (readRef)
 -/
 def foo : FunDef := {
   params := []
-  returnType := .basic .tunit
+  returnType := []
   locals := [
     { name := var_s, type := .basic (.trecord s_entries) },
     { name := var_r, type := .ref (.trecord s_entries) (.varRef var_s) .siteBorrowMut },
