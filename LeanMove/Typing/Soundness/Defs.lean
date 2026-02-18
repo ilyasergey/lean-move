@@ -95,6 +95,145 @@ def ValueMatchesType (v : Value) (τ : MoveType) (rmap : RefMap) : Prop :=
   | .ref _bt r _bk =>
     ∃ loc path, v = .ref loc path ∧ rmap.map r = some (loc, path)
 
+/-- Extend a RefMap with mappings from returned reference values.
+    For each result site that has a ref type in the siteEnv, maps the abstract ref
+    to the concrete (loc, path) from the corresponding returned value.
+    Existing mappings are preserved (output refs are fresh, so no conflicts). -/
+def RefMap.extendWithReturns (rmap : RefMap) (siteEnv : SiteEnv) :
+    List Site → List Value → RefMap
+  | [], [] => rmap
+  | s :: ss, v :: vs =>
+    let rmap' := match lookup siteEnv s, v with
+      | some (.ref _ r _), .ref loc path =>
+        RefMap.mk (fun r' => if r' = r then some (loc, path) else rmap.map r')
+      | _, _ => rmap
+    rmap'.extendWithReturns siteEnv ss vs
+  | _, _ => rmap
+
+/-- extendWithReturns preserves mappings for refs not among the output refs -/
+theorem RefMap.extendWithReturns_preserves (rmap : RefMap) (siteEnv : SiteEnv)
+    (sites : List Site) (vals : List Value) (r : Aref) (p : Loc × List Field)
+    (h : rmap.map r = some p)
+    (hne : ∀ s ∈ sites, ∀ bt r' bk, lookup siteEnv s = some (.ref bt r' bk) → r' ≠ r) :
+    (RefMap.extendWithReturns rmap siteEnv sites vals).map r = some p := by
+  induction sites generalizing vals rmap with
+  | nil => cases vals <;> simp [extendWithReturns, h]
+  | cons s ss ih =>
+    cases vals with
+    | nil => simp [extendWithReturns, h]
+    | cons v vs =>
+      simp only [extendWithReturns]
+      have hne_s := hne s (List.mem_cons_self ..)
+      have hne_ss : ∀ s' ∈ ss, ∀ bt r' bk, lookup siteEnv s' = some (.ref bt r' bk) → r' ≠ r :=
+        fun s' hs' => hne s' (List.mem_cons_of_mem _ hs')
+      cases hse : lookup siteEnv s with
+      | none => exact ih rmap vs h hne_ss
+      | some τ =>
+        cases τ with
+        | basic _ => exact ih rmap vs h hne_ss
+        | ref bt r' bk =>
+          have hr'ne : r' ≠ r := hne_s bt r' bk hse
+          cases v with
+          | ref loc path =>
+            apply ih _ vs _ hne_ss
+            show (if r = r' then some (loc, path) else rmap.map r) = some p
+            rw [if_neg (Ne.symm hr'ne)]
+            exact h
+          | int _ => exact ih rmap vs h hne_ss
+          | bool _ => exact ih rmap vs h hne_ss
+          | unit => exact ih rmap vs h hne_ss
+          | «record» _ => exact ih rmap vs h hne_ss
+
+/-- extendWithReturns preserves none for refs not among the output refs -/
+theorem RefMap.extendWithReturns_preserves_none (rmap : RefMap) (siteEnv : SiteEnv)
+    (sites : List Site) (vals : List Value) (r : Aref)
+    (h : rmap.map r = none)
+    (hne : ∀ s ∈ sites, ∀ bt r' bk, lookup siteEnv s = some (.ref bt r' bk) → r' ≠ r) :
+    (RefMap.extendWithReturns rmap siteEnv sites vals).map r = none := by
+  induction sites generalizing vals rmap with
+  | nil => cases vals <;> simp [extendWithReturns, h]
+  | cons s ss ih =>
+    cases vals with
+    | nil => simp [extendWithReturns, h]
+    | cons v vs =>
+      simp only [extendWithReturns]
+      have hne_s := hne s (List.mem_cons_self ..)
+      have hne_ss : ∀ s' ∈ ss, ∀ bt r' bk, lookup siteEnv s' = some (.ref bt r' bk) → r' ≠ r :=
+        fun s' hs' => hne s' (List.mem_cons_of_mem _ hs')
+      cases hse : lookup siteEnv s with
+      | none => exact ih rmap vs h hne_ss
+      | some τ =>
+        cases τ with
+        | basic _ => exact ih rmap vs h hne_ss
+        | ref bt r' bk =>
+          have hr'ne : r' ≠ r := hne_s bt r' bk hse
+          cases v with
+          | ref loc path =>
+            apply ih _ vs _ hne_ss
+            show (if r = r' then some (loc, path) else rmap.map r) = none
+            rw [if_neg (Ne.symm hr'ne)]
+            exact h
+          | int _ => exact ih rmap vs h hne_ss
+          | bool _ => exact ih rmap vs h hne_ss
+          | unit => exact ih rmap vs h hne_ss
+          | «record» _ => exact ih rmap vs h hne_ss
+
+/-- If extendWithReturns maps r to (loc, path), then either:
+    (1) the original rmap already mapped r to (loc, path), or
+    (2) Value.ref loc path is among the vals -/
+theorem RefMap.extendWithReturns_values (rmap : RefMap) (siteEnv : SiteEnv)
+    (sites : List Site) (vals : List Value) (r : Aref) (loc : Loc) (path : List Field)
+    (h : (RefMap.extendWithReturns rmap siteEnv sites vals).map r = some (loc, path)) :
+    rmap.map r = some (loc, path) ∨ Value.ref loc path ∈ vals := by
+  induction sites generalizing vals rmap with
+  | nil => cases vals <;> (simp [extendWithReturns] at h; exact Or.inl h)
+  | cons s ss ih =>
+    cases vals with
+    | nil => simp [extendWithReturns] at h; exact Or.inl h
+    | cons v vs =>
+      -- Put h back in goal so case-splitting reduces the match
+      revert h; simp only [extendWithReturns]
+      cases hse : lookup siteEnv s with
+      | none =>
+        intro h
+        rcases ih rmap vs h with hold | hnew
+        · exact Or.inl hold
+        · exact Or.inr (List.mem_cons_of_mem _ hnew)
+      | some τ =>
+        cases τ with
+        | basic _ =>
+          intro h
+          rcases ih rmap vs h with hold | hnew
+          · exact Or.inl hold
+          · exact Or.inr (List.mem_cons_of_mem _ hnew)
+        | ref bt r' bk =>
+          cases v with
+          | ref loc' path' =>
+            intro h
+            rcases ih _ vs h with hold | hnew
+            · -- hold : (if r = r' then some (loc', path') else rmap.map r) = some (loc, path)
+              by_cases hrr : r = r'
+              · subst hrr; simp at hold; obtain ⟨rfl, rfl⟩ := hold
+                exact Or.inr (List.Mem.head _)
+              · simp [hrr] at hold; exact Or.inl hold
+            · exact Or.inr (List.mem_cons_of_mem _ hnew)
+          | int _ =>
+            intro h; rcases ih rmap vs h with hold | hnew
+            · exact Or.inl hold
+            · exact Or.inr (List.mem_cons_of_mem _ hnew)
+          | bool _ =>
+            intro h; rcases ih rmap vs h with hold | hnew
+            · exact Or.inl hold
+            · exact Or.inr (List.mem_cons_of_mem _ hnew)
+          | unit =>
+            intro h; rcases ih rmap vs h with hold | hnew
+            · exact Or.inl hold
+            · exact Or.inr (List.mem_cons_of_mem _ hnew)
+          | «record» _ =>
+            intro h; rcases ih rmap vs h with hold | hnew
+            · exact Or.inl hold
+            · exact Or.inr (List.mem_cons_of_mem _ hnew)
+
 -- ============================================================
 -- Part 3: readPath / writePath structural lemmas
 -- ============================================================
@@ -432,20 +571,118 @@ structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
      (∃ s bk, lookup env.siteEnv s = some (.ref bt r bk))) →
     ∃ v, m.heap.readRef loc path = some v ∧ HasType v bt
 
+  -- 22. FunEnv signature consistency: typing-level FunSig matches runtime FunDef
+  funEnv_sig_consistent : ∀ fname sig,
+    lookup env.funEnv fname = some sig →
+    ∃ fdef, lookup m.frame.funEnv fname = some fdef ∧
+            fdef.params.map (fun (_, τ) => τ.toParamType) = sig.params ∧
+            fdef.returnType = sig.returnType
+
+/-- Return values are well-typed: each value matches its corresponding site type.
+    For ref types, also requires heap readability (needed for rmap_live and rmap_has_type). -/
+def ReturnValsWellTyped : List Value → List Site → SiteEnv → Heap → Prop
+  | [], [], _, _ => True
+  | v :: vs, s :: ss, se, heap =>
+    (match lookup se s with
+     | some (.basic bt) => HasType v bt
+     | some (.ref bt _ _) => ∃ loc path, v = .ref loc path ∧
+         ∃ v', heap.readRef loc path = some v' ∧ HasType v' bt
+     | none => False) ∧
+    ReturnValsWellTyped vs ss se heap
+  | _, _, _, _ => False
+
 /-- Stack safety: each frame on the stack can be safely restored after ret.
+    Fields are inlined from WellTypedState to allow individual heap-dependent
+    field maintenance through callee execution. At ret time, these fields are
+    combined with ReturnValsWellTyped via wellTypedState_extend_result_sites
+    to produce a full WellTypedState.
     Defined by structural recursion on the stack. -/
-def StackSafe : List Frame → Option ReturnInfo → Heap → Prop
-  | [], _, _ => True
-  | _, none, _ => True
-  | callerFrame :: rest, some ri, heap =>
-    (∀ vals newSiteStore,
-      bindReturnValues callerFrame.siteStore ri.resultSites vals = some newSiteStore →
-      ∃ env' lenv' retTypes' rmap',
-        WellTypedState
-          ⟨{callerFrame with siteStore := newSiteStore, stmt := ri.callerStmt}, rest, heap⟩
-          env' lenv' retTypes' rmap' ∧
-        StackSafe rest callerFrame.returnInfo heap) ∧
-    StackSafe rest callerFrame.returnInfo heap
+def StackSafe : List Frame → Option ReturnInfo → Heap → List ParamType → Prop
+  | [], _, _, _ => True
+  | _, none, _, _ => True
+  | callerFrame :: rest, some ri, heap, calleeRetTypes =>
+    ∃ callerEnv callerLenv callerRetTypes callerRmap,
+      -- == Heap-independent fields (unchanged during callee execution) ==
+      (TypeEnv.WellFormed callerEnv ∧
+      typecheck_stmt callerLenv callerEnv ri.callerStmt callerRetTypes ∧
+      (∀ b, b ∈ callerFrame.blocks → ∀ blockEnv,
+        lookup callerLenv b.label = some blockEnv →
+        typecheck_stmt callerLenv blockEnv b.body callerRetTypes) ∧
+      (∀ L envL, lookup callerLenv L = some envL → ∀ s, lookup envL.siteEnv s = none) ∧
+      (∀ L envL, lookup callerLenv L = some envL → TypeEnv.WellFormed envL) ∧
+      (∀ L envL, lookup callerLenv L = some envL →
+        ∀ x bt r bk ms, lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) →
+        r ∈ envL.pathEnv.refs) ∧
+      (∀ L envL, lookup callerLenv L = some envL →
+        ∀ r x y bt bt' bk bk' ms ms', x ≠ y →
+        lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) →
+        lookup envL.varEnv y = some (.validVar, .ref bt' r bk', ms') → False) ∧
+      (∀ L envL, lookup callerLenv L = some envL → envL.funEnv = callerEnv.funEnv) ∧
+      (∀ fname fdef, lookup callerFrame.funEnv fname = some fdef →
+        ∃ lenv', typecheck_fun fdef lenv') ∧
+      (∀ x bt r bk ms, lookup callerEnv.varEnv x = some (.validVar, .ref bt r bk, ms) →
+        r ∈ callerEnv.pathEnv.refs) ∧
+      (∀ s bt r bk, lookup callerEnv.siteEnv s = some (.ref bt r bk) →
+        r ∈ callerEnv.pathEnv.refs) ∧
+      -- live_refs_unique (3 conjuncts)
+      (∀ r, (∀ x bt bk ms s bt' bk',
+          lookup callerEnv.varEnv x = some (.validVar, .ref bt r bk, ms) →
+          lookup callerEnv.siteEnv s = some (.ref bt' r bk') → False) ∧
+        (∀ s s' bt bt' bk bk', s ≠ s' →
+          lookup callerEnv.siteEnv s = some (.ref bt r bk) →
+          lookup callerEnv.siteEnv s' = some (.ref bt' r bk') → False) ∧
+        (∀ x y bt bt' bk bk' ms ms', x ≠ y →
+          lookup callerEnv.varEnv x = some (.validVar, .ref bt r bk, ms) →
+          lookup callerEnv.varEnv y = some (.validVar, .ref bt' r bk', ms') → False)) ∧
+      callerRmap.map .root = none ∧
+      (∀ u p, interpret_regex (callerEnv.pathEnv.paths (u, .root)) p → u = .root ∧ p = []) ∧
+      -- root_path_coherence
+      (∀ v y rest_pe, v ∈ callerEnv.pathEnv.refs →
+        interpret_regex (callerEnv.pathEnv.paths (.root, v)) (.root_to_var y :: rest_pe) →
+        ∀ loc_v path_v, callerRmap.map v = some (loc_v, path_v) →
+        ∀ loc_y, lookup callerFrame.varStore y = some (some loc_y) →
+        loc_v = loc_y → path_v = fieldPathOf rest_pe) ∧
+      (∀ u v p, u ∉ callerEnv.pathEnv.refs → u ≠ .root → u ≠ v →
+        ¬interpret_regex (callerEnv.pathEnv.paths (u, v)) p) ∧
+      (∀ u v p, v ∉ callerEnv.pathEnv.refs → v ≠ .root → u ≠ v →
+        ¬interpret_regex (callerEnv.pathEnv.paths (u, v)) p) ∧
+      (∀ u p, interpret_regex (callerEnv.pathEnv.paths (u, u)) p → p = []) ∧
+      -- Unmapped refs (output refs) have no cross-paths
+      (∀ r1 r2, r1 ∈ callerEnv.pathEnv.refs → r2 ∈ callerEnv.pathEnv.refs →
+        r1 ≠ r2 → (callerRmap.map r1 = none ∨ callerRmap.map r2 = none) →
+        ∀ p, ¬interpret_regex (callerEnv.pathEnv.paths (r1, r2)) p) ∧
+      -- Result-site refs are unmapped in callerRmap (they're fresh output refs)
+      (∀ s bt r bk, s ∈ ri.resultSites →
+        lookup callerEnv.siteEnv s = some (.ref bt r bk) → callerRmap.map r = none) ∧
+
+      -- == Heap-dependent fields (maintained through callee heap operations) ==
+      (∀ x isv τ ms, lookup callerEnv.varEnv x = some (isv, τ, ms) →
+        match isv with
+        | .validVar => ∃ loc v, lookup callerFrame.varStore x = some (some loc) ∧
+                       heap.read loc = some v ∧ ValueMatchesType v τ callerRmap
+        | .invalidVar => lookup callerFrame.varStore x = some none ∨
+                        ∃ loc, lookup callerFrame.varStore x = some (some loc)) ∧
+      -- site_consistent: RESTRICTED to non-result sites
+      (∀ s τ, lookup callerEnv.siteEnv s = some τ → s ∉ ri.resultSites →
+        ∃ v, lookup callerFrame.siteStore s = some v ∧ ValueMatchesType v τ callerRmap) ∧
+      (∀ r loc path, callerRmap.map r = some (loc, path) → heap.readRef loc path ≠ none) ∧
+      (∀ r1 r2, r1 ∈ callerEnv.pathEnv.refs → r2 ∈ callerEnv.pathEnv.refs →
+        ∀ p, interpret_regex (callerEnv.pathEnv.paths (r1, r2)) p →
+        PathReflectedInHeap callerRmap heap r1 r2 p) ∧
+      (∀ loc, heap.read loc ≠ none → loc < heap.nextLoc) ∧
+      -- rmap_has_type: for refs used in varEnv OR non-result siteEnv
+      (∀ r bt loc path, callerRmap.map r = some (loc, path) →
+        ((∃ x bk ms, lookup callerEnv.varEnv x = some (.validVar, .ref bt r bk, ms)) ∨
+         (∃ s bk, lookup callerEnv.siteEnv s = some (.ref bt r bk) ∧ s ∉ ri.resultSites)) →
+        ∃ v, heap.readRef loc path = some v ∧ HasType v bt) ∧
+      -- funEnv_sig_consistent
+      (∀ fname sig, lookup callerEnv.funEnv fname = some sig →
+        ∃ fdef, lookup callerFrame.funEnv fname = some fdef ∧
+                fdef.params.map (fun (_, τ) => τ.toParamType) = sig.params ∧
+                fdef.returnType = sig.returnType) ∧
+      -- types_conform: callee return types match caller result site types
+      types_conform callerEnv.siteEnv ri.resultSites calleeRetTypes) ∧
+    StackSafe rest callerFrame.returnInfo heap callerRetTypes
 
 -- ============================================================
 -- Part 6: Key Bridge Lemma (check_outbound → paths are trivial)

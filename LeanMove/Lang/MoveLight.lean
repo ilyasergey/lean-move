@@ -363,6 +363,12 @@ structure ParamType where
   isRefMut : Option Bool
 deriving Repr, Inhabited, Hashable, DecidableEq
 
+/-- Convert a MoveType to ParamType (for bridging FunDef.params with FunSig.params) -/
+def MoveType.toParamType : MoveType → ParamType
+  | .basic bt => ⟨bt, none⟩
+  | .ref bt _ .siteBorrowMut => ⟨bt, some true⟩
+  | .ref bt _ .siteBorrowImm => ⟨bt, some false⟩
+
 -- Function definition
 structure FunDef where
   params : List (Var × MoveType)  -- (x : T)*

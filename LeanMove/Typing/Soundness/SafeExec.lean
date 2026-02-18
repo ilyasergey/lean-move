@@ -42,7 +42,7 @@ def SafeExecState (state : ExecState) : Prop :=
   match state with
   | .running m => ∃ env lenv retTypes rmap,
       WellTypedState m env lenv retTypes rmap ∧
-      StackSafe m.stack m.frame.returnInfo m.heap
+      StackSafe m.stack m.frame.returnInfo m.heap retTypes
   | .halted _ => True
   | .error (.danglingRef _) => False
   | .error _ => True

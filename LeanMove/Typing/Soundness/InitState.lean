@@ -529,7 +529,7 @@ def checkArgsCompatible (params : List (Var × MoveType)) (args : List Value) (h
     The decidable type checker (`check_fun_dec_sound`) establishes `lenv_wf`
     for the `lenv` it constructs. The remaining four fields are decidable and
     can be verified via `SoundnessAssumptions.checkDecidable`. -/
-structure SoundnessAssumptions (f : FunDef) (lenv : LabelEnv) (heap : Heap) (args : List Value) where
+structure SoundnessAssumptions (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunDef) (heap : Heap) (args : List Value) where
   /-- Every label environment entry is structurally well-formed.
       Not decidable without the decidable type-checking representation (`LabelEnvDec`),
       because `TypeEnv.WellFormed` involves `PathEnv.WellFormed` which constrains
@@ -622,6 +622,15 @@ structure SoundnessAssumptions (f : FunDef) (lenv : LabelEnv) (heap : Heap) (arg
   entry_varEnv_exact : ∀ block env, f.blocks.head? = some block →
     lookup lenv block.label = some env → LookupEquiv env.varEnv (init_fun_varEnv f)
 
+  /-- Every function signature in every label environment entry has a matching
+      runtime function definition in `funEnv`. Required for `funEnv_sig_consistent`
+      in `WellTypedState` and for the `call` preservation case. -/
+  funEnv_sig : ∀ l env, lookup lenv l = some env →
+    ∀ fname sig, lookup env.funEnv fname = some sig →
+    ∃ fdef, lookup funEnv fname = some fdef ∧
+            fdef.params.map (fun (_, τ) => τ.toParamType) = sig.params ∧
+            fdef.returnType = sig.returnType
+
 /-- Boolean check for all decidable hypotheses of type soundness.
     Includes `check_fun_dec` (function type-checks), `checkFunEnv`
     (function environment well-typed), and the decidable fields of
@@ -699,8 +708,13 @@ private theorem toLabelEnv_lookup_some (lenvDec : LabelEnvDec) (l : Label) (env 
 theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     (funEnv : AssocMap Id FunDef) (fte : FunTypingEnv)
     (heap : Heap) (args : List Value)
-    (hcheck : SoundnessAssumptions.checkDecidable f lenvDec funEnv fte heap args = true) :
-    SoundnessAssumptions f lenvDec.toLabelEnv heap args where
+    (hcheck : SoundnessAssumptions.checkDecidable f lenvDec funEnv fte heap args = true)
+    (hfunSig : ∀ l env, lookup lenvDec.toLabelEnv l = some env →
+      ∀ fname sig, lookup env.funEnv fname = some sig →
+      ∃ fdef, lookup funEnv fname = some fdef ∧
+              fdef.params.map (fun (_, τ) => τ.toParamType) = sig.params ∧
+              fdef.returnType = sig.returnType) :
+    SoundnessAssumptions f lenvDec.toLabelEnv funEnv heap args where
   -- checkDecidable has 14 conjuncts (13 &&):
   -- 1:check_fun_dec 2:checkFunEnv 3:checkArgsCompatible 4:param_refs_distinct
   -- 5:param_refs_not_root 6:heap_wf 7:lenv_empty_sites 8:lenv_complete
@@ -824,6 +838,7 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
       simp only [LabelEnvDec.toLabelEnv, lookup_mapValues]
       show (lookup lenvDec block.label).map TypeEnvDec.toTypeEnv = some ted.toTypeEnv
       rw [show lookup lenvDec block.label = some ted from hted]; rfl⟩
+  funEnv_sig := hfunSig
 
 -- ============================================================
 -- Part 11c: allocArgs_param_has_type + initState_safe
@@ -1062,7 +1077,7 @@ theorem initState_safe (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunD
     (args : List Value) (heap : Heap)
     (htyped : typecheck_fun f lenv)
     (hfunEnv : ∀ fname fdef, lookup funEnv fname = some fdef → ∃ lenv', typecheck_fun fdef lenv')
-    (ha : SoundnessAssumptions f lenv heap args) :
+    (ha : SoundnessAssumptions f lenv funEnv heap args) :
     SafeExecState (initState f funEnv args heap) := by
   -- Invert typecheck_fun
   obtain ⟨initEnv, hvarEnv, hsiteEnv, hpathEnv, hblocks_ne, hentry_equiv, hblocks_typed⟩ :=
@@ -1400,6 +1415,9 @@ theorem initState_safe (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunD
               rw [hreadRef_preserved r loc path hrmap_eq]
               exact ⟨val, hreadref, hht⟩
             · rw [hsiteEnv_empty s] at hlookup_s; cases hlookup_s
+          funEnv_sig_consistent := by
+            intro fname sig hlookup_fe
+            exact ha.funEnv_sig entryLabel blockEnv hlookup fname sig hlookup_fe
         }
       · -- StackSafe [] none heap' = True
         simp only [StackSafe]

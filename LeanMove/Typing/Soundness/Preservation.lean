@@ -14,7 +14,7 @@
  limitations under the License.
 -/
 
-import LeanMove.Typing.Soundness.Defs
+import LeanMove.Typing.Soundness.StackSafeUtils
 import LeanMove.Typing.Soundness.Weakening
 
 /-!
@@ -359,13 +359,13 @@ private lemma live_refs_unique_insert_basic
 private theorem preservation_intLit (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (s : Site) (n : Nat) (cont : Stmt)
     (hstmt : m.frame.stmt = .letBind s (.intLit n) cont)
     (hstep : step (.running m) = .running m') :
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   simp only [step, hstmt, ExecState.running.injEq] at hstep; subst hstep
   have hcont := inv_intLit (by rw [← hstmt]; exact hwt.stmt_typed)
   refine ⟨{env with siteEnv := insert env.siteEnv s (.basic .u64)},
@@ -403,12 +403,13 @@ private theorem preservation_intLit (m m' : Machine) (env : TypeEnv) (lenv : Lab
       · by_cases heq : s' = s
         · subst heq; simp [lookup_insert_same] at hsite
         · exact Or.inr ⟨s', bk, by rw [lookup_insert_ne _ s s' _ heq] at hsite; exact hsite⟩
+    funEnv_sig_consistent := hwt.funEnv_sig_consistent
   }
 
 private theorem preservation_copy_val (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (s : Site) (x : Var) (cont : Stmt) (bt : BasicMoveType) (ms : Mut)
     (hstmt : m.frame.stmt = .letBind s (.usage (.copy x)) cont)
     (hvar : lookup env.varEnv x = some (.validVar, .basic bt, ms))
@@ -416,7 +417,7 @@ private theorem preservation_copy_val (m m' : Machine) (env : TypeEnv) (lenv : L
     (hstep : step (.running m) = .running m') :
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   obtain ⟨loc, val, hloc, hread, hht_val⟩ := hwt.var_consistent x .validVar (.basic bt) ms hvar
   have hrv : readVar m x = some val := by unfold readVar; simp [hloc, hread]
   simp only [step, hstmt, hrv, ExecState.running.injEq] at hstep; subst hstep
@@ -455,6 +456,7 @@ private theorem preservation_copy_val (m m' : Machine) (env : TypeEnv) (lenv : L
       · by_cases heq : s' = s
         · subst heq; simp [lookup_insert_same] at hsite
         · exact Or.inr ⟨s', bk, by rw [lookup_insert_ne _ s s' _ heq] at hsite; exact hsite⟩
+    funEnv_sig_consistent := hwt.funEnv_sig_consistent
   }
 
 /-- When PathEnv is extended via `update_with_epsilon t s_orig pe` and rmap is
@@ -689,7 +691,7 @@ private lemma freshRef_not_root
 private theorem preservation_copy_ref (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (s : Site) (x : Var) (cont : Stmt)
     (τ_ref : BasicMoveType) (ms : Mut) (s_orig t : Aref) (isBor : BorrowingKind)
     (hvar : lookup env.varEnv x = some (.validVar, .ref τ_ref s_orig isBor, ms))
@@ -702,7 +704,7 @@ private theorem preservation_copy_ref (m m' : Machine) (env : TypeEnv) (lenv : L
     (hstep : step (.running m) = .running m') :
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   -- 1. Extract the value from variable x
   obtain ⟨loc_x, val, hloc_x, hread_x, hmatch_x⟩ :=
     hwt.var_consistent x .validVar (.ref τ_ref s_orig isBor) ms hvar
@@ -880,18 +882,19 @@ private theorem preservation_copy_ref (m m' : Machine) (env : TypeEnv) (lenv : L
             exact absurd hsite.2.1.symm hrt
           · rw [lookup_insert_ne _ s s' _ heqs] at hsite
             exact Or.inr ⟨s', bk, hsite⟩
+    funEnv_sig_consistent := hwt.funEnv_sig_consistent
   } -- end copy_ref
 
 private theorem preservation_move (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (s : Site) (x : Var) (cont : Stmt)
     (hstmt : m.frame.stmt = .letBind s (.usage (.move x)) cont)
     (hstep : step (.running m) = .running m') :
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   obtain ⟨τ, ms, hvar, hcont⟩ := inv_move (by rw [← hstmt]; exact hwt.stmt_typed)
   obtain ⟨loc, val, hloc, hread, hmatch⟩ := hwt.var_consistent x .validVar τ ms hvar
   have hrv : readVar m x = some val := by unfold readVar; simp [hloc, hread]
@@ -1066,6 +1069,7 @@ private theorem preservation_move (m m' : Machine) (env : TypeEnv) (lenv : Label
             exact Or.inl ⟨x, bk', ms, hvar⟩
         · rw [lookup_insert_ne _ s s' _ heq] at hsite
           exact Or.inr ⟨s', bk, hsite⟩
+    funEnv_sig_consistent := hwt.funEnv_sig_consistent
   }
 
 /-- Reusable helper: rmap_paths is preserved by update_with_extension r .root [.root_to_var x]
@@ -1179,7 +1183,7 @@ private lemma rmap_paths_update_with_borrow
 private theorem preservation_borrow (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (s : Site) (x : Var) (cont : Stmt) (bk : BorrowingKind)
     -- Inversion results
     (τ : BasicMoveType) (r : Aref)
@@ -1199,7 +1203,7 @@ private theorem preservation_borrow (m : Machine) (env : TypeEnv) (lenv : LabelE
                 stmt := cont } }
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   intro m'
   -- 1. Define the new rmap extending with r → (loc, [])
   let rmap' : RefMap := { map := fun r' => if r' = r then some (loc, []) else rmap.map r' }
@@ -1393,19 +1397,20 @@ private theorem preservation_borrow (m : Machine) (env : TypeEnv) (lenv : LabelE
             exact absurd hsite'.2.1.symm hrt
           · rw [lookup_insert_ne _ s s' _ heqs] at hsite'
             exact Or.inr ⟨s', bk', hsite'⟩
+    funEnv_sig_consistent := hwt.funEnv_sig_consistent
   }
 
 /-- Preservation for borrowImm: thin wrapper around preservation_borrow. -/
 private theorem preservation_borrowImm (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (s : Site) (x : Var) (cont : Stmt)
     (hstmt : m.frame.stmt = .letBind s (.usage (.borrowImm x)) cont)
     (hstep : step (.running m) = .running m') :
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   obtain ⟨τ, ms, r, hlookup, hfresh, hcont⟩ :=
     inv_borrowImm (by rw [← hstmt]; exact hwt.stmt_typed)
   obtain ⟨loc, val, hloc, hread, hht_val⟩ :=
@@ -1419,13 +1424,13 @@ private theorem preservation_borrowImm (m m' : Machine) (env : TypeEnv) (lenv : 
 private theorem preservation_borrowMut (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (s : Site) (x : Var) (cont : Stmt)
     (hstmt : m.frame.stmt = .letBind s (.usage (.borrowMut x)) cont)
     (hstep : step (.running m) = .running m') :
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   obtain ⟨τ, ms, r, hlookup, hfresh, hcont⟩ :=
     inv_borrowMut (by rw [← hstmt]; exact hwt.stmt_typed)
   obtain ⟨loc, val, hloc, hread, hht_val⟩ :=
@@ -1455,7 +1460,7 @@ private theorem fieldPathOf_append (l₁ l₂ : List PathElement) :
 private theorem preservation_borrowField (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (af src : Site) (field : Field) (cont : Stmt) (bk : BorrowingKind)
     -- Inversion results
     (bt' : BasicMoveType) (fentries : AssocMap Field BasicMoveType) (s rf : Aref)
@@ -1474,7 +1479,7 @@ private theorem preservation_borrowField (m : Machine) (env : TypeEnv) (lenv : L
                 stmt := cont } }
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   intro m'
   -- 1. Freshness facts
   have hfresh_bool : freshRefInEnvBool rf env = true :=
@@ -1835,19 +1840,20 @@ private theorem preservation_borrowField (m : Machine) (env : TypeEnv) (lenv : L
               intro h; subst h; rw [lookup_delete_same] at hsite'; simp at hsite'
             rw [lookup_delete_ne _ src s' hne_src] at hsite'
             exact Or.inr ⟨s', bk', hsite'⟩
+    funEnv_sig_consistent := hwt.funEnv_sig_consistent
   }
 
 /-- Preservation for borrowField: thin wrapper around preservation_borrowField. -/
 private theorem preservation_borrowFieldImm (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (af : Site) (src : Site) (bt : BasicMoveType) (field : Field) (cont : Stmt)
     (hstmt : m.frame.stmt = .letBind af (.borrowField src bt field) cont)
     (hstep : step (.running m) = .running m') :
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   obtain ⟨bt', isBor, fentries, s, rf, hlookup_src, hbt, hfield, hfresh, hcont⟩ :=
     inv_borrowField (by rw [← hstmt]; exact hwt.stmt_typed)
   subst hbt
@@ -1863,13 +1869,13 @@ private theorem preservation_borrowFieldImm (m m' : Machine) (env : TypeEnv) (le
 private theorem preservation_borrowMutField (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (af : Site) (src : Site) (bt : BasicMoveType) (field : Field) (cont : Stmt)
     (hstmt : m.frame.stmt = .letBind af (.borrowMutField src bt field) cont)
     (hstep : step (.running m) = .running m') :
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   obtain ⟨btf, fentries, s, rf, hlookup_src, hbt, hfield, hfresh, hcont⟩ :=
     inv_borrowMutField (by rw [← hstmt]; exact hwt.stmt_typed)
   subst hbt
@@ -1900,306 +1906,6 @@ private theorem rmap_paths_delete_ref_node (env : TypeEnv) (m : Machine) (rmap :
   obtain ⟨hr2_mem, hr2_ne⟩ := hr2f
   rw [delete_ref_node_paths_not_involving_r env.pathEnv r r1 r2 hr1_ne hr2_ne] at hpf
   exact hrp r1 r2 hr1_mem hr2_mem p hpf
-
-/-- PathReflectedInHeap is preserved under heap.alloc -/
-private theorem pathReflectedInHeap_heap_alloc (rmap : RefMap) (heap : Heap) (v : Value)
-    (r1 r2 : Aref) (p : List PathElement)
-    (hrfl : PathReflectedInHeap rmap heap r1 r2 p)
-    (hlive : ∀ r loc path, rmap.map r = some (loc, path) → heap.readRef loc path ≠ none)
-    (hlb : ∀ loc, heap.read loc ≠ none → loc < heap.nextLoc) :
-    PathReflectedInHeap rmap (heap.alloc v).1 r1 r2 p := by
-  unfold PathReflectedInHeap at hrfl ⊢
-  cases hr1 : rmap.map r1 with
-  | none => trivial
-  | some p1 =>
-    cases hr2 : rmap.map r2 with
-    | none => simp
-    | some p2 =>
-      simp only [hr1, hr2] at hrfl ⊢
-      obtain ⟨loc1, path1⟩ := p1
-      obtain ⟨loc2, path2⟩ := p2
-      simp only at hrfl ⊢
-      intro heq_loc
-      obtain ⟨hpath, hread⟩ := hrfl heq_loc
-      refine ⟨hpath, ?_⟩
-      have hloc2_lt := hlb loc2 (readRef_implies_read heap loc2 path2 (hlive r2 loc2 path2 hr2))
-      have hne : loc2 ≠ heap.nextLoc := by intro h; subst h; exact Nat.lt_irrefl _ hloc2_lt
-      rw [heap_alloc_preserves_readRef heap v loc2 path2 hne]
-      exact hread
-
-/-- WellTypedState is preserved when only the heap grows by alloc (frame unchanged) -/
-private theorem wellTypedState_heap_alloc
-    (frame : Frame) (stack : List Frame) (heap : Heap)
-    (env : TypeEnv) (lenv : LabelEnv) (retTypes : List ParamType) (rmap : RefMap)
-    (v : Value)
-    (hwt : WellTypedState ⟨frame, stack, heap⟩ env lenv retTypes rmap) :
-    WellTypedState ⟨frame, stack, (heap.alloc v).1⟩ env lenv retTypes rmap := by
-  have hlb := hwt.heap_loc_bound
-  exact {
-    env_wf := hwt.env_wf
-    stmt_typed := hwt.stmt_typed
-    var_consistent := by
-      intro x isv τ ms hvar
-      have hold := hwt.var_consistent x isv τ ms hvar
-      cases isv with
-      | validVar =>
-        obtain ⟨loc, val, hloc, hread, hmatch⟩ := hold
-        have hlt := hlb loc (by rw [Heap.read] at hread ⊢; simp [hread])
-        refine ⟨loc, val, hloc, ?_, hmatch⟩
-        rw [heap_alloc_preserves_read heap v loc hlt]
-        exact hread
-      | invalidVar => exact hold
-    site_consistent := hwt.site_consistent
-    rmap_live := by
-      intro r loc path hrmap
-      have hlive := hwt.rmap_live r loc path hrmap
-      have hlt := hlb loc (readRef_implies_read heap loc path hlive)
-      have hne : loc ≠ heap.nextLoc := by intro h; subst h; exact Nat.lt_irrefl _ hlt
-      rw [heap_alloc_preserves_readRef heap v loc path hne]
-      exact hlive
-    rmap_paths := by
-      intro r1 r2 hr1 hr2 p hp
-      exact pathReflectedInHeap_heap_alloc rmap heap v r1 r2 p
-        (hwt.rmap_paths r1 r2 hr1 hr2 p hp) hwt.rmap_live hlb
-    varEnv_refs_in_pathEnv := hwt.varEnv_refs_in_pathEnv
-    siteEnv_refs_in_pathEnv := hwt.siteEnv_refs_in_pathEnv
-    live_refs_unique := hwt.live_refs_unique
-    blocks_typed := hwt.blocks_typed
-    lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
-    lenv_wf := hwt.lenv_wf
-    lenv_var_tracked := hwt.lenv_var_tracked
-    lenv_var_unique := hwt.lenv_var_unique
-    lenv_funEnv_eq := hwt.lenv_funEnv_eq
-    funEnv_typed := hwt.funEnv_typed
-    heap_loc_bound := heap_loc_bound_after_alloc heap v hlb
-    rmap_root_none := hwt.rmap_root_none
-    no_paths_to_root := hwt.no_paths_to_root
-    root_path_coherence := hwt.root_path_coherence
-    paths_from_non_member_empty := hwt.paths_from_non_member_empty
-    paths_to_non_member_empty := hwt.paths_to_non_member_empty
-    self_loop_only_empty := hwt.self_loop_only_empty
-    rmap_has_type := by
-      intro r bt loc path hrmap hcond
-      obtain ⟨val, hread, hht⟩ := hwt.rmap_has_type r bt loc path hrmap hcond
-      have hlt := hlb loc (readRef_implies_read heap loc path (hwt.rmap_live r loc path hrmap))
-      have hne : loc ≠ heap.nextLoc := by intro h; subst h; exact Nat.lt_irrefl _ hlt
-      rw [heap_alloc_preserves_readRef heap v loc path hne]
-      exact ⟨val, hread, hht⟩
-  }
-
-/-- StackSafe is preserved under heap.alloc -/
-private theorem stackSafe_heap_alloc (stack : List Frame) (ri : Option ReturnInfo)
-    (heap : Heap) (v : Value)
-    (hss : StackSafe stack ri heap)
-    (hlb : ∀ loc, heap.read loc ≠ none → loc < heap.nextLoc) :
-    StackSafe stack ri (heap.alloc v).1 := by
-  cases stack with
-  | nil => simp [StackSafe]
-  | cons callerFrame rest =>
-    cases ri with
-    | none => simp [StackSafe]
-    | some ri =>
-      simp only [StackSafe] at hss ⊢
-      obtain ⟨hret, hrest⟩ := hss
-      refine ⟨fun vals newSiteStore hbind => ?_, ?_⟩
-      · obtain ⟨env', lenv', retTypes', rmap', hwt', hss'⟩ := hret vals newSiteStore hbind
-        exact ⟨env', lenv', retTypes', rmap',
-          wellTypedState_heap_alloc _ _ heap env' lenv' retTypes' rmap' v hwt',
-          stackSafe_heap_alloc rest callerFrame.returnInfo heap v hss' hwt'.heap_loc_bound⟩
-      · exact stackSafe_heap_alloc rest callerFrame.returnInfo heap v hrest hlb
-
-/-- WellTypedState is preserved under heap.writeRef.
-    The write at (loc, wpath) changes the root value at loc from baseVal to
-    writePath baseVal wpath vval. All WellTypedState invariants are preserved because:
-    - For locations ≠ loc: heap reads unchanged
-    - For loc with basic-typed vars: writePath_preserves_HasType_general + HasType_transfer
-    - For loc with ref-typed vars: impossible (ref can't coexist with writePath success)
-    - For rmap_live/rmap_paths: heap_writeRef_preserves_readRef_same_loc + suffix transfer
-    - For rmap_has_type: writePath_preserves_readPath_HasType -/
-private theorem wellTypedState_heap_writeRef
-    (frame : Frame) (stack : List Frame) (heap heap' : Heap)
-    (loc : Loc) (wpath : List Field) (vval v_leaf : Value) (τ : BasicMoveType)
-    (env : TypeEnv) (lenv : LabelEnv) (retTypes : List ParamType) (rmap : RefMap)
-    (hwt : WellTypedState ⟨frame, stack, heap⟩ env lenv retTypes rmap)
-    (hwr : heap.writeRef loc wpath vval = some heap')
-    (hv_leaf_read : heap.readRef loc wpath = some v_leaf)
-    (hv_leaf_ht : HasType v_leaf τ)
-    (hmval : HasType vval τ) :
-    WellTypedState ⟨frame, stack, heap'⟩ env lenv retTypes rmap := by
-  -- Extract base value and writePath facts
-  have hlb := hwt.heap_loc_bound
-  simp only [Heap.readRef, bind, Option.bind] at hv_leaf_read
-  simp only [Heap.writeRef, bind, Option.bind] at hwr
-  cases hbase : heap.read loc with
-  | none => simp [hbase] at hv_leaf_read
-  | some baseVal =>
-    simp only [hbase] at hv_leaf_read hwr
-    cases hwp : writePath baseVal wpath vval with
-    | none => simp [hwp] at hwr
-    | some newRoot =>
-      simp [hwp] at hwr
-      -- hwr : heap' = heap.write loc newRoot (or reverse)
-      -- hv_leaf_read : readPath baseVal wpath = some v_leaf
-      -- Helper: reads at other locations
-      have hread_diff : ∀ loc', loc' ≠ loc → heap'.read loc' = heap.read loc' := by
-        intro loc' hne; rw [← hwr]
-        exact heap_write_preserves_read heap loc loc' newRoot (Ne.symm hne)
-      have hread_loc : heap'.read loc = some newRoot := by
-        rw [← hwr]; simp [Heap.write, Heap.read, lookup_insert_same]
-      -- Reconstruct the full writeRef for helpers that need it
-      have hwr_full : heap.writeRef loc wpath vval = some heap' := by
-        simp [Heap.writeRef, bind, Option.bind, hbase, hwp, hwr]
-      exact {
-        env_wf := hwt.env_wf
-        stmt_typed := hwt.stmt_typed
-        var_consistent := by
-          intro x isv τ_x ms hvar
-          have hvc := hwt.var_consistent x isv τ_x ms hvar
-          cases isv with
-          | validVar =>
-            obtain ⟨loc_x, v_x, hvarStore, hread_x, hmatch_x⟩ := hvc
-            by_cases hloc : loc_x = loc
-            · subst hloc
-              have hveq : v_x = baseVal := by
-                rw [hbase] at hread_x; simp only [Option.some.injEq] at hread_x; exact hread_x.symm
-              subst hveq
-              refine ⟨loc_x, newRoot, hvarStore, hread_loc, ?_⟩
-              cases τ_x with
-              | basic bt_x =>
-                dsimp only [ValueMatchesType] at hmatch_x ⊢
-                exact writePath_preserves_HasType_general v_x wpath vval newRoot bt_x
-                  hmatch_x hwp (by
-                    intro bt_leaf htap
-                    obtain ⟨bt', htap'⟩ := readPath_ne_none_implies_typeAtPath v_x bt_x
-                      wpath hmatch_x (by rw [hv_leaf_read]; exact Option.some_ne_none _)
-                    rw [htap'] at htap; simp only [Option.some.injEq] at htap; subst htap
-                    obtain ⟨u, hru, hhu⟩ := HasType_typeAtPath v_x bt_x wpath bt' hmatch_x htap'
-                    rw [hv_leaf_read] at hru; simp only [Option.some.injEq] at hru; subst hru
-                    exact HasType_transfer hhu hv_leaf_ht hmval)
-              | ref bt_ref r_ref bk_ref =>
-                exfalso
-                dsimp only [ValueMatchesType] at hmatch_x
-                obtain ⟨loc', path', hveq, _⟩ := hmatch_x
-                rw [hveq] at hwp hv_leaf_read
-                cases wpath with
-                | cons f rest => simp [writePath] at hwp
-                | nil =>
-                  simp [readPath] at hv_leaf_read; rw [← hv_leaf_read] at hv_leaf_ht
-                  exact HasType_not_ref loc' path' τ hv_leaf_ht
-            · exact ⟨loc_x, v_x, hvarStore, by rw [hread_diff loc_x hloc]; exact hread_x, hmatch_x⟩
-          | invalidVar => exact hvc
-        site_consistent := hwt.site_consistent
-        rmap_live := by
-          intro r' loc' path' hrmap'
-          have hlive := hwt.rmap_live r' loc' path' hrmap'
-          by_cases hloc : loc = loc'
-          · subst hloc
-            exact heap_writeRef_preserves_readRef_same_loc heap loc wpath path' vval heap'
-              hwr_full hlive (by
-                intro suffix hsuffix
-                cases suffix with
-                | nil => simp [readPath]
-                | cons sf srest =>
-                  simp only [Heap.readRef, bind, Option.bind, hbase] at hlive
-                  rw [← hsuffix, readPath_append] at hlive
-                  simp only [hv_leaf_read, Option.bind] at hlive
-                  exact HasType_transfer_readPath_ne_none v_leaf vval τ
-                    (sf :: srest) hv_leaf_ht hmval hlive)
-          · simp only [Heap.readRef, bind, Option.bind] at hlive ⊢
-            rw [hread_diff loc' (Ne.symm hloc)]
-            exact hlive
-        rmap_paths := by
-          intro r1 r2 hr1 hr2 p hp
-          have hpih := hwt.rmap_paths r1 r2 hr1 hr2 p hp
-          unfold PathReflectedInHeap at hpih ⊢
-          cases hrm1 : rmap.map r1 with
-          | none => simp [hrm1] at hpih ⊢
-          | some p1 =>
-            obtain ⟨loc1, path1⟩ := p1
-            cases hrm2 : rmap.map r2 with
-            | none => simp [hrm1, hrm2] at hpih ⊢
-            | some p2 =>
-              obtain ⟨loc2, path2⟩ := p2
-              simp only [hrm1, hrm2] at hpih ⊢
-              intro hloc_eq
-              obtain ⟨hpath_eq, hne⟩ := hpih hloc_eq
-              refine ⟨hpath_eq, ?_⟩
-              by_cases hloc2 : loc = loc2
-              · subst hloc2
-                exact heap_writeRef_preserves_readRef_same_loc heap loc wpath path2 vval heap'
-                  hwr_full hne (by
-                    intro suffix hsuffix
-                    cases suffix with
-                    | nil => simp [readPath]
-                    | cons sf srest =>
-                      simp only [Heap.readRef, bind, Option.bind, hbase] at hne
-                      rw [← hsuffix, readPath_append] at hne
-                      simp only [hv_leaf_read, Option.bind] at hne
-                      exact HasType_transfer_readPath_ne_none v_leaf vval τ
-                        (sf :: srest) hv_leaf_ht hmval hne)
-              · simp only [Heap.readRef, bind, Option.bind] at hne ⊢
-                rw [hread_diff loc2 (Ne.symm hloc2)]
-                exact hne
-        varEnv_refs_in_pathEnv := hwt.varEnv_refs_in_pathEnv
-        siteEnv_refs_in_pathEnv := hwt.siteEnv_refs_in_pathEnv
-        live_refs_unique := hwt.live_refs_unique
-        blocks_typed := hwt.blocks_typed
-        lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
-        lenv_wf := hwt.lenv_wf
-        lenv_var_tracked := hwt.lenv_var_tracked
-        lenv_var_unique := hwt.lenv_var_unique
-        lenv_funEnv_eq := hwt.lenv_funEnv_eq
-        funEnv_typed := hwt.funEnv_typed
-        heap_loc_bound := heap_loc_bound_after_writeRef heap loc wpath vval heap' hlb hwr_full
-        rmap_root_none := hwt.rmap_root_none
-        no_paths_to_root := hwt.no_paths_to_root
-        root_path_coherence := hwt.root_path_coherence
-        paths_from_non_member_empty := hwt.paths_from_non_member_empty
-        paths_to_non_member_empty := hwt.paths_to_non_member_empty
-        self_loop_only_empty := hwt.self_loop_only_empty
-        rmap_has_type := by
-          intro r' bt loc' path' hrmap' hcond
-          obtain ⟨v_old, hread_old, hht_old⟩ := hwt.rmap_has_type r' bt loc' path' hrmap' hcond
-          by_cases hloc' : loc = loc'
-          · subst hloc'
-            simp only [Heap.readRef, bind, Option.bind, hbase] at hread_old
-            obtain ⟨vnew, hread_vnew, hht_vnew⟩ := writePath_preserves_readPath_HasType
-              baseVal wpath path' vval newRoot v_leaf v_old τ bt
-              hwp hread_old hht_old hv_leaf_read hv_leaf_ht hmval
-            exact ⟨vnew, by simp [Heap.readRef, bind, Option.bind, hread_loc, hread_vnew], hht_vnew⟩
-          · refine ⟨v_old, ?_, hht_old⟩
-            simp only [Heap.readRef, bind, Option.bind] at hread_old ⊢
-            rw [hread_diff loc' (Ne.symm hloc')]
-            exact hread_old
-      }
-
-/-- StackSafe is preserved under heap.writeRef -/
-private theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
-    (heap heap' : Heap) (loc : Loc) (wpath : List Field)
-    (vval v_leaf : Value) (τ : BasicMoveType)
-    (hss : StackSafe stack ri heap)
-    (hwr : heap.writeRef loc wpath vval = some heap')
-    (hv_leaf_read : heap.readRef loc wpath = some v_leaf)
-    (hv_leaf_ht : HasType v_leaf τ)
-    (hmval : HasType vval τ) :
-    StackSafe stack ri heap' := by
-  cases stack with
-  | nil => simp [StackSafe]
-  | cons callerFrame rest =>
-    cases ri with
-    | none => simp [StackSafe]
-    | some ri =>
-      simp only [StackSafe] at hss ⊢
-      obtain ⟨hret, hrest⟩ := hss
-      refine ⟨fun vals newSiteStore hbind => ?_, ?_⟩
-      · obtain ⟨env', lenv', retTypes', rmap', hwt', hss'⟩ := hret vals newSiteStore hbind
-        exact ⟨env', lenv', retTypes', rmap',
-          wellTypedState_heap_writeRef _ _ heap heap' loc wpath vval v_leaf τ
-            env' lenv' retTypes' rmap' hwt' hwr hv_leaf_read hv_leaf_ht hmval,
-          stackSafe_heap_writeRef rest callerFrame.returnInfo heap heap' loc wpath
-            vval v_leaf τ hss' hwr hv_leaf_read hv_leaf_ht hmval⟩
-      · exact stackSafe_heap_writeRef rest callerFrame.returnInfo heap heap' loc wpath
-          vval v_leaf τ hrest hwr hv_leaf_read hv_leaf_ht hmval
 
 /-- After delete_ref_node, no_paths_to_root is preserved. -/
 private lemma no_paths_to_root_delete_ref_node'
@@ -2327,13 +2033,13 @@ private lemma live_refs_unique_delete_site
 private theorem preservation_readRef (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (s : Site) (src : Site) (cont : Stmt)
     (hstmt : m.frame.stmt = .letBind s (.readRef src) cont)
     (hstep : step (.running m) = .running m') :
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   obtain ⟨r, τ, isBor, hlookup, hcont⟩ := inv_readRef (by rw [← hstmt]; exact hwt.stmt_typed)
   obtain ⟨vref, hvref, hmatch⟩ := hwt.site_consistent src (.ref τ r isBor) hlookup
   obtain ⟨loc, path, hveq, hrmap⟩ := hmatch
@@ -2432,6 +2138,7 @@ private theorem preservation_readRef (m m' : Machine) (env : TypeEnv) (lenv : La
               intro h; subst h; rw [lookup_delete_same] at hsite; simp at hsite
             rw [lookup_delete_ne _ src s' hne_src] at hsite
             exact Or.inr ⟨s', bk, hsite⟩
+      funEnv_sig_consistent := hwt.funEnv_sig_consistent
     }
 
 /-- If evalBinop succeeds and binop_type determines the output type,
@@ -2459,13 +2166,13 @@ private lemma evalBinop_has_type (op : Binop) (bt1 bt2 bt3 : BasicMoveType)
 private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (s : Site) (op : Binop) (sA sB : Site) (cont : Stmt)
     (hstmt : m.frame.stmt = .letBind s (.binop op sA sB) cont)
     (hstep : step (.running m) = .running m') :
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   obtain ⟨bt1, bt2, bt3, ha, hb, hbt, hcont⟩ := inv_binop (by rw [← hstmt]; exact hwt.stmt_typed)
   obtain ⟨va, hva, hma⟩ := hwt.site_consistent sA (.basic bt1) ha
   obtain ⟨vb, hvb, hmb⟩ := hwt.site_consistent sB (.basic bt2) hb
@@ -2591,18 +2298,19 @@ private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : Labe
             intro h; rw [h, lookup_delete_same] at hsite; simp at hsite
           rw [lookup_delete_ne _ sA s' hne_a] at hsite
           exact Or.inr ⟨s', bk, hsite⟩
+    funEnv_sig_consistent := hwt.funEnv_sig_consistent
   }
 
 private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (site : Site) (cont : Stmt)
     (hstmt : m.frame.stmt = .release site cont)
     (hstep : step (.running m) = .running m') :
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   simp only [step, hstmt, ExecState.running.injEq] at hstep; subst hstep
   obtain ⟨τ, r, isBor, hlookup, hcont⟩ := inv_release (by rw [← hstmt]; exact hwt.stmt_typed)
   have hr_not_root : r ≠ .root := hwt.env_wf.siteEnv_wf site (.ref τ r isBor) hlookup
@@ -2654,18 +2362,19 @@ private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : La
           intro h; subst h; rw [lookup_delete_same] at hsite; simp at hsite
         rw [lookup_delete_ne env.siteEnv site s' hne] at hsite
         exact Or.inr ⟨s', bk, hsite⟩
+    funEnv_sig_consistent := hwt.funEnv_sig_consistent
   }
 
 private theorem preservation_writeRef (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (dst val : Site) (cont : Stmt)
     (hstmt : m.frame.stmt = .writeRef dst val cont)
     (hstep : step (.running m) = .running m') :
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   -- 1. Invert typing
   obtain ⟨τ, r, hdst_type, hval_type, hcheck, hcont⟩ :=
     inv_writeRef (by rw [← hstmt]; exact hwt.stmt_typed)
@@ -2962,6 +2671,7 @@ private theorem preservation_writeRef (m m' : Machine) (env : TypeEnv) (lenv : L
                 hloc' hwr]
           exact hread_old
         exact ⟨v_old, hread', hht_old⟩
+    funEnv_sig_consistent := hwt.funEnv_sig_consistent
   }
 
 -- ============================================================
@@ -3172,13 +2882,13 @@ private lemma collectPackFields_lookup_inv
 private theorem preservation_pack (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (s : Site) (name : Id) (fieldSites : List (Field × Site)) (cont : Stmt)
     (hstmt : m.frame.stmt = .letBind s (.pack name fieldSites) cont)
     (hstep : step (.running m) = .running m') :
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   obtain ⟨fentries, hfield_map, hcomplete, hcont⟩ := inv_pack (by rw [← hstmt]; exact hwt.stmt_typed)
   simp only [step, hstmt] at hstep
   split at hstep
@@ -3278,12 +2988,13 @@ private theorem preservation_pack (m m' : Machine) (env : TypeEnv) (lenv : Label
           · subst heq; simp [lookup_insert_same] at hsite
           · rw [lookup_insert_ne _ s s' _ heq] at hsite
             exact Or.inr ⟨s', bk, lookup_deleteAll_some env.siteEnv _ s' _ hsite⟩
+      funEnv_sig_consistent := hwt.funEnv_sig_consistent
     }
 
 private theorem preservation_assign_valid (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (x : Var) (a : Site) (cont : Stmt)
     (ax : Site) (τ : BasicMoveType) (ms : Mut) (r : Aref)
     (hvar : lookup env.varEnv x = some (.validVar, .basic τ, ms))
@@ -3299,7 +3010,7 @@ private theorem preservation_assign_valid (m m' : Machine) (env : TypeEnv) (lenv
     (hstep : step (.running m) = .running m') :
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   -- x is valid with .basic τ, so we can read the current value
   obtain ⟨loc_old, val_old, hloc_old, hread_old, _⟩ := hwt.var_consistent x .validVar (.basic τ) ms hvar
   -- Read the site value
@@ -3604,12 +3315,13 @@ private theorem preservation_assign_valid (m m' : Machine) (env : TypeEnv) (lenv
         have hne : loc ≠ m.heap.nextLoc := by intro h; subst h; exact Nat.lt_irrefl _ hlt
         rw [heap_alloc_preserves_readRef m.heap v loc path hne]
         exact ⟨val, hread, hht⟩
+      funEnv_sig_consistent := hwt.funEnv_sig_consistent
     }
 
 private theorem preservation_assign_invalid (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (x : Var) (a : Site) (cont : Stmt) (τ τ' : MoveType)
     (hvar : lookup env.varEnv x = some (.invalidVar, τ, .mutable))
     (hsite : lookup env.siteEnv a = some τ')
@@ -3621,7 +3333,7 @@ private theorem preservation_assign_invalid (m m' : Machine) (env : TypeEnv) (le
     (hstep : step (.running m) = .running m') :
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   -- Extract runtime values from site_consistent
   obtain ⟨v, hv, hmatch⟩ := hwt.site_consistent a τ' hsite
   have hrs : readSite m a = some v := hv
@@ -3822,6 +3534,7 @@ private theorem preservation_assign_invalid (m m' : Machine) (env : TypeEnv) (le
       have hne : loc ≠ m.heap.nextLoc := by intro h; subst h; exact Nat.lt_irrefl _ hlt
       rw [heap_alloc_preserves_readRef m.heap v loc path hne]
       exact ⟨val, hread, hht⟩
+    funEnv_sig_consistent := hwt.funEnv_sig_consistent
   }
 
 /-- Preservation for freeze: converts a (possibly mutable) reference to an immutable one.
@@ -3830,13 +3543,13 @@ private theorem preservation_assign_invalid (m m' : Machine) (env : TypeEnv) (le
 private theorem preservation_freeze (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (s : Site) (src : Site) (cont : Stmt)
     (hstmt : m.frame.stmt = .letBind s (.freeze src) cont)
     (hstep : step (.running m) = .running m') :
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   -- 1. Invert typing
   obtain ⟨τ, r, r', isBor, hlookup, hfresh, hcont⟩ :=
     inv_freeze (by rw [← hstmt]; exact hwt.stmt_typed)
@@ -4156,6 +3869,7 @@ private theorem preservation_freeze (m m' : Machine) (env : TypeEnv) (lenv : Lab
               intro h; subst h; rw [lookup_delete_same] at hsite'; simp at hsite'
             rw [lookup_delete_ne _ src s' hne_src] at hsite'
             exact Or.inr ⟨s', bk', hsite'⟩
+    funEnv_sig_consistent := hwt.funEnv_sig_consistent
   }
 
 -- ============================================================
@@ -4165,13 +3879,13 @@ private theorem preservation_freeze (m m' : Machine) (env : TypeEnv) (lenv : Lab
 private theorem preservation_unpack (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (fields : List (Field × Site)) (src : Site) (cont : Stmt)
     (hstmt : m.frame.stmt = .unpack fields src cont)
     (hstep : step (.running m) = .running m') :
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   -- 1. Invert typing
   obtain ⟨fentries, hlookup_src, hfresh, hdistinct, hfield_exists, hcont⟩ :=
     inv_unpack (by rw [← hstmt]; exact hwt.stmt_typed)
@@ -4326,6 +4040,7 @@ private theorem preservation_unpack (m m' : Machine) (env : TypeEnv) (lenv : Lab
             intro h; subst h; rw [lookup_delete_same] at hsite; cases hsite
           rw [lookup_delete_ne _ src s' hne_src] at hsite
           exact Or.inr ⟨s', bk, hsite⟩
+    funEnv_sig_consistent := hwt.funEnv_sig_consistent
   }
 
 -- ============================================================
@@ -4369,13 +4084,13 @@ private lemma findBlock_spec (blocks : List Block) (label : Label) (block : Bloc
 private theorem preservation_jump (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (label : Label)
     (hstmt : m.frame.stmt = .jump label)
     (hstep : step (.running m) = .running m') :
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   -- 1. Extract typing info
   obtain ⟨envL, hlenv, hsubsumes⟩ := inv_jump (by rw [← hstmt]; exact hwt.stmt_typed)
   -- 2. Case split on findBlock (step requires it to succeed)
@@ -4440,6 +4155,7 @@ private theorem preservation_jump (m m' : Machine) (env : TypeEnv) (lenv : Label
         rcases hcond with ⟨x, bk, ms, hvar⟩ | ⟨s, bk, hsite⟩
         · exact Or.inl ⟨x, bk, ms, hvar⟩
         · simp [hse s] at hsite
+      funEnv_sig_consistent := hwt.funEnv_sig_consistent
     }
 
 -- ============================================================
@@ -4449,13 +4165,13 @@ private theorem preservation_jump (m m' : Machine) (env : TypeEnv) (lenv : Label
 private theorem preservation_branch (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (c : Site) (l1 l2 : Label)
     (hstmt : m.frame.stmt = .branch c l1 l2)
     (hstep : step (.running m) = .running m') :
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   -- 1. Extract typing info
   obtain ⟨envL1, envL2, hc_type, hl1, hl2, hs1, hs2⟩ :=
     inv_branch (by rw [← hstmt]; exact hwt.stmt_typed)
@@ -4537,6 +4253,7 @@ private theorem preservation_branch (m m' : Machine) (env : TypeEnv) (lenv : Lab
             rcases hcond with ⟨x, bk, ms, hvar⟩ | ⟨s, bk, hsite⟩
             · exact Or.inl ⟨x, bk, ms, hvar⟩
             · simp [hse' s] at hsite
+          funEnv_sig_consistent := hwt.funEnv_sig_consistent
         }
     | false =>
       -- step uses l2
@@ -4596,7 +4313,242 @@ private theorem preservation_branch (m m' : Machine) (env : TypeEnv) (lenv : Lab
             rcases hcond with ⟨x, bk, ms, hvar⟩ | ⟨s, bk, hsite⟩
             · exact Or.inl ⟨x, bk, ms, hvar⟩
             · simp [hse' s] at hsite
+          funEnv_sig_consistent := hwt.funEnv_sig_consistent
         }
+
+-- ============================================================
+-- Part 8a2: preservation_ret
+-- ============================================================
+
+private theorem preservation_ret (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retTypes : List ParamType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retTypes rmap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
+    (sites : List Site)
+    (hstmt : m.frame.stmt = .ret sites)
+    (hstep : step (.running m) = .running m') :
+    ∃ env' lenv' retTypes' rmap',
+      WellTypedState m' env' lenv' retTypes' rmap' ∧
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
+  -- 1. Simplify step; case-split on collectSiteValues
+  simp only [step, hstmt] at hstep
+  cases hcsv : collectSiteValues m.frame.siteStore sites with
+  | none => simp [hcsv] at hstep
+  | some vals =>
+    simp only [hcsv] at hstep
+    -- Case split on stack
+    cases hstack : m.stack with
+    | nil => simp [hstack] at hstep
+    | cons callerFrame rest =>
+      simp only [hstack] at hstep hss
+      -- Case split on returnInfo
+      cases hri : m.frame.returnInfo with
+      | none => simp [hri] at hstep
+      | some ri =>
+        simp only [hri] at hstep hss
+        -- Case split on bindReturnValues
+        cases hbrv : bindReturnValues callerFrame.siteStore ri.resultSites vals with
+        | none => simp [hbrv] at hstep
+        | some newSiteStore =>
+          simp only [hbrv, ExecState.running.injEq] at hstep
+          subst hstep
+          -- 2. Extract typing info from ret rule
+          obtain ⟨htc_callee, _, _, _⟩ :=
+            inv_ret (by rw [← hstmt]; exact hwt.stmt_typed)
+          -- 3. Unfold StackSafe to get caller info
+          unfold StackSafe at hss
+          obtain ⟨cE, cL, cR, cM, hfields, hrest⟩ := hss
+          have henv_wf : TypeEnv.WellFormed cE := hfields.1
+          obtain ⟨hstmt_caller, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
+            hlenv_vu, hlenv_fe, hfe_typed, hve_refs, hse_refs, hlru,
+            hrmap_root, hno_paths_root, hroot_coh, hpfnm, hptnm, hsle,
+            huncp, hrru, hvar_con, hsite_con, hrmap_live, hrmap_paths_f,
+            hhlb, hrmap_ht, hfe_sig, htc_caller⟩ := hfields.2
+          -- 4. Construct extended rmap
+          let rmap' := RefMap.extendWithReturns cM cE.siteEnv ri.resultSites vals
+          -- 5. Extract complex field proofs BEFORE the structure literal
+          --    (to avoid the scoping gotcha: outer variables not accessible in by blocks inside exact { ... })
+          -- Helper: output ref ≠ var ref (from live_refs_unique)
+          have hne_output_var : ∀ (r_v : Aref), ∀ x bt bk ms,
+              lookup cE.varEnv x = some (.validVar, .ref bt r_v bk, ms) →
+              ∀ s ∈ ri.resultSites, ∀ bt' r' bk',
+              lookup cE.siteEnv s = some (.ref bt' r' bk') → r' ≠ r_v := by
+            intro r_v x bt bk ms hvar s hs bt' r' bk' hse hr'eq
+            subst hr'eq; exact (hlru r').1 x bt bk ms s bt' bk' hvar hse
+          -- Helper: mapped ref ≠ output ref (from result_refs_unmapped)
+          have hne_mapped : ∀ r (p : Loc × List Field),
+              cM.map r = some p →
+              ∀ s ∈ ri.resultSites, ∀ bt r' bk,
+              lookup cE.siteEnv s = some (.ref bt r' bk) → r' ≠ r := by
+            intro r p hcm s hs bt r' bk hse hr'eq
+            subst hr'eq; rw [hrru s bt r' bk hs hse] at hcm; exact absurd hcm (by simp)
+          -- 5a. var_consistent for rmap'
+          have hvar_con' : ∀ x isv τ ms,
+              lookup cE.varEnv x = some (isv, τ, ms) →
+              match isv with
+              | .validVar => ∃ loc v,
+                  lookup callerFrame.varStore x = some (some loc) ∧
+                  m.heap.read loc = some v ∧ ValueMatchesType v τ rmap'
+              | .invalidVar =>
+                  lookup callerFrame.varStore x = some none ∨
+                  ∃ loc, lookup callerFrame.varStore x = some (some loc) := by
+            intro x isv τ ms hvar
+            have hvc := hvar_con x isv τ ms hvar
+            cases isv with
+            | validVar =>
+              obtain ⟨loc, v, hloc, hread, hmatch⟩ := hvc
+              refine ⟨loc, v, hloc, hread, ?_⟩
+              cases τ with
+              | basic bt => exact hmatch
+              | ref bt r bk =>
+                obtain ⟨loc', path', hveq, hrmap_eq⟩ := hmatch
+                exact ⟨loc', path', hveq, RefMap.extendWithReturns_preserves cM cE.siteEnv
+                  ri.resultSites vals r (loc', path') hrmap_eq
+                  (hne_output_var r x bt bk ms hvar)⟩
+            | invalidVar => exact hvc
+          -- 5b. rmap_live for rmap'
+          have hrmap_live' : ∀ r loc path,
+              rmap'.map r = some (loc, path) → m.heap.readRef loc path ≠ none := by
+            intro r loc path hrmap_eq
+            have h_or := RefMap.extendWithReturns_values cM cE.siteEnv ri.resultSites vals
+              r loc path hrmap_eq
+            rcases h_or with hold | hnew
+            · exact hrmap_live r loc path hold
+            · exact returned_ref_is_live env.siteEnv m.frame.siteStore rmap m.heap
+                sites retTypes vals loc path hcsv htc_callee hwt.site_consistent
+                hwt.rmap_live hnew
+          -- 5c. rmap_paths for rmap'
+          have hrmap_paths' : ∀ r1 r2, r1 ∈ cE.pathEnv.refs → r2 ∈ cE.pathEnv.refs →
+              ∀ p, interpret_regex (cE.pathEnv.paths (r1, r2)) p →
+              PathReflectedInHeap rmap' m.heap r1 r2 p := by
+            intro r1 r2 hr1 hr2 p hp
+            by_cases heq : r1 = r2
+            · -- Self-loop: p = []
+              subst heq
+              have hpeq : p = [] := hsle r1 p hp
+              subst hpeq
+              unfold PathReflectedInHeap
+              cases hrm : rmap'.map r1 with
+              | none => trivial
+              | some pair =>
+                intro _; constructor
+                · simp [fieldPathOf]
+                · exact hrmap_live' r1 pair.1 pair.2 hrm
+            · -- r1 ≠ r2
+              cases hm1 : cM.map r1 with
+              | none => exact absurd hp (huncp r1 r2 hr1 hr2 heq (Or.inl hm1) p)
+              | some p1 =>
+                cases hm2 : cM.map r2 with
+                | none => exact absurd hp (huncp r1 r2 hr1 hr2 heq (Or.inr hm2) p)
+                | some p2 =>
+                  have hpih := hrmap_paths_f r1 r2 hr1 hr2 p hp
+                  -- Annotate with rmap' so rw can find the pattern in the goal
+                  have heq1 : rmap'.map r1 = some p1 :=
+                    RefMap.extendWithReturns_preserves cM cE.siteEnv
+                      ri.resultSites vals r1 p1 hm1 (hne_mapped r1 p1 hm1)
+                  have heq2 : rmap'.map r2 = some p2 :=
+                    RefMap.extendWithReturns_preserves cM cE.siteEnv
+                      ri.resultSites vals r2 p2 hm2 (hne_mapped r2 p2 hm2)
+                  simp only [PathReflectedInHeap] at hpih ⊢
+                  rw [heq1, heq2]; rw [hm1, hm2] at hpih
+                  exact hpih
+          -- 5d. site_consistent for rmap' and newSiteStore
+          have hsite_con' : ∀ s τ, lookup cE.siteEnv s = some τ →
+              ∃ v, lookup newSiteStore s = some v ∧ ValueMatchesType v τ rmap' := by
+            intro s τ hse
+            by_cases hni : s ∈ ri.resultSites
+            · sorry -- Result sites: needs derive_returnValsWellTyped + bindReturnValues
+            · -- Non-result sites: preserved by bindReturnValues
+              obtain ⟨v, hlookup, hvm⟩ := hsite_con s τ hse hni
+              refine ⟨v, ?_, ?_⟩
+              · rw [bindReturnValues_preserves callerFrame.siteStore ri.resultSites vals
+                  newSiteStore s hbrv hni]
+                exact hlookup
+              · cases τ with
+                | basic _ => exact hvm
+                | ref bt r bk =>
+                  obtain ⟨loc, path, hveq, hrmap_eq⟩ := hvm
+                  have hne_site : ∀ s' ∈ ri.resultSites, ∀ bt' r' bk',
+                      lookup cE.siteEnv s' = some (.ref bt' r' bk') → r' ≠ r := by
+                    intro s' hs' bt' r' bk' hse' hr'eq
+                    subst hr'eq
+                    by_cases hsne : s = s'
+                    · subst hsne; exact absurd hs' hni
+                    · exact (hlru r').2.1 s s' bt bt' bk bk' hsne hse hse'
+                  exact ⟨loc, path, hveq, RefMap.extendWithReturns_preserves cM cE.siteEnv
+                    ri.resultSites vals r (loc, path) hrmap_eq hne_site⟩
+          -- 5e. root_path_coherence for rmap'
+          have hroot_coh' : ∀ v y rest, v ∈ cE.pathEnv.refs →
+              interpret_regex (cE.pathEnv.paths (.root, v)) (.root_to_var y :: rest) →
+              ∀ loc_v path_v, rmap'.map v = some (loc_v, path_v) →
+              ∀ loc_y, lookup callerFrame.varStore y = some (some loc_y) →
+              loc_v = loc_y → path_v = fieldPathOf rest := by
+            intro v y rest hv_mem hpath loc_v path_v hrmap_v loc_y hvar_y hloc_eq
+            -- If v is mapped in cM, use extendWithReturns_preserves + hroot_coh
+            rcases RefMap.extendWithReturns_values cM cE.siteEnv ri.resultSites vals
+              v loc_v path_v hrmap_v with hold | hnew
+            · exact hroot_coh v y rest hv_mem hpath loc_v path_v hold loc_y hvar_y hloc_eq
+            · -- Output ref case: rmap'.map v ≠ cM.map v, so v is an output ref
+              -- Since cM.map .root = none (hrmap_root), huncp gives no paths from .root to v
+              by_cases hv_root : v = Aref.root
+              · subst hv_root
+                have : rmap'.map Aref.root = none :=
+                  RefMap.extendWithReturns_preserves_none cM cE.siteEnv ri.resultSites vals .root
+                    hrmap_root (fun s _ bt r bk hse => henv_wf.siteEnv_wf s (.ref bt r bk) hse)
+                rw [this] at hrmap_v; exact absurd hrmap_v (by simp)
+              · exact absurd hpath (huncp Aref.root v
+                  henv_wf.pathEnv_wf.root_in_refs hv_mem (Ne.symm hv_root)
+                  (Or.inl hrmap_root) (.root_to_var y :: rest))
+          -- 5f. rmap_has_type for rmap'
+          have hrmap_ht' : ∀ r bt loc path, rmap'.map r = some (loc, path) →
+              ((∃ x bk ms, lookup cE.varEnv x = some (.validVar, .ref bt r bk, ms)) ∨
+               (∃ s bk, lookup cE.siteEnv s = some (.ref bt r bk))) →
+              ∃ v, m.heap.readRef loc path = some v ∧ HasType v bt := by
+            intro r bt loc path hrmap_eq hcond
+            rcases RefMap.extendWithReturns_values cM cE.siteEnv ri.resultSites vals
+              r loc path hrmap_eq with hold | hnew
+            · -- Old ref: use hrmap_ht
+              apply hrmap_ht r bt loc path hold
+              rcases hcond with ⟨x, bk, ms, hvar⟩ | ⟨s, bk, hse⟩
+              · exact Or.inl ⟨x, bk, ms, hvar⟩
+              · -- Need s ∉ ri.resultSites (because r is mapped in cM)
+                by_cases hni : s ∈ ri.resultSites
+                · exfalso; rw [hrru s bt r bk hni hse] at hold; exact absurd hold (by simp)
+                · exact Or.inr ⟨s, bk, hse, hni⟩
+            · sorry -- New ref: needs callee bridge (similar to derive_returnValsWellTyped)
+          -- 5g. rmap_root_none for rmap'
+          have hrmap_root' : rmap'.map .root = none :=
+            RefMap.extendWithReturns_preserves_none cM cE.siteEnv ri.resultSites vals .root
+              hrmap_root (fun s _ bt r bk hse => henv_wf.siteEnv_wf s (.ref bt r bk) hse)
+          -- 6. Assemble WellTypedState
+          refine ⟨cE, cL, cR, rmap', ?_, hrest⟩
+          exact {
+            env_wf := henv_wf
+            stmt_typed := hstmt_caller
+            var_consistent := hvar_con'
+            site_consistent := hsite_con'
+            rmap_live := hrmap_live'
+            rmap_paths := hrmap_paths'
+            blocks_typed := hblocks
+            lenv_empty_siteEnv := hlenv_se
+            lenv_wf := hlenv_wf
+            lenv_var_tracked := hlenv_vt
+            lenv_var_unique := hlenv_vu
+            lenv_funEnv_eq := hlenv_fe
+            funEnv_typed := hfe_typed
+            heap_loc_bound := hhlb
+            varEnv_refs_in_pathEnv := hve_refs
+            siteEnv_refs_in_pathEnv := hse_refs
+            live_refs_unique := hlru
+            rmap_root_none := hrmap_root'
+            no_paths_to_root := hno_paths_root
+            root_path_coherence := hroot_coh'
+            paths_from_non_member_empty := hpfnm
+            paths_to_non_member_empty := hptnm
+            self_loop_only_empty := hsle
+            rmap_has_type := hrmap_ht'
+            funEnv_sig_consistent := hfe_sig
+          }
 
 -- ============================================================
 -- Part 8b: Main Preservation Theorem (dispatches to case lemmas)
@@ -4605,11 +4557,11 @@ private theorem preservation_branch (m m' : Machine) (env : TypeEnv) (lenv : Lab
 theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
     (hstep : step (.running m) = .running m') :
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
-      StackSafe m'.stack m'.frame.returnInfo m'.heap := by
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   cases hstmt : m.frame.stmt with
   | skip =>
     exfalso; simp only [step, hstmt] at hstep
