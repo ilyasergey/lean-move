@@ -5062,6 +5062,89 @@ private theorem weaken_call
       hwfL_cc.pathEnv_wf.root_in_refs
     )
 
+/-- Weakening for the `ret` case: return conditions are anti-monotone in paths.
+    Given return conditions for envL and subsumption envL ⊇ env (paths in env ⊆ paths in envL),
+    derives return conditions for env. -/
+private lemma weaken_ret (lenv : LabelEnv) (envL env : TypeEnv) (as : List Site)
+    (retTypes : List ParamType)
+    -- envL return conditions
+    (hconf : types_conform envL.siteEnv as retTypes)
+    (hnolocal : ∀ a ∈ as, ∀ bt r bk, lookup envL.siteEnv a = some (.ref bt r bk) →
+      ∀ p, ¬interpret_regex (envL.pathEnv.paths (.root, r)) p)
+    (hwritable : ∀ a ∈ as, ∀ bt r, lookup envL.siteEnv a = some (.ref bt r .siteBorrowMut) →
+      ∀ y, y ∈ envL.pathEnv.refs → ∀ p, interpret_regex (envL.pathEnv.paths (r, y)) p → p = [])
+    (hnoalias : ∀ a₁ ∈ as, ∀ bt₁ r₁, lookup envL.siteEnv a₁ = some (.ref bt₁ r₁ .siteBorrowMut) →
+      ∀ a₂ ∈ as, a₁ ≠ a₂ → ∀ bt₂ r₂ bk₂, lookup envL.siteEnv a₂ = some (.ref bt₂ r₂ bk₂) →
+        ∀ p, ¬interpret_regex (envL.pathEnv.paths (r₂, r₁)) p)
+    -- subsumption
+    (hsub : TypeEnv.subsumes envL env)
+    -- auxiliary hypotheses
+    (hroot : Aref.root ∈ envL.pathEnv.refs)
+    (hsite_tracked : ∀ s bt r bk, lookup envL.siteEnv s = some (.ref bt r bk) → r ∈ envL.pathEnv.refs)
+    (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = []) :
+    typecheck_stmt lenv env (.ret as) retTypes := by
+  obtain ⟨σ, hid_σ, _, hse, hrefs, _, _, hpaths_sub⟩ := hsub
+  have hσ_root : σ .root = .root := hid_σ .root (fun n h => by cases h)
+  exact typecheck_stmt.ret lenv env _ _
+    (types_conform_SiteEnvSubstEquiv σ _ _ _ _ hse hconf)
+    (by -- no local borrowing: transfer paths from env to envL via hpaths_sub
+      intro a ha_in bt r bk hlook_env p hp_env
+      obtain ⟨τ1, hlook1, hsubst1⟩ :=
+        SiteEnvSubstEquiv_lookup_some_inv σ _ _ a _ hse hlook_env
+      cases τ1 with
+      | basic _ => simp [applySubstMoveType] at hsubst1
+      | ref bt' r' bk' =>
+        simp only [applySubstMoveType, MoveType.ref.injEq] at hsubst1
+        have hrr : σ r' = r := hsubst1.2.1
+        have hr'_mem := hsite_tracked a bt' r' bk' hlook1
+        rw [← hrr, ← hσ_root] at hp_env
+        exact hnolocal a ha_in bt' r' bk' hlook1 p
+          (hpaths_sub .root r' hroot hr'_mem p hp_env))
+    (by -- writability: use path transfer + self_loop_only_empty
+      intro a ha_in bt r hlook_env y hy_env p hp_env
+      obtain ⟨τ1, hlook1, hsubst1⟩ :=
+        SiteEnvSubstEquiv_lookup_some_inv σ _ _ a _ hse hlook_env
+      cases τ1 with
+      | basic _ => simp [applySubstMoveType] at hsubst1
+      | ref bt' r' bk' =>
+        simp only [applySubstMoveType, MoveType.ref.injEq] at hsubst1
+        have hrr : σ r' = r := hsubst1.2.1
+        have hbk : bk' = .siteBorrowMut := hsubst1.2.2
+        rw [hbk] at hlook1
+        have hr'_mem := hsite_tracked a bt' r' .siteBorrowMut hlook1
+        rw [hrefs.symm] at hy_env
+        obtain ⟨y', hy'_mem, rfl⟩ := List.mem_map.mp hy_env
+        rw [← hrr] at hp_env
+        by_cases heq : r' = y'
+        · subst heq; exact hself_loop_only_empty _ p hp_env
+        · exact hwritable a ha_in bt' r' hlook1 y' hy'_mem p
+            (hpaths_sub r' y' hr'_mem hy'_mem p hp_env))
+    (by -- no aliasing: transfer paths from env to envL, use hnoalias
+      intro a₁ ha₁ bt₁ r₁ hlook₁_env a₂ ha₂ hne bt₂ r₂ bk₂ hlook₂_env p hp_env
+      obtain ⟨τ1, hlk1, hsb1⟩ :=
+        SiteEnvSubstEquiv_lookup_some_inv σ _ _ a₁ _ hse hlook₁_env
+      obtain ⟨τ2, hlk2, hsb2⟩ :=
+        SiteEnvSubstEquiv_lookup_some_inv σ _ _ a₂ _ hse hlook₂_env
+      cases τ1 with
+      | basic _ => simp [applySubstMoveType] at hsb1
+      | ref bt₁' r₁' bk₁' =>
+        simp only [applySubstMoveType, MoveType.ref.injEq] at hsb1
+        have hrr₁ : σ r₁' = r₁ := hsb1.2.1
+        have hbk₁ : bk₁' = .siteBorrowMut := hsb1.2.2
+        rw [hbk₁] at hlk1
+        cases τ2 with
+        | basic _ => simp [applySubstMoveType] at hsb2
+        | ref bt₂' r₂' bk₂' =>
+          simp only [applySubstMoveType, MoveType.ref.injEq] at hsb2
+          have hrr₂ : σ r₂' = r₂ := hsb2.2.1
+          have hbk₂ : bk₂' = bk₂ := hsb2.2.2
+          rw [hbk₂] at hlk2
+          have hr₁'_mem := hsite_tracked a₁ bt₁' r₁' .siteBorrowMut hlk1
+          have hr₂'_mem := hsite_tracked a₂ bt₂' r₂' bk₂ hlk2
+          rw [← hrr₂, ← hrr₁] at hp_env
+          exact hnoalias a₁ ha₁ bt₁' r₁' hlk1 a₂ ha₂ hne bt₂' r₂' bk₂ hlk2 p
+            (hpaths_sub r₂' r₁' hr₂'_mem hr₁'_mem p hp_env))
+
 /-- Weakening: if a statement type-checks under envL, and envL.subsumes env,
     then it also type-checks under env.
     Requires both environments to be well-formed and refs tracked (always holds in practice). -/
@@ -5099,13 +5182,9 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
     exact typecheck_stmt.branch lenv env _ _ _ _ _ _ hsite_env hl1 hl2
       (TypeEnv.subsumes_trans _ _ _ hs1 hdel_sub)
       (TypeEnv.subsumes_trans _ _ _ hs2 hdel_sub)
-  | ret _ _ _ hconf _ _ _ =>
-    obtain ⟨σ, _, _, hse, _, _, _, _⟩ := hsub
-    exact typecheck_stmt.ret lenv env _ _
-      (types_conform_SiteEnvSubstEquiv σ _ _ _ _ hse hconf)
-      (by sorry) -- no local borrowing: anti-monotone in paths
-      (by sorry) -- writability: anti-monotone in paths
-      (by sorry) -- no aliasing: anti-monotone in paths
+  | ret _ _ _ hconf hnolocal hwritable hnoalias =>
+    exact weaken_ret lenv _ env _ _ hconf hnolocal hwritable hnoalias
+      hsub hroot hsite_tracked hself_loop_only_empty
   | abort _ _ _ _ hlook =>
     obtain ⟨σ, _, _, hse, _, _, _⟩ := hsub
     exact typecheck_stmt.abort lenv env _ _ _
