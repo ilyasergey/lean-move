@@ -733,82 +733,56 @@ theorem extendWithReturns_new_mapping_type
     (r : Aref) (loc : Loc) (path : List Field)
     (hrmap : (RefMap.extendWithReturns rmap siteEnv sites vals).map r = some (loc, path))
     (hold : rmap.map r = none)
-    (hrvt : ReturnValsWellTyped vals sites siteEnv heap)
-    (hnodup : List.Nodup sites)
-    (huniq : ∀ s₁ ∈ sites, ∀ s₂ ∈ sites, s₁ ≠ s₂ →
-      ∀ bt₁ bt₂ bk₁ bk₂,
-      lookup siteEnv s₁ = some (.ref bt₁ r bk₁) →
-      lookup siteEnv s₂ = some (.ref bt₂ r bk₂) → False) :
+    (hrvt : ReturnValsWellTyped vals sites siteEnv heap) :
     ∃ bt bk s, s ∈ sites ∧ lookup siteEnv s = some (.ref bt r bk) ∧
       ∃ v, heap.readRef loc path = some v ∧ HasType v bt := by
+  -- Prove a stronger version: either rmap already maps r, or some site provided the mapping
+  suffices hsuf : ∀ (rmap : RefMap) (vals : List Value),
+      (RefMap.extendWithReturns rmap siteEnv sites vals).map r = some (loc, path) →
+      ReturnValsWellTyped vals sites siteEnv heap →
+      rmap.map r = some (loc, path) ∨
+      ∃ bt bk s, s ∈ sites ∧ lookup siteEnv s = some (.ref bt r bk) ∧
+        ∃ v, heap.readRef loc path = some v ∧ HasType v bt by
+    rcases hsuf rmap vals hrmap hrvt with h | h
+    · rw [hold] at h; exact absurd h (by simp)
+    · exact h
+  clear rmap hold hrmap hrvt
+  intro rmap vals hrmap hrvt
   induction sites generalizing vals rmap with
   | nil =>
-    cases vals <;> { simp [RefMap.extendWithReturns] at hrmap; rw [hold] at hrmap; simp at hrmap }
+    cases vals <;> (simp [RefMap.extendWithReturns] at hrmap; exact Or.inl hrmap)
   | cons s ss ih =>
-    have hs_not_mem : s ∉ ss := (List.nodup_cons.mp hnodup).1
-    have hnodup_ss : List.Nodup ss := (List.nodup_cons.mp hnodup).2
     cases vals with
-    | nil => simp [RefMap.extendWithReturns] at hrmap; rw [hold] at hrmap; simp at hrmap
+    | nil => simp [RefMap.extendWithReturns] at hrmap; exact Or.inl hrmap
     | cons v vs =>
-      have huniq' : ∀ s₁ ∈ ss, ∀ s₂ ∈ ss, s₁ ≠ s₂ → ∀ bt₁ bt₂ bk₁ bk₂,
-          lookup siteEnv s₁ = some (.ref bt₁ r bk₁) →
-          lookup siteEnv s₂ = some (.ref bt₂ r bk₂) → False :=
-        fun s₁ hs₁ s₂ hs₂ => huniq s₁ (List.mem_cons_of_mem _ hs₁) s₂ (List.mem_cons_of_mem _ hs₂)
       simp only [ReturnValsWellTyped] at hrvt
       cases hse_s : lookup siteEnv s with
-      | none =>
-        simp only [hse_s] at hrvt; exact absurd hrvt.1 id
+      | none => simp only [hse_s] at hrvt; exact absurd hrvt.1 id
       | some τ =>
         simp only [hse_s] at hrvt
         cases τ with
         | basic _ =>
-          -- extendWithReturns doesn't change rmap for basic type
-          -- IH: use rmap with tail
-          obtain ⟨bt, bk, s', hs', hse', hv⟩ := ih rmap vs (by
-            -- Need: (extendWithReturns rmap siteEnv ss vs).map r = some (loc, path)
-            -- Since lookup siteEnv s = some (.basic _), extendWithReturns step doesn't touch rmap
-            -- regardless of v. The call reduces to extendWithReturns rmap siteEnv ss vs.
-            -- We show this by cases on v:
-            revert hrmap; cases v <;> simp [RefMap.extendWithReturns, hse_s]) hold hrvt.2 hnodup_ss huniq'
-          exact ⟨bt, bk, s', List.mem_cons_of_mem _ hs', hse', hv⟩
+          exact (ih rmap vs (by
+            revert hrmap; cases v <;> simp [RefMap.extendWithReturns, hse_s]) hrvt.2).elim
+            Or.inl
+            (fun ⟨bt, bk, s', hs', hse', hv⟩ =>
+              Or.inr ⟨bt, bk, s', List.mem_cons_of_mem _ hs', hse', hv⟩)
         | ref bt_s r_s bk_s =>
-          -- ReturnValsWellTyped forces v to be a ref
           obtain ⟨loc_v, path_v, hveq, v', hread_v, htype_v⟩ := hrvt.1
-          -- Determine concrete v
           cases hv : v with
           | ref loc_v' path_v' =>
-            subst hv
-            simp only [Value.ref.injEq] at hveq
-            obtain ⟨rfl, rfl⟩ := hveq
-            -- Reduce extendWithReturns step
+            subst hv; simp only [Value.ref.injEq] at hveq; obtain ⟨rfl, rfl⟩ := hveq
             rw [ewr_step_ref rmap siteEnv s ss bt_s r_s bk_s loc_v' path_v' vs hse_s] at hrmap
-            by_cases hrr : r = r_s
-            · -- r = r_s: this site mapped r
-              subst hrr
-              -- No other site in ss has ref r (by huniq)
-              have hne_ss : ∀ s₂ ∈ ss, ∀ bt₂ r₂ bk₂,
-                  lookup siteEnv s₂ = some (.ref bt₂ r₂ bk₂) → r₂ ≠ r := by
-                intro s₂ hs₂ bt₂ r₂ bk₂ hse₂ hr₂eq; subst hr₂eq
-                exact huniq s (List.mem_cons_self ..) s₂ (List.mem_cons_of_mem _ hs₂)
-                  (fun heq => hs_not_mem (heq ▸ hs₂)) bt_s bt₂ bk_s bk₂ hse_s hse₂
-              -- rmap_step.map r = some (loc_v', path_v')
-              have hrmap_step : (⟨fun r' => if r' = r then some (loc_v', path_v') else rmap.map r'⟩ : RefMap).map r = some (loc_v', path_v') := by
-                simp
-              have hpres := RefMap.extendWithReturns_preserves
-                ⟨fun r' => if r' = r then some (loc_v', path_v') else rmap.map r'⟩
-                siteEnv ss vs r (loc_v', path_v') hrmap_step hne_ss
-              rw [hpres] at hrmap
-              simp only [Option.some.injEq, Prod.mk.injEq] at hrmap
-              obtain ⟨rfl, rfl⟩ := hrmap
-              exact ⟨bt_s, bk_s, s, List.mem_cons_self .., hse_s, v', hread_v, htype_v⟩
-            · -- r ≠ r_s: rmap_step maps r to none, use IH
-              have hold' : (⟨fun r' => if r' = r_s then some (loc_v', path_v') else rmap.map r'⟩ : RefMap).map r = none := by
-                show (if r = r_s then some (loc_v', path_v') else rmap.map r) = none
-                rw [if_neg hrr]; exact hold
-              obtain ⟨bt, bk, s', hs', hse', hv⟩ := ih
-                ⟨fun r' => if r' = r_s then some (loc_v', path_v') else rmap.map r'⟩
-                vs hrmap hold' hrvt.2 hnodup_ss huniq'
-              exact ⟨bt, bk, s', List.mem_cons_of_mem _ hs', hse', hv⟩
+            exact (ih _ vs hrmap hrvt.2).elim
+              (fun hold' => by
+                by_cases hrr : r = r_s
+                · subst hrr; simp at hold'; obtain ⟨rfl, rfl⟩ := hold'
+                  exact Or.inr ⟨bt_s, bk_s, s, List.mem_cons_self .., hse_s, v', hread_v, htype_v⟩
+                · have h : (⟨fun r' => if r' = r_s then some (loc_v', path_v') else rmap.map r'⟩ :
+                      RefMap).map r = rmap.map r := by simp [hrr]
+                  rw [h] at hold'; exact Or.inl hold')
+              (fun ⟨bt, bk, s', hs', hse', hv'⟩ =>
+                Or.inr ⟨bt, bk, s', List.mem_cons_of_mem _ hs', hse', hv'⟩)
           | int n => subst hv; exact Value.noConfusion hveq
           | bool b => subst hv; exact Value.noConfusion hveq
           | unit => subst hv; exact Value.noConfusion hveq

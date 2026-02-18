@@ -4452,12 +4452,22 @@ private theorem preservation_ret (m m' : Machine) (env : TypeEnv) (lenv : LabelE
                   simp only [PathReflectedInHeap] at hpih ⊢
                   rw [heq1, heq2]; rw [hm1, hm2] at hpih
                   exact hpih
+          -- ReturnValsWellTyped for caller sites (needed by 5d and 5f)
+          have hrvt_caller : ReturnValsWellTyped vals ri.resultSites cE.siteEnv m.heap :=
+            derive_returnValsWellTyped env.siteEnv cE.siteEnv sites ri.resultSites
+              retTypes m.frame.siteStore m.heap rmap vals
+              htc_callee htc_caller hcsv hwt.site_consistent
+              (fun r bt loc path hm hs => hwt.rmap_has_type r bt loc path hm (Or.inr hs))
           -- 5d. site_consistent for rmap' and newSiteStore
           have hsite_con' : ∀ s τ, lookup cE.siteEnv s = some τ →
               ∃ v, lookup newSiteStore s = some v ∧ ValueMatchesType v τ rmap' := by
             intro s τ hse
             by_cases hni : s ∈ ri.resultSites
-            · sorry -- Result sites: needs derive_returnValsWellTyped + bindReturnValues
+            · exact returnVals_site_consistent cM callerFrame.siteStore cE.siteEnv
+                ri.resultSites vals m.heap newSiteStore hbrv hrvt_caller
+                (fun s₁ _ s₂ _ hne bt₁ bt₂ r bk₁ bk₂ hs₁ hs₂ =>
+                  (hlru r).2.1 s₁ s₂ bt₁ bt₂ bk₁ bk₂ hne hs₁ hs₂)
+                s hni τ hse
             · -- Non-result sites: preserved by bindReturnValues
               obtain ⟨v, hlookup, hvm⟩ := hsite_con s τ hse hni
               refine ⟨v, ?_, ?_⟩
@@ -4515,7 +4525,53 @@ private theorem preservation_ret (m m' : Machine) (env : TypeEnv) (lenv : LabelE
                 by_cases hni : s ∈ ri.resultSites
                 · exfalso; rw [hrru s bt r bk hni hse] at hold; exact absurd hold (by simp)
                 · exact Or.inr ⟨s, bk, hse, hni⟩
-            · sorry -- New ref: needs callee bridge (similar to derive_returnValsWellTyped)
+            · -- New ref: extendWithReturns created this mapping
+              rcases hcond with ⟨x, bk_v, ms, hvar⟩ | ⟨s_c, bk_c, hse_c⟩
+              · -- varEnv case: no result site has ref r, so cM must map r
+                have hne_r := hne_output_var r x bt bk_v ms hvar
+                cases hcm : cM.map r with
+                | none =>
+                  exact absurd hrmap_eq (by
+                    rw [show rmap'.map r = none from
+                      RefMap.extendWithReturns_preserves_none cM cE.siteEnv
+                        ri.resultSites vals r hcm hne_r]; simp)
+                | some p =>
+                  have hpres := RefMap.extendWithReturns_preserves cM cE.siteEnv
+                    ri.resultSites vals r p hcm hne_r
+                  rw [hpres] at hrmap_eq
+                  simp only [Option.some.injEq] at hrmap_eq; subst hrmap_eq
+                  exact hrmap_ht r bt loc path hcm (Or.inl ⟨x, bk_v, ms, hvar⟩)
+              · -- siteEnv case
+                by_cases hni_s : s_c ∈ ri.resultSites
+                · -- s_c ∈ resultSites: cM.map r = none, use extendWithReturns_new_mapping_type
+                  have hcm_none : cM.map r = none := hrru s_c bt r bk_c hni_s hse_c
+                  obtain ⟨bt', bk'', s', hs', hse', v_h, hread, hhas⟩ :=
+                    extendWithReturns_new_mapping_type cM cE.siteEnv ri.resultSites vals m.heap
+                      r loc path hrmap_eq hcm_none hrvt_caller
+                  -- bt' = bt: both sites have ref r, so must be same site by hlru
+                  have hbt_eq : bt' = bt := by
+                    by_cases hsne : s_c = s'
+                    · subst hsne; rw [hse_c] at hse'
+                      simp only [Option.some.injEq, MoveType.ref.injEq] at hse'; exact hse'.1.symm
+                    · exact absurd ((hlru r).2.1 s_c s' bt bt' bk_c bk'' hsne hse_c hse') False.elim
+                  subst hbt_eq; exact ⟨v_h, hread, hhas⟩
+                · -- s_c ∉ resultSites: no result site has ref r, so cM maps r
+                  have hne_r : ∀ s' ∈ ri.resultSites, ∀ bt' r' bk',
+                      lookup cE.siteEnv s' = some (.ref bt' r' bk') → r' ≠ r := by
+                    intro s' hs' bt' r' bk' hse' hr'eq; rw [hr'eq] at hse'
+                    exact (hlru r).2.1 s_c s' bt bt' bk_c bk' (fun h => hni_s (h ▸ hs')) hse_c hse'
+                  cases hcm : cM.map r with
+                  | none =>
+                    exact absurd hrmap_eq (by
+                      rw [show rmap'.map r = none from
+                        RefMap.extendWithReturns_preserves_none cM cE.siteEnv
+                          ri.resultSites vals r hcm hne_r]; simp)
+                  | some p =>
+                    have hpres := RefMap.extendWithReturns_preserves cM cE.siteEnv
+                      ri.resultSites vals r p hcm hne_r
+                    rw [hpres] at hrmap_eq
+                    simp only [Option.some.injEq] at hrmap_eq; subst hrmap_eq
+                    exact hrmap_ht r bt loc path hcm (Or.inr ⟨s_c, bk_c, hse_c, hni_s⟩)
           -- 5g. rmap_root_none for rmap'
           have hrmap_root' : rmap'.map .root = none :=
             RefMap.extendWithReturns_preserves_none cM cE.siteEnv ri.resultSites vals .root
@@ -4600,7 +4656,7 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
   | unpack fields src cont => exact preservation_unpack m m' env lenv retTypes rmap hwt hss fields src cont hstmt hstep
   | jump label => exact preservation_jump m m' env lenv retTypes rmap hwt hss label hstmt hstep
   | branch c l1 l2 => exact preservation_branch m m' env lenv retTypes rmap hwt hss c l1 l2 hstmt hstep
-  | ret sites => sorry
+  | ret sites => exact preservation_ret m m' env lenv retTypes rmap hwt hss sites hstmt hstep
   | call results fname argSites cont => sorry
 
 
