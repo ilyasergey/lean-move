@@ -299,17 +299,19 @@ structure TypeEnv where
   funEnv  : FunEnv
 
 /-- Propositional version: r doesn't appear as a ref in any VarEnv or SiteEnv entry,
-    and is also fresh in PathEnv. -/
+    is fresh in PathEnv, and is not a variable reference. -/
 def freshRefInEnv (r : Aref) (env : TypeEnv) : Prop :=
   freshRef r env.pathEnv ∧
   r ∉ collectVarEnvRefs env.varEnv ∧
-  r ∉ collectSiteEnvRefs env.siteEnv
+  r ∉ collectSiteEnvRefs env.siteEnv ∧
+  (∀ v, r ≠ .varRef v)
 
 /-- Boolean version of freshRefInEnv for use in algorithmic type checking -/
 def freshRefInEnvBool (r : Aref) (env : TypeEnv) : Bool :=
   freshRefBool r env.pathEnv &&
   !(collectVarEnvRefs env.varEnv).contains r &&
-  !(collectSiteEnvRefs env.siteEnv).contains r
+  !(collectSiteEnvRefs env.siteEnv).contains r &&
+  match r with | .varRef _ => false | _ => true
 
 /-- Compute a fresh Aref by finding the maximum refid across all TypeEnv components -/
 def nextFreshRefInEnv (env : TypeEnv) : Aref :=

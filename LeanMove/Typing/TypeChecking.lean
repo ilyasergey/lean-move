@@ -106,7 +106,7 @@ def addFieldSites (fentries : AssocMap Field BasicMoveType) (se : AssocMap Site 
 
 /-- Check that all refs in the list are fresh in the environment. -/
 def all_refs_fresh_in_env (env : TypeEnv) (refs : List Aref) : Prop :=
-  ∀ r ∈ refs, freshRefInEnvBool r env = true
+  ∀ r ∈ refs, freshRefInEnv r env
 
 /-- Populate output sites in the environment with types from return type specs.
     Basic returns: insert (.basic bt), consume no ref.
@@ -361,8 +361,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
   | let_bind_copy_ref : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) x τ ms (s t : Aref) isBor cont retTypes,
       lookup env.varEnv x = some (.validVar, .ref τ s isBor, ms) →
       notIn env.siteEnv a →
-      freshRefInEnvBool t env →
-      (∀ v, t ≠ .varRef v) →
+      freshRefInEnv t env →
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.ref τ t isBor)
                   pathEnv := update_with_epsilon t s env.pathEnv}
@@ -373,8 +372,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
   | let_bind_borrowImm : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) x τ ms (r : Aref) cont retTypes,
       lookup env.varEnv x = some (.validVar, .basic τ, ms) →
       notIn env.siteEnv a →
-      freshRefInEnvBool r env →
-      (∀ v, r ≠ .varRef v) →
+      freshRefInEnv r env →
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowImm)
                   pathEnv := update_with_epsilon r r env.pathEnv |>
@@ -387,8 +385,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
       LE.le .mutable ms →
       lookup env.varEnv x = some (.validVar, .basic τ, ms) →
       notIn env.siteEnv a →
-      freshRefInEnvBool r env →
-      (∀ v, r ≠ .varRef v) →
+      freshRefInEnv r env →
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowMut)
                   pathEnv := update_with_epsilon r r env.pathEnv |>
@@ -411,7 +408,6 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
       lookup fentries f = some bt' →
       notIn env.siteEnv af →
       freshRefInEnv rf env →
-      (∀ v, rf ≠ .varRef v) →
       typecheck_stmt lenv
         {env with siteEnv := insert (delete env.siteEnv a) af (.ref bt' rf isBor)
                   pathEnv := update_with_extension rf s [.field f] env.pathEnv}
@@ -425,7 +421,6 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
       lookup fentries f = some btf →
       notIn env.siteEnv af →
       freshRefInEnv rf env →
-      (∀ v, rf ≠ .varRef v) →
       typecheck_stmt lenv
         {env with siteEnv := insert (delete env.siteEnv a) af (.ref btf rf .siteBorrowMut)
                   pathEnv := update_with_extension rf s [.field f] env.pathEnv}
@@ -458,7 +453,6 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
       lookup env.siteEnv a = some (.ref τ r isBor) →
       notIn env.siteEnv c →
       freshRefInEnv r' env →
-      (∀ v, r' ≠ .varRef v) →
       typecheck_stmt lenv
         {env with siteEnv := insert (delete env.siteEnv a) c (.ref τ r' .siteBorrowImm)
                   pathEnv := consume_ref_transfer env.pathEnv r r'}
@@ -499,8 +493,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
       lookup env.varEnv x = some (.validVar, .basic τ, ms) →
       lookup env.siteEnv a = some (.basic τ) →
       notIn env.siteEnv ax →
-      freshRefInEnvBool r env →
-      (∀ v, r ≠ .varRef v) →
+      freshRefInEnv r env →
       -- After writeRef: both ax and a are consumed, r is garbage collected
       -- The intermediate pathEnv is: update_with_extension r .root [.root_to_var x] (update_with_epsilon r r env.pathEnv)
       -- The intermediate siteEnv has ax with the mutable borrow
@@ -535,8 +528,6 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
       -- Fresh abstract refs for reference-typed outputs
       all_refs_fresh_in_env env outRefs →
       List.Nodup outRefs →
-      -- outRefs are not variable references (only refids or root)
-      (∀ r ∈ outRefs, ∀ v, r ≠ .varRef v) →
       -- Populate output sites → env'
       populate_call_outputs env as rets outRefs = some env' →
       -- Mutable inputs isolated

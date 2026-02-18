@@ -1664,8 +1664,7 @@ private theorem weaken_let_bind_borrowImm
     (cont : Stmt) (retTypes : List ParamType)
     (hlookup : lookup envL.varEnv x_var = some (.validVar, .basic τ, ms))
     (hnotIn : notIn envL.siteEnv a)
-    (hfresh : freshRefInEnvBool r envL)
-    (hr_not_varRef : ∀ v, r ≠ .varRef v)
+    (hfresh : freshRefInEnv r envL)
     (hsub : TypeEnv.subsumes envL env)
     (hfuneq : envL.funEnv = env.funEnv)
     (hwfL : TypeEnv.WellFormed envL) (hwfE : TypeEnv.WellFormed env)
@@ -1688,10 +1687,9 @@ private theorem weaken_let_bind_borrowImm
   have hlook_env := VarEnvSubstEquiv_lookup_valid σ _ _ _ _ _ hve hlookup
   simp only [applySubstMoveType] at hlook_env
   -- Freshness of r in envL
-  have hr_fresh_pe : r ∉ envL.pathEnv.refs := by
-    have := freshRefInEnvBool_implies_freshRefBool r _ hfresh
-    exact (freshRef_iff_freshRefBool r envL.pathEnv).mpr this
+  have hr_fresh_pe : r ∉ envL.pathEnv.refs := freshRefInEnv_implies_freshRef r envL hfresh
   have hr_ne_root : r ≠ .root := fun h => hr_fresh_pe (h ▸ hroot)
+  have hr_not_varRef : ∀ v, r ≠ .varRef v := (hfresh.2.2 : _ ∧ _).2
   have hr_refid : ∃ n, r = .refid n := by
     cases r with
     | root => exact absurd rfl hr_ne_root
@@ -1700,10 +1698,9 @@ private theorem weaken_let_bind_borrowImm
   have hσ_root : σ .root = .root := hid .root (fun n => Aref.noConfusion)
   -- Pick fresh r' for env
   let r' := nextFreshRefInEnv env
-  have hr'_fresh := nextFreshRefInEnv_fresh env
+  have hr'_fresh_prop := nextFreshRefInEnv_fresh_prop env
   have hr'_fresh_pe := nextFreshRefInEnv_not_in_pathEnv env
   have hr'_not_root := nextFreshRefInEnv_not_root env
-  have hr'_not_varRef := nextFreshRefInEnv_not_varRef env
   have hr'_not_mapped : r' ∉ envL.pathEnv.refs.map σ := by rw [hrefs]; exact hr'_fresh_pe
   -- Compound pathEnv refs simplification
   have h_compound_refs :
@@ -1715,8 +1712,7 @@ private theorem weaken_let_bind_borrowImm
   apply typecheck_stmt.let_bind_borrowImm lenv env _ _ _ _ r' _ _
     hlook_env
     (SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn)
-    hr'_fresh
-    (fun v => hr'_not_varRef v)
+    hr'_fresh_prop
   -- IH: need subsumes for modified envs
   apply ih
   · -- subsumes: simplify compound pathEnvs via absorb lemma
@@ -1726,10 +1722,10 @@ private theorem weaken_let_bind_borrowImm
       extendSubst_id σ r r' hid hr_refid,
       VarEnvSubstEquiv_extend σ r r' _ _ hve
         (fun x' bt' s' bk' ms' hlook' =>
-          Ne.symm (freshRefInEnvBool_ne_varEnv_ref r _ x' .validVar bt' s' bk' ms' hfresh hlook')),
+          Ne.symm (freshRefInEnv_ne_varEnv_ref r _ x' .validVar bt' s' bk' ms' hfresh hlook')),
       SiteEnvSubstEquiv_extend_insert_ref σ r r' _ _ _ _ _ hse
         (fun k bt ref bk hlook' =>
-          Ne.symm (freshRefInEnvBool_ne_siteEnv_ref r _ k bt ref bk hfresh hlook')),
+          Ne.symm (freshRefInEnv_ne_siteEnv_ref r _ k bt ref bk hfresh hlook')),
       ?_, ?_, ?_, ?_⟩
     · -- refs
       simp only [uwe_refs_fresh r .root _ envL.pathEnv hr_fresh_pe,
@@ -1778,9 +1774,9 @@ private theorem weaken_let_bind_borrowImm
   · -- RefsUnique
     exact RefsUnique_insert_fresh_ref _ _ _ _ _ _ huniq
       (fun x' bt' ref bk' ms' hlook' =>
-        Ne.symm (freshRefInEnvBool_ne_varEnv_ref r _ x' .validVar bt' ref bk' ms' hfresh hlook'))
+        Ne.symm (freshRefInEnv_ne_varEnv_ref r _ x' .validVar bt' ref bk' ms' hfresh hlook'))
       (fun s' bt' ref bk' hlook' =>
-        Ne.symm (freshRefInEnvBool_ne_siteEnv_ref r _ s' bt' ref bk' hfresh hlook'))
+        Ne.symm (freshRefInEnv_ne_siteEnv_ref r _ s' bt' ref bk' hfresh hlook'))
   · exact update_with_extension_paths_to_non_member r' .root [.root_to_var x_var] _
       (by unfold update_with_epsilon
           exact update_with_extension_paths_to_non_member r' r' [] env.pathEnv
@@ -1807,8 +1803,7 @@ private theorem weaken_let_bind_borrowMut
     (hle : LE.le .mutable ms)
     (hlookup : lookup envL.varEnv x_var = some (.validVar, .basic τ, ms))
     (hnotIn : notIn envL.siteEnv a)
-    (hfresh : freshRefInEnvBool r envL)
-    (hr_not_varRef : ∀ v, r ≠ .varRef v)
+    (hfresh : freshRefInEnv r envL)
     (hsub : TypeEnv.subsumes envL env)
     (hfuneq : envL.funEnv = env.funEnv)
     (hwfL : TypeEnv.WellFormed envL) (hwfE : TypeEnv.WellFormed env)
@@ -1830,10 +1825,9 @@ private theorem weaken_let_bind_borrowMut
   obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub
   have hlook_env := VarEnvSubstEquiv_lookup_valid σ _ _ _ _ _ hve hlookup
   simp only [applySubstMoveType] at hlook_env
-  have hr_fresh_pe : r ∉ envL.pathEnv.refs := by
-    have := freshRefInEnvBool_implies_freshRefBool r _ hfresh
-    exact (freshRef_iff_freshRefBool r envL.pathEnv).mpr this
+  have hr_fresh_pe : r ∉ envL.pathEnv.refs := freshRefInEnv_implies_freshRef r envL hfresh
   have hr_ne_root : r ≠ .root := fun h => hr_fresh_pe (h ▸ hroot)
+  have hr_not_varRef : ∀ v, r ≠ .varRef v := (hfresh.2.2 : _ ∧ _).2
   have hr_refid : ∃ n, r = .refid n := by
     cases r with
     | root => exact absurd rfl hr_ne_root
@@ -1841,10 +1835,9 @@ private theorem weaken_let_bind_borrowMut
     | varRef v => exact absurd rfl (hr_not_varRef v)
   have hσ_root : σ .root = .root := hid .root (fun n => Aref.noConfusion)
   let r' := nextFreshRefInEnv env
-  have hr'_fresh := nextFreshRefInEnv_fresh env
+  have hr'_fresh_prop := nextFreshRefInEnv_fresh_prop env
   have hr'_fresh_pe := nextFreshRefInEnv_not_in_pathEnv env
   have hr'_not_root := nextFreshRefInEnv_not_root env
-  have hr'_not_varRef := nextFreshRefInEnv_not_varRef env
   have hr'_not_mapped : r' ∉ envL.pathEnv.refs.map σ := by rw [hrefs]; exact hr'_fresh_pe
   have h_compound_refs :
       (update_with_extension r .root [.root_to_var x_var]
@@ -1854,8 +1847,7 @@ private theorem weaken_let_bind_borrowMut
   apply typecheck_stmt.let_bind_borrowMut lenv env _ _ _ _ r' _ _
     hle hlook_env
     (SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn)
-    hr'_fresh
-    (fun v => hr'_not_varRef v)
+    hr'_fresh_prop
   apply ih
   · -- subsumes
     rw [uwe_absorbs_epsilon r .root _ envL.pathEnv hr_fresh_pe (Ne.symm hr_ne_root),
@@ -1864,10 +1856,10 @@ private theorem weaken_let_bind_borrowMut
       extendSubst_id σ r r' hid hr_refid,
       VarEnvSubstEquiv_extend σ r r' _ _ hve
         (fun x' bt' s' bk' ms' hlook' =>
-          Ne.symm (freshRefInEnvBool_ne_varEnv_ref r _ x' .validVar bt' s' bk' ms' hfresh hlook')),
+          Ne.symm (freshRefInEnv_ne_varEnv_ref r _ x' .validVar bt' s' bk' ms' hfresh hlook')),
       SiteEnvSubstEquiv_extend_insert_ref σ r r' _ _ _ _ _ hse
         (fun k bt ref bk hlook' =>
-          Ne.symm (freshRefInEnvBool_ne_siteEnv_ref r _ k bt ref bk hfresh hlook')),
+          Ne.symm (freshRefInEnv_ne_siteEnv_ref r _ k bt ref bk hfresh hlook')),
       ?_, ?_, ?_, ?_⟩
     · -- refs
       simp only [uwe_refs_fresh r .root _ envL.pathEnv hr_fresh_pe,
@@ -1907,9 +1899,9 @@ private theorem weaken_let_bind_borrowMut
     exact .tail _ (hvar_tracked _ _ _ _ _ hlook_x')
   · exact RefsUnique_insert_fresh_ref _ _ _ _ _ _ huniq
       (fun x' bt' ref bk' ms' hlook' =>
-        Ne.symm (freshRefInEnvBool_ne_varEnv_ref r _ x' .validVar bt' ref bk' ms' hfresh hlook'))
+        Ne.symm (freshRefInEnv_ne_varEnv_ref r _ x' .validVar bt' ref bk' ms' hfresh hlook'))
       (fun s' bt' ref bk' hlook' =>
-        Ne.symm (freshRefInEnvBool_ne_siteEnv_ref r _ s' bt' ref bk' hfresh hlook'))
+        Ne.symm (freshRefInEnv_ne_siteEnv_ref r _ s' bt' ref bk' hfresh hlook'))
   · exact update_with_extension_paths_to_non_member r' .root [.root_to_var x_var] _
       (by unfold update_with_epsilon
           exact update_with_extension_paths_to_non_member r' r' [] env.pathEnv
@@ -1938,7 +1930,6 @@ private theorem weaken_let_bind_borrowField
     (hlookup_f : lookup fentries f = some bt')
     (hnotIn : notIn envL.siteEnv af)
     (hfresh : freshRefInEnv rf envL)
-    (hrf_not_varRef : ∀ v, rf ≠ .varRef v)
     (hsub : TypeEnv.subsumes envL env)
     (hfuneq : envL.funEnv = env.funEnv)
     (hwfL : TypeEnv.WellFormed envL) (hwfE : TypeEnv.WellFormed env)
@@ -1963,6 +1954,7 @@ private theorem weaken_let_bind_borrowField
   -- Freshness of rf in envL
   have hrf_fresh_pe : rf ∉ envL.pathEnv.refs := freshRefInEnv_implies_freshRef rf envL hfresh
   have hrf_ne_root : rf ≠ .root := fun h => hrf_fresh_pe (h ▸ hroot)
+  have hrf_not_varRef : ∀ v, rf ≠ .varRef v := (hfresh.2.2 : _ ∧ _).2
   have hrf_refid : ∃ n, rf = .refid n := by
     cases rf with
     | root => exact absurd rfl hrf_ne_root
@@ -1973,7 +1965,6 @@ private theorem weaken_let_bind_borrowField
   have hrf'_fresh_prop := nextFreshRefInEnv_fresh_prop env
   have hrf'_fresh_pe := nextFreshRefInEnv_not_in_pathEnv env
   have hrf'_not_root := nextFreshRefInEnv_not_root env
-  have hrf'_not_varRef := nextFreshRefInEnv_not_varRef env
   have hrf'_not_mapped : rf' ∉ envL.pathEnv.refs.map σ := by rw [hrefs]; exact hrf'_fresh_pe
   -- s ∈ envL.pathEnv.refs (from site_tracked)
   have hs_mem := hsite_tracked _ _ _ _ hlookup_a
@@ -1982,7 +1973,6 @@ private theorem weaken_let_bind_borrowField
     hlook_a_env hbt hlookup_f
     (SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn)
     hrf'_fresh_prop
-    (fun v => hrf'_not_varRef v)
   -- IH: need subsumes for modified envs
   apply ih
   · -- subsumes with extendSubst σ rf rf'
@@ -2068,7 +2058,6 @@ private theorem weaken_let_bind_borrowMutField
     (hlookup_f : lookup fentries f = some btf)
     (hnotIn : notIn envL.siteEnv af)
     (hfresh : freshRefInEnv rf envL)
-    (hrf_not_varRef : ∀ v, rf ≠ .varRef v)
     (hsub : TypeEnv.subsumes envL env)
     (hfuneq : envL.funEnv = env.funEnv)
     (hwfL : TypeEnv.WellFormed envL) (hwfE : TypeEnv.WellFormed env)
@@ -2091,6 +2080,7 @@ private theorem weaken_let_bind_borrowMutField
   simp only [applySubstMoveType] at hlook_a_env
   have hrf_fresh_pe : rf ∉ envL.pathEnv.refs := freshRefInEnv_implies_freshRef rf envL hfresh
   have hrf_ne_root : rf ≠ .root := fun h => hrf_fresh_pe (h ▸ hroot)
+  have hrf_not_varRef : ∀ v, rf ≠ .varRef v := (hfresh.2.2 : _ ∧ _).2
   have hrf_refid : ∃ n, rf = .refid n := by
     cases rf with
     | root => exact absurd rfl hrf_ne_root
@@ -2100,14 +2090,12 @@ private theorem weaken_let_bind_borrowMutField
   have hrf'_fresh_prop := nextFreshRefInEnv_fresh_prop env
   have hrf'_fresh_pe := nextFreshRefInEnv_not_in_pathEnv env
   have hrf'_not_root := nextFreshRefInEnv_not_root env
-  have hrf'_not_varRef := nextFreshRefInEnv_not_varRef env
   have hrf'_not_mapped : rf' ∉ envL.pathEnv.refs.map σ := by rw [hrefs]; exact hrf'_fresh_pe
   have hs_mem := hsite_tracked _ _ _ _ hlookup_a
   apply typecheck_stmt.let_bind_borrowMutField lenv env a af f _ _ _ (σ s) rf' _ _
     hlook_a_env hbt hlookup_f
     (SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn)
     hrf'_fresh_prop
-    (fun v => hrf'_not_varRef v)
   apply ih
   · -- subsumes
     refine ⟨extendSubst σ rf rf',
@@ -2179,7 +2167,6 @@ private theorem weaken_let_bind_freeze
     (hlook : lookup envL.siteEnv a = some (.ref τ r isBor))
     (hnotIn : notIn envL.siteEnv c)
     (hfresh : freshRefInEnv r' envL)
-    (hr'_not_varRef : ∀ v, r' ≠ .varRef v)
     (hsub : TypeEnv.subsumes envL env)
     (hfuneq : envL.funEnv = env.funEnv)
     (hwfL : TypeEnv.WellFormed envL) (hwfE : TypeEnv.WellFormed env)
@@ -2206,6 +2193,7 @@ private theorem weaken_let_bind_freeze
   -- Freshness of r' in envL
   have hr'_fresh_pe : r' ∉ envL.pathEnv.refs := freshRefInEnv_implies_freshRef r' envL hfresh
   have hr'_ne_root : r' ≠ .root := fun h => hr'_fresh_pe (h ▸ hroot)
+  have hr'_not_varRef : ∀ v, r' ≠ .varRef v := (hfresh.2.2 : _ ∧ _).2
   have hr'_refid : ∃ n, r' = .refid n := by
     cases r' with
     | root => exact absurd rfl hr'_ne_root
@@ -2230,7 +2218,6 @@ private theorem weaken_let_bind_freeze
     hlook_env
     (SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn)
     hr''_fresh_prop
-    (fun v => hr''_not_varRef v)
   -- IH: need subsumes for modified envs
   apply ih
   · -- subsumes with extendSubst σ r' r''
@@ -2336,8 +2323,7 @@ private theorem weaken_var_assign_valid
     (hlook_x : lookup envL.varEnv x = some (.validVar, .basic τ, ms))
     (hlook_a : lookup envL.siteEnv a = some (.basic τ))
     (hnotIn : notIn envL.siteEnv ax)
-    (hfresh : freshRefInEnvBool r envL)
-    (_ : ∀ v, r ≠ .varRef v)
+    (hfresh : freshRefInEnv r envL)
     (hsub : TypeEnv.subsumes envL env)
     (hfuneq : envL.funEnv = env.funEnv)
     (hwfL : TypeEnv.WellFormed envL) (hwfE : TypeEnv.WellFormed env)
@@ -2363,13 +2349,11 @@ private theorem weaken_var_assign_valid
   have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
   simp only [applySubstMoveType] at hlook_a_env
   -- r freshness in envL
-  have hr_fresh_pe : r ∉ envL.pathEnv.refs := by
-    have := freshRefInEnvBool_implies_freshRefBool r _ hfresh
-    exact (freshRef_iff_freshRefBool r envL.pathEnv).mpr this
+  have hr_fresh_pe : r ∉ envL.pathEnv.refs := freshRefInEnv_implies_freshRef r envL hfresh
   have hr_ne_root : r ≠ .root := fun h => hr_fresh_pe (h ▸ hroot)
   -- Pick fresh r'' for env
   let r'' := nextFreshRefInEnv env
-  have hr''_fresh_bool := nextFreshRefInEnv_fresh env
+  have hr''_fresh_prop := nextFreshRefInEnv_fresh_prop env
   have hr''_fresh_pe := nextFreshRefInEnv_not_in_pathEnv env
   have hr''_not_root := nextFreshRefInEnv_not_root env
   have hr''_not_varRef := nextFreshRefInEnv_not_varRef env
@@ -2377,8 +2361,7 @@ private theorem weaken_var_assign_valid
   apply typecheck_stmt.var_assign_valid lenv env _ _ ax τ _ r'' _ _
     hms hlook_x_env hlook_a_env
     (SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn)
-    hr''_fresh_bool
-    (fun v => hr''_not_varRef v)
+    hr''_fresh_prop
   -- IH: need subsumes for modified envs
   apply ih
   · -- subsumes: use σ directly (r/r'' are gc'd, pathEnv reverts to original refs/paths)
@@ -2448,9 +2431,9 @@ private theorem weaken_var_assign_valid
       (RefsUnique_delete_site _ _ _
         (RefsUnique_insert_fresh_ref _ _ ax _ r .siteBorrowMut huniq
           (fun x' bt' r' bk' ms' hlook' =>
-            Ne.symm (freshRefInEnvBool_ne_varEnv_ref r envL x' .validVar bt' r' bk' ms' hfresh hlook'))
+            Ne.symm (freshRefInEnv_ne_varEnv_ref r envL x' .validVar bt' r' bk' ms' hfresh hlook'))
           (fun s' bt' r' bk' hlook' =>
-            Ne.symm (freshRefInEnvBool_ne_siteEnv_ref r envL s' bt' r' bk' hfresh hlook'))))
+            Ne.symm (freshRefInEnv_ne_siteEnv_ref r envL s' bt' r' bk' hfresh hlook'))))
   · -- hpaths_to_nm: thread through uwe/eps/gc
     exact garbage_collect_paths_to_non_member _ _
       (update_with_extension_paths_to_non_member r'' .root [.root_to_var x] _
@@ -2962,8 +2945,7 @@ private theorem weaken_let_bind_copy_ref
     (cont : Stmt) (retTypes : List ParamType)
     (hlookup : lookup envL.varEnv x = some (.validVar, .ref τ s isBor, ms))
     (hnotIn : notIn envL.siteEnv a)
-    (hfresh : freshRefInEnvBool t envL)
-    (ht_not_varRef : ∀ v, t ≠ .varRef v)
+    (hfresh : freshRefInEnv t envL)
     (hsub : TypeEnv.subsumes envL env)
     (hfuneq : envL.funEnv = env.funEnv)
     (hwfL : TypeEnv.WellFormed envL) (hwfE : TypeEnv.WellFormed env)
@@ -2985,10 +2967,9 @@ private theorem weaken_let_bind_copy_ref
   have hlook_env := VarEnvSubstEquiv_lookup_valid σ _ _ _ _ _ hve hlookup
   simp only [applySubstMoveType] at hlook_env
   -- Freshness of t in envL
-  have ht_fresh_pe : t ∉ envL.pathEnv.refs := by
-    have := freshRefInEnvBool_implies_freshRefBool t _ hfresh
-    exact (freshRef_iff_freshRefBool t envL.pathEnv).mpr this
+  have ht_fresh_pe : t ∉ envL.pathEnv.refs := freshRefInEnv_implies_freshRef t envL hfresh
   have ht_ne_root : t ≠ .root := fun h => ht_fresh_pe (h ▸ hroot)
+  have ht_not_varRef : ∀ v, t ≠ .varRef v := freshRefInEnv_not_varRef t envL hfresh
   -- t is a refid (from ht_ne_root + ht_not_varRef)
   have ht_refid : ∃ n, t = .refid n := by
     cases t with
@@ -2997,10 +2978,9 @@ private theorem weaken_let_bind_copy_ref
     | varRef v => exact absurd rfl (ht_not_varRef v)
   -- Pick fresh t' for env
   let t' := nextFreshRefInEnv env
-  have ht'_fresh := nextFreshRefInEnv_fresh env
+  have ht'_fresh_prop := nextFreshRefInEnv_fresh_prop env
   have ht'_fresh_pe := nextFreshRefInEnv_not_in_pathEnv env
   have ht'_not_root := nextFreshRefInEnv_not_root env
-  have ht'_not_varRef := nextFreshRefInEnv_not_varRef env
   have ht'_not_mapped : t' ∉ envL.pathEnv.refs.map σ := by rw [hrefs]; exact ht'_fresh_pe
   -- s ∈ envL.pathEnv.refs (from var_tracked)
   have hs_mem := hvar_tracked _ _ _ _ _ hlookup
@@ -3008,8 +2988,7 @@ private theorem weaken_let_bind_copy_ref
   apply typecheck_stmt.let_bind_copy_ref lenv env _ _ _ _ (σ s) t' _ _ _
     hlook_env
     (SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn)
-    ht'_fresh
-    (fun v => ht'_not_varRef v)
+    ht'_fresh_prop
   -- IH: need subsumes for modified envs
   apply ih
   · -- subsumes with extendSubst σ t t'
@@ -3017,10 +2996,10 @@ private theorem weaken_let_bind_copy_ref
       extendSubst_id σ t t' hid ht_refid,
       VarEnvSubstEquiv_extend σ t t' _ _ hve
         (fun x' bt' s' bk' ms' hlook' =>
-          Ne.symm (freshRefInEnvBool_ne_varEnv_ref t _ x' .validVar bt' s' bk' ms' hfresh hlook')),
+          Ne.symm (freshRefInEnv_ne_varEnv_ref t _ x' .validVar bt' s' bk' ms' hfresh hlook')),
       SiteEnvSubstEquiv_extend_insert_ref σ t t' _ _ _ _ _ hse
         (fun k bt r bk hlook' =>
-          Ne.symm (freshRefInEnvBool_ne_siteEnv_ref t _ k bt r bk hfresh hlook')),
+          Ne.symm (freshRefInEnv_ne_siteEnv_ref t _ k bt r bk hfresh hlook')),
       ?_, ?_, ?_, ?_⟩
     · -- refs: (uwe t s [] peL).refs.map σ' = (uwe t' (σ s) [] peE).refs
       simp only [uwe_epsilon_refs_fresh t s envL.pathEnv ht_fresh_pe,
@@ -3060,9 +3039,9 @@ private theorem weaken_let_bind_copy_ref
   · -- RefsUnique
     exact RefsUnique_insert_fresh_ref _ _ _ _ _ _ huniq
       (fun x' bt' r bk' ms' hlook' =>
-        Ne.symm (freshRefInEnvBool_ne_varEnv_ref t _ x' .validVar bt' r bk' ms' hfresh hlook'))
+        Ne.symm (freshRefInEnv_ne_varEnv_ref t _ x' .validVar bt' r bk' ms' hfresh hlook'))
       (fun s' bt' r bk' hlook' =>
-        Ne.symm (freshRefInEnvBool_ne_siteEnv_ref t _ s' bt' r bk' hfresh hlook'))
+        Ne.symm (freshRefInEnv_ne_siteEnv_ref t _ s' bt' r bk' hfresh hlook'))
   · exact update_with_extension_paths_to_non_member _ _ _ _ hpaths_to_nm
       (Or.inl (by rw [← hrefs]; exact List.mem_map_of_mem hs_mem))
   · exact update_with_extension_paths_from_non_member _ _ _ _ hpaths_from_nm
@@ -3199,7 +3178,7 @@ private lemma makeFreshRefs_fresh (env : TypeEnv) (n : Nat) :
   intro r hr
   simp [makeFreshRefs] at hr
   obtain ⟨i, _, rfl⟩ := hr
-  exact refid_ge_start_fresh env _ (by omega)
+  exact freshRefInEnvBool_implies_freshRefInEnv _ _ (refid_ge_start_fresh env _ (by omega))
 
 private lemma makeFreshRefs_nodup (env : TypeEnv) (n : Nat) :
     List.Nodup (makeFreshRefs env n) := by
@@ -3696,8 +3675,8 @@ private lemma freshRefInEnvBool_insert_basic (r : Aref) (env : TypeEnv) (site : 
     freshRefInEnvBool r {env with siteEnv := insert env.siteEnv site (.basic bt)} = true := by
   simp only [freshRefInEnvBool, Bool.and_eq_true, Bool.not_eq_true',
              List.contains_eq_any_beq] at hfresh ⊢
-  obtain ⟨⟨hpe, hve⟩, hse⟩ := hfresh
-  refine ⟨⟨hpe, hve⟩, ?_⟩
+  obtain ⟨⟨⟨hpe, hve⟩, hse⟩, hnv⟩ := hfresh
+  refine ⟨⟨⟨hpe, hve⟩, ?_⟩, hnv⟩
   simp only [collectSiteEnvRefs, AssocMap.insert, List.filterMap_cons, getTypeRef]
   rw [List.any_eq_false]; intro x hx
   rw [List.mem_filterMap] at hx
@@ -3718,8 +3697,8 @@ private lemma freshRefInEnvBool_insert_ref_update_epsilon (r' r : Aref) (env : T
                 pathEnv := update_with_epsilon r r env.pathEnv} = true := by
   simp only [freshRefInEnvBool, Bool.and_eq_true, Bool.not_eq_true',
              List.contains_eq_any_beq] at hfresh ⊢
-  obtain ⟨⟨hpe, hve⟩, hse⟩ := hfresh
-  refine ⟨⟨?_, hve⟩, ?_⟩
+  obtain ⟨⟨⟨hpe, hve⟩, hse⟩, hnv⟩ := hfresh
+  refine ⟨⟨⟨?_, hve⟩, ?_⟩, hnv⟩
   · -- freshRefBool r' (update_with_epsilon r r env.pathEnv)
     simp only [freshRefBool, Bool.not_eq_true', List.contains_eq_any_beq] at hpe ⊢
     simp only [update_with_epsilon, update_with_extension]
@@ -3771,7 +3750,10 @@ private lemma populate_call_outputs_RefsUnique
         simp only [populate_call_outputs] at hpop
         exact ih {env with siteEnv := insert env.siteEnv site (.basic bt)} _ _
           (RefsUnique_insert_basic env.varEnv env.siteEnv site bt huniq)
-          (fun r hr => freshRefInEnvBool_insert_basic r env site bt (hfresh r hr))
+          (fun r hr =>
+            let hb := freshRefInEnvBool_insert_basic r env site bt
+              ((freshRefInEnv_iff_freshRefInEnvBool r env).mp (hfresh r hr))
+            (freshRefInEnv_iff_freshRefInEnvBool r _).mpr hb)
           hnodup hpop
       | some b =>
         cases b <;> (
@@ -3783,12 +3765,14 @@ private lemma populate_call_outputs_RefsUnique
             exact ih _ _ _
               (RefsUnique_insert_fresh_ref env.varEnv env.siteEnv site bt r _ huniq
                 (fun x bt' r' bk' ms hlook =>
-                  (freshRefInEnvBool_ne_varEnv_ref r env x .validVar bt' r' bk' ms hr_fresh hlook).symm)
+                  (freshRefInEnv_ne_varEnv_ref r env x .validVar bt' r' bk' ms hr_fresh hlook).symm)
                 (fun s bt' r' bk' hlook =>
-                  (freshRefInEnvBool_ne_siteEnv_ref r env s bt' r' bk' hr_fresh hlook).symm))
-              (fun r' hr' => freshRefInEnvBool_insert_ref_update_epsilon r' r env site bt _
-                (hfresh r' (List.mem_cons.mpr (Or.inr hr')))
-                (fun heq => (List.nodup_cons.mp hnodup).1 (heq ▸ hr')))
+                  (freshRefInEnv_ne_siteEnv_ref r env s bt' r' bk' hr_fresh hlook).symm))
+              (fun r' hr' =>
+                let hb := freshRefInEnvBool_insert_ref_update_epsilon r' r env site bt _
+                  ((freshRefInEnv_iff_freshRefInEnvBool r' env).mp (hfresh r' (List.mem_cons.mpr (Or.inr hr'))))
+                  (fun heq => (List.nodup_cons.mp hnodup).1 (heq ▸ hr'))
+                (freshRefInEnv_iff_freshRefInEnvBool r' _).mpr hb)
               ((List.nodup_cons.mp hnodup).2)
               hpop)
 
@@ -4457,7 +4441,6 @@ private lemma populate_call_outputs_subsumes
     (hfreshE : all_refs_fresh_in_env envE outRefsE)
     (hnodupL : List.Nodup outRefsL) (hnodupE : List.Nodup outRefsE)
     (hlen : outRefsL.length = outRefsE.length)
-    (hnotVarRefL : ∀ r ∈ outRefsL, ∀ v, r ≠ .varRef v)
     (hnotRootL : ∀ r ∈ outRefsL, r ≠ .root)
     (hnotRootE : ∀ r ∈ outRefsE, r ≠ .root)
     (hpaths_to_nm : ∀ u v p, v ∉ envE.pathEnv.refs → v ≠ .root → u ≠ v →
@@ -4496,10 +4479,16 @@ private lemma populate_call_outputs_subsumes
           (SiteEnvSubstEquiv_insert σ _ _ site (.basic bt) (.basic bt) hse
             (by simp [applySubstMoveType]))
           hrefs hinj hnonroot hpaths
-          (fun r hr => freshRefInEnvBool_insert_basic r envL site bt (hfreshL r hr))
-          (fun r hr => freshRefInEnvBool_insert_basic r envE site bt (hfreshE r hr))
+          (fun r hr =>
+            let hb := freshRefInEnvBool_insert_basic r envL site bt
+              ((freshRefInEnv_iff_freshRefInEnvBool r envL).mp (hfreshL r hr))
+            (freshRefInEnv_iff_freshRefInEnvBool r _).mpr hb)
+          (fun r hr =>
+            let hb := freshRefInEnvBool_insert_basic r envE site bt
+              ((freshRefInEnv_iff_freshRefInEnvBool r envE).mp (hfreshE r hr))
+            (freshRefInEnv_iff_freshRefInEnvBool r _).mpr hb)
           hnodupL hnodupE hlen
-          hnotVarRefL hnotRootL hnotRootE hpaths_to_nm hpaths_from_nm hfuneq hpopL hpopE
+          hnotRootL hnotRootE hpaths_to_nm hpaths_from_nm hfuneq hpopL hpopE
       | some b =>
         cases b <;> (
           cases outRefsL with
@@ -4510,20 +4499,21 @@ private lemma populate_call_outputs_subsumes
             | cons rE outRefsE' =>
               simp only [populate_call_outputs] at hpopL hpopE
               -- Fresh refs are not in pathEnv.refs
-              have hrL_fresh_pe : rL ∉ envL.pathEnv.refs := by
-                have := freshRefInEnvBool_implies_freshRefBool rL _ (hfreshL rL (List.mem_cons.mpr (Or.inl rfl)))
-                exact (freshRef_iff_freshRefBool rL envL.pathEnv).mpr this
-              have hrE_fresh_pe : rE ∉ envE.pathEnv.refs := by
-                have := freshRefInEnvBool_implies_freshRefBool rE _ (hfreshE rE (List.mem_cons.mpr (Or.inl rfl)))
-                exact (freshRef_iff_freshRefBool rE envE.pathEnv).mpr this
+              have hrL_fresh := hfreshL rL (List.mem_cons.mpr (Or.inl rfl))
+              have hrL_fresh_pe : rL ∉ envL.pathEnv.refs :=
+                freshRefInEnv_implies_freshRef rL envL hrL_fresh
+              have hrE_fresh := hfreshE rE (List.mem_cons.mpr (Or.inl rfl))
+              have hrE_fresh_pe : rE ∉ envE.pathEnv.refs :=
+                freshRefInEnv_implies_freshRef rE envE hrE_fresh
               have hrL_ne_root := hnotRootL rL (List.mem_cons.mpr (Or.inl rfl))
               have hrE_ne_root := hnotRootE rE (List.mem_cons.mpr (Or.inl rfl))
-              -- rL is a refid (from not_varRef + not_root)
+              -- rL is a refid (from freshRefInEnv includes not_varRef + not_root)
+              have hrL_not_varRef : ∀ v, rL ≠ .varRef v := (hrL_fresh.2.2 : _ ∧ _).2
               have hrL_refid : ∃ n, rL = .refid n := by
                 cases rL with
                 | root => exact absurd rfl hrL_ne_root
                 | refid n => exact ⟨n, rfl⟩
-                | varRef v => exact absurd rfl (hnotVarRefL (.varRef v) (List.mem_cons.mpr (Or.inl rfl)) v)
+                | varRef v => exact absurd rfl (hrL_not_varRef v)
               have hrE_not_mapped : rE ∉ envL.pathEnv.refs.map σ := by
                 rw [hrefs]; exact hrE_fresh_pe
               -- Extended σ
@@ -4537,13 +4527,13 @@ private lemma populate_call_outputs_subsumes
                 (extendSubst_id σ rL rE hid hrL_refid)
                 (VarEnvSubstEquiv_extend σ rL rE _ _ hve
                   (fun x' bt' s' bk' ms' hlook' =>
-                    Ne.symm (freshRefInEnvBool_ne_varEnv_ref rL _ x' .validVar bt' s' bk' ms'
-                      (hfreshL rL (List.mem_cons.mpr (Or.inl rfl))) hlook')))
+                    Ne.symm (freshRefInEnv_ne_varEnv_ref rL _ x' .validVar bt' s' bk' ms'
+                      hrL_fresh hlook')))
                 (SiteEnvSubstEquiv_extend_insert_ref σ rL rE _ _ site bt _
                   hse
                   (fun k bt' ref bk' hlook' =>
-                    Ne.symm (freshRefInEnvBool_ne_siteEnv_ref rL _ k bt' ref bk'
-                      (hfreshL rL (List.mem_cons.mpr (Or.inl rfl))) hlook')))
+                    Ne.symm (freshRefInEnv_ne_siteEnv_ref rL _ k bt' ref bk'
+                      hrL_fresh hlook')))
                 (by simp only [uwe_epsilon_refs_fresh rL rL envL.pathEnv hrL_fresh_pe,
                         uwe_epsilon_refs_fresh rE rE envE.pathEnv hrE_fresh_pe]
                     simp only [List.map_cons, show σ' rL = rE from if_pos rfl]
@@ -4554,15 +4544,20 @@ private lemma populate_call_outputs_subsumes
                 (update_with_epsilon_path_inclusion σ rL rE envL.pathEnv envE.pathEnv
                   hpaths hrL_fresh_pe hrE_fresh_pe hinj hrefs hrE_ne_root
                   hpaths_to_nm hpaths_from_nm)
-                (fun r hr => freshRefInEnvBool_insert_ref_update_epsilon r rL envL site bt _
-                  (hfreshL r (List.mem_cons.mpr (Or.inr hr)))
-                  (fun (h : r = rL) => (List.nodup_cons.mp hnodupL).1 (h ▸ hr)))
-                (fun r hr => freshRefInEnvBool_insert_ref_update_epsilon r rE envE site bt _
-                  (hfreshE r (List.mem_cons.mpr (Or.inr hr)))
-                  (fun (h : r = rE) => (List.nodup_cons.mp hnodupE).1 (h ▸ hr)))
+                (fun r hr =>
+                  let hb := freshRefInEnvBool_insert_ref_update_epsilon r rL envL site bt _
+                    ((freshRefInEnv_iff_freshRefInEnvBool r envL).mp
+                      (hfreshL r (List.mem_cons.mpr (Or.inr hr))))
+                    (fun (h : r = rL) => (List.nodup_cons.mp hnodupL).1 (h ▸ hr))
+                  (freshRefInEnv_iff_freshRefInEnvBool r _).mpr hb)
+                (fun r hr =>
+                  let hb := freshRefInEnvBool_insert_ref_update_epsilon r rE envE site bt _
+                    ((freshRefInEnv_iff_freshRefInEnvBool r envE).mp
+                      (hfreshE r (List.mem_cons.mpr (Or.inr hr))))
+                    (fun (h : r = rE) => (List.nodup_cons.mp hnodupE).1 (h ▸ hr))
+                  (freshRefInEnv_iff_freshRefInEnvBool r _).mpr hb)
                 ((List.nodup_cons.mp hnodupL).2) ((List.nodup_cons.mp hnodupE).2)
                 (by simpa using hlen)
-                (fun r hr v => hnotVarRefL r (List.mem_cons.mpr (Or.inr hr)) v)
                 (fun r hr => hnotRootL r (List.mem_cons.mpr (Or.inr hr)))
                 (fun r hr => hnotRootE r (List.mem_cons.mpr (Or.inr hr)))
                 (update_with_extension_paths_to_non_member rE rE [] envE.pathEnv
@@ -4971,7 +4966,6 @@ private theorem weaken_call
     (hfreshSitesL : all_fresh_sites envL as)
     (hfreshRefsL : all_refs_fresh_in_env envL outRefsL)
     (hnodupL : List.Nodup outRefsL)
-    (hnotVarRefL : ∀ r ∈ outRefsL, ∀ v, r ≠ .varRef v)
     (hpopL : populate_call_outputs envL as rets outRefsL = some envL')
     (hisoL : check_mutable_inputs_isolated envL bs)
     (hsub : TypeEnv.subsumes envL env)
@@ -5003,8 +4997,7 @@ private theorem weaken_call
   obtain ⟨envE', hpopE⟩ := populate_call_outputs_exists' env envL as rets outRefsE outRefsL envL' hpopL hlenE
   -- Derive not_root for outRefsL from freshness
   have hout_not_root_L : ∀ r ∈ outRefsL, r ≠ Aref.root := fun r hr => by
-    have hfr := (freshRef_iff_freshRefBool r envL.pathEnv).mpr
-      (freshRefInEnvBool_implies_freshRefBool r envL (hfreshRefsL r hr))
+    have hfr := freshRefInEnv_implies_freshRef r envL (hfreshRefsL r hr)
     exact fun heq => hfr (heq ▸ hroot)
   -- WF for intermediate environments
   have hwfL' : TypeEnv.WellFormed envL' :=
@@ -5037,12 +5030,12 @@ private theorem weaken_call
   have hfrom_E' := populate_call_outputs_paths_from_nm env envE' as rets outRefsE hpaths_from_nm hpopE
   -- Apply call rule
   exact typecheck_stmt.call lenv env fnName as bs params rets outRefsE envE' cont retTypes
-    hfunE htcE hfreshSitesE hfreshRefsE hnodupE (makeFreshRefs_not_varRef env outRefsL.length) hpopE hisoE
+    hfunE htcE hfreshSitesE hfreshRefsE hnodupE hpopE hisoE
     (ih (call_connect_inputs_outputs envE' as bs)
       (call_connect_subsumes envL' envE' as bs
         (populate_call_outputs_subsumes envL env envL' envE' as rets outRefsL outRefsE σ
           hid hve hse hrefs hinj hnonroot hpaths_incl
-          hfreshRefsL hfreshRefsE hnodupL hnodupE hlenE.symm hnotVarRefL
+          hfreshRefsL hfreshRefsE hnodupL hnodupE hlenE.symm
           hout_not_root_L (makeFreshRefs_not_root env outRefsL.length)
           hpaths_to_nm hpaths_from_nm hfuneq hpopL hpopE)
         hst_L' hst_E')
@@ -5153,44 +5146,44 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
     exact weaken_release lenv _ env a _ r _ _ _ hlook_a
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
-  | let_bind_copy_ref envL a _ _ _ s t _ _ _ hlookup hnotIn hfresh ht_not_varRef _ ih =>
-    exact weaken_let_bind_copy_ref lenv envL env a _ _ _ s t _ _ _ hlookup hnotIn hfresh ht_not_varRef
+  | let_bind_copy_ref envL a _ _ _ s t _ _ _ hlookup hnotIn hfresh _ ih =>
+    exact weaken_let_bind_copy_ref lenv envL env a _ _ _ s t _ _ _ hlookup hnotIn hfresh
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
-  | let_bind_borrowImm envL a x_var τ ms r cont retTypes hlookup hnotIn hfresh hr_not_varRef _ ih =>
+  | let_bind_borrowImm envL a x_var τ ms r cont retTypes hlookup hnotIn hfresh _ ih =>
     exact weaken_let_bind_borrowImm lenv envL env a x_var τ ms r _ _
-      hlookup hnotIn hfresh hr_not_varRef
+      hlookup hnotIn hfresh
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
-  | let_bind_borrowMut envL a x_var _ _ r _ _ hle hlookup hnotIn hfresh hr_not_varRef _ ih =>
+  | let_bind_borrowMut envL a x_var _ _ r _ _ hle hlookup hnotIn hfresh _ ih =>
     exact weaken_let_bind_borrowMut lenv envL env a x_var _ _ r _ _
-      hle hlookup hnotIn hfresh hr_not_varRef
+      hle hlookup hnotIn hfresh
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
-  | let_bind_borrowField envL a af f _ _ _ _ s rf _ _ hlookup_a hbt hlookup_f hnotIn hfresh hrf_not_varRef _ ih =>
+  | let_bind_borrowField envL a af f _ _ _ _ s rf _ _ hlookup_a hbt hlookup_f hnotIn hfresh _ ih =>
     exact weaken_let_bind_borrowField lenv envL env a af f _ _ _ _ s rf _ _
-      hlookup_a hbt hlookup_f hnotIn hfresh hrf_not_varRef
+      hlookup_a hbt hlookup_f hnotIn hfresh
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
-  | let_bind_borrowMutField envL a af f _ _ _ s rf _ _ hlookup_a hbt hlookup_f hnotIn hfresh hrf_not_varRef _ ih =>
+  | let_bind_borrowMutField envL a af f _ _ _ s rf _ _ hlookup_a hbt hlookup_f hnotIn hfresh _ ih =>
     exact weaken_let_bind_borrowMutField lenv envL env a af f _ _ _ s rf _ _
-      hlookup_a hbt hlookup_f hnotIn hfresh hrf_not_varRef
+      hlookup_a hbt hlookup_f hnotIn hfresh
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
-  | let_bind_freeze envL a c τ r r' isBor cont retTypes hlook hnotIn hfresh hr'_not_varRef _ ih =>
+  | let_bind_freeze envL a c τ r r' isBor cont retTypes hlook hnotIn hfresh _ ih =>
     exact weaken_let_bind_freeze lenv envL env a c τ r r' isBor _ _
-      hlook hnotIn hfresh hr'_not_varRef
+      hlook hnotIn hfresh
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
-  | var_assign_valid envL x a ax τ ms r _ _ hms hlook_x hlook_a hnotIn hfresh hr_not_varRef _ ih =>
+  | var_assign_valid envL x a ax τ ms r _ _ hms hlook_x hlook_a hnotIn hfresh _ ih =>
     exact weaken_var_assign_valid lenv envL env x a ax τ ms r _ _
-      hms hlook_x hlook_a hnotIn hfresh hr_not_varRef
+      hms hlook_x hlook_a hnotIn hfresh
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   | call envL fnName as bs params rets outRefsL envL' cont retTypes
-      hfunL htcL hfreshSitesL hfreshRefsL hnodupL hnotVarRefL hpopL hisoL _ ih =>
+      hfunL htcL hfreshSitesL hfreshRefsL hnodupL hpopL hisoL _ ih =>
     exact weaken_call lenv envL env fnName as bs params rets outRefsL envL' cont retTypes
-      hfunL htcL hfreshSitesL hfreshRefsL hnodupL hnotVarRefL hpopL hisoL
+      hfunL htcL hfreshSitesL hfreshRefsL hnodupL hpopL hisoL
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   -- ==================== Complex non-pathEnv cases ====================

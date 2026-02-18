@@ -126,8 +126,8 @@ private lemma list_lookup_pair_mem [BEq α] [LawfulBEq α]
 -- freshRefInEnvBool implies freshRefBool on pathEnv
 lemma freshRefInEnvBool_implies_freshRefBool (r : Aref) (env : TypeEnv)
     (h : freshRefInEnvBool r env = true) : freshRefBool r env.pathEnv = true := by
-  simp only [freshRefInEnvBool, Bool.and_eq_true] at h
-  exact h.1.1
+  simp only [freshRefInEnvBool] at h
+  revert h; simp only [Bool.and_eq_true]; exact fun ⟨⟨⟨hp, _⟩, _⟩, _⟩ => hp
 
 -- freshRefInEnv implies freshRef on pathEnv
 lemma freshRefInEnv_implies_freshRef (r : Aref) (env : TypeEnv)
@@ -137,25 +137,29 @@ lemma freshRefInEnv_implies_freshRef (r : Aref) (env : TypeEnv)
 theorem freshRefInEnv_iff_freshRefInEnvBool (r : Aref) (env : TypeEnv) :
     freshRefInEnv r env ↔ freshRefInEnvBool r env = true := by
   constructor
-  · intro ⟨hpath, hvar, hsite⟩
-    simp only [freshRefInEnvBool, Bool.and_eq_true, Bool.not_eq_true',
-               List.contains_eq_any_beq]
-    refine ⟨⟨(freshRef_iff_freshRefBool r env.pathEnv).mp hpath, ?_⟩, ?_⟩
+  · intro ⟨hpath, hvar, hsite, hnv⟩
+    simp only [freshRefInEnvBool]
+    simp only [Bool.and_eq_true, Bool.not_eq_true', List.contains_eq_any_beq]
+    refine ⟨⟨⟨(freshRef_iff_freshRefBool r env.pathEnv).mp hpath, ?_⟩, ?_⟩, ?_⟩
     · rw [List.any_eq_false]; intro x hx
       simp only [beq_iff_eq]; exact fun heq => hvar (heq ▸ hx)
     · rw [List.any_eq_false]; intro x hx
       simp only [beq_iff_eq]; exact fun heq => hsite (heq ▸ hx)
+    · cases r with
+      | varRef v => exact absurd rfl (hnv v)
+      | _ => trivial
   · intro h
-    simp only [freshRefInEnvBool, Bool.and_eq_true, Bool.not_eq_true',
-               List.contains_eq_any_beq] at h
-    obtain ⟨⟨hpath, hvar⟩, hsite⟩ := h
-    refine ⟨(freshRef_iff_freshRefBool r env.pathEnv).mpr hpath, ?_, ?_⟩
+    simp only [freshRefInEnvBool] at h
+    simp only [Bool.and_eq_true, Bool.not_eq_true', List.contains_eq_any_beq] at h
+    obtain ⟨⟨⟨hpath, hvar⟩, hsite⟩, hnv⟩ := h
+    refine ⟨(freshRef_iff_freshRefBool r env.pathEnv).mpr hpath, ?_, ?_, ?_⟩
     · intro hmem
       rw [List.any_eq_false] at hvar
       exact absurd (beq_self_eq_true r) (hvar r hmem)
     · intro hmem
       rw [List.any_eq_false] at hsite
       exact absurd (beq_self_eq_true r) (hsite r hmem)
+    · intro v heq; subst heq; simp at hnv
 
 -- nextFreshRefInEnv is fresh in the entire TypeEnv (Bool version)
 theorem nextFreshRefInEnv_fresh (env : TypeEnv) :
@@ -170,13 +174,14 @@ theorem nextFreshRefInEnv_fresh (env : TypeEnv) :
     intro r hr n hn heq
     have hmax := foldl_max_ge_elem AR 0 r hr
     subst heq; subst hn; simp only [getRefId] at hmax; omega
-  refine ⟨⟨?_, ?_⟩, ?_⟩
+  refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩
   · rw [List.any_eq_false]; intro r hr; simp only [beq_iff_eq]
     exact (hnotIn r (List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inl hr)))) _ rfl).symm
   · rw [List.any_eq_false]; intro r hr; simp only [beq_iff_eq]
     exact (hnotIn r (List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inr hr)))) _ rfl).symm
   · rw [List.any_eq_false]; intro r hr; simp only [beq_iff_eq]
     exact (hnotIn r (List.mem_append.mpr (Or.inr hr)) _ rfl).symm
+  · trivial  -- nextFreshRefInEnv returns .refid, not .varRef
 
 -- nextFreshRefInEnv is fresh (Prop version)
 theorem nextFreshRefInEnv_fresh_prop (env : TypeEnv) :
@@ -210,13 +215,14 @@ lemma refid_ge_start_fresh (env : TypeEnv) (n : Nat)
     intro r hr heq
     have hmax := foldl_max_ge_elem _ 0 r hr
     subst heq; simp only [getRefId] at hmax; omega
-  refine ⟨⟨?_, ?_⟩, ?_⟩
+  refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩
   · rw [List.any_eq_false]; intro r hr; simp only [beq_iff_eq]
     exact (hnotIn r (List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inl hr))))).symm
   · rw [List.any_eq_false]; intro r hr; simp only [beq_iff_eq]
     exact (hnotIn r (List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inr hr))))).symm
   · rw [List.any_eq_false]; intro r hr; simp only [beq_iff_eq]
     exact (hnotIn r (List.mem_append.mpr (Or.inr hr))).symm
+  · trivial  -- .refid n is not .varRef
 
 -- Key lemma: freshRefInEnvBool means the ref doesn't appear in any VarEnv entry
 lemma freshRefInEnvBool_ne_varEnv_ref (t : Aref) (env : TypeEnv) (x : Var)
@@ -225,7 +231,7 @@ lemma freshRefInEnvBool_ne_varEnv_ref (t : Aref) (env : TypeEnv) (x : Var)
     (hlookup : lookup env.varEnv x = some (isv, .ref τ s isBor, ms)) :
     t ≠ s := by
   intro heq; subst heq
-  have ⟨_, hvar, _⟩ := (freshRefInEnv_iff_freshRefInEnvBool t env).mpr hfresh
+  have ⟨_, hvar, _, _⟩ := (freshRefInEnv_iff_freshRefInEnvBool t env).mpr hfresh
   apply hvar
   simp only [collectVarEnvRefs, List.mem_filterMap]
   exact ⟨(x, (isv, .ref τ t isBor, ms)), list_lookup_pair_mem hlookup, rfl⟩
@@ -237,7 +243,7 @@ lemma freshRefInEnvBool_ne_siteEnv_ref (t : Aref) (env : TypeEnv) (s : Site)
     (hlookup : lookup env.siteEnv s = some (.ref τ s_ref isBor)) :
     t ≠ s_ref := by
   intro heq; subst heq
-  have ⟨_, _, hsite⟩ := (freshRefInEnv_iff_freshRefInEnvBool t env).mpr hfresh
+  have ⟨_, _, hsite, _⟩ := (freshRefInEnv_iff_freshRefInEnvBool t env).mpr hfresh
   apply hsite
   simp only [collectSiteEnvRefs, List.mem_filterMap]
   exact ⟨(s, .ref τ t isBor), list_lookup_pair_mem hlookup, rfl⟩
@@ -258,6 +264,20 @@ lemma freshRefInEnv_ne_siteEnv_ref (t : Aref) (env : TypeEnv) (s : Site)
     t ≠ s_ref := by
   exact freshRefInEnvBool_ne_siteEnv_ref t env s τ s_ref isBor
     ((freshRefInEnv_iff_freshRefInEnvBool t env).mp hfresh) hlookup
+
+-- Extract not_varRef from freshRefInEnv
+lemma freshRefInEnv_not_varRef (r : Aref) (env : TypeEnv)
+    (hfresh : freshRefInEnv r env) : ∀ v, r ≠ .varRef v := hfresh.2.2.2
+
+-- Extract not_varRef from freshRefInEnvBool
+lemma freshRefInEnvBool_not_varRef (r : Aref) (env : TypeEnv)
+    (hfresh : freshRefInEnvBool r env = true) : ∀ v, r ≠ .varRef v :=
+  freshRefInEnv_not_varRef r env ((freshRefInEnv_iff_freshRefInEnvBool r env).mpr hfresh)
+
+-- Extract freshRefInEnv from freshRefInEnvBool
+lemma freshRefInEnvBool_implies_freshRefInEnv (r : Aref) (env : TypeEnv)
+    (h : freshRefInEnvBool r env = true) : freshRefInEnv r env :=
+  (freshRefInEnv_iff_freshRefInEnvBool r env).mpr h
 
 /- ---------------------------------------------------- -/
 /-       PathEnv lemmas                                  -/

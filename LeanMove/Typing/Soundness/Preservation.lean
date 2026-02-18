@@ -78,8 +78,7 @@ private theorem inv_copy
         cont retTypes) ∨
     (∃ τ ms s t isBor,
       lookup env.varEnv x = some (.validVar, .ref τ s isBor, ms) ∧
-      freshRefInEnvBool t env ∧
-      (∀ v, t ≠ .varRef v) ∧
+      freshRefInEnv t env ∧
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.ref τ t isBor)
                   pathEnv := update_with_epsilon t s env.pathEnv}
@@ -87,8 +86,8 @@ private theorem inv_copy
   match h with
   | .let_bind_copy_val _ _ _ _ bt ms _ _ hlookup _ hcont =>
     .inl ⟨bt, ms, hlookup, hcont⟩
-  | .let_bind_copy_ref _ _ _ _ τ ms s t isBor _ _ hlookup _ hfresh hnv hcont =>
-    .inr ⟨τ, ms, s, t, isBor, hlookup, hfresh, hnv, hcont⟩
+  | .let_bind_copy_ref _ _ _ _ τ ms s t isBor _ _ hlookup _ hfresh hcont =>
+    .inr ⟨τ, ms, s, t, isBor, hlookup, hfresh, hcont⟩
 
 private theorem inv_move
     (h : typecheck_stmt lenv env (.letBind a (.usage (.move x)) cont) retTypes) :
@@ -105,31 +104,29 @@ private theorem inv_borrowImm
     (h : typecheck_stmt lenv env (.letBind a (.usage (.borrowImm x)) cont) retTypes) :
     ∃ τ ms r,
       lookup env.varEnv x = some (.validVar, .basic τ, ms) ∧
-      freshRefInEnvBool r env ∧
-      (∀ v, r ≠ .varRef v) ∧
+      freshRefInEnv r env ∧
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowImm)
                   pathEnv := update_with_extension r .root [.root_to_var x]
                               (update_with_epsilon r r env.pathEnv)}
         cont retTypes :=
   match h with
-  | .let_bind_borrowImm _ _ _ _ τ ms r _ _ hlookup _ hfresh hnv hcont =>
-    ⟨τ, ms, r, hlookup, hfresh, hnv, hcont⟩
+  | .let_bind_borrowImm _ _ _ _ τ ms r _ _ hlookup _ hfresh hcont =>
+    ⟨τ, ms, r, hlookup, hfresh, hcont⟩
 
 private theorem inv_borrowMut
     (h : typecheck_stmt lenv env (.letBind a (.usage (.borrowMut x)) cont) retTypes) :
     ∃ τ ms r,
       lookup env.varEnv x = some (.validVar, .basic τ, ms) ∧
-      freshRefInEnvBool r env ∧
-      (∀ v, r ≠ .varRef v) ∧
+      freshRefInEnv r env ∧
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowMut)
                   pathEnv := update_with_extension r .root [.root_to_var x]
                               (update_with_epsilon r r env.pathEnv)}
         cont retTypes :=
   match h with
-  | .let_bind_borrowMut _ _ _ _ τ ms r _ _ _ hlookup _ hfresh hnv hcont =>
-    ⟨τ, ms, r, hlookup, hfresh, hnv, hcont⟩
+  | .let_bind_borrowMut _ _ _ _ τ ms r _ _ _ hlookup _ hfresh hcont =>
+    ⟨τ, ms, r, hlookup, hfresh, hcont⟩
 
 private theorem inv_readRef
     (h : typecheck_stmt lenv env (.letBind c (.readRef src) cont) retTypes) :
@@ -146,15 +143,14 @@ private theorem inv_freeze
     (h : typecheck_stmt lenv env (.letBind c (.freeze src) cont) retTypes) :
     ∃ τ r r' isBor,
       lookup env.siteEnv src = some (.ref τ r isBor) ∧
-      (∀ v, r' ≠ .varRef v) ∧
       freshRefInEnv r' env ∧
       typecheck_stmt lenv
         {env with siteEnv := insert (delete env.siteEnv src) c (.ref τ r' .siteBorrowImm)
                   pathEnv := consume_ref_transfer env.pathEnv r r'}
         cont retTypes :=
   match h with
-  | .let_bind_freeze _ _ _ _ τ r r' isBor _ _ hlookup _ hfresh hnv hcont =>
-    ⟨τ, r, r', isBor, hlookup, hnv, hfresh, hcont⟩
+  | .let_bind_freeze _ _ _ _ τ r r' isBor _ _ hlookup _ hfresh hcont =>
+    ⟨τ, r, r', isBor, hlookup, hfresh, hcont⟩
 
 private theorem inv_pack
     (h : typecheck_stmt lenv env (.letBind b (.pack recName fieldSites) cont) retTypes) :
@@ -177,14 +173,13 @@ private theorem inv_borrowField
       bt = .trecord fentries ∧
       lookup fentries field = some bt' ∧
       freshRefInEnv rf env ∧
-      (∀ v, rf ≠ .varRef v) ∧
       typecheck_stmt lenv
         {env with siteEnv := insert (delete env.siteEnv src) af (.ref bt' rf isBor)
                   pathEnv := update_with_extension rf s [.field field] env.pathEnv}
         cont retTypes :=
   match h with
-  | .let_bind_borrowField _ _ _ _ _ _ bt' isBor fentries s rf _ _ hlookup hbt hf _ hfresh hnv hcont =>
-    ⟨bt', isBor, fentries, s, rf, hlookup, hbt, hf, hfresh, hnv, hcont⟩
+  | .let_bind_borrowField _ _ _ _ _ _ bt' isBor fentries s rf _ _ hlookup hbt hf _ hfresh hcont =>
+    ⟨bt', isBor, fentries, s, rf, hlookup, hbt, hf, hfresh, hcont⟩
 
 private theorem inv_borrowMutField
     (h : typecheck_stmt lenv env (.letBind af (.borrowMutField src bt field) cont) retTypes) :
@@ -193,14 +188,13 @@ private theorem inv_borrowMutField
       bt = .trecord fentries ∧
       lookup fentries field = some btf ∧
       freshRefInEnv rf env ∧
-      (∀ v, rf ≠ .varRef v) ∧
       typecheck_stmt lenv
         {env with siteEnv := insert (delete env.siteEnv src) af (.ref btf rf .siteBorrowMut)
                   pathEnv := update_with_extension rf s [.field field] env.pathEnv}
         cont retTypes :=
   match h with
-  | .let_bind_borrowMutField _ _ _ _ _ _ btf fentries s rf _ _ hlookup hbt hf _ hfresh hnv hcont =>
-    ⟨btf, fentries, s, rf, hlookup, hbt, hf, hfresh, hnv, hcont⟩
+  | .let_bind_borrowMutField _ _ _ _ _ _ btf fentries s rf _ _ hlookup hbt hf _ hfresh hcont =>
+    ⟨btf, fentries, s, rf, hlookup, hbt, hf, hfresh, hcont⟩
 
 private theorem inv_writeRef
     (h : typecheck_stmt lenv env (.writeRef dst val cont) retTypes) :
@@ -253,7 +247,7 @@ private theorem inv_call
       populate_call_outputs env results rets outRefs = some env' ∧
       typecheck_stmt lenv (call_connect_inputs_outputs env' results args) cont retTypes :=
   match h with
-  | .call _ _ _ _ _ params rets outRefs env' _ _ hfun _ _ _ _ _ hpop _ hcont =>
+  | .call _ _ _ _ _ params rets outRefs env' _ _ hfun _ _ _ _ hpop _ hcont =>
     ⟨params, rets, outRefs, env', hfun, hpop, hcont⟩
 
 private theorem inv_unpack
@@ -275,8 +269,7 @@ private theorem inv_assign
     (∃ ax τ ms r,
       lookup env.varEnv x = some (.validVar, .basic τ, ms) ∧
       lookup env.siteEnv a = some (.basic τ) ∧
-      (∀ v, r ≠ .varRef v) ∧
-      freshRefInEnvBool r env ∧
+      freshRefInEnv r env ∧
       notIn env.siteEnv ax ∧
       typecheck_stmt lenv
         {env with siteEnv := delete (delete (insert env.siteEnv ax (.ref τ r .siteBorrowMut)) a) ax
@@ -292,8 +285,8 @@ private theorem inv_assign
                   siteEnv := delete env.siteEnv a}
         cont retTypes) :=
   match h with
-  | .var_assign_valid _ _ _ _ ax τ ms r _ _ _ hlookup ha_type hnotin hfresh hnv hcont =>
-    .inl ⟨ax, τ, ms, r, hlookup, ha_type, hnv, hfresh, hnotin, hcont⟩
+  | .var_assign_valid _ _ _ _ ax τ ms r _ _ _ hlookup ha_type hnotin hfresh hcont =>
+    .inl ⟨ax, τ, ms, r, hlookup, ha_type, hfresh, hnotin, hcont⟩
   | .var_assign_invalid _ _ _ _ τ τ' _ _ hlookup_var hlookup_site hcompat hcont =>
     .inr ⟨τ, τ', hlookup_var, hlookup_site, hcompat, hcont⟩
 
@@ -543,7 +536,7 @@ private lemma var_consistent_extend_rmap_fresh
     {m : Machine} {env : TypeEnv} {lenv : LabelEnv} {retTypes : List ParamType} {rmap : RefMap}
     (hwt : WellTypedState m env lenv retTypes rmap)
     (t : Aref) (loc_t : Loc) (path_t : List Field)
-    (hfresh : freshRefInEnvBool t env) :
+    (hfresh : freshRefInEnv t env) :
     let rmap' : RefMap := { map := fun r => if r = t then some (loc_t, path_t) else rmap.map r }
     ∀ y isv τ ms,
       lookup env.varEnv y = some (isv, τ, ms) →
@@ -566,7 +559,7 @@ private lemma var_consistent_extend_rmap_fresh
     | ref bt r_y bk =>
       obtain ⟨loc_v, path_v, hv_eq, hrmap_r⟩ := hm
       by_cases hrt : r_y = t
-      · exact absurd hrt.symm (freshRefInEnvBool_ne_varEnv_ref t env y .validVar bt r_y bk ms hfresh hvy)
+      · exact absurd hrt.symm (freshRefInEnv_ne_varEnv_ref t env y .validVar bt r_y bk ms hfresh hvy)
       · refine ⟨loc_v, path_v, hv_eq, ?_⟩
         show (if r_y = t then some (loc_t, path_t) else rmap.map r_y) = some (loc_v, path_v)
         rw [if_neg hrt]; exact hrmap_r
@@ -577,7 +570,7 @@ private lemma site_consistent_old_entry_extend_rmap
     {m : Machine} {env : TypeEnv} {lenv : LabelEnv} {retTypes : List ParamType} {rmap : RefMap}
     (hwt : WellTypedState m env lenv retTypes rmap)
     (t : Aref) (loc_t : Loc) (path_t : List Field)
-    (hfresh : freshRefInEnvBool t env)
+    (hfresh : freshRefInEnv t env)
     (s' : Site) (τ' : MoveType) (hl : lookup env.siteEnv s' = some τ') :
     let rmap' : RefMap := { map := fun r => if r = t then some (loc_t, path_t) else rmap.map r }
     ∃ v', lookup m.frame.siteStore s' = some v' ∧ ValueMatchesType v' τ' rmap' := by
@@ -589,7 +582,7 @@ private lemma site_consistent_old_entry_extend_rmap
   | ref bt r_s bk =>
     obtain ⟨loc_v, path_v, hv_eq', hrmap_r⟩ := hm
     by_cases hrt : r_s = t
-    · exact absurd hrt.symm (freshRefInEnvBool_ne_siteEnv_ref t env s' bt r_s bk hfresh (hrt ▸ hl))
+    · exact absurd hrt.symm (freshRefInEnv_ne_siteEnv_ref t env s' bt r_s bk hfresh (hrt ▸ hl))
     · refine ⟨loc_v, path_v, hv_eq', ?_⟩
       show (if r_s = t then some (loc_t, path_t) else rmap.map r_s) = some (loc_v, path_v)
       rw [if_neg hrt]; exact hrmap_r
@@ -700,8 +693,7 @@ private theorem preservation_copy_ref (m m' : Machine) (env : TypeEnv) (lenv : L
     (s : Site) (x : Var) (cont : Stmt)
     (τ_ref : BasicMoveType) (ms : Mut) (s_orig t : Aref) (isBor : BorrowingKind)
     (hvar : lookup env.varEnv x = some (.validVar, .ref τ_ref s_orig isBor, ms))
-    (hfresh_t : freshRefInEnvBool t env)
-    (hnv_t : ∀ v, t ≠ .varRef v)
+    (hfresh_t : freshRefInEnv t env)
     (hcont : typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv s (.ref τ_ref t isBor)
                   pathEnv := update_with_epsilon t s_orig env.pathEnv}
@@ -727,7 +719,7 @@ private theorem preservation_copy_ref (m m' : Machine) (env : TypeEnv) (lenv : L
     hwt.env_wf.varEnv_wf x (.validVar, .ref τ_ref s_orig isBor, ms) hvar
   -- Extract pathEnv freshness from env-wide freshness
   have hfresh_t_pathEnv : freshRefBool t env.pathEnv :=
-    freshRefInEnvBool_implies_freshRefBool t env hfresh_t
+    freshRefInEnvBool_implies_freshRefBool t env ((freshRefInEnv_iff_freshRefInEnvBool t env).mp hfresh_t)
   have ht_not_root : t ≠ Aref.root := freshRef_not_root hwt.env_wf.pathEnv_wf t hfresh_t_pathEnv
   -- 6. Construct WellTypedState
   refine ⟨{env with siteEnv := insert env.siteEnv s (.ref τ_ref t isBor),
@@ -1182,7 +1174,7 @@ private lemma rmap_paths_update_with_borrow
 /-- Unified preservation for borrowImm/borrowMut of a basic-typed variable.
     Both borrow kinds have identical runtime semantics (allocate ref to var's location)
     and identical proof structure — only the BorrowingKind in siteEnv differs.
-    Parameters: inversion results (τ, r, hfresh, hnv, hcont) and
+    Parameters: inversion results (τ, r, hfresh, hcont) and
     var_consistent results (loc, val, hloc, hread) are pre-computed by the wrappers. -/
 private theorem preservation_borrow (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
@@ -1191,8 +1183,7 @@ private theorem preservation_borrow (m : Machine) (env : TypeEnv) (lenv : LabelE
     (s : Site) (x : Var) (cont : Stmt) (bk : BorrowingKind)
     -- Inversion results
     (τ : BasicMoveType) (r : Aref)
-    (hfresh : freshRefInEnvBool r env)
-    (hnv : ∀ v, r ≠ .varRef v)
+    (hfresh : freshRefInEnv r env)
     (hcont : typecheck_stmt lenv
       {env with siteEnv := insert env.siteEnv s (.ref τ r bk),
                 pathEnv := update_with_extension r .root [.root_to_var x]
@@ -1214,7 +1205,7 @@ private theorem preservation_borrow (m : Machine) (env : TypeEnv) (lenv : LabelE
   let rmap' : RefMap := { map := fun r' => if r' = r then some (loc, []) else rmap.map r' }
   -- 2. Freshness facts
   have hfresh_pathEnv : freshRefBool r env.pathEnv :=
-    freshRefInEnvBool_implies_freshRefBool r env hfresh
+    freshRefInEnvBool_implies_freshRefBool r env ((freshRefInEnv_iff_freshRefInEnvBool r env).mp hfresh)
   have hr_not_root : r ≠ Aref.root := freshRef_not_root hwt.env_wf.pathEnv_wf r hfresh_pathEnv
   have hr_fresh_pe : r ∉ env.pathEnv.refs :=
     (freshRef_iff_freshRefBool r env.pathEnv).mpr hfresh_pathEnv
@@ -1415,14 +1406,14 @@ private theorem preservation_borrowImm (m m' : Machine) (env : TypeEnv) (lenv : 
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
       StackSafe m'.stack m'.frame.returnInfo m'.heap := by
-  obtain ⟨τ, ms, r, hlookup, hfresh, hnv, hcont⟩ :=
+  obtain ⟨τ, ms, r, hlookup, hfresh, hcont⟩ :=
     inv_borrowImm (by rw [← hstmt]; exact hwt.stmt_typed)
   obtain ⟨loc, val, hloc, hread, hht_val⟩ :=
     hwt.var_consistent x .validVar (.basic τ) ms hlookup
   have hgl : getVarLoc m x = some loc := by unfold getVarLoc; simp [hloc]
   simp only [step, hstmt, hgl, ExecState.running.injEq] at hstep; subst hstep
   exact preservation_borrow m env lenv retTypes rmap hwt hss s x cont .siteBorrowImm
-    τ r hfresh hnv hcont loc val hloc hread hht_val
+    τ r hfresh hcont loc val hloc hread hht_val
 
 /-- Preservation for borrowMut: thin wrapper around preservation_borrow. -/
 private theorem preservation_borrowMut (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -1435,14 +1426,14 @@ private theorem preservation_borrowMut (m m' : Machine) (env : TypeEnv) (lenv : 
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
       StackSafe m'.stack m'.frame.returnInfo m'.heap := by
-  obtain ⟨τ, ms, r, hlookup, hfresh, hnv, hcont⟩ :=
+  obtain ⟨τ, ms, r, hlookup, hfresh, hcont⟩ :=
     inv_borrowMut (by rw [← hstmt]; exact hwt.stmt_typed)
   obtain ⟨loc, val, hloc, hread, hht_val⟩ :=
     hwt.var_consistent x .validVar (.basic τ) ms hlookup
   have hgl : getVarLoc m x = some loc := by unfold getVarLoc; simp [hloc]
   simp only [step, hstmt, hgl, ExecState.running.injEq] at hstep; subst hstep
   exact preservation_borrow m env lenv retTypes rmap hwt hss s x cont .siteBorrowMut
-    τ r hfresh hnv hcont loc val hloc hread hht_val
+    τ r hfresh hcont loc val hloc hread hht_val
 
 /-- fieldPathOf distributes over append. -/
 private theorem fieldPathOf_append (l₁ l₂ : List PathElement) :
@@ -1471,7 +1462,6 @@ private theorem preservation_borrowField (m : Machine) (env : TypeEnv) (lenv : L
     (hlookup_src : lookup env.siteEnv src = some (.ref (.trecord fentries) s bk))
     (hfield : lookup fentries field = some bt')
     (hfresh : freshRefInEnv rf env)
-    (hnv : ∀ v, rf ≠ .varRef v)
     (hcont : typecheck_stmt lenv
       {env with siteEnv := insert (delete env.siteEnv src) af (.ref bt' rf bk),
                 pathEnv := update_with_extension rf s [.field field] env.pathEnv}
@@ -1520,7 +1510,7 @@ private theorem preservation_borrowField (m : Machine) (env : TypeEnv) (lenv : L
       (update_with_extension_wellformed rf s [.field field] env.pathEnv hwt.env_wf.pathEnv_wf
         hrf_not_root) hrf_not_root
     stmt_typed := hcont
-    var_consistent := var_consistent_extend_rmap_fresh hwt rf loc (path ++ [field]) hfresh_bool
+    var_consistent := var_consistent_extend_rmap_fresh hwt rf loc (path ++ [field]) hfresh
     site_consistent := by
       intro s' τ' hl
       by_cases heq : s' = af
@@ -1532,7 +1522,7 @@ private theorem preservation_borrowField (m : Machine) (env : TypeEnv) (lenv : L
         have hne_src : s' ≠ src := by
           intro h; subst h; rw [lookup_delete_same] at hl; simp at hl
         rw [lookup_delete_ne _ src s' hne_src] at hl
-        have ⟨v', hv', hm⟩ := site_consistent_old_entry_extend_rmap hwt rf loc (path ++ [field]) hfresh_bool s' τ' hl
+        have ⟨v', hv', hm⟩ := site_consistent_old_entry_extend_rmap hwt rf loc (path ++ [field]) hfresh s' τ' hl
         exact ⟨v', by rw [lookup_insert_ne _ af s' _ heq]; exact hv', hm⟩
     rmap_live := rmap_live_extend_fresh hwt rf loc (path ++ [field]) hreadref_field
     rmap_paths := by
@@ -1858,7 +1848,7 @@ private theorem preservation_borrowFieldImm (m m' : Machine) (env : TypeEnv) (le
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
       StackSafe m'.stack m'.frame.returnInfo m'.heap := by
-  obtain ⟨bt', isBor, fentries, s, rf, hlookup_src, hbt, hfield, hfresh, hnv, hcont⟩ :=
+  obtain ⟨bt', isBor, fentries, s, rf, hlookup_src, hbt, hfield, hfresh, hcont⟩ :=
     inv_borrowField (by rw [← hstmt]; exact hwt.stmt_typed)
   subst hbt
   obtain ⟨vref, hvref, hmatch⟩ := hwt.site_consistent src (.ref (.trecord fentries) s isBor) hlookup_src
@@ -1867,7 +1857,7 @@ private theorem preservation_borrowFieldImm (m m' : Machine) (env : TypeEnv) (le
   rw [hveq] at hrs
   simp only [step, hstmt, hrs, ExecState.running.injEq] at hstep; subst hstep
   exact preservation_borrowField m env lenv retTypes rmap hwt hss af src field cont isBor
-    bt' fentries s rf hlookup_src hfield hfresh hnv hcont loc path hrmap_s
+    bt' fentries s rf hlookup_src hfield hfresh hcont loc path hrmap_s
 
 /-- Preservation for borrowMutField: thin wrapper around preservation_borrowField. -/
 private theorem preservation_borrowMutField (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -1880,7 +1870,7 @@ private theorem preservation_borrowMutField (m m' : Machine) (env : TypeEnv) (le
     ∃ env' lenv' retTypes' rmap',
       WellTypedState m' env' lenv' retTypes' rmap' ∧
       StackSafe m'.stack m'.frame.returnInfo m'.heap := by
-  obtain ⟨btf, fentries, s, rf, hlookup_src, hbt, hfield, hfresh, hnv, hcont⟩ :=
+  obtain ⟨btf, fentries, s, rf, hlookup_src, hbt, hfield, hfresh, hcont⟩ :=
     inv_borrowMutField (by rw [← hstmt]; exact hwt.stmt_typed)
   subst hbt
   obtain ⟨vref, hvref, hmatch⟩ := hwt.site_consistent src (.ref (.trecord fentries) s .siteBorrowMut) hlookup_src
@@ -1889,7 +1879,7 @@ private theorem preservation_borrowMutField (m m' : Machine) (env : TypeEnv) (le
   rw [hveq] at hrs
   simp only [step, hstmt, hrs, ExecState.running.injEq] at hstep; subst hstep
   exact preservation_borrowField m env lenv retTypes rmap hwt hss af src field cont .siteBorrowMut
-    btf fentries s rf hlookup_src hfield hfresh hnv hcont loc path hrmap_s
+    btf fentries s rf hlookup_src hfield hfresh hcont loc path hrmap_s
 
 /-- Reusable helper: delete_ref_node preserves rmap_paths. -/
 private theorem rmap_paths_delete_ref_node (env : TypeEnv) (m : Machine) (rmap : RefMap)
@@ -3298,8 +3288,7 @@ private theorem preservation_assign_valid (m m' : Machine) (env : TypeEnv) (lenv
     (ax : Site) (τ : BasicMoveType) (ms : Mut) (r : Aref)
     (hvar : lookup env.varEnv x = some (.validVar, .basic τ, ms))
     (ha_type : lookup env.siteEnv a = some (.basic τ))
-    (hnv : ∀ v, r ≠ .varRef v)
-    (hfresh : freshRefInEnvBool r env)
+    (hfresh : freshRefInEnv r env)
     (hnotin : notIn env.siteEnv ax)
     (hcont : typecheck_stmt lenv
       {env with siteEnv := delete (delete (insert env.siteEnv ax (.ref τ r .siteBorrowMut)) a) ax
@@ -3327,8 +3316,10 @@ private theorem preservation_assign_valid (m m' : Machine) (env : TypeEnv) (lenv
   | some v =>
     simp [hrs, ExecState.running.injEq] at hstep; subst hstep
     -- r is fresh and not root
+    have hfresh_bool : freshRefInEnvBool r env = true :=
+      (freshRefInEnv_iff_freshRefInEnvBool r env).mp hfresh
     have hr_fresh : freshRef r env.pathEnv :=
-      freshRefBool_implies_freshRef r env.pathEnv (freshRefInEnvBool_implies_freshRefBool r env hfresh)
+      freshRefBool_implies_freshRef r env.pathEnv (freshRefInEnvBool_implies_freshRefBool r env hfresh_bool)
     have hr_not_root : r ≠ Aref.root := by
       intro h; subst h; exact absurd hwt.env_wf.pathEnv_wf.root_in_refs hr_fresh
     -- Abbreviate the complex env
@@ -3847,7 +3838,7 @@ private theorem preservation_freeze (m m' : Machine) (env : TypeEnv) (lenv : Lab
       WellTypedState m' env' lenv' retTypes' rmap' ∧
       StackSafe m'.stack m'.frame.returnInfo m'.heap := by
   -- 1. Invert typing
-  obtain ⟨τ, r, r', isBor, hlookup, hnv, hfresh, hcont⟩ :=
+  obtain ⟨τ, r, r', isBor, hlookup, hfresh, hcont⟩ :=
     inv_freeze (by rw [← hstmt]; exact hwt.stmt_typed)
   -- 2. Get value at src from site_consistent
   obtain ⟨vref, hvref, hmatch⟩ := hwt.site_consistent src (.ref τ r isBor) hlookup
@@ -3888,9 +3879,9 @@ private theorem preservation_freeze (m m' : Machine) (env : TypeEnv) (lenv : Lab
   exact {
     env_wf := TypeEnv.delete_insert_pathEnv_wf env src s (.ref τ r' .siteBorrowImm) pe' hwt.env_wf
       (consume_ref_transfer_wellformed env.pathEnv r r' hwt.env_wf.pathEnv_wf
-        hr_not_root hr'_fresh_pe hnv) hr'_not_root
+        hr_not_root hr'_fresh_pe hfresh.2.2.2) hr'_not_root
     stmt_typed := hcont
-    var_consistent := var_consistent_extend_rmap_fresh hwt r' loc path hfresh_bool
+    var_consistent := var_consistent_extend_rmap_fresh hwt r' loc path hfresh
     site_consistent := by
       intro s' τ' hl
       by_cases heq : s' = s
@@ -3902,7 +3893,7 @@ private theorem preservation_freeze (m m' : Machine) (env : TypeEnv) (lenv : Lab
         have hne_src : s' ≠ src := by
           intro h; subst h; rw [lookup_delete_same] at hl; simp at hl
         rw [lookup_delete_ne _ src s' hne_src] at hl
-        have ⟨v', hv', hm⟩ := site_consistent_old_entry_extend_rmap hwt r' loc path hfresh_bool s' τ' hl
+        have ⟨v', hv', hm⟩ := site_consistent_old_entry_extend_rmap hwt r' loc path hfresh s' τ' hl
         exact ⟨v', by rw [lookup_insert_ne _ s s' _ heq]; exact hv', hm⟩
     rmap_live := rmap_live_extend_fresh hwt r' loc path hlive_r
     rmap_paths := by
@@ -4632,10 +4623,10 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
       cases u with
       | copy x =>
         rcases inv_copy (by rw [← hstmt]; exact hwt.stmt_typed) with
-          ⟨bt, ms, hvar, hcont⟩ | ⟨τ_ref, ms, s_orig, t, isBor, hvar, hfresh_t, hnv_t, hcont⟩
+          ⟨bt, ms, hvar, hcont⟩ | ⟨τ_ref, ms, s_orig, t, isBor, hvar, hfresh_t, hcont⟩
         · exact preservation_copy_val m m' env lenv retTypes rmap hwt hss s x cont bt ms hstmt hvar hcont hstep
         · exact preservation_copy_ref m m' env lenv retTypes rmap hwt hss s x cont
-            τ_ref ms s_orig t isBor hvar hfresh_t hnv_t hcont hstmt hstep
+            τ_ref ms s_orig t isBor hvar hfresh_t hcont hstmt hstep
       | move x => exact preservation_move m m' env lenv retTypes rmap hwt hss s x cont hstmt hstep
       | borrowImm x => exact preservation_borrowImm m m' env lenv retTypes rmap hwt hss s x cont hstmt hstep
       | borrowMut x => exact preservation_borrowMut m m' env lenv retTypes rmap hwt hss s x cont hstmt hstep
@@ -4648,9 +4639,9 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
   | release site cont => exact preservation_release m m' env lenv retTypes rmap hwt hss site cont hstmt hstep
   | assign x site cont =>
     rcases inv_assign (by rw [← hstmt]; exact hwt.stmt_typed) with
-      ⟨ax, τ, ms, r, hvar, ha_type, hnv, hfresh, hnotin, hcont⟩ | ⟨τ, τ', hvar, hsite, hcompat, hcont⟩
+      ⟨ax, τ, ms, r, hvar, ha_type, hfresh, hnotin, hcont⟩ | ⟨τ, τ', hvar, hsite, hcompat, hcont⟩
     · exact preservation_assign_valid m m' env lenv retTypes rmap hwt hss x site cont ax τ ms r
-        hvar ha_type hnv hfresh hnotin hcont hstmt hstep
+        hvar ha_type hfresh hnotin hcont hstmt hstep
     · exact preservation_assign_invalid m m' env lenv retTypes rmap hwt hss x site cont τ τ'
         hvar hsite hcompat hcont hstmt hstep
   | writeRef dst val cont => exact preservation_writeRef m m' env lenv retTypes rmap hwt hss dst val cont hstmt hstep

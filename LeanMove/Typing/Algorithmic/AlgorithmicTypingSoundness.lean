@@ -551,8 +551,7 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
             apply typecheck_stmt.let_bind_copy_ref (τ := τ) (s := s) (t := t) (isBor := isBor) (ms := ms)
             · simp only [hlookup]
             · exact hfresh
-            · exact nextFreshRefInEnv_fresh env
-            · exact nextFreshRefInEnv_not_varRef env
+            · exact nextFreshRefInEnv_fresh_prop env
             · have ht_not_root : t ≠ Aref.root := nextFreshRefInEnv_not_root env
               have hpe' := update_with_epsilon_wellformed t s env.pathEnv hwf.pathEnv_wf ht_not_root
               have hτ : match (MoveType.ref τ t isBor) with | .ref _ r _ => r ≠ Aref.root | .basic _ => True :=
@@ -577,8 +576,7 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
             apply typecheck_stmt.let_bind_borrowImm (τ := τ) (ms := ms) (r := r)
             · simp only [hlookup]
             · exact hfresh
-            · exact nextFreshRefInEnv_fresh env
-            · exact nextFreshRefInEnv_not_varRef env
+            · exact nextFreshRefInEnv_fresh_prop env
             · have hr_not_root : r ≠ Aref.root := nextFreshRefInEnv_not_root env
               have hpe' := update_with_extension_wellformed r .root [.root_to_var x] _
                 (update_with_epsilon_wellformed r r env.pathEnv hwf.pathEnv_wf hr_not_root) hr_not_root
@@ -608,8 +606,7 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
             · simp only [hms, LE.le, Mut.le]
             · simp only [hlookup]
             · exact hfresh
-            · exact nextFreshRefInEnv_fresh env
-            · exact nextFreshRefInEnv_not_varRef env
+            · exact nextFreshRefInEnv_fresh_prop env
             · have hr_not_root : r ≠ Aref.root := nextFreshRefInEnv_not_root env
               have hpe' := update_with_extension_wellformed r .root [.root_to_var x] _
                 (update_with_epsilon_wellformed r r env.pathEnv hwf.pathEnv_wf hr_not_root) hr_not_root
@@ -691,7 +688,6 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
           · exact hlookup
           · exact hfresh
           · exact nextFreshRefInEnv_fresh_prop env
-          · exact nextFreshRefInEnv_not_varRef env
           · have hr_not_root : r ≠ Aref.root := hwf.siteEnv_wf src (.ref bt r isBor) hlookup
             have hr'_fresh : r' ∉ env.pathEnv.refs := nextFreshRefInEnv_not_in_pathEnv env
             have hr'_not_varRef : ∀ v, r' ≠ Aref.varRef v := nextFreshRefInEnv_not_varRef env
@@ -733,7 +729,6 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
                 · exact hlookupf
                 · exact hfresh
                 · exact nextFreshRefInEnv_fresh_prop env
-                · exact nextFreshRefInEnv_not_varRef env
                 · have hrf_not_root : rf ≠ Aref.root := nextFreshRefInEnv_not_root env
                   have hpe' := update_with_extension_wellformed rf s [.field f] env.pathEnv hwf.pathEnv_wf hrf_not_root
                   have hτ : match (MoveType.ref btf rf isBor) with | .ref _ r _ => r ≠ Aref.root | .basic _ => True :=
@@ -777,7 +772,6 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
                   · exact hlookupf
                   · exact hfresh
                   · exact nextFreshRefInEnv_fresh_prop env
-                  · exact nextFreshRefInEnv_not_varRef env
                   · have hrf_not_root : rf ≠ Aref.root := nextFreshRefInEnv_not_root env
                     have hpe' := update_with_extension_wellformed rf s [.field f] env.pathEnv hwf.pathEnv_wf hrf_not_root
                     have hτ : match (MoveType.ref btf rf .siteBorrowMut) with | .ref _ r _ => r ≠ Aref.root | .basic _ => True :=
@@ -1242,7 +1236,7 @@ private lemma generateFreshRefs_fresh (env : TypeEnv) (rets : List ParamType) :
   intro r hr
   simp only [List.mem_map, List.mem_range] at hr
   obtain ⟨i, _, rfl⟩ := hr
-  exact refid_ge_start_fresh env _ (Nat.le_add_right _ _)
+  exact freshRefInEnvBool_implies_freshRefInEnv _ env (refid_ge_start_fresh env _ (Nat.le_add_right _ _))
 
 -- generateFreshRefs produces a list with no duplicates
 private lemma generateFreshRefs_nodup (env : TypeEnv) (rets : List ParamType) :
@@ -1406,8 +1400,7 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
                   · exact hlookup
                   · exact ha_type
                   · exact hfresh_ax
-                  · exact nextFreshRefInEnv_fresh env
-                  · exact nextFreshRefInEnv_not_varRef env
+                  · exact nextFreshRefInEnv_fresh_prop env
                   · have hr_not_root : r ≠ Aref.root := nextFreshRefInEnv_not_root env
                     have hpe' := update_with_extension_wellformed r .root [.root_to_var x] _
                       (update_with_epsilon_wellformed r r env.pathEnv hwf.pathEnv_wf hr_not_root) hr_not_root
@@ -1566,7 +1559,7 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
             apply typecheck_stmt.call lenv env fnName as bs params rets
               (generateFreshRefs env rets) env' cont retTypes
               hlookup_fn htc_bs' hfresh' hfresh_refs hnodup
-              (generateFreshRefs_not_varRef env rets) hpop hiso'
+              hpop hiso'
             exact ih_cont _ hwf' h
           · simp at h
         · simp at h
