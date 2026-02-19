@@ -7,9 +7,8 @@ type system, soundness statement, proof architecture, and key invariants.
 
 ## Dependencies
 
-* `mathlib4-v4.24.0`
-* `batteries-v4.24.0`
-* `ssreflect-v4.24.0`
+* `mathlib4-v4.27.0`
+* `batteries-v4.27.0`
 
 ## Building
 
