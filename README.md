@@ -1,6 +1,9 @@
 ## Lean-Move
 
-An experimental formalisation of Move borrow checker in Lean
+An experimental formalisation of Move borrow checker in Lean.
+
+See **[metatheory.md](metatheory.md)** for a detailed overview of the
+type system, soundness statement, proof architecture, and key invariants.
 
 ## Dependencies
 
