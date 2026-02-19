@@ -505,7 +505,7 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
     | _ => none
 
   | .call as fnName bs cont =>
-    if all_fresh_sites_bool env as then
+    if all_fresh_sites_bool env as && as.eraseDups.length == as.length then
       match lookup env.funEnv fnName with
       | some ⟨params, rets⟩ =>
         if types_conform_bool env.siteEnv bs params &&

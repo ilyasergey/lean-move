@@ -1535,7 +1535,9 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
     intro h
     simp only [check_stmt] at h
     split at h
-    · rename_i hfresh_bool
+    · rename_i hfresh_cond
+      simp only [Bool.and_eq_true] at hfresh_cond
+      obtain ⟨hfresh_bool, hnodup_as_bool⟩ := hfresh_cond
       cases hlookup_fn : lookup env.funEnv fnName with
       | none => simp [hlookup_fn] at h
       | some sig =>
@@ -1549,6 +1551,8 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
           split at h
           · rename_i env' hpop
             have hfresh' := all_fresh_sites_bool_sound env as hfresh_bool
+            have hnodup_as := List.nodup_of_length_eraseDups as
+              (beq_iff_eq.mp hnodup_as_bool).symm
             have htc_bs' := types_conform_bool_sound env.siteEnv bs params htc_bs
             have hiso' := check_mutable_inputs_isolated_bool_sound env bs hiso
             have hfresh_refs := generateFreshRefs_fresh env rets
@@ -1558,7 +1562,7 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
             have hwf' := call_connect_inputs_outputs_wf env' as bs hwf_env'
             apply typecheck_stmt.call lenv env fnName as bs params rets
               (generateFreshRefs env rets) env' cont retTypes
-              hlookup_fn htc_bs' hfresh' sorry hfresh_refs hnodup
+              hlookup_fn htc_bs' hfresh' hnodup_as hfresh_refs hnodup
               hpop hiso'
             exact ih_cont _ hwf' h
           · simp at h
