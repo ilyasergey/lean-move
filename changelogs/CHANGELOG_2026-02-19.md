@@ -71,3 +71,57 @@ and proved a new `checkFunEnv_sound` that returns `FunTypeSafe`. This eliminated
 
 `type_soundness_dec` now takes 7 parameters (was 8). All 25 test theorems in AllTests.lean
 pass without modification. Build succeeds (324 jobs). One `sorry` remains: `preservation_call`.
+
+---
+
+## preservation_call skeleton + infrastructure
+
+### Summary
+
+Extended `FunTypeSafe` with 4 new callee properties needed for `preservation_call`, extended
+`checkFunEnv` with 4 corresponding boolean checks and proved their soundness, made `allocArgs`
+helpers non-private, added `stackSafe_allocArgs`, wrote `inv_call` with all 8 premises, and
+created the `preservation_call` proof skeleton with 2 sorrys (callee WellTypedState + StackSafe).
+
+### New definitions / lemmas
+
+| Definition | File | Purpose |
+|-----------|------|---------|
+| `stackSafe_allocArgs` | StackSafeUtils.lean | StackSafe preserved through allocArgs sequence |
+| `inv_call` (extended) | Preservation.lean | Extracts all 8 premises from `typecheck_stmt.call` |
+| `preservation_call` | Preservation.lean | Skeleton with 2 sorrys |
+
+### Key changes
+
+#### Defs.lean
+- Extended `FunTypeSafe` with 4 new properties (15 conjuncts total):
+  `params_nodup`, `param_refs_distinct`, `param_refs_not_root`, `entry_varEnv_exact`
+
+#### DecidableTypeEnv.lean
+- Extended `checkFunEnv` from 7 to 11 per-function checks (param nodup, ref distinct, not root, entry varEnv exact)
+
+#### InitState.lean
+- Made 12 `allocArgs`/`addLocals` helpers non-private
+- Extended `checkFunEnv_sound` from 6→10 `Bool.and_eq_true` peeling; proves all 15 FunTypeSafe conjuncts
+
+#### StackSafeUtils.lean
+- Added `stackSafe_allocArgs`: induction on params using `stackSafe_heap_alloc` at each step
+
+#### Preservation.lean
+- Extended `inv_call` to extract all 8 premises (params, rets, outRefs, popEnv, sig, types_conform, fresh sites/refs, nodup, populate, isolated, continuation typed)
+- Added `preservation_call` skeleton: simplifies step through 4 nested matches, extracts callee entry block, constructs calleeRmap, provides 2 sorry witnesses
+
+### File stats
+
+| File | Changes |
+|------|---------|
+| `Defs.lean` | +13 |
+| `DecidableTypeEnv.lean` | +14 |
+| `InitState.lean` | +56/-18 |
+| `Preservation.lean` | +98 |
+| `StackSafeUtils.lean` | +40 |
+| **Total** | **+221/-18** across 5 files |
+
+### Result
+
+Build succeeds (289 jobs). 2 sorrys remain in `preservation_call`: callee WellTypedState + StackSafe construction.

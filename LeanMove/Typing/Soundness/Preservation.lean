@@ -244,11 +244,16 @@ private theorem inv_call
     (h : typecheck_stmt lenv env (.call results fname args cont) retTypes) :
     ∃ params rets outRefs env',
       lookup env.funEnv fname = some ⟨params, rets⟩ ∧
+      types_conform env.siteEnv args params ∧
+      all_fresh_sites env results ∧
+      all_refs_fresh_in_env env outRefs ∧
+      List.Nodup outRefs ∧
       populate_call_outputs env results rets outRefs = some env' ∧
+      check_mutable_inputs_isolated env args ∧
       typecheck_stmt lenv (call_connect_inputs_outputs env' results args) cont retTypes :=
   match h with
-  | .call _ _ _ _ _ params rets outRefs env' _ _ hfun _ _ _ _ hpop _ hcont =>
-    ⟨params, rets, outRefs, env', hfun, hpop, hcont⟩
+  | .call _ _ _ _ _ params rets outRefs env' _ _ hfun htc hfs hfr hnd hpop hiso hcont =>
+    ⟨params, rets, outRefs, env', hfun, htc, hfs, hfr, hnd, hpop, hiso, hcont⟩
 
 private theorem inv_unpack
     (h : typecheck_stmt lenv env (.unpack fields src cont) retTypes) :
@@ -4628,6 +4633,95 @@ private theorem preservation_ret (m m' : Machine) (env : TypeEnv) (lenv : LabelE
             rmap_has_type := hrmap_ht'
             funEnv_sig_consistent := hfe_sig
           }
+
+-- ============================================================
+-- Part 8a3: preservation_call
+-- ============================================================
+
+private theorem preservation_call (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retTypes : List ParamType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retTypes rmap)
+    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
+    (results : List Site) (fname : Id) (argSites : List Site) (cont : Stmt)
+    (hstmt : m.frame.stmt = .call results fname argSites cont)
+    (hstep : step (.running m) = .running m') :
+    ∃ env' lenv' retTypes' rmap',
+      WellTypedState m' env' lenv' retTypes' rmap' ∧
+      StackSafe m'.stack m'.frame.returnInfo m'.heap retTypes' := by
+  -- 1. Extract typing premises from typecheck_stmt.call
+  have hstmt_typed : typecheck_stmt lenv env (.call results fname argSites cont) retTypes := by
+    rw [← hstmt]; exact hwt.stmt_typed
+  obtain ⟨params, rets, outRefs, popEnv, hsig, htypes_conf, hfresh_sites,
+    hfresh_refs, hnodup_refs, hpop, hiso, hcont_cc⟩ := inv_call hstmt_typed
+
+  -- 2. Get runtime function definition from funEnv_sig_consistent
+  obtain ⟨fdef, hfdef_lookup, hfdef_params, hfdef_rets⟩ :=
+    hwt.funEnv_sig_consistent fname ⟨params, rets⟩ hsig
+
+  -- 3. Get FunTypeSafe from funEnv_typed
+  have hfts := hwt.funEnv_typed fname fdef hfdef_lookup
+  obtain ⟨callee_lenv, htyped_fun, hlenv_wf_callee, hlenv_es_callee, hlenv_vt_callee,
+    hlenv_vu_callee, hlenv_sig_callee, hlenv_complete_callee, hlenv_fe_callee,
+    hlenv_pfnm_callee, hlenv_ptnm_callee, hlenv_sle_callee,
+    hparams_nodup, hparam_refs_distinct, hparam_refs_not_root, hentry_varEnv_exact⟩ := hfts
+
+  -- 4. Simplify step: case-split on collectSiteValues, allocArgs, blocks.head?
+  simp only [step, hstmt] at hstep
+  -- funEnv lookup succeeds
+  rw [show AssocMap.lookup m.frame.funEnv fname = some fdef from hfdef_lookup] at hstep
+  -- collectSiteValues
+  cases hcsv : collectSiteValues m.frame.siteStore argSites with
+  | none => simp [hcsv] at hstep
+  | some argVals =>
+    simp only [hcsv] at hstep
+    -- allocArgs
+    cases hallocArgs : allocArgs m.heap fdef.params argVals with
+    | none => simp [hallocArgs] at hstep
+    | some allocPair =>
+      obtain ⟨heap', paramVarStore⟩ := allocPair
+      simp only [hallocArgs] at hstep
+      -- blocks.head?
+      cases hhead : fdef.blocks.head? with
+      | none => simp [hhead] at hstep
+      | some entryBlock =>
+        simp only [hhead, ExecState.running.injEq] at hstep
+        subst hstep
+
+        -- 5. Extract callee entry block info from FunTypeSafe
+        obtain ⟨initEnv, hvarEnv_init, hsiteEnv_init, hpathEnv_init,
+          hblocks_ne, hentry_equiv, hblocks_typed⟩ := htyped_fun
+        obtain ⟨entryLabel, entryBody⟩ := entryBlock
+        have hentry_in : ⟨entryLabel, entryBody⟩ ∈ fdef.blocks := by
+          cases hbl : fdef.blocks with
+          | nil => simp [hbl] at hhead
+          | cons h t => rw [hbl] at hhead; simp only [List.head?, Option.some.injEq] at hhead;
+                        rw [← hhead]; exact .head t
+        obtain ⟨blockEnv, hlookup_callee⟩ := hlenv_complete_callee ⟨entryLabel, entryBody⟩ hentry_in
+        have hequiv := hentry_equiv entryLabel entryBody blockEnv hhead hlookup_callee
+        have htyped_entry := hblocks_typed ⟨entryLabel, entryBody⟩ hentry_in blockEnv hlookup_callee
+        have hblockEnv_wf := hlenv_wf_callee entryLabel blockEnv hlookup_callee
+        have hvarEnv_exact := hentry_varEnv_exact ⟨entryLabel, entryBody⟩ blockEnv hhead hlookup_callee
+        -- Extract equiv components
+        unfold TypeEnv.equiv at hequiv
+        obtain ⟨_, hvar_compat, hrefs_equiv, hpaths_equiv⟩ := hequiv
+        have hrefs_eq : blockEnv.pathEnv.refs = (init_fun_pathEnv fdef).refs := by
+          rw [hpathEnv_init] at hrefs_equiv; exact hrefs_equiv
+        have hsiteEnv_empty : ∀ s, lookup blockEnv.siteEnv s = none :=
+          hlenv_es_callee entryLabel blockEnv hlookup_callee
+
+        -- 6. Construct callee rmap (same pattern as initState_safe)
+        let paramRefEntries := (fdef.params.zip argVals).filterMap (fun ((_, τ), v) =>
+          match τ, v with
+          | .ref _ r _, .ref loc path => some (r, (loc, path))
+          | _, _ => none)
+        let calleeRmap : RefMap := { map := fun r => List.lookup r paramRefEntries }
+
+        -- 7. Provide the two witnesses: callee WellTypedState + StackSafe
+        refine ⟨blockEnv, callee_lenv, fdef.returnType, calleeRmap, ?_, ?_⟩
+        · -- Callee WellTypedState
+          sorry
+        · -- StackSafe for the new stack
+          sorry
 
 -- ============================================================
 -- Part 8b: Main Preservation Theorem (dispatches to case lemmas)

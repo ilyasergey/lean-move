@@ -480,7 +480,18 @@ def FunTypeSafe (fdef : FunDef) (runtimeFunEnv : AssocMap Id FunDef) : Prop :=
       ∀ u v p, v ∉ envL.pathEnv.refs → v ≠ .root → u ≠ v →
       ¬interpret_regex (envL.pathEnv.paths (u, v)) p) ∧
     (∀ L envL, lookup lenv L = some envL →
-      ∀ u p, interpret_regex (envL.pathEnv.paths (u, u)) p → p = [])
+      ∀ u p, interpret_regex (envL.pathEnv.paths (u, u)) p → p = []) ∧
+    -- Parameter names are unique
+    (fdef.params.map Prod.fst).Nodup ∧
+    -- Parameter ref ids are distinct
+    (fdef.params.filterMap (fun (_, τ) => match τ with
+      | .ref _ r _ => some r | _ => none)).Nodup ∧
+    -- No param ref is .root
+    (∀ x bt r bk, (x, .ref bt r bk) ∈ fdef.params → r ≠ .root) ∧
+    -- Entry block varEnv matches init_fun_varEnv exactly
+    (∀ block env, fdef.blocks.head? = some block →
+      lookup lenv block.label = some env →
+      LookupEquiv env.varEnv (init_fun_varEnv fdef))
 
 -- ============================================================
 -- Part 5b: Well-Typed State (Central Invariant)

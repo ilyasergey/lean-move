@@ -169,7 +169,7 @@ private lemma init_fun_varEnv_invalid_is_local (f : FunDef) (x : Var) (τ : Move
   cases this  -- .invalidVar = .validVar is impossible
 
 /-- addLocals preserves lookups for variables not in the locals list. -/
-private lemma addLocals_preserves_lookup (vs : VarStore) (locals : List LocalVar) (x : Var)
+lemma addLocals_preserves_lookup (vs : VarStore) (locals : List LocalVar) (x : Var)
     (hx : x ∉ locals.map (·.name)) : lookup (addLocals vs locals) x = lookup vs x := by
   induction locals generalizing vs with
   | nil => rfl
@@ -179,7 +179,7 @@ private lemma addLocals_preserves_lookup (vs : VarStore) (locals : List LocalVar
     rw [ih (insert vs lv.name none) hx.2, lookup_insert_ne _ _ _ _ hx.1]
 
 /-- addLocals sets variables that appear in locals to none. -/
-private lemma addLocals_local_some_none (vs : VarStore) (locals : List LocalVar) (x : Var)
+lemma addLocals_local_some_none (vs : VarStore) (locals : List LocalVar) (x : Var)
     (hx : x ∈ locals.map (·.name)) : lookup (addLocals vs locals) x = some none := by
   induction locals generalizing vs with
   | nil => cases hx
@@ -207,7 +207,7 @@ private lemma heap_alloc_read_ne (h : Heap) (v : Value) (loc : Loc) (hne : loc �
   simp only [Heap.alloc, Heap.read]
   exact lookup_insert_ne h.store h.nextLoc loc v hne
 
-private lemma heap_alloc_preserves_bound (h : Heap) (v : Value)
+lemma heap_alloc_preserves_bound (h : Heap) (v : Value)
     (hlb : ∀ loc, h.read loc ≠ none → loc < h.nextLoc) :
     ∀ loc, (h.alloc v).1.read loc ≠ none → loc < (h.alloc v).1.nextLoc := by
   intro loc hread
@@ -219,7 +219,7 @@ private lemma heap_alloc_preserves_bound (h : Heap) (v : Value)
     exact Nat.lt_succ_of_lt (hlb loc hread')
 
 /-- allocArgs preserves reads at locations below the initial nextLoc. -/
-private lemma allocArgs_preserves_old_read (heap : Heap) (params : List (Var × MoveType))
+lemma allocArgs_preserves_old_read (heap : Heap) (params : List (Var × MoveType))
     (args : List Value) (heap_out : Heap) (vs : VarStore) :
     allocArgs heap params args = some (heap_out, vs) →
     ∀ loc, loc < heap.nextLoc → heap_out.read loc = heap.read loc := by
@@ -256,7 +256,7 @@ private lemma allocArgs_preserves_old_read (heap : Heap) (params : List (Var × 
         exact heap_alloc_read_ne heap a loc hne
 
 /-- allocArgs preserves the heap_loc_bound invariant. -/
-private lemma allocArgs_heap_loc_bound' (heap : Heap) (params : List (Var × MoveType))
+lemma allocArgs_heap_loc_bound' (heap : Heap) (params : List (Var × MoveType))
     (args : List Value) (heap_out : Heap) (vs : VarStore) :
     allocArgs heap params args = some (heap_out, vs) →
     (∀ loc, heap.read loc ≠ none → loc < heap.nextLoc) →
@@ -289,7 +289,7 @@ private lemma allocArgs_heap_loc_bound' (heap : Heap) (params : List (Var × Mov
           (heap_alloc_preserves_bound heap a hlb)
 
 /-- allocArgs provides store entries and heap values for each parameter. -/
-private lemma allocArgs_param_allocated (heap : Heap) (params : List (Var × MoveType))
+lemma allocArgs_param_allocated (heap : Heap) (params : List (Var × MoveType))
     (args : List Value) (heap_out : Heap) (vs : VarStore)
     (hlb : ∀ loc, heap.read loc ≠ none → loc < heap.nextLoc) :
     allocArgs heap params args = some (heap_out, vs) →
@@ -686,6 +686,11 @@ theorem checkFunEnv_sound (funEnv : AssocMap Id FunDef) (fte : FunTypingEnv) :
   have hentry := hcheck (fname, fdef) hmem
   split at hentry
   · next lenvDec _ =>
+    -- Peel off 10 && conjuncts (11 total checks)
+    rw [Bool.and_eq_true] at hentry; obtain ⟨hentry, heve⟩ := hentry
+    rw [Bool.and_eq_true] at hentry; obtain ⟨hentry, hpnr⟩ := hentry
+    rw [Bool.and_eq_true] at hentry; obtain ⟨hentry, hprd⟩ := hentry
+    rw [Bool.and_eq_true] at hentry; obtain ⟨hentry, hpnd⟩ := hentry
     rw [Bool.and_eq_true] at hentry; obtain ⟨hentry, hsigs⟩ := hentry
     rw [Bool.and_eq_true] at hentry; obtain ⟨hentry, hfec⟩ := hentry
     rw [Bool.and_eq_true] at hentry; obtain ⟨hentry, hvru⟩ := hentry
@@ -722,7 +727,30 @@ theorem checkFunEnv_sound (funEnv : AssocMap Id FunDef) (fte : FunTypingEnv) :
         LabelEnvDec.checkFunEnvConsistent_sound lenvDec hfec L L' envL envL' h1 h2,
       check_fun_dec_lenv_non_member_from fdef lenvDec hcfd,
       check_fun_dec_lenv_non_member_to fdef lenvDec hcfd,
-      check_fun_dec_lenv_self_loop fdef lenvDec hcfd⟩
+      check_fun_dec_lenv_self_loop fdef lenvDec hcfd,
+      -- params_nodup
+      by rw [decide_eq_true_eq] at hpnd; exact hpnd,
+      -- param_refs_distinct
+      by rw [decide_eq_true_eq] at hprd; exact hprd,
+      -- param_refs_not_root
+      by
+        intro x bt r bk hmem hr
+        subst hr
+        simp only [List.all_eq_true] at hpnr
+        have := hpnr (x, .ref bt .root bk) hmem
+        simp at this,
+      -- entry_varEnv_exact
+      by
+        intro block env hhead hlookup_env
+        obtain ⟨ted, hted, rfl⟩ := toLabelEnv_lookup_some lenvDec block.label env hlookup_env
+        show LookupEquiv ted.varEnv (init_fun_varEnv fdef)
+        cases hbl : fdef.blocks.head? with
+        | none => rw [hbl] at hhead; cases hhead
+        | some block' =>
+          rw [hbl] at hhead; cases hhead
+          simp only [hbl] at heve
+          simp only [hted] at heve
+          exact lookup_equiv_bool_sound ted.varEnv (init_fun_varEnv fdef) heve⟩
   · next => simp at hentry
 
 /-- Soundness of the decidable check: the boolean check yields the full
@@ -867,7 +895,7 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
 /-- allocArgs stores each argument value at a fresh location, preserving HasType.
     If the params/args are zipped and each basic-typed entry has HasType,
     then for any param (x, .basic bt) in the params, the stored value has type bt. -/
-private lemma allocArgs_param_has_type (heap : Heap) (params : List (Var × MoveType))
+lemma allocArgs_param_has_type (heap : Heap) (params : List (Var × MoveType))
     (args : List Value) (heap_out : Heap) (vs : VarStore)
     (hlb : ∀ loc, heap.read loc ≠ none → loc < heap.nextLoc)
     (halloc : allocArgs heap params args = some (heap_out, vs))
@@ -918,7 +946,7 @@ private lemma allocArgs_param_has_type (heap : Heap) (params : List (Var × Move
           exact ⟨loc, v, by rw [lookup_insert_ne _ _ _ _ heq]; exact hlookup, hread, hht⟩
 
 /-- allocArgs succeeds only when params.length = args.length -/
-private lemma allocArgs_length_eq (heap : Heap) (params : List (Var × MoveType))
+lemma allocArgs_length_eq (heap : Heap) (params : List (Var × MoveType))
     (args : List Value) (heap_out : Heap) (vs : VarStore)
     (halloc : allocArgs heap params args = some (heap_out, vs)) :
     params.length = args.length := by
@@ -940,7 +968,7 @@ private lemma allocArgs_length_eq (heap : Heap) (params : List (Var × MoveType)
         exact congrArg Nat.succ (ih (heap.alloc a).1 as' h' vs' hrec)
 
 /-- If a ∈ l₁ and l₁.length = l₂.length, then ∃ b, (a, b) ∈ l₁.zip l₂ -/
-private lemma exists_mem_zip_right {α β : Type} {l₁ : List α} {l₂ : List β}
+lemma exists_mem_zip_right {α β : Type} {l₁ : List α} {l₂ : List β}
     {a : α} (hlen : l₁.length = l₂.length) (hmem : a ∈ l₁) :
     ∃ b, (a, b) ∈ l₁.zip l₂ := by
   induction l₁ generalizing l₂ with
@@ -956,7 +984,7 @@ private lemma exists_mem_zip_right {α β : Type} {l₁ : List α} {l₂ : List 
         exact ⟨b, List.mem_cons_of_mem _ hb⟩
 
 /-- List.lookup succeeds when the key-value pair is in the list and keys are Nodup. -/
-private lemma list_lookup_of_mem_nodup {K V : Type} [BEq K] [LawfulBEq K]
+lemma list_lookup_of_mem_nodup {K V : Type} [BEq K] [LawfulBEq K]
     {l : List (K × V)} {k : K} {v : V}
     (hmem : (k, v) ∈ l) (hnodup : (l.map Prod.fst).Nodup) :
     l.lookup k = some v := by
@@ -978,7 +1006,7 @@ private lemma list_lookup_of_mem_nodup {K V : Type} [BEq K] [LawfulBEq K]
       · exact ih hmem hnodup_tl
 
 /-- Ref keys from zip+filterMap form a sublist of ref keys from params-only filterMap. -/
-private lemma paramRefKeys_sublist (params : List (Var × MoveType)) (args : List Value) :
+lemma paramRefKeys_sublist (params : List (Var × MoveType)) (args : List Value) :
     List.Sublist
     ((params.zip args).filterMap (fun ((_, τ), v) =>
       match τ, v with
@@ -1006,7 +1034,7 @@ private lemma paramRefKeys_sublist (params : List (Var × MoveType)) (args : Lis
         | record _ => exact List.Sublist.cons _ (ih as')
 
 /-- allocArgs stores the exact argument value for each param/arg pair. -/
-private lemma allocArgs_param_stores_arg (heap : Heap) (params : List (Var × MoveType))
+lemma allocArgs_param_stores_arg (heap : Heap) (params : List (Var × MoveType))
     (args : List Value) (heap_out : Heap) (vs : VarStore)
     (hlb : ∀ loc, heap.read loc ≠ none → loc < heap.nextLoc)
     (halloc : allocArgs heap params args = some (heap_out, vs))
@@ -1050,7 +1078,7 @@ private lemma allocArgs_param_stores_arg (heap : Heap) (params : List (Var × Mo
           exact ⟨loc, by rw [lookup_insert_ne _ _ _ _ heq]; exact hlookup, hread⟩
 
 /-- If two params both contribute the same ref r to the filterMap, they must be the same param. -/
-private lemma nodup_filterMap_params_same_ref
+lemma nodup_filterMap_params_same_ref
     (params : List (Var × MoveType))
     (hnodup_names : (params.map Prod.fst).Nodup)
     (hnodup_refs : (params.filterMap (fun (_, τ) => match τ with

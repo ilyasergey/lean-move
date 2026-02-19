@@ -653,7 +653,22 @@ def checkFunEnv (funEnv : AssocMap Id FunDef) (fte : FunTypingEnv) : Bool :=
       LabelEnvDec.allVarRefsTracked_bool lenvDec &&
       LabelEnvDec.allVarRefsUnique_bool lenvDec &&
       LabelEnvDec.checkFunEnvConsistent lenvDec &&
-      checkFunEnvSigs lenvDec funEnv
+      checkFunEnvSigs lenvDec funEnv &&
+      -- params_nodup: parameter names are unique
+      decide ((fdef.params.map Prod.fst).Nodup) &&
+      -- param_refs_distinct: ref-typed param refs are distinct
+      decide ((fdef.params.filterMap (fun (_, τ) => match τ with
+        | .ref _ r _ => some r | _ => none)).Nodup) &&
+      -- param_refs_not_root: no param ref is .root
+      fdef.params.all (fun (_, τ) => match τ with
+        | .ref _ .root _ => false | _ => true) &&
+      -- entry_varEnv_exact: entry block varEnv matches init_fun_varEnv exactly
+      (match fdef.blocks.head? with
+       | some block =>
+         match lookup lenvDec block.label with
+         | some ted => lookup_equiv_bool ted.varEnv (init_fun_varEnv fdef)
+         | none => true
+       | none => true)
     | none => false
 
 end LeanMove.Typing

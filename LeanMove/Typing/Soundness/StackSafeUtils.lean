@@ -884,4 +884,44 @@ theorem returnVals_site_consistent
             | unit => simp at hveq
             | «record» _ => simp at hveq
 
+-- ============================================================
+-- Part 5: StackSafe preservation through allocArgs
+-- ============================================================
+
+/-- StackSafe is preserved through allocArgs (a sequence of heap.alloc calls).
+    By induction on the params/args list, using stackSafe_heap_alloc at each step. -/
+theorem stackSafe_allocArgs (stack : List Frame) (ri : Option ReturnInfo)
+    (heap : Heap) (params : List (Var × MoveType)) (args : List Value)
+    (heap' : Heap) (vs : VarStore) {calleeRetTypes : List ParamType}
+    (hss : StackSafe stack ri heap calleeRetTypes)
+    (hlb : ∀ loc, heap.read loc ≠ none → loc < heap.nextLoc)
+    (halloc : allocArgs heap params args = some (heap', vs)) :
+    StackSafe stack ri heap' calleeRetTypes := by
+  induction params generalizing heap args heap' vs with
+  | nil =>
+    cases args with
+    | nil =>
+      have : heap' = heap := by
+        simp only [allocArgs, Option.some.injEq, Prod.mk.injEq] at halloc
+        exact halloc.1.symm
+      rw [this]; exact hss
+    | cons => simp [allocArgs] at halloc
+  | cons p ps ih =>
+    obtain ⟨y, τ_y⟩ := p
+    cases args with
+    | nil => simp [allocArgs] at halloc
+    | cons a as' =>
+      simp only [allocArgs, Bind.bind, Option.bind] at halloc
+      cases hrec : allocArgs (heap.alloc a).1 ps as' with
+      | none => rw [hrec] at halloc; simp at halloc
+      | some pair =>
+        obtain ⟨h'', vs''⟩ := pair
+        rw [hrec] at halloc; dsimp at halloc
+        simp only [Option.some.injEq, Prod.mk.injEq] at halloc
+        rw [halloc.1.symm]
+        exact ih (heap.alloc a).1 as' h'' vs''
+          (stackSafe_heap_alloc stack ri heap a hss hlb)
+          (heap_loc_bound_after_alloc heap a hlb)
+          hrec
+
 end LeanMove.Typing.TypeSoundness
