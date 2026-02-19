@@ -1148,6 +1148,43 @@ private lemma siteenv_subst_equiv_bool_sound (σ : List (Aref × Aref)) (se1 se2
       rw [applySubstMoveTypeList_eq] at heq
       exact heq
 
+/-- Helper: two nodup lists of the same length where one is a subset of the other are permutations. -/
+private lemma perm_of_nodup_nodup_subset_length_eq [DecidableEq α] (l₁ l₂ : List α)
+    (hnd₁ : l₁.Nodup) (hnd₂ : l₂.Nodup)
+    (hlen : l₁.length = l₂.length)
+    (hsub : ∀ x ∈ l₁, x ∈ l₂) : l₁.Perm l₂ := by
+  induction l₁ generalizing l₂ with
+  | nil =>
+    cases l₂ with
+    | nil => exact List.Perm.nil
+    | cons _ _ => simp at hlen
+  | cons a t ih =>
+    have ha₂ : a ∈ l₂ := hsub a List.mem_cons_self
+    -- l₂ can be split as l₂_pre ++ a :: l₂_suf
+    obtain ⟨l₂_pre, l₂_suf, rfl⟩ := List.append_of_mem ha₂
+    -- (l₂_pre ++ a :: l₂_suf) ~ (a :: (l₂_pre ++ l₂_suf))
+    have hperm_mid : (l₂_pre ++ a :: l₂_suf).Perm (a :: (l₂_pre ++ l₂_suf)) :=
+      List.perm_middle
+    -- Suffices to show: (a :: t) ~ (a :: (l₂_pre ++ l₂_suf))
+    apply List.Perm.trans _ hperm_mid.symm
+    apply List.Perm.cons
+    -- Now show: t ~ l₂_pre ++ l₂_suf
+    have hnd_a : a ∉ t := (List.nodup_cons.mp hnd₁).1
+    have hnd_t : t.Nodup := (List.nodup_cons.mp hnd₁).2
+    have hnd_mid : (a :: (l₂_pre ++ l₂_suf)).Nodup := hperm_mid.nodup_iff.mp hnd₂
+    have hnd_rest : (l₂_pre ++ l₂_suf).Nodup := (List.nodup_cons.mp hnd_mid).2
+    apply ih (l₂_pre ++ l₂_suf) hnd_t hnd_rest
+    · simp [List.length_append] at hlen ⊢; omega
+    · intro x hx
+      have hx₂ := hsub x (List.mem_cons_of_mem a hx)
+      have hx_ne_a : x ≠ a := fun heq => hnd_a (heq ▸ hx)
+      -- x ∈ l₂_pre ++ a :: l₂_suf and x ≠ a, so x ∈ l₂_pre ++ l₂_suf
+      simp [List.mem_append, List.mem_cons] at hx₂ ⊢
+      rcases hx₂ with h | rfl | h
+      · left; exact h
+      · exact absurd rfl hx_ne_a
+      · right; exact h
+
 /-- Soundness of subsumes_bool: if it returns true, the semantic subsumption holds.
     Requires that env.varEnv has no root refs (always satisfied by TypeEnv.WellFormed). -/
 theorem subsumes_bool_implies_subsumes (envL env : TypeEnv)
@@ -1159,26 +1196,41 @@ theorem subsumes_bool_implies_subsumes (envL env : TypeEnv)
   split at h
   · simp at h  -- none case: contradiction
   · rename_i pairs heq_subst
-    -- Re-fold siteenv/varenv_subst_equiv_bool which got expanded by the split
-    have h' : (siteenv_subst_equiv_bool pairs envL.siteEnv env.siteEnv &&
-              varenv_subst_equiv_bool pairs envL.varEnv env.varEnv &&
-              (envL.pathEnv.refs.map (applySubstArefList pairs) == env.pathEnv.refs) &&
-              (env.pathEnv.refs.eraseDups.length == env.pathEnv.refs.length) &&
-              envL.pathEnv.refs.all fun u =>
-                envL.pathEnv.refs.all fun v =>
-                  regexSubsumedBy (env.pathEnv.paths (applySubstArefList pairs u, applySubstArefList pairs v))
-                    (envL.pathEnv.paths (u, v))) = true := h
     -- Decompose the && chain using simple Bool helpers
     have and_left  {a b : Bool} (h : (a && b) = true) : a = true := by cases a <;> simp_all
     have and_right {a b : Bool} (h : (a && b) = true) : b = true := by cases a <;> simp_all
-    have hse := and_left (and_left (and_left (and_left h')))
-    have hve := and_right (and_left (and_left (and_left h')))
-    have hrefs := and_right (and_left (and_left h'))
-    have hnodup_raw := and_right (and_left h')
-    have hpaths_raw := and_right h'
+    -- The && chain structure is: se && ve && (len && mapped_nd && containment) && nodup && paths
+    -- After simp, the `let mapped` is inlined
+    simp only [Bool.and_eq_true] at h
+    obtain ⟨⟨⟨⟨hse, hve⟩, hrefs_combined⟩, hnodup_raw⟩, hpaths_raw⟩ := h
+    -- Decompose the refs check sub-chain: ((len ∧ mapped_nd) ∧ containment)
+    have hlen_raw := hrefs_combined.1.1
+    have hmapped_nd_raw := hrefs_combined.1.2
+    have hcontains_raw := hrefs_combined.2
     simp only [List.all_eq_true] at hpaths_raw
     -- Define σ as the function version of the substitution
     let σ : Aref → Aref := fun r => applySubstArefList pairs r
+    -- Extract the perm-related facts
+    have hlen : (envL.pathEnv.refs.map σ).length = env.pathEnv.refs.length :=
+      beq_iff_eq.mp hlen_raw
+    have hnodup_len : env.pathEnv.refs.length = env.pathEnv.refs.eraseDups.length :=
+      (beq_iff_eq.mp hnodup_raw).symm
+    have hnd : env.pathEnv.refs.Nodup :=
+      List.nodup_of_length_eraseDups env.pathEnv.refs hnodup_len
+    have hmapped_nd_len : (envL.pathEnv.refs.map σ).length =
+        (envL.pathEnv.refs.map σ).eraseDups.length :=
+      (beq_iff_eq.mp hmapped_nd_raw).symm
+    have hnd_map : (envL.pathEnv.refs.map σ).Nodup :=
+      List.nodup_of_length_eraseDups _ hmapped_nd_len
+    have hcontains : ∀ r ∈ envL.pathEnv.refs.map σ, r ∈ env.pathEnv.refs := by
+      simp only [List.all_eq_true, List.contains_eq_any_beq, List.any_eq_true,
+                 beq_iff_eq] at hcontains_raw
+      intro r hr
+      obtain ⟨r', hr'_mem, rfl⟩ := hcontains_raw r hr
+      exact hr'_mem
+    -- Derive Perm
+    have hrefs_perm : (envL.pathEnv.refs.map σ).Perm env.pathEnv.refs :=
+      perm_of_nodup_nodup_subset_length_eq _ _ hnd_map hnd hlen hcontains
     refine ⟨σ, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- σ is identity on non-refid arefs
       intro r hr
@@ -1188,16 +1240,9 @@ theorem subsumes_bool_implies_subsumes (envL env : TypeEnv)
       exact varenv_subst_equiv_bool_sound pairs envL.varEnv env.varEnv hve
     · -- SiteEnvSubstEquiv σ envL.siteEnv env.siteEnv
       exact siteenv_subst_equiv_bool_sound pairs envL.siteEnv env.siteEnv hse
-    · -- envL.pathEnv.refs.map σ = env.pathEnv.refs
-      exact beq_iff_eq.mp hrefs
+    · -- (envL.pathEnv.refs.map σ).Perm env.pathEnv.refs
+      exact hrefs_perm
     · -- σ is injective on envL.pathEnv.refs
-      have hrefs_eq : envL.pathEnv.refs.map σ = env.pathEnv.refs :=
-        beq_iff_eq.mp hrefs
-      have hnodup_len : env.pathEnv.refs.length = env.pathEnv.refs.eraseDups.length :=
-        (beq_iff_eq.mp hnodup_raw).symm
-      have hnd : env.pathEnv.refs.Nodup :=
-        List.nodup_of_length_eraseDups env.pathEnv.refs hnodup_len
-      have hnd_map : (envL.pathEnv.refs.map σ).Nodup := hrefs_eq ▸ hnd
       intro u v hu hv huv
       exact List.inj_on_of_nodup_map hnd_map u hu v hv huv
     · -- (nonroot ∧ paths) - last two fields

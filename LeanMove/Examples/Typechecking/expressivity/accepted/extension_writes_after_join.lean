@@ -179,6 +179,12 @@ def t_l3_varEnv : VarEnv :=
   let ve := update ve var_b (.invalidVar, .ref (.trecord s_entries) (.refid 5) .siteBorrowMut, .mutable)
   update ve var_y (.validVar, .ref (.trecord s_entries) (.refid 305) .siteBorrowMut, .mutable)
 
+-- PathEnvDec at l3: must track .refid refs from both branches
+def t_l3_pathEnvDec : PathEnvDec := {
+  refs := [.root, .refid 1, .refid 305]
+  paths := .empty
+}
+
 -- Label environment (decidable)
 def t_lenvDec : LabelEnvDec :=
   insert (insert (insert (insert AssocMap.empty
@@ -189,7 +195,7 @@ def t_lenvDec : LabelEnvDec :=
     "l2" { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
            pathEnv := init_fun_pathEnvDec t.params, funEnv := AssocMap.empty })
     "l3" { siteEnv := AssocMap.empty, varEnv := t_l3_varEnv,
-           pathEnv := init_fun_pathEnvDec t.params, funEnv := AssocMap.empty }
+           pathEnv := t_l3_pathEnvDec, funEnv := AssocMap.empty }
 
 -- Theorem: t is well-typed (algorithmic, decidable)
 theorem t_check : check_fun_dec t t_lenvDec = true := by rfl

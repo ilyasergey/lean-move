@@ -340,13 +340,12 @@ private lemma not_borrowed_weaken (σ : Aref → Aref) (envL env : TypeEnv) (x :
       ∀ path, interpret_regex (env.pathEnv.paths (σ u, σ v)) path →
               interpret_regex (envL.pathEnv.paths (u, v)) path) →
     (∀ r, (∀ n, r ≠ .refid n) → σ r = r) →
-    envL.pathEnv.refs.map σ = env.pathEnv.refs →
+    (envL.pathEnv.refs.map σ).Perm env.pathEnv.refs →
     Aref.root ∈ envL.pathEnv.refs →
     not_borrowed x env := by
   intro hnb hpaths hid hrefs hroot_mem r hr
   -- r ∈ env.pathEnv.refs, so r = σ u for some u ∈ envL.pathEnv.refs
-  rw [← hrefs] at hr
-  obtain ⟨u, hu, rfl⟩ := List.mem_map.mp hr
+  obtain ⟨u, hu, rfl⟩ := List.mem_map.mp (hrefs.symm.mem_iff.mp hr)
   -- σ .root = .root (identity on non-refid)
   have hσroot : σ .root = .root := hid .root (fun n h => by cases h)
   -- Contrapositive of path inclusion
@@ -496,12 +495,13 @@ theorem TypeEnv.subsumes_trans (envL1 envL2 env : TypeEnv) :
   · exact VarEnvSubstEquiv_trans σ1 σ2 _ _ _ hve1 hve2
   · exact SiteEnvSubstEquiv_trans σ1 σ2 _ _ _ hse1 hse2
   · have hcomp : (fun r => σ2 (σ1 r)) = (σ2 ∘ σ1) := rfl
-    rw [hcomp, ← List.map_map, hrefs1, hrefs2]
+    rw [hcomp, ← List.map_map]
+    exact (hrefs1.map σ2).trans hrefs2
   · intro u v hu hv huv
-    have hσ1u : σ1 u ∈ envL2.pathEnv.refs := by
-      rw [← hrefs1]; exact List.mem_map_of_mem (f := σ1) hu
-    have hσ1v : σ1 v ∈ envL2.pathEnv.refs := by
-      rw [← hrefs1]; exact List.mem_map_of_mem (f := σ1) hv
+    have hσ1u : σ1 u ∈ envL2.pathEnv.refs :=
+      hrefs1.mem_iff.mp (List.mem_map_of_mem (f := σ1) hu)
+    have hσ1v : σ1 v ∈ envL2.pathEnv.refs :=
+      hrefs1.mem_iff.mp (List.mem_map_of_mem (f := σ1) hv)
     exact hinj1 u v hu hv (hinj2 (σ1 u) (σ1 v) hσ1u hσ1v huv)
   · constructor
     · -- nonroot: composed σ preserves non-root
@@ -510,10 +510,10 @@ theorem TypeEnv.subsumes_trans (envL1 envL2 env : TypeEnv) :
       exact hnonroot2 (σ1 r) (hnonroot1 r hr)
     · -- paths
       intro u v hu hv path hinterp
-      have hσ1u : σ1 u ∈ envL2.pathEnv.refs := by
-        rw [← hrefs1]; exact List.mem_map_of_mem (f := σ1) hu
-      have hσ1v : σ1 v ∈ envL2.pathEnv.refs := by
-        rw [← hrefs1]; exact List.mem_map_of_mem (f := σ1) hv
+      have hσ1u : σ1 u ∈ envL2.pathEnv.refs :=
+        hrefs1.mem_iff.mp (List.mem_map_of_mem (f := σ1) hu)
+      have hσ1v : σ1 v ∈ envL2.pathEnv.refs :=
+        hrefs1.mem_iff.mp (List.mem_map_of_mem (f := σ1) hv)
       exact hpaths1 u v hu hv path (hpaths2 (σ1 u) (σ1 v) hσ1u hσ1v path hinterp)
 
 -- ============================================================
@@ -807,7 +807,7 @@ private lemma der_mono (re1 re2 : Regex PathElement) (p : Path)
 /-- check_outbound weakens: if outbound check passes for envL, it also passes for env (fewer paths) -/
 private lemma check_outbound_weaken (σ : Aref → Aref) (peL peE : PathEnv)
     (r : Aref)
-    (hrefs : peL.refs.map σ = peE.refs)
+    (hrefs : (peL.refs.map σ).Perm peE.refs)
     (hpaths : ∀ u v, u ∈ peL.refs → v ∈ peL.refs →
       ∀ path, interpret_regex (peE.paths (σ u, σ v)) path →
               interpret_regex (peL.paths (u, v)) path)
@@ -816,8 +816,7 @@ private lemma check_outbound_weaken (σ : Aref → Aref) (peL peE : PathEnv)
     check_outbound peE (σ r) (λ re ↦ only_matches_empty (simplify re)) := by
   unfold check_outbound at houtbound ⊢
   intro s' hs'
-  rw [← hrefs] at hs'
-  obtain ⟨v, hv, rfl⟩ := List.mem_map.mp hs'
+  obtain ⟨v, hv, rfl⟩ := List.mem_map.mp (hrefs.symm.mem_iff.mp hs')
   have hL := houtbound v hv
   -- hL : only_matches_empty (simplify (peL.paths (r, v))) = true
   -- Need: only_matches_empty (simplify (peE.paths (σ r, σ v))) = true
@@ -1701,7 +1700,7 @@ private theorem weaken_let_bind_borrowImm
   have hr'_fresh_prop := nextFreshRefInEnv_fresh_prop env
   have hr'_fresh_pe := nextFreshRefInEnv_not_in_pathEnv env
   have hr'_not_root := nextFreshRefInEnv_not_root env
-  have hr'_not_mapped : r' ∉ envL.pathEnv.refs.map σ := by rw [hrefs]; exact hr'_fresh_pe
+  have hr'_not_mapped : r' ∉ envL.pathEnv.refs.map σ := fun h => hr'_fresh_pe (hrefs.mem_iff.mp h)
   -- Compound pathEnv refs simplification
   have h_compound_refs :
       (update_with_extension r .root [.root_to_var x_var]
@@ -1731,8 +1730,8 @@ private theorem weaken_let_bind_borrowImm
       simp only [uwe_refs_fresh r .root _ envL.pathEnv hr_fresh_pe,
           uwe_refs_fresh r' .root _ env.pathEnv hr'_fresh_pe]
       simp only [List.map, extendSubst, ite_true]
-      congr 1
-      rw [map_extendSubst_eq_map_σ σ r r' _ hr_fresh_pe, hrefs]
+      rw [map_extendSubst_eq_map_σ σ r r' _ hr_fresh_pe]
+      exact List.Perm.cons r' hrefs
     · -- injectivity
       exact extendSubst_injective σ r r' _ hinj hr_fresh_pe hr'_not_mapped
     · -- nonroot
@@ -1838,7 +1837,7 @@ private theorem weaken_let_bind_borrowMut
   have hr'_fresh_prop := nextFreshRefInEnv_fresh_prop env
   have hr'_fresh_pe := nextFreshRefInEnv_not_in_pathEnv env
   have hr'_not_root := nextFreshRefInEnv_not_root env
-  have hr'_not_mapped : r' ∉ envL.pathEnv.refs.map σ := by rw [hrefs]; exact hr'_fresh_pe
+  have hr'_not_mapped : r' ∉ envL.pathEnv.refs.map σ := fun h => hr'_fresh_pe (hrefs.mem_iff.mp h)
   have h_compound_refs :
       (update_with_extension r .root [.root_to_var x_var]
         (update_with_epsilon r r envL.pathEnv)).refs = r :: envL.pathEnv.refs := by
@@ -1865,8 +1864,8 @@ private theorem weaken_let_bind_borrowMut
       simp only [uwe_refs_fresh r .root _ envL.pathEnv hr_fresh_pe,
           uwe_refs_fresh r' .root _ env.pathEnv hr'_fresh_pe]
       simp only [List.map, extendSubst, ite_true]
-      congr 1
-      rw [map_extendSubst_eq_map_σ σ r r' _ hr_fresh_pe, hrefs]
+      rw [map_extendSubst_eq_map_σ σ r r' _ hr_fresh_pe]
+      exact List.Perm.cons r' hrefs
     · exact extendSubst_injective σ r r' _ hinj hr_fresh_pe hr'_not_mapped
     · exact extendSubst_nonroot σ r r' hnonroot hr'_not_root
     · have := path_inclusion_update_with_extension σ _ _ r r' .root
@@ -1965,7 +1964,7 @@ private theorem weaken_let_bind_borrowField
   have hrf'_fresh_prop := nextFreshRefInEnv_fresh_prop env
   have hrf'_fresh_pe := nextFreshRefInEnv_not_in_pathEnv env
   have hrf'_not_root := nextFreshRefInEnv_not_root env
-  have hrf'_not_mapped : rf' ∉ envL.pathEnv.refs.map σ := by rw [hrefs]; exact hrf'_fresh_pe
+  have hrf'_not_mapped : rf' ∉ envL.pathEnv.refs.map σ := fun h => hrf'_fresh_pe (hrefs.mem_iff.mp h)
   -- s ∈ envL.pathEnv.refs (from site_tracked)
   have hs_mem := hsite_tracked _ _ _ _ hlookup_a
   -- Apply borrowField rule
@@ -1993,8 +1992,8 @@ private theorem weaken_let_bind_borrowField
       simp only [uwe_refs_fresh rf s _ envL.pathEnv hrf_fresh_pe,
           uwe_refs_fresh rf' (σ s) _ env.pathEnv hrf'_fresh_pe]
       simp only [List.map, extendSubst, ite_true]
-      congr 1
-      rw [map_extendSubst_eq_map_σ σ rf rf' _ hrf_fresh_pe, hrefs]
+      rw [map_extendSubst_eq_map_σ σ rf rf' _ hrf_fresh_pe]
+      exact List.Perm.cons rf' hrefs
     · -- injectivity
       exact extendSubst_injective σ rf rf' _ hinj hrf_fresh_pe hrf'_not_mapped
     · -- nonroot
@@ -2040,9 +2039,9 @@ private theorem weaken_let_bind_borrowField
       (fun s' bt r bk' hlook' =>
         Ne.symm (freshRefInEnv_ne_siteEnv_ref rf envL s' bt r bk' hfresh hlook'))
   · exact update_with_extension_paths_to_non_member _ _ _ _ hpaths_to_nm
-      (Or.inl (by rw [← hrefs]; exact List.mem_map_of_mem hs_mem))
+      (Or.inl (hrefs.mem_iff.mp (List.mem_map_of_mem hs_mem)))
   · exact update_with_extension_paths_from_non_member _ _ _ _ hpaths_from_nm
-      (Or.inl (by rw [← hrefs]; exact List.mem_map_of_mem hs_mem))
+      (Or.inl (hrefs.mem_iff.mp (List.mem_map_of_mem hs_mem)))
   · exact self_loop_only_empty_uwe _ _ _ env.pathEnv hself_loop_only_empty
   · -- root ∈ updated refs
     simp only [uwe_refs_fresh rf s _ envL.pathEnv hrf_fresh_pe]
@@ -2090,7 +2089,7 @@ private theorem weaken_let_bind_borrowMutField
   have hrf'_fresh_prop := nextFreshRefInEnv_fresh_prop env
   have hrf'_fresh_pe := nextFreshRefInEnv_not_in_pathEnv env
   have hrf'_not_root := nextFreshRefInEnv_not_root env
-  have hrf'_not_mapped : rf' ∉ envL.pathEnv.refs.map σ := by rw [hrefs]; exact hrf'_fresh_pe
+  have hrf'_not_mapped : rf' ∉ envL.pathEnv.refs.map σ := fun h => hrf'_fresh_pe (hrefs.mem_iff.mp h)
   have hs_mem := hsite_tracked _ _ _ _ hlookup_a
   apply typecheck_stmt.let_bind_borrowMutField lenv env a af f _ _ _ (σ s) rf' _ _
     hlook_a_env hbt hlookup_f
@@ -2114,8 +2113,8 @@ private theorem weaken_let_bind_borrowMutField
     · simp only [uwe_refs_fresh rf s _ envL.pathEnv hrf_fresh_pe,
           uwe_refs_fresh rf' (σ s) _ env.pathEnv hrf'_fresh_pe]
       simp only [List.map, extendSubst, ite_true]
-      congr 1
-      rw [map_extendSubst_eq_map_σ σ rf rf' _ hrf_fresh_pe, hrefs]
+      rw [map_extendSubst_eq_map_σ σ rf rf' _ hrf_fresh_pe]
+      exact List.Perm.cons rf' hrefs
     · exact extendSubst_injective σ rf rf' _ hinj hrf_fresh_pe hrf'_not_mapped
     · exact extendSubst_nonroot σ rf rf' hnonroot hrf'_not_root
     · exact path_inclusion_update_with_extension σ _ _ rf rf' s [.field f]
@@ -2153,9 +2152,9 @@ private theorem weaken_let_bind_borrowMutField
       (fun s' bt r bk' hlook' =>
         Ne.symm (freshRefInEnv_ne_siteEnv_ref rf envL s' bt r bk' hfresh hlook'))
   · exact update_with_extension_paths_to_non_member _ _ _ _ hpaths_to_nm
-      (Or.inl (by rw [← hrefs]; exact List.mem_map_of_mem hs_mem))
+      (Or.inl (hrefs.mem_iff.mp (List.mem_map_of_mem hs_mem)))
   · exact update_with_extension_paths_from_non_member _ _ _ _ hpaths_from_nm
-      (Or.inl (by rw [← hrefs]; exact List.mem_map_of_mem hs_mem))
+      (Or.inl (hrefs.mem_iff.mp (List.mem_map_of_mem hs_mem)))
   · exact self_loop_only_empty_uwe _ _ _ env.pathEnv hself_loop_only_empty
   · simp only [uwe_refs_fresh rf s _ envL.pathEnv hrf_fresh_pe]
     exact .tail _ hroot
@@ -2208,9 +2207,9 @@ private theorem weaken_let_bind_freeze
   have hr''_fresh_pe := nextFreshRefInEnv_not_in_pathEnv env
   have hr''_not_root := nextFreshRefInEnv_not_root env
   have hr''_not_varRef := nextFreshRefInEnv_not_varRef env
-  have hr''_not_mapped : r'' ∉ envL.pathEnv.refs.map σ := by rw [hrefs]; exact hr''_fresh_pe
+  have hr''_not_mapped : r'' ∉ envL.pathEnv.refs.map σ := fun h => hr''_fresh_pe (hrefs.mem_iff.mp h)
   -- σ r ∈ env.pathEnv.refs
-  have hσr_mem : σ r ∈ env.pathEnv.refs := by rw [← hrefs]; exact List.mem_map_of_mem hr_mem
+  have hσr_mem : σ r ∈ env.pathEnv.refs := hrefs.mem_iff.mp (List.mem_map_of_mem hr_mem)
   -- r'' ≠ σ r
   have hr''_ne_σr : r'' ≠ σ r := by intro heq; rw [← heq] at hσr_mem; exact hr''_fresh_pe hσr_mem
   -- Apply freeze rule
@@ -2238,10 +2237,10 @@ private theorem weaken_let_bind_freeze
       rw [crt_refs_fresh envL.pathEnv r r' hr'_fresh_pe (Ne.symm hr_ne_r'),
           crt_refs_fresh env.pathEnv (σ r) r'' hr''_fresh_pe hr''_ne_σr]
       simp only [List.map, extendSubst, ite_true]
-      congr 1
       rw [map_extendSubst_eq_map_σ σ r' r'' _
             (fun h => hr'_fresh_pe ((List.mem_filter.mp h).1)),
-          map_filter_ne σ _ r hinj hr_mem, hrefs]
+          map_filter_ne σ _ r hinj hr_mem]
+      exact List.Perm.cons r'' (hrefs.filter _)
     · -- injectivity
       have key := extendSubst_injective σ r' r'' _ hinj hr'_fresh_pe hr''_not_mapped
       simp only [if_pos hr'_fresh_pe] at key
@@ -2383,11 +2382,11 @@ private theorem weaken_var_assign_valid
       have hv_ne : v ≠ r := fun h => hr_fresh_pe (h ▸ hv)
       have hσu_ne : σ u ≠ r'' := by
         intro h
-        have : σ u ∈ env.pathEnv.refs := by rw [← hrefs]; exact List.mem_map_of_mem (f := σ) hu
+        have : σ u ∈ env.pathEnv.refs := hrefs.mem_iff.mp (List.mem_map_of_mem (f := σ) hu)
         rw [h] at this; exact hr''_fresh_pe this
       have hσv_ne : σ v ≠ r'' := by
         intro h
-        have : σ v ∈ env.pathEnv.refs := by rw [← hrefs]; exact List.mem_map_of_mem (f := σ) hv
+        have : σ v ∈ env.pathEnv.refs := hrefs.mem_iff.mp (List.mem_map_of_mem (f := σ) hv)
         rw [h] at this; exact hr''_fresh_pe this
       simp only [garbage_collect] at hinterp ⊢
       rw [if_neg (fun ⟨h, _⟩ => hu_ne h), if_neg (not_or.mpr ⟨hu_ne, hv_ne⟩)]
@@ -2737,7 +2736,7 @@ private theorem weaken_let_bind_readRef
       SiteEnvSubstEquiv_insert σ _ _ _ _ _
         (SiteEnvSubstEquiv_delete σ _ _ _ hse) (applySubstMoveType_basic σ _),
       ?_, ?_, hnonroot, ?_⟩
-    · simp only [delete_ref_node]; rw [map_filter_ne σ _ r hinj hr_mem, hrefs]
+    · simp only [delete_ref_node]; rw [map_filter_ne σ _ r hinj hr_mem]; exact hrefs.filter _
     · intro u v hu hv
       simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq] at hu hv
       exact hinj u v hu.1 hv.1
@@ -2818,7 +2817,8 @@ private theorem weaken_write_ref
       ?_, ?_, hnonroot, ?_⟩
     · -- refs
       simp only [garbage_collect]
-      rw [map_filter_ne σ _ r hinj hr_mem, hrefs]
+      rw [map_filter_ne σ _ r hinj hr_mem]
+      exact hrefs.filter _
     · -- injectivity
       intro u v hu hv
       simp only [garbage_collect, List.mem_filter, decide_eq_true_eq] at hu hv
@@ -2896,7 +2896,8 @@ private theorem weaken_release
     refine ⟨σ, hid, hve, SiteEnvSubstEquiv_delete σ _ _ _ hse, ?_, ?_, hnonroot, ?_⟩
     · -- refs
       simp only [delete_ref_node]
-      rw [map_filter_ne σ _ r hinj hr_mem, hrefs]
+      rw [map_filter_ne σ _ r hinj hr_mem]
+      exact hrefs.filter _
     · -- injectivity
       intro u v hu hv
       simp only [delete_ref_node, List.mem_filter, decide_eq_true_eq] at hu hv
@@ -2981,7 +2982,7 @@ private theorem weaken_let_bind_copy_ref
   have ht'_fresh_prop := nextFreshRefInEnv_fresh_prop env
   have ht'_fresh_pe := nextFreshRefInEnv_not_in_pathEnv env
   have ht'_not_root := nextFreshRefInEnv_not_root env
-  have ht'_not_mapped : t' ∉ envL.pathEnv.refs.map σ := by rw [hrefs]; exact ht'_fresh_pe
+  have ht'_not_mapped : t' ∉ envL.pathEnv.refs.map σ := fun h => ht'_fresh_pe (hrefs.mem_iff.mp h)
   -- s ∈ envL.pathEnv.refs (from var_tracked)
   have hs_mem := hvar_tracked _ _ _ _ _ hlookup
   -- Apply the copy_ref rule
@@ -3005,8 +3006,8 @@ private theorem weaken_let_bind_copy_ref
       simp only [uwe_epsilon_refs_fresh t s envL.pathEnv ht_fresh_pe,
           uwe_epsilon_refs_fresh t' (σ s) env.pathEnv ht'_fresh_pe]
       simp only [List.map, extendSubst, ite_true]
-      congr 1
-      rw [map_extendSubst_eq_map_σ σ t t' _ ht_fresh_pe, hrefs]
+      rw [map_extendSubst_eq_map_σ σ t t' _ ht_fresh_pe]
+      exact List.Perm.cons t' hrefs
     · -- injectivity
       exact extendSubst_injective σ t t' _ hinj ht_fresh_pe ht'_not_mapped
     · -- nonroot
@@ -3043,9 +3044,9 @@ private theorem weaken_let_bind_copy_ref
       (fun s' bt' r bk' hlook' =>
         Ne.symm (freshRefInEnv_ne_siteEnv_ref t _ s' bt' r bk' hfresh hlook'))
   · exact update_with_extension_paths_to_non_member _ _ _ _ hpaths_to_nm
-      (Or.inl (by rw [← hrefs]; exact List.mem_map_of_mem hs_mem))
+      (Or.inl (hrefs.mem_iff.mp (List.mem_map_of_mem hs_mem)))
   · exact update_with_extension_paths_from_non_member _ _ _ _ hpaths_from_nm
-      (Or.inl (by rw [← hrefs]; exact List.mem_map_of_mem hs_mem))
+      (Or.inl (hrefs.mem_iff.mp (List.mem_map_of_mem hs_mem)))
   · exact self_loop_only_empty_uwe _ _ _ env.pathEnv hself_loop_only_empty
   · -- root ∈ updated refs
     simp only [uwe_epsilon_refs_fresh t s envL.pathEnv ht_fresh_pe]
@@ -4750,7 +4751,7 @@ private lemma update_with_epsilon_path_inclusion (σ : Aref → Aref)
               interpret_regex (peL.paths (u, v)) path)
     (hrL_fresh : rL ∉ peL.refs) (hrE_fresh : rE ∉ peE.refs)
     (_ : ∀ u v, u ∈ peL.refs → v ∈ peL.refs → σ u = σ v → u = v)
-    (hrefs_map : peL.refs.map σ = peE.refs)
+    (hrefs_map : (peL.refs.map σ).Perm peE.refs)
     (hrE_ne_root : rE ≠ .root)
     (hpaths_to_nm : ∀ u v p, v ∉ peE.refs → v ≠ .root → u ≠ v →
       ¬interpret_regex (peE.paths (u, v)) p)
@@ -4769,7 +4770,7 @@ private lemma update_with_epsilon_path_inclusion (σ : Aref → Aref)
     uwe_epsilon_refs_fresh rE rE peE hrE_fresh
   -- σ maps old refs to env refs, so σ u ≠ rE for old u
   have hσ_old_ne_rE : ∀ u, u ∈ peL.refs → σ u ≠ rE := by
-    intro u hu heq; exact hrE_fresh (heq ▸ hrefs_map ▸ List.mem_map.mpr ⟨u, hu, rfl⟩)
+    intro u hu heq; exact hrE_fresh (hrefs_map.mem_iff.mp (heq ▸ List.mem_map.mpr ⟨u, hu, rfl⟩))
   intro u v hu hv path hp
   rw [hrefsL] at hu hv
   simp only [update_with_epsilon, update_with_extension] at hp ⊢
@@ -4824,7 +4825,7 @@ private lemma populate_call_outputs_subsumes
     (hid : ∀ r, (∀ n, r ≠ .refid n) → σ r = r)
     (hve : VarEnvSubstEquiv σ envL.varEnv envE.varEnv)
     (hse : SiteEnvSubstEquiv σ envL.siteEnv envE.siteEnv)
-    (hrefs : envL.pathEnv.refs.map σ = envE.pathEnv.refs)
+    (hrefs : (envL.pathEnv.refs.map σ).Perm envE.pathEnv.refs)
     (hinj : ∀ u v, u ∈ envL.pathEnv.refs → v ∈ envL.pathEnv.refs → σ u = σ v → u = v)
     (hnonroot : ∀ r, r ≠ .root → σ r ≠ .root)
     (hpaths : ∀ u v, u ∈ envL.pathEnv.refs → v ∈ envL.pathEnv.refs →
@@ -4907,8 +4908,8 @@ private lemma populate_call_outputs_subsumes
                 | root => exact absurd rfl hrL_ne_root
                 | refid n => exact ⟨n, rfl⟩
                 | varRef v => exact absurd rfl (hrL_not_varRef v)
-              have hrE_not_mapped : rE ∉ envL.pathEnv.refs.map σ := by
-                rw [hrefs]; exact hrE_fresh_pe
+              have hrE_not_mapped : rE ∉ envL.pathEnv.refs.map σ :=
+                fun h => hrE_fresh_pe (hrefs.mem_iff.mp h)
               -- Extended σ
               let σ' := extendSubst σ rL rE
               exact ih_as
@@ -4930,8 +4931,8 @@ private lemma populate_call_outputs_subsumes
                 (by simp only [uwe_epsilon_refs_fresh rL rL envL.pathEnv hrL_fresh_pe,
                         uwe_epsilon_refs_fresh rE rE envE.pathEnv hrE_fresh_pe]
                     simp only [List.map_cons, show σ' rL = rE from if_pos rfl]
-                    congr 1
-                    exact (map_extendSubst_eq_map_σ σ rL rE _ hrL_fresh_pe).trans hrefs)
+                    rw [map_extendSubst_eq_map_σ σ rL rE _ hrL_fresh_pe]
+                    exact List.Perm.cons rE hrefs)
                 (extendSubst_injective σ rL rE _ hinj hrL_fresh_pe hrE_not_mapped)
                 (extendSubst_nonroot σ rL rE hnonroot hrE_ne_root)
                 (update_with_epsilon_path_inclusion σ rL rE envL.pathEnv envE.pathEnv
@@ -5626,8 +5627,7 @@ private theorem weaken_call
     | ref bt' r' bk' =>
       simp only [applySubstMoveType, MoveType.ref.injEq] at hsubst1
       obtain ⟨_, rfl, _⟩ := hsubst1
-      rw [← hrefs]
-      exact List.mem_map.mpr ⟨r', hsite_tracked s bt' r' bk' hlook1, rfl⟩
+      exact hrefs.mem_iff.mp (List.mem_map.mpr ⟨r', hsite_tracked s bt' r' bk' hlook1, rfl⟩)
   have hst_E' := populate_call_outputs_site_tracked env envE' as rets outRefsE hst_E hpopE
   have hsl_E' := populate_call_outputs_self_loop_only_empty env envE' as rets outRefsE
       hself_loop_only_empty hpopE
@@ -5717,8 +5717,7 @@ private lemma weaken_ret (lenv : LabelEnv) (envL env : TypeEnv) (as : List Site)
         have hbk : bk' = .siteBorrowMut := hsubst1.2.2
         rw [hbk] at hlook1
         have hr'_mem := hsite_tracked a bt' r' .siteBorrowMut hlook1
-        rw [hrefs.symm] at hy_env
-        obtain ⟨y', hy'_mem, rfl⟩ := List.mem_map.mp hy_env
+        obtain ⟨y', hy'_mem, rfl⟩ := List.mem_map.mp (hrefs.symm.mem_iff.mp hy_env)
         rw [← hrr] at hp_env
         by_cases heq : r' = y'
         · subst heq; exact hself_loop_only_empty _ p hp_env

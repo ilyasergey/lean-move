@@ -151,7 +151,12 @@ def TypeEnv.subsumes_bool (envL env : TypeEnv) : Bool :=
   | some σ =>
     siteenv_subst_equiv_bool σ envL.siteEnv env.siteEnv &&
     varenv_subst_equiv_bool σ envL.varEnv env.varEnv &&
-    (envL.pathEnv.refs.map (applySubstArefList σ) == env.pathEnv.refs) &&
+    -- Check that mapped refs are a permutation of env's refs
+    -- (both nodup + same length + containment → Perm)
+    (let mapped := envL.pathEnv.refs.map (applySubstArefList σ)
+     mapped.length == env.pathEnv.refs.length &&
+     mapped.eraseDups.length == mapped.length &&
+     mapped.all (fun r => env.pathEnv.refs.contains r)) &&
     -- Check that env's refs have no duplicates (implies σ is injective on envL's refs)
     (env.pathEnv.refs.eraseDups.length == env.pathEnv.refs.length) &&
     envL.pathEnv.refs.all fun u =>

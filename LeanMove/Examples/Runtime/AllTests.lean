@@ -252,17 +252,13 @@ private def twoStructsHeap : Heap × Loc × Loc :=
 #guard (run 200 (initState t AssocMap.empty [.bool true, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1)).isHalted
 #guard (run 200 (initState t AssocMap.empty [.bool false, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1)).isHalted
 
--- TODO: type_soundness_dec fails because allVarRefsTracked_bool doesn't account for
--- .refid placeholders in non-entry blocks. The l3 varEnv uses .refid 1 and .refid 305
--- (needed for subsumption from both branches), but these aren't in pathEnv.refs.
--- Fix: make allVarRefsTracked_bool substitution-aware for .refid refs.
--- private theorem ext_writes_join_t_true_no_danglingRef :
---     ∀ n loc, run n (initState t empty [.bool true, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1) ≠ .error (.danglingRef loc) :=
---   type_soundness_dec t t_lenvDec empty empty [.bool true, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1 (by rfl)
---
--- private theorem ext_writes_join_t_false_no_danglingRef :
---     ∀ n loc, run n (initState t empty [.bool false, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1) ≠ .error (.danglingRef loc) :=
---   type_soundness_dec t t_lenvDec empty empty [.bool false, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1 (by rfl)
+private theorem ext_writes_join_t_true_no_danglingRef :
+    ∀ n loc, run n (initState t empty [.bool true, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec t t_lenvDec empty empty [.bool true, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1 (by rfl)
+
+private theorem ext_writes_join_t_false_no_danglingRef :
+    ∀ n loc, run n (initState t empty [.bool false, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec t t_lenvDec empty empty [.bool false, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1 (by rfl)
 
 end
 

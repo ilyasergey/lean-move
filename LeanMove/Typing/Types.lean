@@ -394,8 +394,8 @@ def TypeEnv.subsumes (envL env : TypeEnv) : Prop :=
     VarEnvSubstEquiv σ envL.varEnv env.varEnv ∧
     -- After σ on envL, SiteEnv entries match env's
     SiteEnvSubstEquiv σ envL.siteEnv env.siteEnv ∧
-    -- After σ on envL, PathEnv refs match env's
-    envL.pathEnv.refs.map σ = env.pathEnv.refs ∧
+    -- After σ on envL, PathEnv refs match env's (up to permutation)
+    (envL.pathEnv.refs.map σ).Perm env.pathEnv.refs ∧
     -- σ is injective on envL.pathEnv.refs (needed for path deletion cases)
     (∀ u v, u ∈ envL.pathEnv.refs → v ∈ envL.pathEnv.refs → σ u = σ v → u = v) ∧
     -- σ doesn't create roots: non-root arefs never map to root
