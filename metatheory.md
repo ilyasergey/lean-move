@@ -287,6 +287,80 @@ admits a new `WellTypedState` (and `StackSafe` is maintained). The file
 contains one case proof per typing rule (~25 cases), plus inversion lemmas
 that extract hypotheses from each `typecheck_stmt` constructor.
 
+### Regex-based path tracking (`Structures/Regex.lean`, `Types.lean`)
+
+The central technical device in MoveLight is representing the *borrow graph*
+— the set of reachability relationships between abstract references — as a
+map from pairs of references to **regular expressions** over path elements:
+
+```
+pathEnv.paths : (Aref × Aref) → Regex PathElement
+```
+
+A path element is either `.field f` (a record field access) or
+`.root_to_var x` (a link from the local root to variable `x`). The regex
+`pathEnv.paths (u, v)` describes *all* concrete field paths by which `v` is
+reachable from `u` in the current borrow structure. The regex language
+(`Structures/Regex.lean`) supports the standard constructors — `empty`, `ε`
+(empty word), `char a`, `dot` (wildcard), `union`, `concat`, `star` — plus
+**Brzozowski derivatives** (`deriv re a`), whose semantics is:
+
+```
+interpret_regex (deriv re a) w  ⟺  interpret_regex re (a :: w)
+```
+
+Derivatives arise naturally when a new reference is created by extending an
+existing one with a field path. If `s` is an existing reference and we
+create `z = &s.f`, the paths *from* `z` to any reference `v` are exactly the
+derivative of `s`'s paths to `v` with respect to the field `f`:
+
+```lean
+-- update_with_extension z s [.field f] pe:
+paths' (z, v) := der (G (s, v)) [.field f]   -- = ∂[field f] G(s, v)
+paths' (u, z) := G (u, s) ∘ [.field f]       -- = G(u,s) ⬝ ⌜field f⌝
+```
+
+This is the key insight: Brzozowski derivatives let us compute the path
+graph of a sub-reference *symbolically*, without enumerating concrete paths.
+
+**Path graph operations.** Each typing rule transforms the path environment
+via one of several operations:
+
+| Operation | Used by | Effect on `pathEnv` |
+|---|---|---|
+| `update_with_extension z s p` | `borrowField`, `borrowMut`, `borrowImm` | Add ref `z`; paths to `z` extend through `p`, paths from `z` are derivatives by `p` |
+| `update_with_epsilon z s` | `copy` (ref type) | Shorthand for `update_with_extension z s []` — `z` is an alias of `s` with identity paths |
+| `delete_ref_node r` | `readRef`, `release` | Remove `r` from tracked refs; clear all its edges |
+| `garbage_collect r` | `writeRef`, `assign` (valid) | Same as `delete_ref_node` — remove `r` after a write consumes it |
+| `consume_ref_transfer r r'` | `freeze` | Remove `r`, transfer incoming edges to `r'` (union of old `r'` and `r` edges) |
+| `extend_with_star t s` | `call` (path connection) | Add `t →[·★] s` and `s →[·★] t` paths — the callee may have created arbitrary relationships |
+
+**Decidable path checks.** The typing rules query the path graph via
+`check_outbound` and `not_borrowed`, both of which ask whether certain
+regexes accept only the empty word (or nothing at all). The decidable
+checker (`TypeCheckingAlgorithmic.lean`) answers these queries by:
+
+1. **Simplifying** the regex (`simplify`): eliminates derivatives and nested
+   constructs, producing a derivative-free regex.
+2. **Testing emptiness** (`only_matches_empty`): a structural boolean check
+   on the simplified regex.
+
+Both steps are proved sound (`simplify_preserves_semantics`,
+`only_matches_empty_sound`), establishing that the boolean check is a
+conservative approximation of the semantic question. In practice, `simplify`
+is precise enough that no false positives arise for the Move test suite.
+
+**Role in preservation.** The regex representation is what makes the
+invariant `rmap_paths` (`PathReflectedInHeap`) maintainable across
+preservation steps. When a new reference is created (e.g., by borrowing a
+field), the derivative-based path update exactly mirrors how the concrete
+heap location of the new reference relates to the parent's location. The
+preservation proof for each rule must show that the regex transformation
+faithfully reflects the heap transformation — for instance, that
+`der (G(s, v)) [.field f]` accepts a path `p` iff following `[.field f] ++
+p` from `s` reaches `v` in the heap, which is exactly the semantics of
+Brzozowski derivatives.
+
 ### Weakening and subsumption (`Weakening.lean`)
 
 At control-flow joins (`jump`, `branch`), the current environment `env` may

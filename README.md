@@ -13,32 +13,30 @@ type system, soundness statement, proof architecture, and key invariants.
 
 ## Building
 
-### Build all
+### Build everything (default)
 ```bash
 lake build
 ```
+Builds the core library, all type-checking examples, and runtime tests
+(including type-soundness certificates).
 
-### Build all examples
+### Build core library only
 ```bash
-lake build examples
+lake build core
 ```
 
-### Build initial examples only
+### Build type-checking examples
 ```bash
-lake build initial
+lake build examples    # all examples
+lake build litmus       # basic litmus tests only
+lake build expressivity # expressivity tests only
 ```
 
-Initial examples demonstrate basic MoveLight type checking:
-- `LeanMove/Examples/initial/accepted/` - Well-typed examples with complete proofs
-- `LeanMove/Examples/initial/rejected/` - Ill-typed examples that fail type checking
+- `LeanMove/Examples/Typechecking/litmus/` — basic accepted / rejected examples
+- `LeanMove/Examples/Typechecking/expressivity/` — transpiled from the
+  [Move bytecode verifier tests](https://github.com/tnowacki/sui/tree/example-tests/external-crates/move/crates/bytecode-verifier-transactional-tests/tests/reference_safety/expressivity)
 
-### Build expressivity examples only
+### Build runtime tests only
 ```bash
-lake build expressivity
+lake build runtime
 ```
-
-The expressivity examples are transpiled from the Move bytecode verifier transactional tests:
-- `LeanMove/Examples/expressivity/accepted/` - Examples that pass the type checker
-- `LeanMove/Examples/expressivity/rejected/` - Examples that fail the type checker
-
-Source: https://github.com/tnowacki/sui/tree/example-tests/external-crates/move/crates/bytecode-verifier-transactional-tests/tests/reference_safety/expressivity
