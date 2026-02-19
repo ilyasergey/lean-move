@@ -523,38 +523,6 @@ theorem lenvDec_var_unique (lenvDec : LabelEnvDec)
     · exact habs rfl
 
 /- ---------------------------------------------------- -/
-/-       Decidable Function Environment                  -/
-/- ---------------------------------------------------- -/
-
-/-- Decidable typing environments for a set of functions.
-    Maps function names to their `LabelEnvDec` typing environments. -/
-abbrev FunTypingEnv := AssocMap Id LabelEnvDec
-
-/-- Boolean check: every function in funEnv has a corresponding entry in
-    funTypingEnv and passes check_fun_dec. -/
-def checkFunEnv (funEnv : AssocMap Id FunDef) (fte : FunTypingEnv) : Bool :=
-  funEnv.entries.all fun (fname, fdef) =>
-    match lookup fte fname with
-    | some lenvDec => check_fun_dec fdef lenvDec
-    | none => false
-
-/-- Soundness: if checkFunEnv succeeds, every function in funEnv is well-typed. -/
-theorem checkFunEnv_sound (funEnv : AssocMap Id FunDef) (fte : FunTypingEnv) :
-    checkFunEnv funEnv fte = true →
-    ∀ fname fdef, lookup funEnv fname = some fdef →
-      ∃ lenv', typecheck_fun fdef lenv' := by
-  intro hcheck fname fdef hlookup
-  simp only [checkFunEnv, List.all_eq_true] at hcheck
-  have hmem := lookup_some funEnv fname fdef hlookup
-  have hentry := hcheck (fname, fdef) hmem
-  simp only [] at hentry
-  cases hlenv : lookup fte fname with
-  | none => simp [hlenv] at hentry
-  | some lenvDec =>
-    simp [hlenv] at hentry
-    exact ⟨lenvDec.toLabelEnv, check_fun_dec_sound fdef lenvDec hentry⟩
-
-/- ---------------------------------------------------- -/
 /-       FunEnv consistency across lenv entries           -/
 /- ---------------------------------------------------- -/
 
@@ -600,5 +568,92 @@ theorem LabelEnvDec.checkFunEnvConsistent_sound (led : LabelEnvDec)
         · rcases hm2 with ⟨rfl, rfl⟩ | hm2
           · exact h _ hm1
           · exact (h _ hm1).trans (h _ hm2).symm
+
+/- ---------------------------------------------------- -/
+/-       Decidable Function Environment                  -/
+/- ---------------------------------------------------- -/
+
+/-- Decidable typing environments for a set of functions.
+    Maps function names to their `LabelEnvDec` typing environments. -/
+abbrev FunTypingEnv := AssocMap Id LabelEnvDec
+
+/-- Helper: extract a TypeEnvDec entry from a LabelEnvDec lookup via toLabelEnv -/
+theorem toLabelEnv_lookup_some (lenvDec : LabelEnvDec) (l : Label) (env : TypeEnv)
+    (hlookup : lookup lenvDec.toLabelEnv l = some env) :
+    ∃ ted, lookup lenvDec l = some ted ∧ env = ted.toTypeEnv := by
+  simp only [LabelEnvDec.toLabelEnv, lookup_mapValues] at hlookup
+  cases hlenv : lookup lenvDec l with
+  | none => simp [hlenv] at hlookup
+  | some ted => simp [hlenv, Option.map] at hlookup; exact ⟨ted, rfl, hlookup.symm⟩
+
+-- Helper: if some entry has a matching key, List.lookup succeeds
+theorem any_beq_implies_list_lookup {K V : Type} [DecidableEq K]
+    (entries : List (K × V)) (k : K) :
+    entries.any (fun (l, _) => l == k) = true →
+    ∃ v, List.lookup k entries = some v := by
+  induction entries with
+  | nil => simp
+  | cons hd rest ih =>
+    intro h
+    simp only [List.any_cons, Bool.or_eq_true] at h
+    obtain ⟨l, v⟩ := hd
+    rcases h with hhead | htail
+    · have heq : l = k := by simpa using hhead
+      rw [← heq]; simp [List.lookup]
+    · simp only [List.lookup]
+      cases heq : k == l
+      · exact ih htail
+      · exact ⟨v, rfl⟩
+
+/-- Boolean check: all FunEnv entries in a LabelEnvDec match the runtime funEnv signatures. -/
+def checkFunEnvSigs (led : LabelEnvDec) (funEnv : AssocMap Id FunDef) : Bool :=
+  led.entries.all fun (_, ted) =>
+    ted.funEnv.entries.all fun (fname, sig) =>
+      match lookup funEnv fname with
+      | some fdef =>
+        decide (fdef.params.map (fun (_, τ) => τ.toParamType) = sig.params) &&
+        decide (fdef.returnType = sig.returnType)
+      | none => false
+
+/-- Soundness: if checkFunEnvSigs succeeds, all FunEnv entries in lenv
+    match the runtime funEnv. -/
+theorem checkFunEnvSigs_sound (led : LabelEnvDec) (funEnv : AssocMap Id FunDef)
+    (h : checkFunEnvSigs led funEnv = true) :
+    ∀ l env, lookup led.toLabelEnv l = some env →
+    ∀ fname sig, lookup env.funEnv fname = some sig →
+    ∃ fdef, lookup funEnv fname = some fdef ∧
+            fdef.params.map (fun (_, τ) => τ.toParamType) = sig.params ∧
+            fdef.returnType = sig.returnType := by
+  intro l env hlookup fname sig hsig
+  obtain ⟨ted, hted, rfl⟩ := toLabelEnv_lookup_some led l env hlookup
+  simp only [checkFunEnvSigs, List.all_eq_true] at h
+  have hmem_ted := lookup_some led l ted hted
+  have hall_sig := h (l, ted) hmem_ted
+  simp only [TypeEnvDec.toTypeEnv] at hsig
+  have hmem_sig := lookup_some ted.funEnv fname sig hsig
+  have hchk := hall_sig (fname, sig) hmem_sig
+  simp only [] at hchk
+  cases hfl : lookup funEnv fname with
+  | none => simp [hfl] at hchk
+  | some fdef =>
+    rw [hfl] at hchk
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hchk
+    exact ⟨fdef, rfl, hchk.1, hchk.2⟩
+
+/-- Boolean check: every function in funEnv passes all checks needed for
+    FunTypeSafe: type checking, well-formedness, empty siteEnv, lenv completeness,
+    var refs tracked/unique, funEnv consistent, and funEnv signatures matching. -/
+def checkFunEnv (funEnv : AssocMap Id FunDef) (fte : FunTypingEnv) : Bool :=
+  funEnv.entries.all fun (fname, fdef) =>
+    match lookup fte fname with
+    | some lenvDec =>
+      check_fun_dec fdef lenvDec &&
+      lenvDec.entries.all (fun (_, ted) => ted.siteEnv.isEmpty) &&
+      fdef.blocks.all (fun block => lenvDec.entries.any (fun (l, _) => l == block.label)) &&
+      LabelEnvDec.allVarRefsTracked_bool lenvDec &&
+      LabelEnvDec.allVarRefsUnique_bool lenvDec &&
+      LabelEnvDec.checkFunEnvConsistent lenvDec &&
+      checkFunEnvSigs lenvDec funEnv
+    | none => false
 
 end LeanMove.Typing

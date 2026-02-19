@@ -4362,10 +4362,14 @@ private theorem preservation_ret (m m' : Machine) (env : TypeEnv) (lenv : LabelE
           obtain ⟨hstmt_caller, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
             hlenv_vu, hlenv_fe, hfe_typed, hve_refs, hse_refs, hlru,
             hrmap_root, hno_paths_root, hroot_coh, hpfnm, hptnm, hsle,
-            huncp, hrru, hvar_con, hsite_con, hrmap_live, hrmap_paths_f,
+            hiso_unmapped, hrru, hvar_con, hsite_con, hrmap_live, hrmap_paths_f,
             hhlb, hrmap_ht, hfe_sig, htc_caller⟩ := hfields.2
           -- 4. Construct extended rmap
           let rmap' := RefMap.extendWithReturns cM cE.siteEnv ri.resultSites vals
+          -- 4b. Root stays unmapped in rmap' (needed early for rmap_paths proof)
+          have hrmap_root' : rmap'.map .root = none :=
+            RefMap.extendWithReturns_preserves_none cM cE.siteEnv ri.resultSites vals .root
+              hrmap_root (fun s _ bt r bk hse => henv_wf.siteEnv_wf s (.ref bt r bk) hse)
           -- 5. Extract complex field proofs BEFORE the structure literal
           --    (to avoid the scoping gotcha: outer variables not accessible in by blocks inside exact { ... })
           -- Helper: output ref ≠ var ref (from live_refs_unique)
@@ -4436,10 +4440,25 @@ private theorem preservation_ret (m m' : Machine) (env : TypeEnv) (lenv : LabelE
                 · exact hrmap_live' r1 pair.1 pair.2 hrm
             · -- r1 ≠ r2
               cases hm1 : cM.map r1 with
-              | none => exact absurd hp (huncp r1 r2 hr1 hr2 heq (Or.inl hm1) p)
+              | none =>
+                by_cases hr1_root : r1 = .root
+                · -- r1 = .root: rmap'.map .root = none → PathReflectedInHeap = True
+                  subst hr1_root
+                  unfold PathReflectedInHeap; rw [hrmap_root']; trivial
+                · -- r1 ≠ .root: unmapped_isolated gives no paths to r1 from r2
+                  have hiso := hiso_unmapped r1 hm1 hr1_root hr1
+                  exact absurd hp ((hiso r2 (Ne.symm heq)).2 p)
               | some p1 =>
                 cases hm2 : cM.map r2 with
-                | none => exact absurd hp (huncp r1 r2 hr1 hr2 heq (Or.inr hm2) p)
+                | none =>
+                  by_cases hr2_root : r2 = .root
+                  · -- r2 = .root: no_paths_to_root gives r1 = .root, contradicting r1 ≠ r2
+                    subst hr2_root
+                    have ⟨hr1_eq, _⟩ := hno_paths_root r1 p hp
+                    exact absurd hr1_eq heq
+                  · -- r2 ≠ .root: unmapped_isolated gives no paths from r1 to r2
+                    have hiso := hiso_unmapped r2 hm2 hr2_root hr2
+                    exact absurd hp ((hiso r1 heq).1 p)
                 | some p2 =>
                   have hpih := hrmap_paths_f r1 r2 hr1 hr2 p hp
                   -- Annotate with rmap' so rw can find the pattern in the goal
@@ -4494,21 +4513,29 @@ private theorem preservation_ret (m m' : Machine) (env : TypeEnv) (lenv : LabelE
               ∀ loc_y, lookup callerFrame.varStore y = some (some loc_y) →
               loc_v = loc_y → path_v = fieldPathOf rest := by
             intro v y rest hv_mem hpath loc_v path_v hrmap_v loc_y hvar_y hloc_eq
-            -- If v is mapped in cM, use extendWithReturns_preserves + hroot_coh
-            rcases RefMap.extendWithReturns_values cM cE.siteEnv ri.resultSites vals
-              v loc_v path_v hrmap_v with hold | hnew
-            · exact hroot_coh v y rest hv_mem hpath loc_v path_v hold loc_y hvar_y hloc_eq
-            · -- Output ref case: rmap'.map v ≠ cM.map v, so v is an output ref
-              -- Since cM.map .root = none (hrmap_root), huncp gives no paths from .root to v
+            -- Case split on whether v was already mapped in cM
+            cases hcm_v : cM.map v with
+            | some pair =>
+              -- v is mapped in cM → v is NOT a result-site ref (by hrru contrapositive)
+              have hne_v : ∀ s ∈ ri.resultSites, ∀ bt r' bk,
+                  lookup cE.siteEnv s = some (.ref bt r' bk) → r' ≠ v := by
+                intro s hs bt r' bk hse hr'eq
+                have hcm_none := hrru s bt r' bk hs hse
+                rw [hr'eq] at hcm_none; simp [hcm_none] at hcm_v
+              -- extendWithReturns preserves v's mapping
+              have hpres := RefMap.extendWithReturns_preserves cM cE.siteEnv
+                ri.resultSites vals v pair hcm_v hne_v
+              rw [hpres] at hrmap_v
+              simp only [Option.some.injEq] at hrmap_v; subst hrmap_v
+              exact hroot_coh v y rest hv_mem hpath loc_v path_v hcm_v loc_y hvar_y hloc_eq
+            | none =>
+              -- v is unmapped in cM
               by_cases hv_root : v = Aref.root
-              · subst hv_root
-                have : rmap'.map Aref.root = none :=
-                  RefMap.extendWithReturns_preserves_none cM cE.siteEnv ri.resultSites vals .root
-                    hrmap_root (fun s _ bt r bk hse => henv_wf.siteEnv_wf s (.ref bt r bk) hse)
-                rw [this] at hrmap_v; exact absurd hrmap_v (by simp)
-              · exact absurd hpath (huncp Aref.root v
-                  henv_wf.pathEnv_wf.root_in_refs hv_mem (Ne.symm hv_root)
-                  (Or.inl hrmap_root) (.root_to_var y :: rest))
+              · subst hv_root; rw [hrmap_root'] at hrmap_v; exact absurd hrmap_v (by simp)
+              · -- v is unmapped non-root: unmapped_isolated gives no paths from .root to v
+                exact absurd hpath
+                  ((hiso_unmapped v hcm_v hv_root hv_mem Aref.root (Ne.symm hv_root)).1
+                    (.root_to_var y :: rest))
           -- 5f. rmap_has_type for rmap'
           have hrmap_ht' : ∀ r bt loc path, rmap'.map r = some (loc, path) →
               ((∃ x bk ms, lookup cE.varEnv x = some (.validVar, .ref bt r bk, ms)) ∨
@@ -4572,10 +4599,6 @@ private theorem preservation_ret (m m' : Machine) (env : TypeEnv) (lenv : LabelE
                     rw [hpres] at hrmap_eq
                     simp only [Option.some.injEq] at hrmap_eq; subst hrmap_eq
                     exact hrmap_ht r bt loc path hcm (Or.inr ⟨s_c, bk_c, hse_c, hni_s⟩)
-          -- 5g. rmap_root_none for rmap'
-          have hrmap_root' : rmap'.map .root = none :=
-            RefMap.extendWithReturns_preserves_none cM cE.siteEnv ri.resultSites vals .root
-              hrmap_root (fun s _ bt r bk hse => henv_wf.siteEnv_wf s (.ref bt r bk) hse)
           -- 6. Assemble WellTypedState
           refine ⟨cE, cL, cR, rmap', ?_, hrest⟩
           exact {

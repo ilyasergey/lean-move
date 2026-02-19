@@ -141,11 +141,11 @@ theorem stackSafe_heap_alloc (stack : List Frame) (ri : Option ReturnInfo)
       have henv_wf : TypeEnv.WellFormed cE := hfields.1
       obtain ⟨hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
         hlenv_vu, hlenv_fe, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
-        hroot_coh, hpfnm, hptnm, hsle, huncp, hrru, hvar_con, hsite_con, hrmap_live, hrmap_paths_f,
+        hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hvar_con, hsite_con, hrmap_live, hrmap_paths_f,
         hhlb, hrmap_ht, hfe_sig, htc⟩ := hfields.2
       refine ⟨cE, cL, cR, cM, ⟨henv_wf, hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
         hlenv_vu, hlenv_fe, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
-        hroot_coh, hpfnm, hptnm, hsle, huncp, hrru, ?_, ?_, ?_, ?_, ?_, ?_, ?_, htc⟩, ?_⟩
+        hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, ?_, ?_, ?_, ?_, ?_, ?_, ?_, htc⟩, ?_⟩
       · -- var_consistent
         intro x isv τ ms hvar
         have hold := hvar_con x isv τ ms hvar
@@ -369,7 +369,7 @@ theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
       have henv_wf : TypeEnv.WellFormed cE := hfields.1
       obtain ⟨hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
         hlenv_vu, hlenv_fe, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
-        hroot_coh, hpfnm, hptnm, hsle, huncp, hrru, hvar_con, hsite_con, hrmap_live, hrmap_paths_f,
+        hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hvar_con, hsite_con, hrmap_live, hrmap_paths_f,
         hhlb, hrmap_ht, hfe_sig, htc⟩ := hfields.2
       -- Extract base value and writePath facts for field maintenance
       have hv_leaf_read' := hv_leaf_read
@@ -391,7 +391,7 @@ theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
             rw [← hwr']; simp [Heap.write, Heap.read, lookup_insert_same]
           refine ⟨cE, cL, cR, cM, ⟨henv_wf, hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
             hlenv_vu, hlenv_fe, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
-            hroot_coh, hpfnm, hptnm, hsle, huncp, hrru, ?_, ?_, ?_, ?_, ?_, ?_, ?_, htc⟩, ?_⟩
+            hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, ?_, ?_, ?_, ?_, ?_, ?_, ?_, htc⟩, ?_⟩
           · -- var_consistent
             intro x isv τ_x ms hvar
             have hvc := hvar_con x isv τ_x ms hvar

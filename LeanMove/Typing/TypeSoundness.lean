@@ -42,31 +42,25 @@ open AssocMap
 theorem type_soundness (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunDef)
     (args : List Value) (heap : Heap)
     (htyped : typecheck_fun f lenv)
-    (hfunEnv : ∀ fname fdef, lookup funEnv fname = some fdef → ∃ lenv', typecheck_fun fdef lenv')
+    (hfunEnv : ∀ fname fdef, lookup funEnv fname = some fdef → FunTypeSafe fdef funEnv)
     (ha : SoundnessAssumptions f lenv funEnv heap args) :
     ∀ n loc, Semantics.run n (initState f funEnv args heap) ≠ .error (.danglingRef loc) :=
   safe_run_no_danglingRef (initState f funEnv args heap) (initState_safe f lenv funEnv args heap htyped hfunEnv ha)
 
 /-- Decidable type soundness theorem: a single boolean check suffices.
     `SoundnessAssumptions.checkDecidable` verifies everything: function type-checking
-    (`check_fun_dec`), function environment well-typedness (`checkFunEnv`), and all
-    remaining semantic prerequisites. The `hfunSig` hypothesis connects typing-level
-    FunSig entries with runtime FunDef signatures. -/
+    (`check_fun_dec`), function environment well-typedness (`checkFunEnv`), funEnv
+    signature matching, and all remaining semantic prerequisites. -/
 theorem type_soundness_dec (f : FunDef) (lenvDec : LabelEnvDec)
     (funEnv : AssocMap Id FunDef) (fte : FunTypingEnv)
     (args : List Value) (heap : Heap)
-    (hdec : SoundnessAssumptions.checkDecidable f lenvDec funEnv fte heap args = true)
-    (hfunSig : ∀ l env, lookup lenvDec.toLabelEnv l = some env →
-      ∀ fname sig, lookup env.funEnv fname = some sig →
-      ∃ fdef, lookup funEnv fname = some fdef ∧
-              fdef.params.map (fun (_, τ) => τ.toParamType) = sig.params ∧
-              fdef.returnType = sig.returnType) :
+    (hdec : SoundnessAssumptions.checkDecidable f lenvDec funEnv fte heap args = true) :
     ∀ n loc, Semantics.run n (initState f funEnv args heap) ≠ .error (.danglingRef loc) := by
   have hcd := hdec
   simp only [SoundnessAssumptions.checkDecidable, Bool.and_eq_true] at hcd
   exact type_soundness f lenvDec.toLabelEnv funEnv args heap
-    (check_fun_dec_sound f lenvDec hcd.1.1.1.1.1.1.1.1.1.1.1.1.1)
-    (checkFunEnv_sound funEnv fte hcd.1.1.1.1.1.1.1.1.1.1.1.1.2)
-    (SoundnessAssumptions.of_check f lenvDec funEnv fte heap args hdec hfunSig)
+    (check_fun_dec_sound f lenvDec hcd.1.1.1.1.1.1.1.1.1.1.1.1.1.1)
+    (checkFunEnv_sound funEnv fte hcd.1.1.1.1.1.1.1.1.1.1.1.1.1.2)
+    (SoundnessAssumptions.of_check f lenvDec funEnv fte heap args hdec)
 
 end LeanMove.Typing.TypeSoundness

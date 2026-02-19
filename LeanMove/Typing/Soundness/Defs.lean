@@ -438,7 +438,52 @@ def PathReflectedInHeap (rmap : RefMap) (heap : Heap)
   | _, _ => True  -- If either ref is unmapped, the constraint is vacuous
 
 -- ============================================================
--- Part 5: Well-Typed State (Central Invariant)
+-- Part 5a: FunTypeSafe (bundled safety for typed functions)
+-- ============================================================
+
+/-- A function definition is safely typed if there exists a label environment
+    satisfying typecheck_fun AND all the structural properties needed to
+    construct a WellTypedState for the callee upon function call. -/
+def FunTypeSafe (fdef : FunDef) (runtimeFunEnv : AssocMap Id FunDef) : Prop :=
+  ∃ lenv : LabelEnv,
+    typecheck_fun fdef lenv ∧
+    -- All lenv entries are well-formed
+    (∀ L envL, lookup lenv L = some envL → TypeEnv.WellFormed envL) ∧
+    -- All lenv entries have empty siteEnv
+    (∀ L envL, lookup lenv L = some envL → ∀ s, lookup envL.siteEnv s = none) ∧
+    -- Valid var refs tracked in pathEnv
+    (∀ L envL, lookup lenv L = some envL →
+      ∀ x bt r bk ms, lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) →
+      r ∈ envL.pathEnv.refs) ∧
+    -- Valid var refs are unique
+    (∀ L envL, lookup lenv L = some envL →
+      ∀ r x y bt bt' bk bk' ms ms', x ≠ y →
+      lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) →
+      lookup envL.varEnv y = some (.validVar, .ref bt' r bk', ms') → False) ∧
+    -- lenv entries' funEnv matches runtime
+    (∀ L envL, lookup lenv L = some envL →
+      ∀ fname sig, lookup envL.funEnv fname = some sig →
+      ∃ fdef', lookup runtimeFunEnv fname = some fdef' ∧
+              fdef'.params.map (fun (_, τ) => τ.toParamType) = sig.params ∧
+              fdef'.returnType = sig.returnType) ∧
+    -- Every block has a lenv entry
+    (∀ b, b ∈ fdef.blocks → ∃ envL, lookup lenv b.label = some envL) ∧
+    -- All lenv entries share the same funEnv
+    (∀ L envL L' envL',
+      lookup lenv L = some envL → lookup lenv L' = some envL' →
+      envL.funEnv = envL'.funEnv) ∧
+    -- Path properties of lenv entries
+    (∀ L envL, lookup lenv L = some envL →
+      ∀ u v p, u ∉ envL.pathEnv.refs → u ≠ .root → u ≠ v →
+      ¬interpret_regex (envL.pathEnv.paths (u, v)) p) ∧
+    (∀ L envL, lookup lenv L = some envL →
+      ∀ u v p, v ∉ envL.pathEnv.refs → v ≠ .root → u ≠ v →
+      ¬interpret_regex (envL.pathEnv.paths (u, v)) p) ∧
+    (∀ L envL, lookup lenv L = some envL →
+      ∀ u p, interpret_regex (envL.pathEnv.paths (u, u)) p → p = [])
+
+-- ============================================================
+-- Part 5b: Well-Typed State (Central Invariant)
 -- ============================================================
 
 /-- The central invariant: a running machine state is well-typed with respect to
@@ -507,10 +552,10 @@ structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
   -- 9e. lenv entries have the same funEnv as the current env
   lenv_funEnv_eq : ∀ L envL, lookup lenv L = some envL → envL.funEnv = env.funEnv
 
-  -- 10. All functions in funEnv are well-typed
+  -- 10. All functions in funEnv are safely typed (with lenv properties)
   funEnv_typed : ∀ fname fdef,
     lookup m.frame.funEnv fname = some fdef →
-    ∃ lenv', typecheck_fun fdef lenv'
+    FunTypeSafe fdef m.frame.funEnv
 
   -- 11. Heap well-formedness: all readable locations are below nextLoc.
   --     This ensures that heap.alloc produces a genuinely fresh location.
@@ -619,7 +664,7 @@ def StackSafe : List Frame → Option ReturnInfo → Heap → List ParamType →
         lookup envL.varEnv y = some (.validVar, .ref bt' r bk', ms') → False) ∧
       (∀ L envL, lookup callerLenv L = some envL → envL.funEnv = callerEnv.funEnv) ∧
       (∀ fname fdef, lookup callerFrame.funEnv fname = some fdef →
-        ∃ lenv', typecheck_fun fdef lenv') ∧
+        FunTypeSafe fdef callerFrame.funEnv) ∧
       (∀ x bt r bk ms, lookup callerEnv.varEnv x = some (.validVar, .ref bt r bk, ms) →
         r ∈ callerEnv.pathEnv.refs) ∧
       (∀ s bt r bk, lookup callerEnv.siteEnv s = some (.ref bt r bk) →
@@ -647,10 +692,10 @@ def StackSafe : List Frame → Option ReturnInfo → Heap → List ParamType →
       (∀ u v p, v ∉ callerEnv.pathEnv.refs → v ≠ .root → u ≠ v →
         ¬interpret_regex (callerEnv.pathEnv.paths (u, v)) p) ∧
       (∀ u p, interpret_regex (callerEnv.pathEnv.paths (u, u)) p → p = []) ∧
-      -- Unmapped refs (output refs) have no cross-paths
-      (∀ r1 r2, r1 ∈ callerEnv.pathEnv.refs → r2 ∈ callerEnv.pathEnv.refs →
-        r1 ≠ r2 → (callerRmap.map r1 = none ∨ callerRmap.map r2 = none) →
-        ∀ p, ¬interpret_regex (callerEnv.pathEnv.paths (r1, r2)) p) ∧
+      -- Unmapped non-root refs are isolated: only self-loops, no cross-paths
+      (∀ r, callerRmap.map r = none → r ≠ .root → r ∈ callerEnv.pathEnv.refs →
+        ∀ u, u ≠ r → (∀ p, ¬interpret_regex (callerEnv.pathEnv.paths (u, r)) p) ∧
+                       (∀ p, ¬interpret_regex (callerEnv.pathEnv.paths (r, u)) p)) ∧
       -- Result-site refs are unmapped in callerRmap (they're fresh output refs)
       (∀ s bt r bk, s ∈ ri.resultSites →
         lookup callerEnv.siteEnv s = some (.ref bt r bk) → callerRmap.map r = none) ∧

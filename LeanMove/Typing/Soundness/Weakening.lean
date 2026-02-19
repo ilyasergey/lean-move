@@ -3291,7 +3291,7 @@ private lemma check_mutable_inputs_isolated_subsumes
           exact hiso_L p (hpaths r_L r_L2 (hsite_tracked _ _ _ _ hlL_mi) (hsite_tracked _ _ _ _ hlL_other) p hp)
 
 /-- populate_call_outputs preserves varEnv -/
-private lemma populate_call_outputs_varEnv (env env' : TypeEnv) (as : List Site) (rets : List ParamType)
+lemma populate_call_outputs_varEnv (env env' : TypeEnv) (as : List Site) (rets : List ParamType)
     (outRefs : List Aref)
     (hpop : populate_call_outputs env as rets outRefs = some env') :
     env'.varEnv = env.varEnv := by
@@ -3320,7 +3320,7 @@ private lemma populate_call_outputs_varEnv (env env' : TypeEnv) (as : List Site)
             simpa using this)
 
 /-- populate_call_outputs preserves funEnv -/
-private lemma populate_call_outputs_funEnv (env env' : TypeEnv) (as : List Site) (rets : List ParamType)
+lemma populate_call_outputs_funEnv (env env' : TypeEnv) (as : List Site) (rets : List ParamType)
     (outRefs : List Aref)
     (hpop : populate_call_outputs env as rets outRefs = some env') :
     env'.funEnv = env.funEnv := by
@@ -3349,17 +3349,17 @@ private lemma populate_call_outputs_funEnv (env env' : TypeEnv) (as : List Site)
             simpa using this)
 
 /-- call_connect_inputs_outputs preserves varEnv -/
-private lemma call_connect_varEnv (env : TypeEnv) (as bs : List Site) :
+lemma call_connect_varEnv (env : TypeEnv) (as bs : List Site) :
     (call_connect_inputs_outputs env as bs).varEnv = env.varEnv := by
   simp [call_connect_inputs_outputs]
 
 /-- call_connect_inputs_outputs preserves funEnv -/
-private lemma call_connect_funEnv (env : TypeEnv) (as bs : List Site) :
+lemma call_connect_funEnv (env : TypeEnv) (as bs : List Site) :
     (call_connect_inputs_outputs env as bs).funEnv = env.funEnv := by
   simp [call_connect_inputs_outputs]
 
 /-- call_connect_inputs_outputs preserves siteEnv -/
-private lemma call_connect_siteEnv (env : TypeEnv) (as bs : List Site) :
+lemma call_connect_siteEnv (env : TypeEnv) (as bs : List Site) :
     (call_connect_inputs_outputs env as bs).siteEnv = env.siteEnv := by
   simp [call_connect_inputs_outputs]
 
@@ -3432,7 +3432,7 @@ private lemma SiteEnvSubstEquiv_lookup_some_inv (σ : Aref → Aref) (se1 se2 : 
   | some τ1 => simp only [hk1] at hse; exact ⟨τ1, rfl, hse⟩
 
 /-- populate_call_outputs preserves self_loop_only_empty -/
-private lemma populate_call_outputs_self_loop_only_empty
+lemma populate_call_outputs_self_loop_only_empty
     (env env' : TypeEnv) (as : List Site) (rets : List ParamType) (outRefs : List Aref)
     (hsl : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
     (hpop : populate_call_outputs env as rets outRefs = some env') :
@@ -3466,7 +3466,7 @@ private lemma populate_call_outputs_self_loop_only_empty
               (update_with_extension_self_loop_only_empty r r [] env.pathEnv hsl) hpop)
 
 /-- populate_call_outputs preserves paths_from_non_member -/
-private lemma populate_call_outputs_paths_from_nm
+lemma populate_call_outputs_paths_from_nm
     (env env' : TypeEnv) (as : List Site) (rets : List ParamType) (outRefs : List Aref)
     (h_from : ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
       ¬interpret_regex (env.pathEnv.paths (u, v)) p)
@@ -3503,7 +3503,7 @@ private lemma populate_call_outputs_paths_from_nm
               hpop)
 
 /-- populate_call_outputs preserves paths_to_non_member -/
-private lemma populate_call_outputs_paths_to_nm
+lemma populate_call_outputs_paths_to_nm
     (env env' : TypeEnv) (as : List Site) (rets : List ParamType) (outRefs : List Aref)
     (h_to : ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
       ¬interpret_regex (env.pathEnv.paths (u, v)) p)
@@ -3540,7 +3540,7 @@ private lemma populate_call_outputs_paths_to_nm
               hpop)
 
 /-- populate_call_outputs refs are monotone -/
-private lemma populate_call_outputs_refs_mono
+lemma populate_call_outputs_refs_mono
     (env env' : TypeEnv) (as : List Site) (rets : List ParamType) (outRefs : List Aref)
     (hpop : populate_call_outputs env as rets outRefs = some env') :
     ∀ r ∈ env.pathEnv.refs, r ∈ env'.pathEnv.refs := by
@@ -3574,7 +3574,7 @@ private lemma populate_call_outputs_refs_mono
               (update_with_extension_refs_mono r r [] env.pathEnv r' hr'))
 
 /-- populate_call_outputs preserves site_tracked -/
-private lemma populate_call_outputs_site_tracked
+lemma populate_call_outputs_site_tracked
     (env env' : TypeEnv) (as : List Site) (rets : List ParamType) (outRefs : List Aref)
     (hst : ∀ s bt r bk, lookup env.siteEnv s = some (.ref bt r bk) → r ∈ env.pathEnv.refs)
     (hpop : populate_call_outputs env as rets outRefs = some env') :
@@ -3635,7 +3635,7 @@ private lemma populate_call_outputs_site_tracked
               exact update_with_extension_refs_mono r r [] env.pathEnv r' (hst s bt' r' bk' hlook)
 
 /-- populate_call_outputs preserves var_tracked -/
-private lemma populate_call_outputs_var_tracked
+lemma populate_call_outputs_var_tracked
     (env env' : TypeEnv) (as : List Site) (rets : List ParamType) (outRefs : List Aref)
     (hvt : ∀ x bt r bk ms, lookup env.varEnv x = some (.validVar, .ref bt r bk, ms) → r ∈ env.pathEnv.refs)
     (hpop : populate_call_outputs env as rets outRefs = some env') :
@@ -3724,7 +3724,7 @@ private lemma freshRefInEnvBool_insert_ref_update_epsilon (r' r : Aref) (env : T
       exact hse x this
 
 /-- populate_call_outputs preserves RefsUnique -/
-private lemma populate_call_outputs_RefsUnique
+lemma populate_call_outputs_RefsUnique
     (env env' : TypeEnv) (as : List Site) (rets : List ParamType) (outRefs : List Aref)
     (huniq : RefsUnique env.varEnv env.siteEnv)
     (hfresh : all_refs_fresh_in_env env outRefs)
@@ -4237,7 +4237,7 @@ private lemma outer_foldl_cond_ews_refs_eq (targets sources : List Aref) (pe : P
     exact h1
 
 /-- call_connect preserves refs exactly when site_tracked holds -/
-private lemma call_connect_refs_eq
+lemma call_connect_refs_eq
     (env : TypeEnv) (as bs : List Site)
     (hst : ∀ s bt r bk, lookup env.siteEnv s = some (.ref bt r bk) → r ∈ env.pathEnv.refs) :
     (call_connect_inputs_outputs env as bs).pathEnv.refs = env.pathEnv.refs := by
@@ -4955,6 +4955,217 @@ private lemma call_connect_subsumes
               | siteBorrowImm => simp
               | siteBorrowMut => simp only [Option.some.injEq]; intro h; subst h; exact hstL _ _ _ _ hlook)
       hpaths hinj u v hu hv
+
+/-- extend_with_star preserves path inclusion from pe0 when target is isolated in pe0. -/
+private lemma extend_with_star_path_mono (pe0 pe : PathEnv) (target source : Aref)
+    (hiso : ∀ w, w ≠ target → (∀ p, ¬⟦pe0.paths (w, target)⟧ p) ∧
+                               (∀ p, ¬⟦pe0.paths (target, w)⟧ p))
+    (hsl : ∀ p, ⟦pe0.paths (target, target)⟧ p → p = [])
+    (h_inc : ∀ u v p, ⟦pe0.paths (u, v)⟧ p → ⟦pe.paths (u, v)⟧ p) :
+    ∀ u v p, ⟦pe0.paths (u, v)⟧ p →
+      ⟦(extend_with_star target source pe).paths (u, v)⟧ p := by
+  intro u v p hp
+  by_cases hut : u = target
+  · by_cases hvt : v = target
+    · subst hut; subst hvt
+      have hpeq := hsl p hp
+      subst hpeq
+      simp only [extend_with_star, and_self, ↓reduceIte, interpret_regex]
+    · subst hut; exact absurd hp ((hiso v hvt).2 p)
+  · by_cases hvt : v = target
+    · subst hvt; exact absurd hp ((hiso u hut).1 p)
+    · -- Non-target pair: path preserved
+      show ⟦(extend_with_star target source pe).paths (u, v)⟧ p
+      simp only [extend_with_star]
+      rw [if_neg (fun ⟨h, _⟩ => hut h), if_neg hvt, if_neg hut]
+      exact h_inc u v p hp
+
+/-- Inner foldl of extend_with_star (fixed target, varying sources) preserves path inclusion. -/
+private lemma foldl_ewst_path_mono (pe0 : PathEnv) (target : Aref)
+    (sources : List Aref)
+    (hiso : ∀ w, w ≠ target → (∀ p, ¬⟦pe0.paths (w, target)⟧ p) ∧
+                               (∀ p, ¬⟦pe0.paths (target, w)⟧ p))
+    (hsl : ∀ p, ⟦pe0.paths (target, target)⟧ p → p = []) :
+    ∀ (pe : PathEnv), (∀ u v p, ⟦pe0.paths (u, v)⟧ p → ⟦pe.paths (u, v)⟧ p) →
+    ∀ u v p, ⟦pe0.paths (u, v)⟧ p →
+      ⟦(sources.foldl (fun pe' s => extend_with_star target s pe') pe).paths (u, v)⟧ p := by
+  induction sources with
+  | nil => intro pe h_inc; exact h_inc
+  | cons s ss ih =>
+    intro pe h_inc
+    exact ih (extend_with_star target s pe)
+      (extend_with_star_path_mono pe0 pe target s hiso hsl h_inc)
+
+/-- Outer foldl (varying targets, each with inner foldl over sources) preserves path inclusion. -/
+private lemma foldl_foldl_ewst_path_mono (pe0 : PathEnv)
+    (targets sources : List Aref)
+    (hiso : ∀ t ∈ targets, ∀ w, w ≠ t →
+      (∀ p, ¬⟦pe0.paths (w, t)⟧ p) ∧ (∀ p, ¬⟦pe0.paths (t, w)⟧ p))
+    (hsl : ∀ t ∈ targets, ∀ p, ⟦pe0.paths (t, t)⟧ p → p = []) :
+    ∀ (pe : PathEnv), (∀ u v p, ⟦pe0.paths (u, v)⟧ p → ⟦pe.paths (u, v)⟧ p) →
+    ∀ u v p, ⟦pe0.paths (u, v)⟧ p →
+      ⟦(targets.foldl (fun pe' t =>
+        sources.foldl (fun pe'' s => extend_with_star t s pe'') pe') pe).paths (u, v)⟧ p := by
+  induction targets with
+  | nil => intro pe h_inc; exact h_inc
+  | cons t ts ih =>
+    intro pe h_inc
+    exact ih
+      (fun t' ht' => hiso t' (List.mem_cons_of_mem _ ht'))
+      (fun t' ht' => hsl t' (List.mem_cons_of_mem _ ht'))
+      (sources.foldl (fun pe' s => extend_with_star t s pe') pe)
+      (foldl_ewst_path_mono pe0 t sources
+        (hiso t (List.mem_cons_self ..)) (hsl t (List.mem_cons_self ..)) pe h_inc)
+
+/-- Inner conditional foldl (fixed target, varying sources, skip self) preserves path inclusion. -/
+private lemma foldl_cond_ewst_path_mono (pe0 : PathEnv) (target : Aref)
+    (sources : List Aref)
+    (hiso : ∀ w, w ≠ target → (∀ p, ¬⟦pe0.paths (w, target)⟧ p) ∧
+                               (∀ p, ¬⟦pe0.paths (target, w)⟧ p))
+    (hsl : ∀ p, ⟦pe0.paths (target, target)⟧ p → p = []) :
+    ∀ (pe : PathEnv), (∀ u v p, ⟦pe0.paths (u, v)⟧ p → ⟦pe.paths (u, v)⟧ p) →
+    ∀ u v p, ⟦pe0.paths (u, v)⟧ p →
+      ⟦(sources.foldl (fun pe' s =>
+        if target ≠ s then extend_with_star target s pe' else pe') pe).paths (u, v)⟧ p := by
+  induction sources with
+  | nil => intro pe h_inc; exact h_inc
+  | cons s ss ih =>
+    intro pe h_inc
+    simp only [List.foldl]
+    by_cases hne : target ≠ s
+    · rw [if_pos hne]
+      exact ih (extend_with_star target s pe)
+        (extend_with_star_path_mono pe0 pe target s hiso hsl h_inc)
+    · rw [if_neg hne]; exact ih pe h_inc
+
+/-- Outer conditional foldl preserves path inclusion. -/
+private lemma foldl_foldl_cond_ewst_path_mono (pe0 : PathEnv)
+    (targets sources : List Aref)
+    (hiso : ∀ t ∈ targets, ∀ w, w ≠ t →
+      (∀ p, ¬⟦pe0.paths (w, t)⟧ p) ∧ (∀ p, ¬⟦pe0.paths (t, w)⟧ p))
+    (hsl : ∀ t ∈ targets, ∀ p, ⟦pe0.paths (t, t)⟧ p → p = []) :
+    ∀ (pe : PathEnv), (∀ u v p, ⟦pe0.paths (u, v)⟧ p → ⟦pe.paths (u, v)⟧ p) →
+    ∀ u v p, ⟦pe0.paths (u, v)⟧ p →
+      ⟦(targets.foldl (fun pe' t =>
+        sources.foldl (fun pe'' s =>
+          if t ≠ s then extend_with_star t s pe'' else pe'') pe') pe).paths (u, v)⟧ p := by
+  induction targets with
+  | nil => intro pe h_inc; exact h_inc
+  | cons t ts ih =>
+    intro pe h_inc
+    exact ih
+      (fun t' ht' => hiso t' (List.mem_cons_of_mem _ ht'))
+      (fun t' ht' => hsl t' (List.mem_cons_of_mem _ ht'))
+      (sources.foldl (fun pe' s => if t ≠ s then extend_with_star t s pe' else pe') pe)
+      (foldl_cond_ewst_path_mono pe0 t sources
+        (hiso t (List.mem_cons_self ..)) (hsl t (List.mem_cons_self ..)) pe h_inc)
+
+/-- call_connect_inputs_outputs env' subsumes env' (identity substitution).
+    Since call_connect only adds paths (via extend_with_star), env'.paths ⊆ cc(env').paths.
+    Requires that output refs from result sites are isolated in env' (only self-loops). -/
+lemma call_connect_subsumes_self (env' : TypeEnv) (results args : List Site)
+    (hst : ∀ s bt r bk, lookup env'.siteEnv s = some (.ref bt r bk) → r ∈ env'.pathEnv.refs)
+    (hsl : ∀ u p, ⟦env'.pathEnv.paths (u, u)⟧ p → p = [])
+    (hiso_output : ∀ s ∈ results, ∀ bt r bk,
+      lookup env'.siteEnv s = some (.ref bt r bk) →
+      ∀ w, w ≠ r → (∀ p, ¬⟦env'.pathEnv.paths (w, r)⟧ p) ∧
+                     (∀ p, ¬⟦env'.pathEnv.paths (r, w)⟧ p)) :
+    TypeEnv.subsumes (call_connect_inputs_outputs env' results args) env' := by
+  refine ⟨id, fun _ _ => rfl, ?_, ?_, ?_, fun _ _ _ _ h => h, fun _ h => h, ?_⟩
+  · -- VarEnvSubstEquiv id
+    intro k; rw [call_connect_varEnv]
+    cases lookup env'.varEnv k with
+    | none => trivial
+    | some entry =>
+      obtain ⟨isv, τ, ms⟩ := entry
+      cases isv with
+      | validVar =>
+        exact ⟨by cases τ with | basic _ => rfl | ref _ _ _ => rfl, rfl⟩
+      | invalidVar =>
+        exact ⟨by cases τ with
+          | basic _ => rfl
+          | ref _ _ _ => exact ⟨rfl, rfl⟩, rfl⟩
+  · -- SiteEnvSubstEquiv id
+    intro k; rw [call_connect_siteEnv]
+    cases lookup env'.siteEnv k with
+    | none => trivial
+    | some τ => cases τ with
+      | basic _ => rfl
+      | ref _ _ _ => rfl
+  · -- refs.map id = refs
+    rw [call_connect_refs_eq env' results args hst, List.map_id]
+  · -- Path inclusion: env'.paths(u,v) ⊆ cc(env').paths(u,v)
+    intro u v hu hv path hp
+    rw [call_connect_refs_eq env' results args hst] at hu hv
+    simp only [id] at *
+    -- Unfold call_connect_inputs_outputs to expose the triple foldl
+    show ⟦(call_connect_inputs_outputs env' results args).pathEnv.paths (u, v)⟧ path
+    simp only [call_connect_inputs_outputs]
+    -- Derive isolation for all output refs from results
+    -- io refs: immutable output refs
+    have hiso_io : ∀ r ∈ List.filterMap (fun a => match lookup env'.siteEnv a with
+        | some (.ref _ r .siteBorrowImm) => some r | _ => none) results,
+        ∀ w, w ≠ r → (∀ p, ¬⟦env'.pathEnv.paths (w, r)⟧ p) ∧
+                       (∀ p, ¬⟦env'.pathEnv.paths (r, w)⟧ p) := by
+      intro r hr w hw
+      simp only [List.mem_filterMap] at hr
+      obtain ⟨s, hs, hr'⟩ := hr
+      revert hr'; cases hse : lookup env'.siteEnv s with
+      | none => simp
+      | some τ => cases τ with
+        | basic _ => simp
+        | ref bt rr bk => cases bk with
+          | siteBorrowMut => simp
+          | siteBorrowImm =>
+            simp only [Option.some.injEq]; intro h; subst h
+            exact hiso_output s hs bt rr .siteBorrowImm hse w hw
+    -- mo refs: mutable output refs
+    have hiso_mo : ∀ r ∈ List.filterMap (fun a => match lookup env'.siteEnv a with
+        | some (.ref _ r .siteBorrowMut) => some r | _ => none) results,
+        ∀ w, w ≠ r → (∀ p, ¬⟦env'.pathEnv.paths (w, r)⟧ p) ∧
+                       (∀ p, ¬⟦env'.pathEnv.paths (r, w)⟧ p) := by
+      intro r hr w hw
+      simp only [List.mem_filterMap] at hr
+      obtain ⟨s, hs, hr'⟩ := hr
+      revert hr'; cases hse : lookup env'.siteEnv s with
+      | none => simp
+      | some τ => cases τ with
+        | basic _ => simp
+        | ref bt rr bk => cases bk with
+          | siteBorrowImm => simp
+          | siteBorrowMut =>
+            simp only [Option.some.injEq]; intro h; subst h
+            exact hiso_output s hs bt rr .siteBorrowMut hse w hw
+    -- Self-loop conditions
+    have hsl_io : ∀ r ∈ List.filterMap (fun a => match lookup env'.siteEnv a with
+        | some (.ref _ r .siteBorrowImm) => some r | _ => none) results,
+        ∀ p, ⟦env'.pathEnv.paths (r, r)⟧ p → p = [] := fun r _ => hsl r
+    have hsl_mo : ∀ r ∈ List.filterMap (fun a => match lookup env'.siteEnv a with
+        | some (.ref _ r .siteBorrowMut) => some r | _ => none) results,
+        ∀ p, ⟦env'.pathEnv.paths (r, r)⟧ p → p = [] := fun r _ => hsl r
+    -- Compose the three foldl path inclusions
+    -- Rule 1: io from inputs
+    have h1 := foldl_foldl_ewst_path_mono env'.pathEnv
+      (List.filterMap (fun a => match lookup env'.siteEnv a with
+        | some (.ref _ r .siteBorrowImm) => some r | _ => none) results)
+      (List.filterMap (fun a => match lookup env'.siteEnv a with
+        | some (.ref _ r _) => some r | _ => none) args)
+      hiso_io hsl_io env'.pathEnv (fun _ _ _ h => h)
+    -- Rule 2: mo from mi
+    have h2 := foldl_foldl_ewst_path_mono env'.pathEnv
+      (List.filterMap (fun a => match lookup env'.siteEnv a with
+        | some (.ref _ r .siteBorrowMut) => some r | _ => none) results)
+      (List.filterMap (fun a => match lookup env'.siteEnv a with
+        | some (.ref _ r .siteBorrowMut) => some r | _ => none) args)
+      hiso_mo hsl_mo _ h1
+    -- Rule 3: io to io (conditional)
+    have h3 := foldl_foldl_cond_ewst_path_mono env'.pathEnv
+      (List.filterMap (fun a => match lookup env'.siteEnv a with
+        | some (.ref _ r .siteBorrowImm) => some r | _ => none) results)
+      (List.filterMap (fun a => match lookup env'.siteEnv a with
+        | some (.ref _ r .siteBorrowImm) => some r | _ => none) results)
+      hiso_io hsl_io _ h2
+    exact h3 u v path hp
 
 private theorem weaken_call
     (lenv : LabelEnv) (envL env : TypeEnv)
