@@ -523,8 +523,9 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
       AssocMap.lookup env.funEnv fnName = some ⟨params, rets⟩ →
       -- Inputs conform to parameter types
       types_conform env.siteEnv bs params →
-      -- Output sites are fresh
+      -- Output sites are fresh and unique
       all_fresh_sites env as →
+      List.Nodup as →
       -- Fresh abstract refs for reference-typed outputs
       all_refs_fresh_in_env env outRefs →
       List.Nodup outRefs →

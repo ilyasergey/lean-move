@@ -121,6 +121,7 @@ theorem wellTypedState_heap_alloc
       rw [heap_alloc_preserves_readRef heap v loc path hne]
       exact ⟨val, hread, hht⟩
     funEnv_sig_consistent := hwt.funEnv_sig_consistent
+    refs_tracked_mapped := hwt.refs_tracked_mapped
   }
 
 /-- StackSafe is preserved under heap.alloc -/
@@ -141,11 +142,11 @@ theorem stackSafe_heap_alloc (stack : List Frame) (ri : Option ReturnInfo)
       have henv_wf : TypeEnv.WellFormed cE := hfields.1
       obtain ⟨hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
         hlenv_vu, hlenv_fe, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
-        hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hvar_con, hsite_con, hrmap_live, hrmap_paths_f,
+        hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hrtm, hvar_con, hsite_con, hrmap_live, hrmap_paths_f,
         hhlb, hrmap_ht, hfe_sig, htc⟩ := hfields.2
       refine ⟨cE, cL, cR, cM, ⟨henv_wf, hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
         hlenv_vu, hlenv_fe, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
-        hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, ?_, ?_, ?_, ?_, ?_, ?_, ?_, htc⟩, ?_⟩
+        hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hrtm, ?_, ?_, ?_, ?_, ?_, ?_, ?_, htc⟩, ?_⟩
       · -- var_consistent
         intro x isv τ ms hvar
         have hold := hvar_con x isv τ ms hvar
@@ -344,6 +345,7 @@ theorem wellTypedState_heap_writeRef
             rw [hread_diff loc' (Ne.symm hloc')]
             exact hread_old
         funEnv_sig_consistent := hwt.funEnv_sig_consistent
+        refs_tracked_mapped := hwt.refs_tracked_mapped
       }
 
 /-- StackSafe is preserved under heap.writeRef -/
@@ -369,7 +371,7 @@ theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
       have henv_wf : TypeEnv.WellFormed cE := hfields.1
       obtain ⟨hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
         hlenv_vu, hlenv_fe, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
-        hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hvar_con, hsite_con, hrmap_live, hrmap_paths_f,
+        hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hrtm, hvar_con, hsite_con, hrmap_live, hrmap_paths_f,
         hhlb, hrmap_ht, hfe_sig, htc⟩ := hfields.2
       -- Extract base value and writePath facts for field maintenance
       have hv_leaf_read' := hv_leaf_read
@@ -391,7 +393,7 @@ theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
             rw [← hwr']; simp [Heap.write, Heap.read, lookup_insert_same]
           refine ⟨cE, cL, cR, cM, ⟨henv_wf, hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
             hlenv_vu, hlenv_fe, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
-            hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, ?_, ?_, ?_, ?_, ?_, ?_, ?_, htc⟩, ?_⟩
+            hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hrtm, ?_, ?_, ?_, ?_, ?_, ?_, ?_, htc⟩, ?_⟩
           · -- var_consistent
             intro x isv τ_x ms hvar
             have hvc := hvar_con x isv τ_x ms hvar
@@ -788,6 +790,86 @@ theorem extendWithReturns_new_mapping_type
           | unit => subst hv; exact Value.noConfusion hveq
           | «record» fs => subst hv; exact Value.noConfusion hveq
 
+/-- Monotonicity: if rmap already maps r, extendWithReturns still maps r. -/
+theorem RefMap.extendWithReturns_ne_none (rmap : RefMap) (siteEnv : SiteEnv)
+    (sites : List Site) (vals : List Value) (r : Aref)
+    (h : rmap.map r ≠ none) :
+    (RefMap.extendWithReturns rmap siteEnv sites vals).map r ≠ none := by
+  induction sites generalizing vals rmap with
+  | nil => cases vals <;> simp [RefMap.extendWithReturns, h]
+  | cons s ss ih =>
+    cases vals with
+    | nil => simp [RefMap.extendWithReturns, h]
+    | cons v vs =>
+      simp only [RefMap.extendWithReturns]
+      cases hse : lookup siteEnv s with
+      | none => exact ih rmap vs h
+      | some τ =>
+        cases τ with
+        | basic _ => exact ih rmap vs h
+        | ref bt r' bk =>
+          cases v with
+          | ref loc path =>
+            apply ih
+            show (if r = r' then some (loc, path) else rmap.map r) ≠ none
+            by_cases hrr : r = r'
+            · simp [hrr]
+            · simp [hrr]; exact h
+          | int _ => exact ih rmap vs h
+          | bool _ => exact ih rmap vs h
+          | unit => exact ih rmap vs h
+          | «record» _ => exact ih rmap vs h
+
+/-- If a result site has a ref type mapping abstract ref r, and ReturnValsWellTyped holds,
+    then extendWithReturns maps r (r is non-none in the result). -/
+theorem RefMap.extendWithReturns_maps_result_ref
+    (rmap : RefMap) (siteEnv : SiteEnv)
+    (sites : List Site) (vals : List Value) (heap : Heap) (r : Aref)
+    (hrvt : ReturnValsWellTyped vals sites siteEnv heap)
+    (s : Site) (bt : BasicMoveType) (bk : BorrowingKind)
+    (hs : s ∈ sites) (hse : lookup siteEnv s = some (.ref bt r bk)) :
+    (RefMap.extendWithReturns rmap siteEnv sites vals).map r ≠ none := by
+  induction sites generalizing vals rmap with
+  | nil => simp at hs
+  | cons s' ss ih =>
+    cases vals with
+    | nil => simp [ReturnValsWellTyped] at hrvt
+    | cons v' vs =>
+      simp only [ReturnValsWellTyped] at hrvt
+      simp only [RefMap.extendWithReturns]
+      cases hse_s' : lookup siteEnv s' with
+      | none =>
+        simp only [hse_s'] at hrvt
+        exact absurd hrvt.1 id
+      | some τ' =>
+        simp only [hse_s'] at hrvt
+        rcases List.mem_cons.mp hs with rfl | hs_in_ss
+        · -- s = s': this site maps r
+          rw [hse] at hse_s'; cases hse_s'
+          obtain ⟨loc, path, hveq, _⟩ := hrvt.1
+          cases v' with
+          | ref loc' path' =>
+            -- After this step, intermediate rmap maps r → (loc', path')
+            -- Use monotonicity to show it's preserved through remaining sites
+            exact RefMap.extendWithReturns_ne_none _ siteEnv ss vs r (by simp)
+          | int _ => simp at hveq
+          | bool _ => simp at hveq
+          | unit => simp at hveq
+          | «record» _ => simp at hveq
+        · -- s ∈ ss: recurse with IH
+          cases τ' with
+          | basic _ =>
+            exact ih rmap vs hrvt.2 hs_in_ss
+          | ref bt' r' bk' =>
+            obtain ⟨loc', path', hveq', _⟩ := hrvt.1
+            cases v' with
+            | ref l p =>
+              exact ih _ vs hrvt.2 hs_in_ss
+            | int _ => simp at hveq'
+            | bool _ => simp at hveq'
+            | unit => simp at hveq'
+            | «record» _ => simp at hveq'
+
 /-- Result sites get the correct values after bindReturnValues + extendWithReturns.
     For each result site s with type τ in siteEnv, produces a value in newSiteStore
     that matches the type under the extended rmap. -/
@@ -923,5 +1005,435 @@ theorem stackSafe_allocArgs (stack : List Frame) (ri : Option ReturnInfo)
           (stackSafe_heap_alloc stack ri heap a hss hlb)
           (heap_loc_bound_after_alloc heap a hlb)
           hrec
+
+-- ============================================================
+-- Part 6: init_fun_varEnv / addLocals lemmas
+-- (shared between InitState.lean and Preservation.lean)
+-- ============================================================
+
+/-- General foldl+insert lemma: if the initial map and every insertion satisfy P,
+    then every lookup result satisfies P. -/
+private lemma foldl_insert_lookup {K V L : Type} [DecidableEq K]
+    (xs : List L) (init : AssocMap K V) (getKey : L → K) (getValue : L → V)
+    (P : V → Prop)
+    (hinit : ∀ k v, lookup init k = some v → P v)
+    (hinsert : ∀ x, x ∈ xs → P (getValue x)) :
+    ∀ k v, lookup (xs.foldl (fun m x => insert m (getKey x) (getValue x)) init) k = some v → P v := by
+  induction xs generalizing init with
+  | nil => exact hinit
+  | cons elem rest ih =>
+    intro k v h
+    apply ih (insert init (getKey elem) (getValue elem)) _ _ k v h
+    · intro k' v' hlookup
+      by_cases heq : k' = getKey elem
+      · rw [heq, lookup_insert_same] at hlookup
+        rw [← Option.some.inj hlookup]
+        exact hinsert elem (.head rest)
+      · rw [lookup_insert_ne _ _ _ _ heq] at hlookup
+        exact hinit k' v' hlookup
+    · intro x' hmem
+      exact hinsert x' (List.mem_cons_of_mem elem hmem)
+
+/-- In add_locals_to_varEnv, .validVar entries pass through from the base env and
+    the variable is not in the locals' names. -/
+private lemma add_locals_foldl_valid (venv : VarEnv) (locals : List LocalVar)
+    (x : Var) (τ : MoveType) (ms : Mut) :
+    lookup (locals.foldl (fun env lv => insert env lv.name (.invalidVar, lv.type, .mutable)) venv) x
+      = some (.validVar, τ, ms) →
+    lookup venv x = some (.validVar, τ, ms) ∧ x ∉ locals.map (·.name) := by
+  induction locals generalizing venv with
+  | nil =>
+    simp only [List.foldl, List.map, List.not_mem_nil]
+    exact fun h => ⟨h, not_false⟩
+  | cons lv rest ih =>
+    simp only [List.foldl, List.map, List.mem_cons, not_or]
+    intro h
+    obtain ⟨hlookup, hrest⟩ := ih _ h
+    by_cases heq : x = lv.name
+    · rw [heq, lookup_insert_same] at hlookup; cases hlookup
+    · rw [lookup_insert_ne _ _ _ _ heq] at hlookup
+      exact ⟨hlookup, heq, hrest⟩
+
+/-- Non-local keys are preserved through add_locals foldl. -/
+private lemma add_locals_foldl_preserves (venv : VarEnv) (locals : List LocalVar) (x : Var) :
+    x ∉ locals.map (·.name) →
+    lookup (locals.foldl (fun env lv => insert env lv.name (.invalidVar, lv.type, .mutable)) venv) x
+      = lookup venv x := by
+  induction locals generalizing venv with
+  | nil => intro _; rfl
+  | cons lv rest ih =>
+    simp only [List.map, List.mem_cons, not_or, List.foldl]
+    intro ⟨hne, hrest⟩
+    rw [ih _ hrest, lookup_insert_ne _ _ _ _ hne]
+
+/-- All entries in init_varEnv_from_params have .validVar. -/
+private lemma init_varEnv_from_params_isValidVar (params : List (Var × MoveType))
+    (x : Var) (isv : IsValid) (τ : MoveType) (ms : Mut) :
+    lookup (init_varEnv_from_params params) x = some (isv, τ, ms) → isv = .validVar := by
+  intro h
+  unfold init_varEnv_from_params at h
+  have := foldl_insert_lookup params AssocMap.empty
+    (fun p => p.1) (fun p => (IsValid.validVar, p.2, Mut.mutable))
+    (fun v => v.1 = IsValid.validVar)
+    (by intro _ _ h; simp [lookup, AssocMap.empty] at h)
+    (by intro _ _; rfl)
+    x (isv, τ, ms) h
+  simpa using this
+
+/-- Key-aware foldl+insert: if the initial map and every insertion satisfy P(key, value),
+    then every lookup result satisfies P(key, value). -/
+private lemma foldl_insert_lookup_key {K V L : Type} [DecidableEq K]
+    (xs : List L) (init : AssocMap K V) (getKey : L → K) (getValue : L → V)
+    (P : K → V → Prop)
+    (hinit : ∀ k v, lookup init k = some v → P k v)
+    (hinsert : ∀ elem, elem ∈ xs → P (getKey elem) (getValue elem)) :
+    ∀ k v, lookup (xs.foldl (fun m e => insert m (getKey e) (getValue e)) init) k = some v → P k v := by
+  induction xs generalizing init with
+  | nil => exact hinit
+  | cons elem rest ih =>
+    intro k v h
+    apply ih (insert init (getKey elem) (getValue elem)) _ _ k v h
+    · intro k' v' hlookup
+      by_cases heq : k' = getKey elem
+      · rw [heq, lookup_insert_same] at hlookup
+        rw [← Option.some.inj hlookup, heq]
+        exact hinsert elem (.head rest)
+      · rw [lookup_insert_ne _ _ _ _ heq] at hlookup
+        exact hinit k' v' hlookup
+    · intro x' hmem
+      exact hinsert x' (.tail _ hmem)
+
+/-- If lookup in init_fun_varEnv gives .validVar, then the type comes from a param. -/
+lemma init_fun_varEnv_valid_in_params (f : FunDef) (x : Var) (τ : MoveType) (ms : Mut) :
+    lookup (init_fun_varEnv f) x = some (.validVar, τ, ms) →
+    (x, τ) ∈ f.params := by
+  unfold init_fun_varEnv add_locals_to_varEnv init_varEnv_from_params
+  intro h
+  have ⟨hlookup_params, _⟩ := add_locals_foldl_valid _ _ _ _ _ h
+  have := foldl_insert_lookup_key f.params AssocMap.empty
+    (fun p => p.1) (fun p => (IsValid.validVar, p.2, Mut.mutable))
+    (fun k v => ∃ τ₀, (k, τ₀) ∈ f.params ∧ v = (IsValid.validVar, τ₀, Mut.mutable))
+    (by intro _ _ h; simp [lookup, AssocMap.empty] at h)
+    (by intro p hmem; exact ⟨p.2, (Prod.eta p ▸ hmem), rfl⟩)
+    x (.validVar, τ, ms) hlookup_params
+  obtain ⟨τ₀, hmem, heq⟩ := this
+  simp only [Prod.mk.injEq, true_and] at heq
+  rw [heq.1]; exact hmem
+
+/-- If lookup in init_fun_varEnv gives .validVar, then x is not a local name. -/
+lemma init_fun_varEnv_valid_not_local (f : FunDef) (x : Var) (τ : MoveType) (ms : Mut) :
+    lookup (init_fun_varEnv f) x = some (.validVar, τ, ms) →
+    x ∉ f.locals.map (·.name) := by
+  unfold init_fun_varEnv add_locals_to_varEnv
+  intro h
+  exact (add_locals_foldl_valid _ _ _ _ _ h).2
+
+/-- If lookup in init_fun_varEnv gives .invalidVar, then x is a local name. -/
+lemma init_fun_varEnv_invalid_is_local (f : FunDef) (x : Var) (τ : MoveType) (ms : Mut) :
+    lookup (init_fun_varEnv f) x = some (.invalidVar, τ, ms) →
+    x ∈ f.locals.map (·.name) := by
+  unfold init_fun_varEnv add_locals_to_varEnv
+  intro h
+  by_contra habs
+  rw [add_locals_foldl_preserves _ _ _ habs] at h
+  have := init_varEnv_from_params_isValidVar f.params x .invalidVar τ ms h
+  cases this  -- .invalidVar = .validVar is impossible
+
+/-- addLocals preserves lookups for variables not in the locals list. -/
+lemma addLocals_preserves_lookup (vs : VarStore) (locals : List LocalVar) (x : Var)
+    (hx : x ∉ locals.map (·.name)) : lookup (addLocals vs locals) x = lookup vs x := by
+  induction locals generalizing vs with
+  | nil => rfl
+  | cons lv rest ih =>
+    simp only [List.map, List.mem_cons, not_or] at hx
+    simp only [addLocals]
+    rw [ih (insert vs lv.name none) hx.2, lookup_insert_ne _ _ _ _ hx.1]
+
+/-- addLocals sets variables that appear in locals to none. -/
+lemma addLocals_local_some_none (vs : VarStore) (locals : List LocalVar) (x : Var)
+    (hx : x ∈ locals.map (·.name)) : lookup (addLocals vs locals) x = some none := by
+  induction locals generalizing vs with
+  | nil => cases hx
+  | cons lv rest ih =>
+    simp only [List.map, List.mem_cons] at hx
+    simp only [addLocals]
+    rcases hx with heq | hmem
+    · -- x = lv.name
+      by_cases hrest : x ∈ rest.map (·.name)
+      · exact ih _ hrest
+      · rw [addLocals_preserves_lookup _ _ _ hrest, heq, lookup_insert_same]
+    · exact ih _ hmem
+
+-- ============================================================
+-- Part 7: Heap.alloc + allocArgs helper lemmas
+-- (shared between InitState.lean and Preservation.lean)
+-- ============================================================
+
+lemma heap_alloc_nextLoc (h : Heap) (v : Value) :
+    (h.alloc v).1.nextLoc = h.nextLoc + 1 := by
+  simp [Heap.alloc]
+
+lemma heap_alloc_read_same (h : Heap) (v : Value) :
+    (h.alloc v).1.read h.nextLoc = some v := by
+  simp [Heap.alloc, Heap.read, lookup_insert_same]
+
+lemma heap_alloc_read_ne (h : Heap) (v : Value) (loc : Loc) (hne : loc ≠ h.nextLoc) :
+    (h.alloc v).1.read loc = h.read loc := by
+  simp only [Heap.alloc, Heap.read]
+  exact lookup_insert_ne h.store h.nextLoc loc v hne
+
+lemma heap_alloc_preserves_bound (h : Heap) (v : Value)
+    (hlb : ∀ loc, h.read loc ≠ none → loc < h.nextLoc) :
+    ∀ loc, (h.alloc v).1.read loc ≠ none → loc < (h.alloc v).1.nextLoc := by
+  intro loc hread
+  rw [show (h.alloc v).1.nextLoc = h.nextLoc + 1 from by simp [Heap.alloc]]
+  by_cases heq : loc = h.nextLoc
+  · subst heq; exact Nat.lt_succ_self _
+  · have hread' : h.read loc ≠ none := by
+      rwa [heap_alloc_read_ne h v loc heq] at hread
+    exact Nat.lt_succ_of_lt (hlb loc hread')
+
+/-- allocArgs preserves reads at locations below the initial nextLoc. -/
+lemma allocArgs_preserves_old_read (heap : Heap) (params : List (Var × MoveType))
+    (args : List Value) (heap_out : Heap) (vs : VarStore) :
+    allocArgs heap params args = some (heap_out, vs) →
+    ∀ loc, loc < heap.nextLoc → heap_out.read loc = heap.read loc := by
+  induction params generalizing heap args heap_out vs with
+  | nil =>
+    intro halloc loc hloc
+    cases args with
+    | nil =>
+      have : heap_out = heap := by
+        simp only [allocArgs, Option.some.injEq, Prod.mk.injEq] at halloc
+        exact halloc.1.symm
+      rw [this]
+    | cons => simp [allocArgs] at halloc
+  | cons p ps ih =>
+    intro halloc loc hloc
+    obtain ⟨y, τ_y⟩ := p
+    cases args with
+    | nil => simp [allocArgs] at halloc
+    | cons a as' =>
+      -- Unfold allocArgs and extract recursive call result
+      simp only [allocArgs, Bind.bind, Option.bind] at halloc
+      cases hrec : allocArgs (heap.alloc a).1 ps as' with
+      | none => rw [hrec] at halloc; simp at halloc
+      | some pair =>
+        obtain ⟨h', vs'⟩ := pair
+        rw [hrec] at halloc; dsimp at halloc
+        simp only [Option.some.injEq, Prod.mk.injEq] at halloc
+        rw [halloc.1.symm]
+        have hloc' : loc < (heap.alloc a).1.nextLoc := by
+          rw [show (heap.alloc a).1.nextLoc = heap.nextLoc + 1 from by simp [Heap.alloc]]
+          omega
+        rw [ih (heap.alloc a).1 as' h' vs' hrec loc hloc']
+        have hne : loc ≠ heap.nextLoc := by intro h; subst h; exact absurd hloc (Nat.lt_irrefl _)
+        exact heap_alloc_read_ne heap a loc hne
+
+/-- allocArgs preserves the heap_loc_bound invariant. -/
+lemma allocArgs_heap_loc_bound' (heap : Heap) (params : List (Var × MoveType))
+    (args : List Value) (heap_out : Heap) (vs : VarStore) :
+    allocArgs heap params args = some (heap_out, vs) →
+    (∀ loc, heap.read loc ≠ none → loc < heap.nextLoc) →
+    ∀ loc, heap_out.read loc ≠ none → loc < heap_out.nextLoc := by
+  induction params generalizing heap args heap_out vs with
+  | nil =>
+    intro halloc hlb
+    cases args with
+    | nil =>
+      have : heap_out = heap := by
+        simp only [allocArgs, Option.some.injEq, Prod.mk.injEq] at halloc
+        exact halloc.1.symm
+      rw [this]; exact hlb
+    | cons => simp [allocArgs] at halloc
+  | cons p ps ih =>
+    intro halloc hlb
+    obtain ⟨y, τ_y⟩ := p
+    cases args with
+    | nil => simp [allocArgs] at halloc
+    | cons a as' =>
+      simp only [allocArgs, Bind.bind, Option.bind] at halloc
+      cases hrec : allocArgs (heap.alloc a).1 ps as' with
+      | none => rw [hrec] at halloc; simp at halloc
+      | some pair =>
+        obtain ⟨h', vs'⟩ := pair
+        rw [hrec] at halloc; dsimp at halloc
+        simp only [Option.some.injEq, Prod.mk.injEq] at halloc
+        rw [halloc.1.symm]
+        exact ih (heap.alloc a).1 as' h' vs' hrec
+          (heap_alloc_preserves_bound heap a hlb)
+
+/-- allocArgs succeeds only when params.length = args.length -/
+lemma allocArgs_length_eq (heap : Heap) (params : List (Var × MoveType))
+    (args : List Value) (heap_out : Heap) (vs : VarStore)
+    (halloc : allocArgs heap params args = some (heap_out, vs)) :
+    params.length = args.length := by
+  induction params generalizing heap args heap_out vs with
+  | nil =>
+    cases args with
+    | nil => rfl
+    | cons _ _ => simp [allocArgs] at halloc
+  | cons p ps ih =>
+    obtain ⟨y, τ_y⟩ := p
+    cases args with
+    | nil => simp [allocArgs] at halloc
+    | cons a as' =>
+      simp only [allocArgs, Bind.bind, Option.bind] at halloc
+      cases hrec : allocArgs (heap.alloc a).1 ps as' with
+      | none => rw [hrec] at halloc; simp at halloc
+      | some pair =>
+        obtain ⟨h', vs'⟩ := pair
+        exact congrArg Nat.succ (ih (heap.alloc a).1 as' h' vs' hrec)
+
+/-- If a ∈ l₁ and l₁.length = l₂.length, then ∃ b, (a, b) ∈ l₁.zip l₂ -/
+lemma exists_mem_zip_right {α β : Type} {l₁ : List α} {l₂ : List β}
+    {a : α} (hlen : l₁.length = l₂.length) (hmem : a ∈ l₁) :
+    ∃ b, (a, b) ∈ l₁.zip l₂ := by
+  induction l₁ generalizing l₂ with
+  | nil => simp at hmem
+  | cons x xs ih =>
+    cases l₂ with
+    | nil => simp at hlen
+    | cons y ys =>
+      simp only [List.mem_cons] at hmem
+      rcases hmem with rfl | hmem
+      · exact ⟨y, by simp⟩
+      · have ⟨b, hb⟩ := ih (Nat.succ.inj hlen) hmem
+        exact ⟨b, List.mem_cons_of_mem _ hb⟩
+
+/-- List.lookup succeeds when the key-value pair is in the list and keys are Nodup. -/
+lemma list_lookup_of_mem_nodup {K V : Type} [BEq K] [LawfulBEq K]
+    {l : List (K × V)} {k : K} {v : V}
+    (hmem : (k, v) ∈ l) (hnodup : (l.map Prod.fst).Nodup) :
+    l.lookup k = some v := by
+  induction l with
+  | nil => simp at hmem
+  | cons hd tl ih =>
+    simp only [List.map, List.nodup_cons] at hnodup
+    obtain ⟨hnotin, hnodup_tl⟩ := hnodup
+    simp only [List.mem_cons] at hmem
+    rcases hmem with rfl | hmem
+    · simp [List.lookup]
+    · simp only [List.lookup]
+      split
+      · rename_i heq
+        have hkeq : k = hd.1 := beq_iff_eq.mp heq
+        have hk_in_tl : k ∈ tl.map Prod.fst := by
+          rw [List.mem_map]; exact ⟨(k, v), hmem, rfl⟩
+        exact absurd (hkeq ▸ hk_in_tl) hnotin
+      · exact ih hmem hnodup_tl
+
+/-- Ref keys from zip+filterMap form a sublist of ref keys from params-only filterMap. -/
+lemma paramRefKeys_sublist (params : List (Var × MoveType)) (args : List Value) :
+    List.Sublist
+    ((params.zip args).filterMap (fun ((_, τ), v) =>
+      match τ, v with
+      | .ref _ r _, .ref _ _ => some r
+      | _, _ => none))
+    (params.filterMap (fun (_, τ) => match τ with
+      | .ref _ r _ => some r
+      | _ => none)) := by
+  induction params generalizing args with
+  | nil => exact List.Sublist.slnil
+  | cons p ps ih =>
+    obtain ⟨_, τ⟩ := p
+    cases args with
+    | nil => simp only [List.zip_nil_right, List.filterMap_nil]; exact List.nil_sublist _
+    | cons a as' =>
+      simp only [List.zip_cons_cons, List.filterMap_cons]
+      cases τ with
+      | basic _ => exact ih as'
+      | ref bt r bk =>
+        cases a with
+        | ref _ _ => exact List.Sublist.cons₂ _ (ih as')
+        | int _ => exact List.Sublist.cons _ (ih as')
+        | bool _ => exact List.Sublist.cons _ (ih as')
+        | unit => exact List.Sublist.cons _ (ih as')
+        | record _ => exact List.Sublist.cons _ (ih as')
+
+/-- allocArgs stores the exact argument value for each param/arg pair. -/
+lemma allocArgs_param_stores_arg (heap : Heap) (params : List (Var × MoveType))
+    (args : List Value) (heap_out : Heap) (vs : VarStore)
+    (hlb : ∀ loc, heap.read loc ≠ none → loc < heap.nextLoc)
+    (halloc : allocArgs heap params args = some (heap_out, vs))
+    (hnodup : (params.map Prod.fst).Nodup) :
+    ∀ x τ v, ((x, τ), v) ∈ (params.zip args) →
+    ∃ loc, lookup vs x = some (some loc) ∧ heap_out.read loc = some v := by
+  induction params generalizing heap args heap_out vs with
+  | nil => intro x τ v hmem; simp at hmem
+  | cons p ps ih =>
+    intro x τ v hmem
+    obtain ⟨y, τ_y⟩ := p
+    cases args with
+    | nil => simp [allocArgs] at halloc
+    | cons a as' =>
+      simp only [allocArgs, Bind.bind, Option.bind] at halloc
+      cases hrec : allocArgs (heap.alloc a).1 ps as' with
+      | none => rw [hrec] at halloc; simp at halloc
+      | some pair =>
+        obtain ⟨h', vs'⟩ := pair
+        rw [hrec] at halloc; dsimp at halloc
+        simp only [Option.some.injEq, Prod.mk.injEq] at halloc
+        obtain ⟨rfl, rfl⟩ := halloc
+        simp only [List.map, List.nodup_cons] at hnodup
+        obtain ⟨hy_notin, hnodup_ps⟩ := hnodup
+        simp only [List.zip_cons_cons, List.mem_cons, Prod.mk.injEq] at hmem
+        rcases hmem with ⟨⟨rfl, rfl⟩, rfl⟩ | hmem_rest
+        · -- head case: x = y, v = a (after rfl, a is replaced by v)
+          refine ⟨(heap.alloc v).2, lookup_insert_same _ _ _, ?_⟩
+          have hloc : (heap.alloc v).2 < (heap.alloc v).1.nextLoc := by
+            simp [Heap.alloc]
+          rw [allocArgs_preserves_old_read (heap.alloc v).1 ps as' h' vs' hrec
+              (heap.alloc v).2 hloc]
+          exact heap_alloc_read_same heap v
+        · -- tail case
+          have hx_in_ps : x ∈ ps.map Prod.fst := by
+            rw [List.mem_map]
+            exact ⟨(x, τ), (List.of_mem_zip hmem_rest).1, rfl⟩
+          have heq : x ≠ y := fun h => hy_notin (h ▸ hx_in_ps)
+          have ⟨loc, hlookup, hread⟩ := ih (heap.alloc a).1 as' h' vs'
+            (heap_alloc_preserves_bound heap a hlb) hrec hnodup_ps x τ v hmem_rest
+          exact ⟨loc, by rw [lookup_insert_ne _ _ _ _ heq]; exact hlookup, hread⟩
+
+/-- If two params both contribute the same ref r to the filterMap, they must be the same param. -/
+lemma nodup_filterMap_params_same_ref
+    (params : List (Var × MoveType))
+    (hnodup_names : (params.map Prod.fst).Nodup)
+    (hnodup_refs : (params.filterMap (fun (_, τ) => match τ with
+      | .ref _ r _ => some r | _ => none)).Nodup)
+    {x y : Var} {bt bt' : BasicMoveType} {r : Aref} {bk bk' : BorrowingKind}
+    (hpx : (x, MoveType.ref bt r bk) ∈ params)
+    (hpy : (y, MoveType.ref bt' r bk') ∈ params) :
+    x = y := by
+  induction params with
+  | nil => simp at hpx
+  | cons hd tl ih =>
+    simp only [List.map, List.nodup_cons] at hnodup_names
+    obtain ⟨hnotin_names, hnodup_names_tl⟩ := hnodup_names
+    obtain ⟨z, τ_z⟩ := hd
+    simp only [List.mem_cons, Prod.mk.injEq] at hpx hpy
+    have hnodup_refs_tl : (tl.filterMap (fun (_, τ) => match τ with
+        | .ref _ r' _ => some r' | _ => none)).Nodup := by
+      cases τ_z with
+      | basic _ => simpa only [List.filterMap_cons] using hnodup_refs
+      | ref _ _ _ => exact (List.nodup_cons.mp (by simpa only [List.filterMap_cons] using hnodup_refs)).2
+    rcases hpx with ⟨rfl, rfl⟩ | hpx_tl
+    · -- x is head
+      rcases hpy with ⟨rfl, _⟩ | hpy_tl
+      · rfl
+      · -- y in tail with same r → r ∈ filterMap of tail, but head also contributes r → Nodup contradiction
+        exfalso
+        have : r ∈ tl.filterMap (fun (_, τ) => match τ with | .ref _ r' _ => some r' | _ => none) :=
+          List.mem_filterMap.mpr ⟨(y, .ref bt' r bk'), hpy_tl, by simp⟩
+        have := (List.nodup_cons.mp (by simpa only [List.filterMap_cons] using hnodup_refs)).1
+        contradiction
+    · rcases hpy with ⟨rfl, rfl⟩ | hpy_tl
+      · -- y is head, x in tail
+        exfalso
+        have : r ∈ tl.filterMap (fun (_, τ) => match τ with | .ref _ r' _ => some r' | _ => none) :=
+          List.mem_filterMap.mpr ⟨(x, .ref bt r bk), hpx_tl, by simp⟩
+        have := (List.nodup_cons.mp (by simpa only [List.filterMap_cons] using hnodup_refs)).1
+        contradiction
+      · exact ih hnodup_names_tl hnodup_refs_tl hpx_tl hpy_tl
 
 end LeanMove.Typing.TypeSoundness

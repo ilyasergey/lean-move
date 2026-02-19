@@ -634,6 +634,9 @@ structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
             fdef.params.map (fun (_, τ) => τ.toParamType) = sig.params ∧
             fdef.returnType = sig.returnType
 
+  -- 23. All tracked refs are either root or mapped by rmap
+  refs_tracked_mapped : ∀ r, r ∈ env.pathEnv.refs → r = .root ∨ rmap.map r ≠ none
+
 /-- Return values are well-typed: each value matches its corresponding site type.
     For ref types, also requires heap readability (needed for rmap_live and rmap_has_type). -/
 def ReturnValsWellTyped : List Value → List Site → SiteEnv → Heap → Prop
@@ -710,6 +713,9 @@ def StackSafe : List Frame → Option ReturnInfo → Heap → List ParamType →
       -- Result-site refs are unmapped in callerRmap (they're fresh output refs)
       (∀ s bt r bk, s ∈ ri.resultSites →
         lookup callerEnv.siteEnv s = some (.ref bt r bk) → callerRmap.map r = none) ∧
+      -- refs_tracked_or_result: tracked refs are root, mapped, or result-site refs
+      (∀ r, r ∈ callerEnv.pathEnv.refs → r = .root ∨ callerRmap.map r ≠ none ∨
+        (∃ s bt bk, s ∈ ri.resultSites ∧ lookup callerEnv.siteEnv s = some (.ref bt r bk))) ∧
 
       -- == Heap-dependent fields (maintained through callee heap operations) ==
       (∀ x isv τ ms, lookup callerEnv.varEnv x = some (isv, τ, ms) →

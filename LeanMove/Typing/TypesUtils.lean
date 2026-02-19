@@ -1529,6 +1529,17 @@ lemma update_with_extension_z_mem (z x : Aref) (path : List PathElement) (pe : P
   · simp only [hzin, not_true_eq_false, ↓reduceIte]
   · simp only [hzin, not_false_eq_true, ↓reduceIte, List.mem_cons, true_or]
 
+lemma update_with_extension_refs_bounded (z x : Aref) (path : List PathElement) (pe : PathEnv) :
+    ∀ r, r ∈ (update_with_extension z x path pe).refs → r = z ∨ r ∈ pe.refs := by
+  intro r hr
+  simp only [update_with_extension] at hr
+  by_cases hzin : z ∈ pe.refs
+  · simp only [hzin, not_true_eq_false, ↓reduceIte] at hr; exact Or.inr hr
+  · simp only [hzin, not_false_eq_true, ↓reduceIte, List.mem_cons] at hr
+    rcases hr with rfl | hr
+    · exact Or.inl rfl
+    · exact Or.inr hr
+
 /- ---------------------------------------------------- -/
 /-       TypeEnv.equiv lemmas                            -/
 /- ---------------------------------------------------- -/

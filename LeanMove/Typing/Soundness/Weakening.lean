@@ -3573,6 +3573,399 @@ lemma populate_call_outputs_refs_mono
                                pathEnv := update_with_epsilon r r env.pathEnv} _ _ hpop r'
               (update_with_extension_refs_mono r r [] env.pathEnv r' hr'))
 
+/-- New refs in populate_call_outputs come from env or outRefs -/
+lemma populate_call_outputs_refs_bounded
+    (env env' : TypeEnv) (as : List Site) (rets : List ParamType) (outRefs : List Aref)
+    (hpop : populate_call_outputs env as rets outRefs = some env') :
+    ∀ r, r ∈ env'.pathEnv.refs → r ∈ env.pathEnv.refs ∨ r ∈ outRefs := by
+  induction as generalizing env rets outRefs with
+  | nil =>
+    cases rets with
+    | nil =>
+      simp only [populate_call_outputs] at hpop
+      split at hpop
+      · simp only [Option.some.injEq] at hpop; subst hpop; intro r hr; exact Or.inl hr
+      · simp at hpop
+    | cons _ _ => simp [populate_call_outputs] at hpop
+  | cons site as' ih =>
+    cases rets with
+    | nil => simp [populate_call_outputs] at hpop
+    | cons pt rets' =>
+      obtain ⟨bt, isRefMut⟩ := pt
+      cases isRefMut with
+      | none =>
+        simp only [populate_call_outputs] at hpop
+        exact ih {env with siteEnv := insert env.siteEnv site (.basic bt)} _ _ hpop
+      | some b =>
+        cases b <;> (
+          cases outRefs with
+          | nil => simp [populate_call_outputs] at hpop
+          | cons r outRefs' =>
+            simp only [populate_call_outputs] at hpop
+            intro r' hr'
+            have := ih {env with siteEnv := insert env.siteEnv site (.ref bt r _),
+                                 pathEnv := update_with_epsilon r r env.pathEnv} _ _ hpop r' hr'
+            rcases this with h | h
+            · -- r' ∈ intermediate env.pathEnv.refs
+              -- r' ∈ (update_with_epsilon r r env.pathEnv).refs → r' = r ∨ r' ∈ env.pathEnv.refs
+              simp only [update_with_epsilon, update_with_extension] at h
+              by_cases hrin : r ∈ env.pathEnv.refs
+              · simp only [hrin, not_true_eq_false, ↓reduceIte] at h; exact Or.inl h
+              · simp only [hrin, not_false_eq_true, ↓reduceIte, List.mem_cons] at h
+                rcases h with rfl | hmem
+                · exact Or.inr List.mem_cons_self
+                · exact Or.inl hmem
+            · exact Or.inr (List.mem_cons_of_mem _ h))
+
+/-- Any ref-typed siteEnv entry in env' either existed in env or has ref from outRefs -/
+lemma populate_call_outputs_siteEnv_ref_origin
+    (env env' : TypeEnv) (as : List Site) (rets : List ParamType) (outRefs : List Aref)
+    (hpop : populate_call_outputs env as rets outRefs = some env') :
+    ∀ s bt r bk, lookup env'.siteEnv s = some (.ref bt r bk) →
+    (lookup env.siteEnv s = some (.ref bt r bk)) ∨ r ∈ outRefs := by
+  induction as generalizing env rets outRefs with
+  | nil =>
+    cases rets with
+    | nil =>
+      simp only [populate_call_outputs] at hpop
+      split at hpop
+      · simp only [Option.some.injEq] at hpop; subst hpop; intro s bt r bk h; exact Or.inl h
+      · simp at hpop
+    | cons _ _ => simp [populate_call_outputs] at hpop
+  | cons site as' ih =>
+    cases rets with
+    | nil => simp [populate_call_outputs] at hpop
+    | cons pt rets' =>
+      obtain ⟨bt_p, isRefMut⟩ := pt
+      cases isRefMut with
+      | none =>
+        simp only [populate_call_outputs] at hpop
+        intro s bt r bk hlook
+        rcases ih {env with siteEnv := insert env.siteEnv site (.basic bt_p)} _ _ hpop
+          s bt r bk hlook with h | h
+        · -- lookup in intermediate siteEnv
+          by_cases hs : s = site
+          · subst hs; rw [lookup_insert_same] at h; cases h
+          · rw [lookup_insert_ne _ _ _ _ hs] at h; exact Or.inl h
+        · exact Or.inr h
+      | some b =>
+        cases b <;> (
+          cases outRefs with
+          | nil => simp [populate_call_outputs] at hpop
+          | cons r outRefs' =>
+            simp only [populate_call_outputs] at hpop
+            intro s bt' r' bk' hlook
+            rcases ih {env with siteEnv := insert env.siteEnv site (.ref bt_p r _),
+                                pathEnv := update_with_epsilon r r env.pathEnv} _ _ hpop
+              s bt' r' bk' hlook with h | h
+            · -- lookup in intermediate siteEnv
+              by_cases hs : s = site
+              · subst hs; rw [lookup_insert_same] at h
+                simp only [Option.some.injEq, MoveType.ref.injEq] at h
+                exact Or.inr (h.2.1 ▸ List.mem_cons_self)
+              · rw [lookup_insert_ne _ _ _ _ hs] at h; exact Or.inl h
+            · exact Or.inr (List.mem_cons_of_mem _ h))
+
+/-- populate_call_outputs preserves siteEnv entries for sites not in the result list -/
+lemma populate_call_outputs_siteEnv_non_member
+    (env env' : TypeEnv) (as : List Site) (rets : List ParamType) (outRefs : List Aref)
+    (hpop : populate_call_outputs env as rets outRefs = some env') :
+    ∀ s, s ∉ as → lookup env'.siteEnv s = lookup env.siteEnv s := by
+  induction as generalizing env rets outRefs with
+  | nil =>
+    cases rets with
+    | nil =>
+      simp only [populate_call_outputs] at hpop
+      split at hpop
+      · simp only [Option.some.injEq] at hpop; subst hpop; intro s _; rfl
+      · simp at hpop
+    | cons _ _ => simp [populate_call_outputs] at hpop
+  | cons site as' ih =>
+    cases rets with
+    | nil => simp [populate_call_outputs] at hpop
+    | cons pt rets' =>
+      obtain ⟨bt, isRefMut⟩ := pt
+      cases isRefMut with
+      | none =>
+        simp only [populate_call_outputs] at hpop
+        intro s hs
+        have hne : s ≠ site := fun h => hs (h ▸ List.Mem.head _)
+        have hni : s ∉ as' := fun h => hs (List.Mem.tail _ h)
+        rw [ih {env with siteEnv := insert env.siteEnv site (.basic bt)} _ _ hpop s hni]
+        rw [lookup_insert_ne _ _ _ _ hne]
+      | some b =>
+        cases b <;> (
+          cases outRefs with
+          | nil => simp [populate_call_outputs] at hpop
+          | cons r outRefs' =>
+            simp only [populate_call_outputs] at hpop
+            intro s hs
+            have hne : s ≠ site := fun h => hs (h ▸ List.Mem.head _)
+            have hni : s ∉ as' := fun h => hs (List.Mem.tail _ h)
+            rw [ih {env with siteEnv := insert env.siteEnv site (.ref bt r _),
+                             pathEnv := update_with_epsilon r r env.pathEnv} _ _ hpop s hni]
+            rw [lookup_insert_ne _ _ _ _ hne])
+
+/-- Each outRef consumed by populate is associated with a result site in env'.siteEnv -/
+lemma populate_call_outputs_outRef_has_site
+    (env env' : TypeEnv) (as : List Site) (rets : List ParamType) (outRefs : List Aref)
+    (hnodup : List.Nodup as)
+    (hpop : populate_call_outputs env as rets outRefs = some env') :
+    ∀ r, r ∈ outRefs →
+    ∃ s bt bk, s ∈ as ∧ lookup env'.siteEnv s = some (.ref bt r bk) := by
+  induction as generalizing env rets outRefs with
+  | nil =>
+    cases rets with
+    | nil =>
+      simp only [populate_call_outputs] at hpop
+      split at hpop
+      · simp only [Option.some.injEq] at hpop; subst hpop
+        intro r hr; simp only [List.isEmpty_iff] at *
+        rw [‹outRefs = []›] at hr; simp at hr
+      · simp at hpop
+    | cons _ _ => simp [populate_call_outputs] at hpop
+  | cons site as' ih =>
+    cases rets with
+    | nil => simp [populate_call_outputs] at hpop
+    | cons pt rets' =>
+      obtain ⟨bt_p, isRefMut⟩ := pt
+      rw [List.nodup_cons] at hnodup
+      obtain ⟨hsite_not_in, hnodup'⟩ := hnodup
+      cases isRefMut with
+      | none =>
+        simp only [populate_call_outputs] at hpop
+        intro r hr
+        obtain ⟨s, bt, bk, hs, hlook⟩ :=
+          ih {env with siteEnv := insert env.siteEnv site (.basic bt_p)} _ _ hnodup' hpop r hr
+        exact ⟨s, bt, bk, List.mem_cons_of_mem _ hs, hlook⟩
+      | some b =>
+        cases b <;> (
+          cases outRefs with
+          | nil => simp [populate_call_outputs] at hpop
+          | cons r0 outRefs' =>
+            simp only [populate_call_outputs] at hpop
+            intro r hr
+            rcases List.mem_cons.mp hr with rfl | hr'
+            · -- r = r0: site ∉ as' (from nodup), so populate preserves site's entry
+              have hpreserve := populate_call_outputs_siteEnv_non_member
+                {env with siteEnv := insert env.siteEnv site (.ref bt_p r _),
+                          pathEnv := update_with_epsilon r r env.pathEnv}
+                env' as' rets' outRefs' hpop site hsite_not_in
+              exact ⟨site, bt_p, _, List.Mem.head _,
+                hpreserve ▸ lookup_insert_same _ _ _⟩
+            · -- r ∈ outRefs': by IH
+              obtain ⟨s, bt, bk, hs, hlook⟩ :=
+                ih {env with siteEnv := insert env.siteEnv site (.ref bt_p r0 _),
+                             pathEnv := update_with_epsilon r0 r0 env.pathEnv} _ _ hnodup' hpop r hr'
+              exact ⟨s, bt, bk, List.mem_cons_of_mem _ hs, hlook⟩)
+
+/-- Paths between non-outRef refs are preserved through populate_call_outputs -/
+lemma populate_call_outputs_paths_preserved
+    (env env' : TypeEnv) (as : List Site) (rets : List ParamType) (outRefs : List Aref)
+    (hfresh : ∀ r ∈ outRefs, r ∉ env.pathEnv.refs)
+    (hnodup : List.Nodup outRefs)
+    (hpop : populate_call_outputs env as rets outRefs = some env') :
+    ∀ u v, u ∉ outRefs → v ∉ outRefs →
+    env'.pathEnv.paths (u, v) = env.pathEnv.paths (u, v) := by
+  induction as generalizing env rets outRefs with
+  | nil =>
+    cases rets with
+    | nil =>
+      simp only [populate_call_outputs] at hpop
+      split at hpop
+      · simp only [Option.some.injEq] at hpop; subst hpop; intro u v _ _; rfl
+      · simp at hpop
+    | cons _ _ => simp [populate_call_outputs] at hpop
+  | cons site as' ih =>
+    cases rets with
+    | nil => simp [populate_call_outputs] at hpop
+    | cons pt rets' =>
+      obtain ⟨bt_p, isRefMut⟩ := pt
+      cases isRefMut with
+      | none =>
+        simp only [populate_call_outputs] at hpop
+        exact ih {env with siteEnv := insert env.siteEnv site (.basic bt_p)} _ _ hfresh hnodup hpop
+      | some b =>
+        cases b <;> (
+          cases outRefs with
+          | nil => simp [populate_call_outputs] at hpop
+          | cons r outRefs' =>
+            simp only [populate_call_outputs] at hpop
+            intro u v hu hv
+            have hr_fresh := hfresh r (List.Mem.head _)
+            have hu_ne_r : u ≠ r := fun h => hu (h ▸ List.Mem.head _)
+            have hv_ne_r : v ≠ r := fun h => hv (h ▸ List.Mem.head _)
+            have hu' : u ∉ outRefs' := fun h => hu (List.mem_cons_of_mem _ h)
+            have hv' : v ∉ outRefs' := fun h => hv (List.mem_cons_of_mem _ h)
+            have hfresh' : ∀ r' ∈ outRefs', r' ∉
+                (update_with_epsilon r r env.pathEnv).refs := by
+              intro r' hr'
+              rw [uwe_epsilon_refs_fresh r r env.pathEnv hr_fresh]
+              simp only [List.mem_cons, not_or]
+              exact ⟨by rw [List.nodup_cons] at hnodup; intro h; exact hnodup.1 (h ▸ hr'),
+                     hfresh r' (List.mem_cons_of_mem _ hr')⟩
+            have hnodup' : List.Nodup outRefs' := by
+              rw [List.nodup_cons] at hnodup; exact hnodup.2
+            rw [← uwe_paths_ne_ne r r [] env.pathEnv u v hu_ne_r hv_ne_r]
+            exact ih {env with siteEnv := insert env.siteEnv site (.ref bt_p r _),
+                               pathEnv := update_with_epsilon r r env.pathEnv}
+              rets' outRefs' hfresh' hnodup' hpop u v hu' hv')
+
+/-- Output refs are isolated in the populated env: no cross-paths with any other ref -/
+lemma populate_call_outputs_outRef_isolated
+    (env env' : TypeEnv) (as : List Site) (rets : List ParamType) (outRefs : List Aref)
+    (hfresh : ∀ r ∈ outRefs, r ∉ env.pathEnv.refs)
+    (hfresh_root : ∀ r ∈ outRefs, r ≠ Aref.root)
+    (hnodup : List.Nodup outRefs)
+    (hpaths_from : ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hpaths_to : ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hpop : populate_call_outputs env as rets outRefs = some env') :
+    ∀ r ∈ outRefs, ∀ w, w ≠ r →
+      (∀ p, ¬interpret_regex (env'.pathEnv.paths (w, r)) p) ∧
+      (∀ p, ¬interpret_regex (env'.pathEnv.paths (r, w)) p) := by
+  induction as generalizing env rets outRefs with
+  | nil =>
+    cases rets with
+    | nil =>
+      simp only [populate_call_outputs] at hpop
+      split at hpop
+      · simp only [Option.some.injEq] at hpop; subst hpop
+        intro r hr; simp only [List.isEmpty_iff] at *; rw [‹outRefs = []›] at hr; simp at hr
+      · simp at hpop
+    | cons _ _ => simp [populate_call_outputs] at hpop
+  | cons site as' ih =>
+    cases rets with
+    | nil => simp [populate_call_outputs] at hpop
+    | cons pt rets' =>
+      obtain ⟨bt_p, isRefMut⟩ := pt
+      cases isRefMut with
+      | none =>
+        simp only [populate_call_outputs] at hpop
+        exact ih {env with siteEnv := insert env.siteEnv site (.basic bt_p)} _ _
+          hfresh hfresh_root hnodup hpaths_from hpaths_to hpop
+      | some b =>
+        cases b <;> (
+          cases outRefs with
+          | nil => simp [populate_call_outputs] at hpop
+          | cons r outRefs' =>
+            simp only [populate_call_outputs] at hpop
+            have hr_fresh := hfresh r (List.Mem.head _)
+            have hr_root := hfresh_root r (List.Mem.head _)
+            have hr_not_in_rest : r ∉ outRefs' := by
+              rw [List.nodup_cons] at hnodup; exact hnodup.1
+            have hfresh' : ∀ r' ∈ outRefs', r' ∉
+                (update_with_epsilon r r env.pathEnv).refs := by
+              intro r' hr'
+              rw [uwe_epsilon_refs_fresh r r env.pathEnv hr_fresh]
+              simp only [List.mem_cons, not_or]
+              exact ⟨by rw [List.nodup_cons] at hnodup; intro h; exact hnodup.1 (h ▸ hr'),
+                     hfresh r' (List.mem_cons_of_mem _ hr')⟩
+            have hnodup' : List.Nodup outRefs' := by
+              rw [List.nodup_cons] at hnodup; exact hnodup.2
+            have hpaths_from' := update_with_extension_paths_from_non_member
+              r r [] env.pathEnv hpaths_from (Or.inr rfl)
+            have hpaths_to' := update_with_extension_paths_to_non_member
+              r r [] env.pathEnv hpaths_to (Or.inr rfl)
+            have ih_result := ih
+              {env with siteEnv := insert env.siteEnv site (.ref bt_p r _),
+                        pathEnv := update_with_epsilon r r env.pathEnv}
+              rets' outRefs' hfresh' (fun r' hr' => hfresh_root r' (List.mem_cons_of_mem _ hr'))
+              hnodup' hpaths_from' hpaths_to' hpop
+            -- Also get paths_preserved for outRefs' (to handle the r case)
+            have hpaths_preserved := populate_call_outputs_paths_preserved
+              {env with siteEnv := insert env.siteEnv site (.ref bt_p r _),
+                        pathEnv := update_with_epsilon r r env.pathEnv}
+              env' as' rets' outRefs' hfresh' hnodup' hpop
+            intro r' hr' w hw
+            rcases List.mem_cons.mp hr' with rfl | hr'_inner
+            · -- r' = r: after rfl, r is eliminated, r' survives
+              by_cases hw_inner : w ∈ outRefs'
+              · -- w is a later outRef: use IH (swapping roles)
+                have hw_ne : r' ≠ w := hw.symm
+                exact ⟨(ih_result w hw_inner r' hw_ne).2, (ih_result w hw_inner r' hw_ne).1⟩
+              · -- w is NOT a later outRef: use paths_preserved + uwe characterization
+                constructor
+                · -- ¬⟦env'.paths(w, r')⟧ p
+                  intro p hp
+                  have h_eq : env'.pathEnv.paths (w, r') =
+                      extend (env.pathEnv.paths (w, r')) [] :=
+                    (hpaths_preserved w r' hw_inner hr_not_in_rest).trans
+                      (uwe_paths_ne_eq r' r' [] env.pathEnv w hw)
+                  rw [h_eq] at hp
+                  exact no_match_extend [] (fun q => hpaths_to w r' q hr_fresh hr_root hw) p hp
+                · -- ¬⟦env'.paths(r', w)⟧ p
+                  intro p hp
+                  have h_eq : env'.pathEnv.paths (r', w) =
+                      der (env.pathEnv.paths (r', w)) [] :=
+                    (hpaths_preserved r' w hr_not_in_rest hw_inner).trans
+                      (uwe_paths_eq_ne r' r' [] env.pathEnv w hw)
+                  rw [h_eq] at hp
+                  exact no_match_der [] (fun q => hpaths_from r' w q hr_fresh hr_root hw.symm) p hp
+            · -- r' ∈ outRefs': directly from IH
+              exact ih_result r' hr'_inner w hw)
+
+/-- types_conform holds by construction after populate_call_outputs -/
+lemma populate_call_outputs_types_conform
+    (env env' : TypeEnv) (as : List Site) (rets : List ParamType) (outRefs : List Aref)
+    (hnodup : List.Nodup as)
+    (hpop : populate_call_outputs env as rets outRefs = some env') :
+    types_conform env'.siteEnv as rets := by
+  induction as generalizing env rets outRefs with
+  | nil =>
+    cases rets with
+    | nil => simp [types_conform]
+    | cons _ _ => simp [populate_call_outputs] at hpop
+  | cons site as' ih =>
+    cases rets with
+    | nil => simp [populate_call_outputs] at hpop
+    | cons pt rets' =>
+      obtain ⟨bt_p, isRefMut⟩ := pt
+      rw [List.nodup_cons] at hnodup
+      obtain ⟨hsite_not_in, hnodup'⟩ := hnodup
+      cases isRefMut with
+      | none =>
+        simp only [populate_call_outputs] at hpop
+        simp only [types_conform]
+        have hlook : lookup env'.siteEnv site = some (.basic bt_p) := by
+          rw [populate_call_outputs_siteEnv_non_member
+            {env with siteEnv := insert env.siteEnv site (.basic bt_p)} env' as' rets' outRefs
+            hpop site hsite_not_in]
+          exact lookup_insert_same _ _ _
+        rw [hlook]
+        exact ⟨rfl, ih _ _ _ hnodup' hpop⟩
+      | some b =>
+        cases b with
+        | true =>
+          cases outRefs with
+          | nil => simp [populate_call_outputs] at hpop
+          | cons r outRefs' =>
+            simp only [populate_call_outputs] at hpop
+            simp only [types_conform]
+            have hlook : lookup env'.siteEnv site = some (.ref bt_p r .siteBorrowMut) := by
+              rw [populate_call_outputs_siteEnv_non_member
+                {env with siteEnv := insert env.siteEnv site (.ref bt_p r .siteBorrowMut),
+                          pathEnv := update_with_epsilon r r env.pathEnv} env' as' rets' outRefs'
+                hpop site hsite_not_in]
+              exact lookup_insert_same _ _ _
+            rw [hlook]
+            exact ⟨rfl, True.intro, ih _ _ _ hnodup' hpop⟩
+        | false =>
+          cases outRefs with
+          | nil => simp [populate_call_outputs] at hpop
+          | cons r outRefs' =>
+            simp only [populate_call_outputs] at hpop
+            simp only [types_conform]
+            have hlook : lookup env'.siteEnv site = some (.ref bt_p r .siteBorrowImm) := by
+              rw [populate_call_outputs_siteEnv_non_member
+                {env with siteEnv := insert env.siteEnv site (.ref bt_p r .siteBorrowImm),
+                          pathEnv := update_with_epsilon r r env.pathEnv} env' as' rets' outRefs'
+                hpop site hsite_not_in]
+              exact lookup_insert_same _ _ _
+            rw [hlook]
+            exact ⟨rfl, True.intro, ih _ _ _ hnodup' hpop⟩
+
 /-- populate_call_outputs preserves site_tracked -/
 lemma populate_call_outputs_site_tracked
     (env env' : TypeEnv) (as : List Site) (rets : List ParamType) (outRefs : List Aref)
@@ -5175,6 +5568,7 @@ private theorem weaken_call
     (hfunL : lookup envL.funEnv fnName = some ⟨params, rets⟩)
     (htcL : types_conform envL.siteEnv bs params)
     (hfreshSitesL : all_fresh_sites envL as)
+    (hnodup_sites : List.Nodup as)
     (hfreshRefsL : all_refs_fresh_in_env envL outRefsL)
     (hnodupL : List.Nodup outRefsL)
     (hpopL : populate_call_outputs envL as rets outRefsL = some envL')
@@ -5241,7 +5635,7 @@ private theorem weaken_call
   have hfrom_E' := populate_call_outputs_paths_from_nm env envE' as rets outRefsE hpaths_from_nm hpopE
   -- Apply call rule
   exact typecheck_stmt.call lenv env fnName as bs params rets outRefsE envE' cont retTypes
-    hfunE htcE hfreshSitesE hfreshRefsE hnodupE hpopE hisoE
+    hfunE htcE hfreshSitesE hnodup_sites hfreshRefsE hnodupE hpopE hisoE
     (ih (call_connect_inputs_outputs envE' as bs)
       (call_connect_subsumes envL' envE' as bs
         (populate_call_outputs_subsumes envL env envL' envE' as rets outRefsL outRefsE σ
@@ -5471,9 +5865,9 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   | call envL fnName as bs params rets outRefsL envL' cont retTypes
-      hfunL htcL hfreshSitesL hfreshRefsL hnodupL hpopL hisoL _ ih =>
+      hfunL htcL hfreshSitesL hnodup_sites hfreshRefsL hnodupL hpopL hisoL _ ih =>
     exact weaken_call lenv envL env fnName as bs params rets outRefsL envL' cont retTypes
-      hfunL htcL hfreshSitesL hfreshRefsL hnodupL hpopL hisoL
+      hfunL htcL hfreshSitesL hnodup_sites hfreshRefsL hnodupL hpopL hisoL
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   -- ==================== Complex non-pathEnv cases ====================

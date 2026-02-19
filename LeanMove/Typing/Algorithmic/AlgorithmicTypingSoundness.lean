@@ -1558,7 +1558,7 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
             have hwf' := call_connect_inputs_outputs_wf env' as bs hwf_env'
             apply typecheck_stmt.call lenv env fnName as bs params rets
               (generateFreshRefs env rets) env' cont retTypes
-              hlookup_fn htc_bs' hfresh' hfresh_refs hnodup
+              hlookup_fn htc_bs' hfresh' sorry hfresh_refs hnodup
               hpop hiso'
             exact ih_cont _ hwf' h
           · simp at h
