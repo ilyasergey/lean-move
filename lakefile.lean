@@ -13,9 +13,16 @@ require batteries from
 require mathlib from
     git "https://github.com/leanprover-community/mathlib4.git" @ "v4.27.0"
 
+-- Default target: everything (core + examples + runtime tests)
+-- Build with: lake build
 @[default_target]
-lean_lib «LeanMove» where
-  -- add any library configuration options here
+lean_lib «all» where
+  roots := #[`LeanMove, `LeanMove.Examples.Runtime.AllTests]
+
+-- Core library only (no examples or tests)
+-- Build with: lake build core
+lean_lib «core» where
+  roots := #[`LeanMove]
 
 -- Build target for litmus examples
 -- Build with: lake build litmus
@@ -61,7 +68,3 @@ lean_lib «runtime» where
   srcDir := "LeanMove/Examples/Runtime"
   roots := #[`AllTests]
 
--- Build everything: core libraries, examples, and runtime tests
--- Build with: lake build all
-lean_lib «all» where
-  roots := #[`LeanMove, `LeanMove.Examples.Runtime.AllTests]
