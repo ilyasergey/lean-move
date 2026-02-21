@@ -86,7 +86,7 @@ def fn_return_basic : FunDef := {
     { label := "b0"
       body :=
         (letsite s0 ← copy var_a) ;;
-        Stmt.ret [s0]
+        ret [s0]
     }
   ]
 }
@@ -120,7 +120,7 @@ def fn_return_param_ref : FunDef := {
     { label := "b0"
       body :=
         (letsite s0 ← move var_r) ;;
-        Stmt.ret [s0]
+        ret [s0]
     }
   ]
 }
@@ -156,7 +156,7 @@ def fn_return_two : FunDef := {
       body :=
         (letsite s0 ← move var_r1) ;;
         (letsite s1 ← move var_r2) ;;
-        Stmt.ret [s0, s1]
+        ret [s0, s1]
     }
   ]
 }

@@ -95,11 +95,11 @@ def borrow_local_twice : FunDef := {
         (var_y ::= s2) ;;               -- y = s2
         (letsite s3 ← move var_x) ;;    -- s3 = move(x)
         (letsite s4 ← #0) ;;            -- s4 = 0
-        Stmt.writeRef s3 s4 ;;          -- *s3 = 0
+        (*s3 ::= s4) ;;                 -- *s3 = 0
         (letsite s5 ← move var_y) ;;    -- s5 = move(y)
         (letsite s6 ← #0) ;;            -- s6 = 0
-        Stmt.writeRef s5 s6 ;;          -- *s5 = 0
-        Stmt.ret []
+        (*s5 ::= s6) ;;                 -- *s5 = 0
+        ret []
     }
   ]
 }
@@ -128,11 +128,11 @@ def borrow_local_twice_reverse : FunDef := {
         (var_y ::= s2) ;;               -- y = s2
         (letsite s3 ← move var_y) ;;    -- s3 = move(y) -- reversed
         (letsite s4 ← #0) ;;            -- s4 = 0
-        Stmt.writeRef s3 s4 ;;          -- *s3 = 0
+        (*s3 ::= s4) ;;                 -- *s3 = 0
         (letsite s5 ← move var_x) ;;    -- s5 = move(x) -- reversed
         (letsite s6 ← #0) ;;            -- s6 = 0
-        Stmt.writeRef s5 s6 ;;          -- *s5 = 0
-        Stmt.ret []
+        (*s5 ::= s6) ;;                 -- *s5 = 0
+        ret []
     }
   ]
 }
@@ -173,11 +173,11 @@ def borrow_local_and_copy_ref : FunDef := {
         (var_y ::= s2) ;;               -- y = s2
         (letsite s3 ← move var_x) ;;    -- s3 = move(x)
         (letsite s4 ← #0) ;;            -- s4 = 0
-        Stmt.writeRef s3 s4 ;;          -- *s3 = 0
+        (*s3 ::= s4) ;;                 -- *s3 = 0
         (letsite s5 ← move var_y) ;;    -- s5 = move(y)
         (letsite s6 ← #0) ;;            -- s6 = 0
-        Stmt.writeRef s5 s6 ;;          -- *s5 = 0
-        Stmt.ret []
+        (*s5 ::= s6) ;;                 -- *s5 = 0
+        ret []
     }
   ]
 }
@@ -206,11 +206,11 @@ def borrow_local_and_copy_ref_reverse : FunDef := {
         (var_y ::= s2) ;;               -- y = s2
         (letsite s3 ← move var_y) ;;    -- s3 = move(y) -- reversed
         (letsite s4 ← #0) ;;            -- s4 = 0
-        Stmt.writeRef s3 s4 ;;          -- *s3 = 0
+        (*s3 ::= s4) ;;                 -- *s3 = 0
         (letsite s5 ← move var_x) ;;    -- s5 = move(x) -- reversed
         (letsite s6 ← #0) ;;            -- s6 = 0
-        Stmt.writeRef s5 s6 ;;          -- *s5 = 0
-        Stmt.ret []
+        (*s5 ::= s6) ;;                 -- *s5 = 0
+        ret []
     }
   ]
 }

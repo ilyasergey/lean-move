@@ -152,14 +152,14 @@ def invalid_write : FunDef := {
         (var_s_mut ::= s1) ;;
         -- f_imm = &copy(s_imm).S::f
         (letsite s2 ← copy var_s_imm) ;;
-        Stmt.letBind s3 (Expr.borrowField s2 (.trecord s_entries) field_f) ;;
+        (letsite s3 ← borrowField(s2, .trecord s_entries, field_f)) ;;
         (var_f_imm ::= s3) ;;
         -- *copy(s_mut) = S { f: 0 } -- ERROR: f_imm still borrows from s
         (letsite s4 ← copy var_s_mut) ;;
         (letsite s5 ← #0) ;;
-        Stmt.letBind s6 (Expr.pack "S" [(field_f, s5)]) ;;
-        Stmt.writeRef s4 s6 ;;
-        Stmt.ret []
+        (letsite s6 ← pack("S", [(field_f, s5)])) ;;
+        (*s4 ::= s6) ;;
+        ret []
     }
   ]
 }

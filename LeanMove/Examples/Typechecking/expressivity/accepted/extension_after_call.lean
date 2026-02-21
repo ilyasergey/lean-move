@@ -96,27 +96,28 @@ def fn_borrow : FunDef := {
     { label := "l0"
       body :=
         (letsite s0 ← copy var_b) ;;     -- s0 = copy(b)
-        Stmt.letBind s1 (Expr.borrowMutField s0 (.trecord box_entries) field_tl) ;; -- s1 = &mut s0.tl
+        (letsite s1 ← borrowMutField(s0, .trecord box_entries, field_tl)) ;; -- s1 = &mut s0.tl
         (var_tl ::= s1) ;;               -- tl = s1
         (letsite s2 ← copy var_tl) ;;    -- s2 = copy(tl)
-        Stmt.ret [s2]                    -- return s2
+        ret [s2]                         -- return s2
     }
   ]
 }
+
+-- Function signature for borrow
+def borrow_sig : FunSig := ⟨[⟨.trecord box_entries, some true⟩], [⟨.trecord point_entries, some true⟩]⟩
 
 /-
   write(b: &mut Self.Box): &mut Self.Point
   Borrows the top-left point, writes zeros to both coordinates.
 
-  Original MVIR:
-  p = Self.borrow(copy(b));
-  x = &mut copy(p).Point::x;
-  *move(x) = 0;
-  y = &mut copy(p).Point::y;
-  *move(y) = 0;
-  return move(p);
-
-  We inline the borrow call.
+  label l0:
+      p = Self.borrow(copy(b));
+      x = &mut copy(p).Point::x;
+      *move(x) = 0;
+      y = &mut copy(p).Point::y;
+      *move(y) = 0;
+      return move(p);
 -/
 def fn_write : FunDef := {
   params := [(var_b, .ref (.trecord box_entries) (.varRef var_b) .siteBorrowMut)]
@@ -129,29 +130,29 @@ def fn_write : FunDef := {
   blocks := [
     { label := "l0"
       body :=
-        -- p = Self.borrow(copy(b)) - inlined as: p = &mut copy(b).Box::tl
+        -- p = Self.borrow(copy(b))
         (letsite s0 ← copy var_b) ;;     -- s0 = copy(b)
-        Stmt.letBind s1 (Expr.borrowMutField s0 (.trecord box_entries) field_tl) ;; -- s1 = &mut s0.tl
-        (var_tl ::= s1) ;;               -- tl (p) = s1
+        (call([s1], "borrow", [s0])) ;;   -- s1 = borrow(s0)
+        (var_tl ::= s1) ;;               -- p = s1
         -- x = &mut copy(p).Point::x
         (letsite s2 ← copy var_tl) ;;    -- s2 = copy(p)
-        Stmt.letBind s3 (Expr.borrowMutField s2 (.trecord point_entries) field_x) ;; -- s3 = &mut s2.x
+        (letsite s3 ← borrowMutField(s2, .trecord point_entries, field_x)) ;; -- s3 = &mut s2.x
         (var_x ::= s3) ;;                -- x = s3
         -- *move(x) = 0
         (letsite s6 ← move var_x) ;;     -- s6 = move(x)
         (letsite s10 ← #0) ;;            -- s10 = 0 (integer literal)
-        Stmt.writeRef s6 s10 ;;          -- *s6 = s10
+        (*s6 ::= s10) ;;                 -- *s6 = s10
         -- y = &mut copy(p).Point::y
         (letsite s4 ← copy var_tl) ;;    -- s4 = copy(p)
-        Stmt.letBind s5 (Expr.borrowMutField s4 (.trecord point_entries) field_y) ;; -- s5 = &mut s4.y
+        (letsite s5 ← borrowMutField(s4, .trecord point_entries, field_y)) ;; -- s5 = &mut s4.y
         (var_y ::= s5) ;;                -- y = s5
         -- *move(y) = 0
         (letsite s7 ← move var_y) ;;     -- s7 = move(y)
         (letsite s11 ← #0) ;;            -- s11 = 0 (integer literal)
-        Stmt.writeRef s7 s11 ;;          -- *s7 = s11
+        (*s7 ::= s11) ;;                 -- *s7 = s11
         -- return move(p)
-        (letsite s8 ← move var_tl) ;;    -- s8 = move(tl/p)
-        Stmt.ret [s8]                    -- return s8
+        (letsite s8 ← move var_tl) ;;    -- s8 = move(p)
+        ret [s8]                         -- return s8
     }
   ]
 }
@@ -171,11 +172,13 @@ def fn_borrow_initEnvDec : TypeEnvDec := {
 def fn_borrow_lenvDec : LabelEnvDec :=
   AssocMap.insert AssocMap.empty "l0" fn_borrow_initEnvDec
 
+def borrow_funEnv : FunEnv := AssocMap.insert AssocMap.empty "borrow" borrow_sig
+
 def fn_write_initEnvDec : TypeEnvDec := {
   siteEnv := AssocMap.empty
   varEnv := init_fun_varEnv fn_write
   pathEnv := init_fun_pathEnvDec fn_write.params
-  funEnv := AssocMap.empty
+  funEnv := borrow_funEnv
 }
 
 def fn_write_lenvDec : LabelEnvDec :=
@@ -183,6 +186,7 @@ def fn_write_lenvDec : LabelEnvDec :=
 
 -- Test theorems: both functions type check algorithmically
 theorem fn_borrow_check : check_fun_dec fn_borrow fn_borrow_lenvDec = true := by rfl
+
 theorem fn_write_check : check_fun_dec fn_write fn_write_lenvDec = true := by rfl
 
 -- -----------------------------------------------------

@@ -31,6 +31,7 @@ core calculus of the Move intermediate representation — and proved it
 ```
 LeanMove/
 ├── Lang/MoveLight.lean            Language syntax and core types
+├── Lang/Macros.lean               CPS macros for writing MoveLight programs
 ├── Semantics/Smallstep.lean       Small-step interpreter
 │
 ├── Typing/
@@ -488,3 +489,121 @@ inductively by each preservation case. The interplay between reference
 tracking, path graph well-formedness, and the reference map is what makes the
 Move borrow-checking discipline sound: the type system's abstract graph
 faithfully reflects the concrete heap's reference structure at every step.
+
+---
+
+## Appendix — Syntactic macros (`Lang/Macros.lean`)
+
+MoveLight's AST uses continuation-passing style (CPS): non-terminal
+statements carry their continuation as the last argument. Writing programs
+directly with `Stmt.letBind`, `Stmt.writeRef`, etc. is verbose. The file
+`Lang/Macros.lean` provides Lean macros that closely mirror Move IR syntax
+while expanding to the same AST constructors.
+
+### The `;;` operator and StmtBuilder
+
+A `StmtBuilder` is a function `Stmt → Stmt` — it takes a continuation and
+produces a complete statement. The right-associative operator `;;` (priority
+20) threads continuations:
+
+```lean
+infixr:20 " ;; " => fun (f : StmtBuilder) (s : Stmt) => f s
+```
+
+For example, `(letsite s ← move x) ;; ret [s]` expands to
+`Stmt.letBind s (Expr.usage (Usage.move x)) (Stmt.ret [s])`.
+
+### Macro reference
+
+| Macro | Expands to | Move IR equivalent |
+|---|---|---|
+| `letsite s ← #n` | `Stmt.letBind s (Expr.intLit n) cont` | `s = n` |
+| `letsite s ← copy x` | `Stmt.letBind s (Expr.usage (Usage.copy x)) cont` | `s = copy(x)` |
+| `letsite s ← move x` | `Stmt.letBind s (Expr.usage (Usage.move x)) cont` | `s = move(x)` |
+| `letsite s ← &x` | `Stmt.letBind s (Expr.usage (Usage.borrowImm x)) cont` | `s = &x` |
+| `letsite s ← &mut x` | `Stmt.letBind s (Expr.usage (Usage.borrowMut x)) cont` | `s = &mut x` |
+| `letsite s ← *b` | `Stmt.letBind s (Expr.readRef b) cont` | `s = *b` |
+| `letsite s ← freeze b` | `Stmt.letBind s (Expr.freeze b) cont` | `s = freeze(b)` |
+| `letsite s ← pack("T", fs)` | `Stmt.letBind s (Expr.pack "T" fs) cont` | `s = T { ... }` |
+| `letsite s ← borrowField(a, bt, f)` | `Stmt.letBind s (Expr.borrowField a bt f) cont` | `s = &a.T::f` |
+| `letsite s ← borrowMutField(a, bt, f)` | `Stmt.letBind s (Expr.borrowMutField a bt f) cont` | `s = &mut a.T::f` |
+| `x ::= a` | `Stmt.assign x a cont` | `x = a` |
+| `*a ::= b` | `Stmt.writeRef a b cont` | `*a = b` |
+| `release s` | `Stmt.release s cont` | `_ = move(s)` (consume) |
+| `unpack(fields, src)` | `Stmt.unpack fields src cont` | `T { f: s } = src` |
+| `call(rets, fn, args)` | `Stmt.call rets fn args cont` | `rets = fn(args)` |
+| `jump l` | `Stmt.jump l` | `jump l` |
+| `branch c l1 l2` | `Stmt.branch c l1 l2` | `jump_if (c) l1` |
+| `ret sites` | `Stmt.ret sites` | `return sites` |
+| `abort s` | `Stmt.abort s` | `abort s` |
+
+### Syntactic differences from Move IR
+
+The macros bring MoveLight syntax close to Move IR, but some differences
+remain due to A-normal form and Lean's syntax rules:
+
+1. **A-normal form decomposition.** Move IR allows nested expressions like
+   `*move(x) = 0` or `f = &copy(s).S::f`. In MoveLight, each sub-expression
+   is bound to a site first:
+   ```
+   -- Move IR:  *move(x) = 0
+   -- MoveLight:
+   (letsite s1 ← move var_x) ;;
+   (letsite s2 ← #0) ;;
+   (*s1 ::= s2) ;;
+   ```
+
+2. **Integer literals use `#n`.** Move IR writes bare `0`; MoveLight uses
+   `#0` to distinguish integer literals from other terms.
+
+3. **Field borrows carry explicit type arguments.** Move IR writes
+   `&mut copy(p).Point::x`; MoveLight writes
+   `letsite s ← borrowMutField(s0, .trecord point_entries, field_x)` with
+   the parent struct type passed explicitly.
+
+4. **Branch vs jump_if.** Move IR uses `jump_if (move(cond)) L` with
+   fall-through. MoveLight uses `branch s "L_true" "L_false"` with both
+   targets explicit.
+
+5. **No `Stmt.skip` macro.** The no-op terminal is written as `Stmt.skip`
+   directly (rarely used in practice).
+
+### Example
+
+Move IR:
+```
+t() {
+    let a: u64;
+    let x: &mut u64;
+label b0:
+    a = 0;
+    x = &mut a;
+    *move(x) = 0;
+    return;
+}
+```
+
+MoveLight with macros:
+```lean
+def t : FunDef := {
+  params := []
+  returnType := []
+  locals := [
+    { name := var_a, type := .basic .u64 },
+    { name := var_x, type := .ref .u64 (.refid 1) .siteBorrowMut }
+  ]
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite s0 ← #0) ;;
+        (var_a ::= s0) ;;
+        (letsite s1 ← &mut var_a) ;;
+        (var_x ::= s1) ;;
+        (letsite s2 ← move var_x) ;;
+        (letsite s3 ← #0) ;;
+        (*s2 ::= s3) ;;
+        ret []
+    }
+  ]
+}
+```

@@ -204,7 +204,15 @@ def extend_with_star (target source : Aref) (pe: PathEnv) : PathEnv :=
   let paths' := fun (u, v) =>
     if u = target ∧ v = target then Regex.ε  else
     if v = target then Regex.concat (G (u, source)) (Regex.star (Regex.dot)) else
-    if u = target then Regex.concat (Regex.star (Regex.dot)) (G (source, v)) else
+    -- Outbound from target: G(source, v) · .
+    -- The dot suffix ensures same-level aliases (G = ε) produce concat(ε, .)
+    -- which is NOT only_matches_empty, so check_outbound_bool rejects direct
+    -- writes through call outputs that could alias other refs.
+    -- After a single field borrow (Brzozowski derivative), the dot collapses:
+    --   brzozowski_step(f, concat(ε, .)) = union(concat(∅, .), ε) → only_matches_empty
+    -- This allows writes through field borrows of call outputs.
+    -- When G(source, v) = ∅, concat(∅, .) is correctly recognized as empty.
+    if u = target then Regex.concat (G (source, v)) Regex.dot else
     G (u, v)
   let refs' := if target ∉ pe.refs then target :: pe.refs else pe.refs
   { pe with paths := paths', refs := refs' }

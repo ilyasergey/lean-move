@@ -630,7 +630,7 @@ private lemma map_filter_ne (σ : Aref → Aref) (l : List Aref) (r : Aref)
       exact congrArg (σ hd :: ·) (ih hinj' hr')
 
 /-- SiteEnvSubstEquiv is preserved by deleteAll on both sides -/
-private lemma SiteEnvSubstEquiv_deleteAll (σ : Aref → Aref) (se1 se2 : SiteEnv) (keys : List Site) :
+lemma SiteEnvSubstEquiv_deleteAll (σ : Aref → Aref) (se1 se2 : SiteEnv) (keys : List Site) :
     SiteEnvSubstEquiv σ se1 se2 →
     SiteEnvSubstEquiv σ (deleteAll se1 keys) (deleteAll se2 keys) := by
   intro hse
@@ -1139,7 +1139,7 @@ private lemma RefsUnique_assign_from_site (ve : VarEnv) (se : SiteEnv)
         exact hvv _ _ _ _ _ _ _ _ hne hvy hvz
 
 /-- RefsUnique is preserved by deleteAll -/
-private lemma RefsUnique_deleteAll (ve : VarEnv) (se : SiteEnv) (keys : List Site)
+lemma RefsUnique_deleteAll (ve : VarEnv) (se : SiteEnv) (keys : List Site)
     (h : RefsUnique ve se) : RefsUnique ve (deleteAll se keys) := by
   intro r; obtain ⟨hvs, hss, hvv⟩ := h r
   refine ⟨fun x bt bk ms s bt' bk' hv hs => ?_, fun s s' bt bt' bk bk' hne hs hs' => ?_, hvv⟩
@@ -4218,7 +4218,7 @@ private lemma foldl_paths_from_nm {β : Type} (f : PathEnv → β → PathEnv) (
   | cons x xs ih => exact ih (f pe x) (hstep pe x h_from)
 
 /-- call_connect refs are monotone -/
-private lemma call_connect_refs_mono
+lemma call_connect_refs_mono
     (env : TypeEnv) (as bs : List Site) :
     ∀ r ∈ env.pathEnv.refs, r ∈ (call_connect_inputs_outputs env as bs).pathEnv.refs := by
   intro r hr
@@ -4726,11 +4726,9 @@ private lemma extend_with_star_path_inclusion (σ : Aref → Aref)
         have hσu_tgt : σ u = σ targetL := congrArg σ hu_tgt
         rw [if_pos hu_tgt] at ⊢
         rw [if_pos hσu_tgt] at hp
-        -- hp : interpret (.* · G_E(σ sourceL, σ v)) path
-        -- Goal: interpret (.* · G_L(sourceL, v)) path
         simp only [interpret_regex] at hp ⊢
         obtain ⟨p1, p2, rfl, hp1, hp2⟩ := hp
-        exact ⟨p1, p2, rfl, hp1, hincl sourceL v hsrc_mem hv p2 hp2⟩
+        exact ⟨p1, p2, rfl, hincl sourceL v hsrc_mem hv p1 hp1, hp2⟩
       · -- Neither u nor v is target: use base path
         have hσu_ne : σ u ≠ σ targetL := fun h => hu_tgt (hinj u targetL hu htgt_mem h)
         rw [if_neg hu_tgt] at ⊢
@@ -5586,7 +5584,10 @@ private theorem weaken_call
       ¬interpret_regex (env.pathEnv.paths (u, v)) p)
     (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
     (hroot : Aref.root ∈ envL.pathEnv.refs)
-    (ih : WeakenIH lenv (call_connect_inputs_outputs envL' as bs) cont retTypes) :
+    (ih : WeakenIH lenv
+      (let env'' := call_connect_inputs_outputs envL' as bs
+       {env'' with siteEnv := AssocMap.deleteAll env''.siteEnv bs})
+      cont retTypes) :
     typecheck_stmt lenv env (.call as fnName bs cont) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths_incl⟩ := hsub
   -- Transfer preconditions to env
@@ -5611,9 +5612,16 @@ private theorem weaken_call
   have hwfE' : TypeEnv.WellFormed envE' :=
     populate_call_outputs_wf env envE' as rets outRefsE hwfE
       (makeFreshRefs_not_root env outRefsL.length) hpopE
-  -- WF for final environments (after call_connect)
+  -- WF for call_connect environments
   have hwfL_cc := call_connect_inputs_outputs_wf envL' as bs hwfL'
   have hwfE_cc := call_connect_inputs_outputs_wf envE' as bs hwfE'
+  -- WF for deleteAll-wrapped environments
+  have hwfL_del : (let env'' := call_connect_inputs_outputs envL' as bs
+      {env'' with siteEnv := AssocMap.deleteAll env''.siteEnv bs}).WellFormed :=
+    ⟨hwfL_cc.pathEnv_wf, SiteEnv.deleteAll_refs_not_root _ _ hwfL_cc.siteEnv_wf, hwfL_cc.varEnv_wf⟩
+  have hwfE_del : (let env'' := call_connect_inputs_outputs envE' as bs
+      {env'' with siteEnv := AssocMap.deleteAll env''.siteEnv bs}).WellFormed :=
+    ⟨hwfE_cc.pathEnv_wf, SiteEnv.deleteAll_refs_not_root _ _ hwfE_cc.siteEnv_wf, hwfE_cc.varEnv_wf⟩
   -- Derive intermediate properties for envL' and envE'
   have hst_L' := populate_call_outputs_site_tracked envL envL' as rets outRefsL hsite_tracked hpopL
   have hvt_L' := populate_call_outputs_var_tracked envL envL' as rets outRefsL hvar_tracked hpopL
@@ -5627,43 +5635,64 @@ private theorem weaken_call
     | ref bt' r' bk' =>
       simp only [applySubstMoveType, MoveType.ref.injEq] at hsubst1
       obtain ⟨_, rfl, _⟩ := hsubst1
-      exact hrefs.mem_iff.mp (List.mem_map.mpr ⟨r', hsite_tracked s bt' r' bk' hlook1, rfl⟩)
+      exact hrefs.symm.mem_iff.mpr (List.mem_map.mpr ⟨r', hsite_tracked s bt' r' bk' hlook1, rfl⟩)
   have hst_E' := populate_call_outputs_site_tracked env envE' as rets outRefsE hst_E hpopE
   have hsl_E' := populate_call_outputs_self_loop_only_empty env envE' as rets outRefsE
       hself_loop_only_empty hpopE
   have hto_E' := populate_call_outputs_paths_to_nm env envE' as rets outRefsE hpaths_to_nm hpopE
   have hfrom_E' := populate_call_outputs_paths_from_nm env envE' as rets outRefsE hpaths_from_nm hpopE
+  -- Subsumption between call_connect environments
+  have hsub_cc := call_connect_subsumes envL' envE' as bs
+    (populate_call_outputs_subsumes envL env envL' envE' as rets outRefsL outRefsE σ
+      hid hve hse hrefs hinj hnonroot hpaths_incl
+      hfreshRefsL hfreshRefsE hnodupL hnodupE hlenE.symm
+      hout_not_root_L (makeFreshRefs_not_root env outRefsL.length)
+      hpaths_to_nm hpaths_from_nm hfuneq hpopL hpopE)
+    hst_L' hst_E'
+  -- Precompute properties for call_connect envs (avoiding let-binding issues with rw)
+  have hst_cc_L : ∀ s bt r bk, lookup (call_connect_inputs_outputs envL' as bs).siteEnv s =
+      some (.ref bt r bk) → r ∈ (call_connect_inputs_outputs envL' as bs).pathEnv.refs := by
+    intro s bt r bk hlook
+    rw [call_connect_siteEnv] at hlook
+    exact call_connect_refs_mono envL' as bs r (hst_L' s bt r bk hlook)
+  have hvt_cc_L : ∀ x bt r bk ms, lookup (call_connect_inputs_outputs envL' as bs).varEnv x =
+      some (.validVar, .ref bt r bk, ms) → r ∈ (call_connect_inputs_outputs envL' as bs).pathEnv.refs := by
+    intro x bt r bk ms hlook
+    rw [call_connect_varEnv] at hlook
+    exact call_connect_refs_mono envL' as bs r (hvt_L' x bt r bk ms hlook)
+  have huniq_cc_L : RefsUnique (call_connect_inputs_outputs envL' as bs).varEnv
+      (call_connect_inputs_outputs envL' as bs).siteEnv := by
+    rw [call_connect_varEnv, call_connect_siteEnv]; exact huniq_L'
   -- Apply call rule
   exact typecheck_stmt.call lenv env fnName as bs params rets outRefsE envE' cont retTypes
     hfunE htcE hfreshSitesE hnodup_sites hfreshRefsE hnodupE hpopE hisoE
-    (ih (call_connect_inputs_outputs envE' as bs)
-      (call_connect_subsumes envL' envE' as bs
-        (populate_call_outputs_subsumes envL env envL' envE' as rets outRefsL outRefsE σ
-          hid hve hse hrefs hinj hnonroot hpaths_incl
-          hfreshRefsL hfreshRefsE hnodupL hnodupE hlenE.symm
-          hout_not_root_L (makeFreshRefs_not_root env outRefsL.length)
-          hpaths_to_nm hpaths_from_nm hfuneq hpopL hpopE)
-        hst_L' hst_E')
-      (by rw [call_connect_funEnv, populate_call_outputs_funEnv _ _ _ _ _ hpopL, hfuneq,
-              ← populate_call_outputs_funEnv _ _ _ _ _ hpopE, ← call_connect_funEnv])
-      hwfL_cc
-      hwfE_cc
-      -- site_tracked for call_connect envL' as bs
-      (by intro s bt' r' bk' hlook
-          rw [call_connect_siteEnv] at hlook
-          exact call_connect_refs_mono envL' as bs r' (hst_L' s bt' r' bk' hlook))
-      -- var_tracked for call_connect envL' as bs
-      (by intro x bt' r' bk' ms hlook
-          rw [call_connect_varEnv] at hlook
-          exact call_connect_refs_mono envL' as bs r' (hvt_L' x bt' r' bk' ms hlook))
-      -- RefsUnique for call_connect envL' as bs
-      (by rw [call_connect_varEnv, call_connect_siteEnv]; exact huniq_L')
-      -- paths_to_nm for call_connect envE' as bs
+    (ih (let env'' := call_connect_inputs_outputs envE' as bs
+         {env'' with siteEnv := AssocMap.deleteAll env''.siteEnv bs})
+      -- subsumption: {cc(envL') with deleteAll} subsumes {cc(envE') with deleteAll}
+      (by obtain ⟨σ', hid', hve', hse', hrefs', hinj', hnonroot', hpaths'⟩ := hsub_cc
+          exact ⟨σ', hid', hve', SiteEnvSubstEquiv_deleteAll σ' _ _ bs hse',
+                 hrefs', hinj', hnonroot', hpaths'⟩)
+      -- funEnv equality
+      (by simp only [call_connect_funEnv,
+            populate_call_outputs_funEnv _ _ _ _ _ hpopL,
+            populate_call_outputs_funEnv _ _ _ _ _ hpopE, hfuneq])
+      -- WellFormed for envL-side (deleteAll-wrapped)
+      hwfL_del
+      -- WellFormed for envE-side (deleteAll-wrapped)
+      hwfE_del
+      -- site_tracked for envL-side (deleteAll-wrapped)
+      (site_tracked_deleteAll _ _ bs hst_cc_L)
+      -- var_tracked for envL-side (deleteAll-wrapped): varEnv unchanged by deleteAll
+      hvt_cc_L
+      -- RefsUnique for envL-side (deleteAll-wrapped)
+      (RefsUnique_deleteAll _ _ _ huniq_cc_L)
+      -- paths_to_nm for envE-side (deleteAll-wrapped): pathEnv unchanged by deleteAll
       (call_connect_paths_to_nm envE' as bs hto_E' hst_E')
-      -- paths_from_nm for call_connect envE' as bs
+      -- paths_from_nm for envE-side (deleteAll-wrapped)
       (call_connect_paths_from_nm envE' as bs hfrom_E' hst_E')
-      -- self_loop_only_empty for call_connect envE' as bs
+      -- self_loop_only_empty for envE-side (deleteAll-wrapped)
       (call_connect_self_loop_only_empty envE' as bs hsl_E')
+      -- root ∈ pathEnv.refs for envL-side
       hwfL_cc.pathEnv_wf.root_in_refs
     )
 
@@ -5677,7 +5706,9 @@ private lemma weaken_ret (lenv : LabelEnv) (envL env : TypeEnv) (as : List Site)
     (hnolocal : ∀ a ∈ as, ∀ bt r bk, lookup envL.siteEnv a = some (.ref bt r bk) →
       ∀ p, ¬interpret_regex (envL.pathEnv.paths (.root, r)) p)
     (hwritable : ∀ a ∈ as, ∀ bt r, lookup envL.siteEnv a = some (.ref bt r .siteBorrowMut) →
-      ∀ y, y ∈ envL.pathEnv.refs → ∀ p, interpret_regex (envL.pathEnv.paths (r, y)) p → p = [])
+      ∀ b, b ∉ as →
+        ∀ bt' r' bk', lookup envL.siteEnv b = some (.ref bt' r' bk') →
+          ∀ p, interpret_regex (envL.pathEnv.paths (r, r')) p → p = [])
     (hnoalias : ∀ a₁ ∈ as, ∀ bt₁ r₁, lookup envL.siteEnv a₁ = some (.ref bt₁ r₁ .siteBorrowMut) →
       ∀ a₂ ∈ as, a₁ ≠ a₂ → ∀ bt₂ r₂ bk₂, lookup envL.siteEnv a₂ = some (.ref bt₂ r₂ bk₂) →
         ∀ p, ¬interpret_regex (envL.pathEnv.paths (r₂, r₁)) p)
@@ -5688,11 +5719,11 @@ private lemma weaken_ret (lenv : LabelEnv) (envL env : TypeEnv) (as : List Site)
     (hsite_tracked : ∀ s bt r bk, lookup envL.siteEnv s = some (.ref bt r bk) → r ∈ envL.pathEnv.refs)
     (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = []) :
     typecheck_stmt lenv env (.ret as) retTypes := by
-  obtain ⟨σ, hid_σ, _, hse, hrefs, _, _, hpaths_sub⟩ := hsub
+  obtain ⟨σ, hid_σ, _, hse, hrefs, hinj, _, hpaths_sub⟩ := hsub
   have hσ_root : σ .root = .root := hid_σ .root (fun n h => by cases h)
   exact typecheck_stmt.ret lenv env _ _
     (types_conform_SiteEnvSubstEquiv σ _ _ _ _ hse hconf)
-    (by -- no local borrowing: transfer paths from env to envL via hpaths_sub
+    (by -- no local borrowing
       intro a ha_in bt r bk hlook_env p hp_env
       obtain ⟨τ1, hlook1, hsubst1⟩ :=
         SiteEnvSubstEquiv_lookup_some_inv σ _ _ a _ hse hlook_env
@@ -5705,25 +5736,32 @@ private lemma weaken_ret (lenv : LabelEnv) (envL env : TypeEnv) (as : List Site)
         rw [← hrr, ← hσ_root] at hp_env
         exact hnolocal a ha_in bt' r' bk' hlook1 p
           (hpaths_sub .root r' hroot hr'_mem p hp_env))
-    (by -- writability: use path transfer + self_loop_only_empty
-      intro a ha_in bt r hlook_env y hy_env p hp_env
+    (by -- writability: for non-returned live ref sites
+      intro a ha_in bt r hlook_env b hb bt' r' bk' hlook_b_env p hp_env
       obtain ⟨τ1, hlook1, hsubst1⟩ :=
         SiteEnvSubstEquiv_lookup_some_inv σ _ _ a _ hse hlook_env
+      obtain ⟨τ2, hlook2, hsubst2⟩ :=
+        SiteEnvSubstEquiv_lookup_some_inv σ _ _ b _ hse hlook_b_env
       cases τ1 with
       | basic _ => simp [applySubstMoveType] at hsubst1
-      | ref bt' r' bk' =>
+      | ref bt1 r1 bk1 =>
         simp only [applySubstMoveType, MoveType.ref.injEq] at hsubst1
-        have hrr : σ r' = r := hsubst1.2.1
-        have hbk : bk' = .siteBorrowMut := hsubst1.2.2
-        rw [hbk] at hlook1
-        have hr'_mem := hsite_tracked a bt' r' .siteBorrowMut hlook1
-        obtain ⟨y', hy'_mem, rfl⟩ := List.mem_map.mp (hrefs.symm.mem_iff.mp hy_env)
-        rw [← hrr] at hp_env
-        by_cases heq : r' = y'
-        · subst heq; exact hself_loop_only_empty _ p hp_env
-        · exact hwritable a ha_in bt' r' hlook1 y' hy'_mem p
-            (hpaths_sub r' y' hr'_mem hy'_mem p hp_env))
-    (by -- no aliasing: transfer paths from env to envL, use hnoalias
+        have hrr1 : σ r1 = r := hsubst1.2.1
+        have hbk1 : bk1 = .siteBorrowMut := hsubst1.2.2
+        rw [hbk1] at hlook1
+        have hr1_mem := hsite_tracked a bt1 r1 .siteBorrowMut hlook1
+        cases τ2 with
+        | basic _ => simp [applySubstMoveType] at hsubst2
+        | ref bt2 r2 bk2 =>
+          simp only [applySubstMoveType, MoveType.ref.injEq] at hsubst2
+          have hrr2 : σ r2 = r' := hsubst2.2.1
+          have hr2_mem := hsite_tracked b bt2 r2 bk2 hlook2
+          rw [← hrr1, ← hrr2] at hp_env
+          by_cases heq : r1 = r2
+          · subst heq; exact hself_loop_only_empty _ p hp_env
+          · exact hwritable a ha_in bt1 r1 hlook1 b hb bt2 r2 bk2 hlook2 p
+              (hpaths_sub r1 r2 hr1_mem hr2_mem p hp_env))
+    (by -- no aliasing
       intro a₁ ha₁ bt₁ r₁ hlook₁_env a₂ ha₂ hne bt₂ r₂ bk₂ hlook₂_env p hp_env
       obtain ⟨τ1, hlk1, hsb1⟩ :=
         SiteEnvSubstEquiv_lookup_some_inv σ _ _ a₁ _ hse hlook₁_env
@@ -5787,8 +5825,7 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
       (TypeEnv.subsumes_trans _ _ _ hs1 hdel_sub)
       (TypeEnv.subsumes_trans _ _ _ hs2 hdel_sub)
   | ret _ _ _ hconf hnolocal hwritable hnoalias =>
-    exact weaken_ret lenv _ env _ _ hconf hnolocal hwritable hnoalias
-      hsub hroot hsite_tracked hself_loop_only_empty
+    exact weaken_ret lenv _ env _ _ hconf hnolocal hwritable hnoalias hsub hroot hsite_tracked hself_loop_only_empty
   | abort _ _ _ _ hlook =>
     obtain ⟨σ, _, _, hse, _, _, _⟩ := hsub
     exact typecheck_stmt.abort lenv env _ _ _

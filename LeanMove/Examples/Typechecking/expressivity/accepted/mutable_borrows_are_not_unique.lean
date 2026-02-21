@@ -214,40 +214,40 @@ def fields : FunDef := {
       body :=
         -- s1_1 = &mut copy(p).Pair::s1
         (letsite s0 ← copy var_p) ;;
-        Stmt.letBind s1 (Expr.borrowMutField s0 (.trecord pair_entries) field_s1) ;;
+        (letsite s1 ← borrowMutField(s0, .trecord pair_entries, field_s1)) ;;
         (var_s1_1 ::= s1) ;;
         -- s2_1 = &mut copy(p).Pair::s2
         (letsite s2 ← copy var_p) ;;
-        Stmt.letBind s3 (Expr.borrowMutField s2 (.trecord pair_entries) field_s2) ;;
+        (letsite s3 ← borrowMutField(s2, .trecord pair_entries, field_s2)) ;;
         (var_s2_1 ::= s3) ;;
         -- f_1_1 = &mut copy(s1_1).S::f
         (letsite s4 ← copy var_s1_1) ;;
-        Stmt.letBind s5 (Expr.borrowMutField s4 (.trecord s_entries) field_f) ;;
+        (letsite s5 ← borrowMutField(s4, .trecord s_entries, field_f)) ;;
         (var_f_1_1 ::= s5) ;;
         -- f_2_1 = &mut copy(s2_1).S::f
         (letsite s6 ← copy var_s2_1) ;;
-        Stmt.letBind s7 (Expr.borrowMutField s6 (.trecord s_entries) field_f) ;;
+        (letsite s7 ← borrowMutField(s6, .trecord s_entries, field_f)) ;;
         (var_f_2_1 ::= s7) ;;
         -- p2 = copy(p)
         (letsite s8 ← copy var_p) ;;
         (var_p2 ::= s8) ;;
         -- s1_2 = &mut copy(p2).Pair::s1
         (letsite s9 ← copy var_p2) ;;
-        Stmt.letBind s10 (Expr.borrowMutField s9 (.trecord pair_entries) field_s1) ;;
+        (letsite s10 ← borrowMutField(s9, .trecord pair_entries, field_s1)) ;;
         (var_s1_2 ::= s10) ;;
         -- s2_2 = &mut copy(p2).Pair::s2
         (letsite s11 ← copy var_p2) ;;
-        Stmt.letBind s12 (Expr.borrowMutField s11 (.trecord pair_entries) field_s2) ;;
+        (letsite s12 ← borrowMutField(s11, .trecord pair_entries, field_s2)) ;;
         (var_s2_2 ::= s12) ;;
         -- f_1_2 = &mut copy(s1_2).S::f
         (letsite s13 ← copy var_s1_2) ;;
-        Stmt.letBind s14 (Expr.borrowMutField s13 (.trecord s_entries) field_f) ;;
+        (letsite s14 ← borrowMutField(s13, .trecord s_entries, field_f)) ;;
         (var_f_1_2 ::= s14) ;;
         -- f_2_2 = &mut copy(s2_2).S::f
         (letsite s15 ← copy var_s2_2) ;;
-        Stmt.letBind s16 (Expr.borrowMutField s15 (.trecord s_entries) field_f) ;;
+        (letsite s16 ← borrowMutField(s15, .trecord s_entries, field_f)) ;;
         (var_f_2_2 ::= s16) ;;
-        Stmt.ret []
+        ret []
     }
   ]
 }
@@ -276,77 +276,77 @@ def fields_write : FunDef := {
       body :=
         -- s1_1 = &mut copy(p).Pair::s1
         (letsite s0 ← copy var_p) ;;
-        Stmt.letBind s1 (Expr.borrowMutField s0 (.trecord pair_entries) field_s1) ;;
+        (letsite s1 ← borrowMutField(s0, .trecord pair_entries, field_s1)) ;;
         (var_s1_1 ::= s1) ;;
         -- s2_1 = &mut copy(p).Pair::s2
         (letsite s2 ← copy var_p) ;;
-        Stmt.letBind s3 (Expr.borrowMutField s2 (.trecord pair_entries) field_s2) ;;
+        (letsite s3 ← borrowMutField(s2, .trecord pair_entries, field_s2)) ;;
         (var_s2_1 ::= s3) ;;
         -- f_1_1 = &mut copy(s1_1).S::f
         (letsite s4 ← copy var_s1_1) ;;
-        Stmt.letBind s5 (Expr.borrowMutField s4 (.trecord s_entries) field_f) ;;
+        (letsite s5 ← borrowMutField(s4, .trecord s_entries, field_f)) ;;
         (var_f_1_1 ::= s5) ;;
         -- f_2_1 = &mut copy(s2_1).S::f
         (letsite s6 ← copy var_s2_1) ;;
-        Stmt.letBind s7 (Expr.borrowMutField s6 (.trecord s_entries) field_f) ;;
+        (letsite s7 ← borrowMutField(s6, .trecord s_entries, field_f)) ;;
         (var_f_2_1 ::= s7) ;;
         -- p2 = copy(p)
         (letsite s8 ← copy var_p) ;;
         (var_p2 ::= s8) ;;
         -- s1_2 = &mut copy(p2).Pair::s1
         (letsite s9 ← copy var_p2) ;;
-        Stmt.letBind s10 (Expr.borrowMutField s9 (.trecord pair_entries) field_s1) ;;
+        (letsite s10 ← borrowMutField(s9, .trecord pair_entries, field_s1)) ;;
         (var_s1_2 ::= s10) ;;
         -- s2_2 = &mut copy(p2).Pair::s2
         (letsite s11 ← copy var_p2) ;;
-        Stmt.letBind s12 (Expr.borrowMutField s11 (.trecord pair_entries) field_s2) ;;
+        (letsite s12 ← borrowMutField(s11, .trecord pair_entries, field_s2)) ;;
         (var_s2_2 ::= s12) ;;
         -- f_1_2 = &mut copy(s1_2).S::f
         (letsite s13 ← copy var_s1_2) ;;
-        Stmt.letBind s14 (Expr.borrowMutField s13 (.trecord s_entries) field_f) ;;
+        (letsite s14 ← borrowMutField(s13, .trecord s_entries, field_f)) ;;
         (var_f_1_2 ::= s14) ;;
         -- f_2_2 = &mut copy(s2_2).S::f
         (letsite s15 ← copy var_s2_2) ;;
-        Stmt.letBind s16 (Expr.borrowMutField s15 (.trecord s_entries) field_f) ;;
+        (letsite s16 ← borrowMutField(s15, .trecord s_entries, field_f)) ;;
         (var_f_2_2 ::= s16) ;;
         -- Writes: order does not matter as long as the reference has no extensions
         -- *move(f_2_2) = 0
         (letsite s17 ← move var_f_2_2) ;;
         (letsite s25 ← #0) ;;
-        Stmt.writeRef s17 s25 ;;
+        (*s17 ::= s25) ;;
         -- *move(f_2_1) = 0
         (letsite s18 ← move var_f_2_1) ;;
         (letsite s26 ← #0) ;;
-        Stmt.writeRef s18 s26 ;;
+        (*s18 ::= s26) ;;
         -- *move(f_1_2) = 0
         (letsite s19 ← move var_f_1_2) ;;
         (letsite s27 ← #0) ;;
-        Stmt.writeRef s19 s27 ;;
+        (*s19 ::= s27) ;;
         -- *move(f_1_1) = 0
         (letsite s20 ← move var_f_1_1) ;;
         (letsite s28 ← #0) ;;
-        Stmt.writeRef s20 s28 ;;
+        (*s20 ::= s28) ;;
         -- *move(s1_1) = S { f: 0 }
         (letsite s21 ← move var_s1_1) ;;
         (letsite s29 ← #0) ;;
-        Stmt.letBind s30 (Expr.pack "S" [(field_f, s29)]) ;;
-        Stmt.writeRef s21 s30 ;;
+        (letsite s30 ← pack("S", [(field_f, s29)])) ;;
+        (*s21 ::= s30) ;;
         -- *move(s2_1) = S { f: 0 }
         (letsite s22 ← move var_s2_1) ;;
         (letsite s31 ← #0) ;;
-        Stmt.letBind s32 (Expr.pack "S" [(field_f, s31)]) ;;
-        Stmt.writeRef s22 s32 ;;
+        (letsite s32 ← pack("S", [(field_f, s31)])) ;;
+        (*s22 ::= s32) ;;
         -- *move(s1_2) = S { f: 0 }
         (letsite s23 ← move var_s1_2) ;;
         (letsite s33 ← #0) ;;
-        Stmt.letBind s34 (Expr.pack "S" [(field_f, s33)]) ;;
-        Stmt.writeRef s23 s34 ;;
+        (letsite s34 ← pack("S", [(field_f, s33)])) ;;
+        (*s23 ::= s34) ;;
         -- *move(s2_2) = S { f: 0 }
         (letsite s24 ← move var_s2_2) ;;
         (letsite s35 ← #0) ;;
-        Stmt.letBind s36 (Expr.pack "S" [(field_f, s35)]) ;;
-        Stmt.writeRef s24 s36 ;;
-        Stmt.ret []
+        (letsite s36 ← pack("S", [(field_f, s35)])) ;;
+        (*s24 ::= s36) ;;
+        ret []
     }
   ]
 }

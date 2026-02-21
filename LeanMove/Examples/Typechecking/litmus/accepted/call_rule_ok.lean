@@ -143,11 +143,11 @@ def basic_return_then_write : FunDef := {
         (letsite s1 ← &mut var_a) ;;
         (var_m ::= s1) ;;
         (letsite s2 ← copy var_m) ;;
-        Stmt.call [s3] "deref" [s2] (
-          (letsite s4 ← copy var_m) ;;
-          (letsite s5 ← #0) ;;
-          Stmt.writeRef s4 s5 ;;
-          Stmt.ret [])
+        (call([s3], "deref", [s2])) ;;
+        (letsite s4 ← copy var_m) ;;
+        (letsite s5 ← #0) ;;
+        (*s4 ::= s5) ;;
+        ret []
     }
   ]
 }
@@ -199,11 +199,11 @@ def read_call_output : FunDef := {
         (letsite s1 ← &mut var_a) ;;
         (var_m ::= s1) ;;
         (letsite s2 ← copy var_m) ;;
-        Stmt.call [s3] "id_mut" [s2] (
-          (var_mut1 ::= s3) ;;
-          (letsite s4 ← copy var_mut1) ;;
-          (letsite s5 ← *s4) ;;
-          Stmt.ret [])
+        (call([s3], "id_mut", [s2])) ;;
+        (var_mut1 ::= s3) ;;
+        (letsite s4 ← copy var_mut1) ;;
+        (letsite s5 ← *s4) ;;
+        ret []
     }
   ]
 }

@@ -112,7 +112,7 @@ def t : FunDef := {
         (letsite s1 ← #0) ;;            -- s1 = 0 (integer literal)
         (var_b ::= s1) ;;               -- b = s1
         (letsite s2 ← move var_cond) ;; -- s2 = move(cond)
-        Stmt.branch s2 "l2" "l1"
+        branch s2 "l2" "l1"
     },
     -- label l1 (false branch): x = &mut a; y = &mut b; jump l3
     { label := "l1"
@@ -121,7 +121,7 @@ def t : FunDef := {
         (var_x ::= s3) ;;               -- x = s3
         (letsite s4 ← &mut var_b) ;;    -- s4 = &mut b
         (var_y ::= s4) ;;               -- y = s4
-        Stmt.jump "l3"
+        jump "l3"
     },
     -- label l2 (true branch): x = &mut b; y = &mut a; jump l3
     { label := "l2"
@@ -130,7 +130,7 @@ def t : FunDef := {
         (var_x ::= s3) ;;               -- x = s3
         (letsite s4 ← &mut var_a) ;;    -- s4 = &mut a
         (var_y ::= s4) ;;               -- y = s4
-        Stmt.jump "l3"
+        jump "l3"
     },
     -- label l3: z = &mut a; writes; return
     { label := "l3"
@@ -139,14 +139,14 @@ def t : FunDef := {
         (var_z ::= s5) ;;               -- z = s5
         (letsite s6 ← move var_z) ;;    -- s6 = move(z)
         (letsite s7 ← #0) ;;            -- s7 = 0 (integer literal)
-        Stmt.writeRef s6 s7 ;;          -- *s6 = s7
+        (*s6 ::= s7) ;;                 -- *s6 = s7
         (letsite s8 ← move var_x) ;;    -- s8 = move(x)
         (letsite s9 ← #0) ;;            -- s9 = 0 (integer literal)
-        Stmt.writeRef s8 s9 ;;          -- *s8 = s9
+        (*s8 ::= s9) ;;                 -- *s8 = s9
         (letsite s10 ← move var_y) ;;   -- s10 = move(y)
         (letsite s11 ← #0) ;;           -- s11 = 0 (integer literal)
-        Stmt.writeRef s10 s11 ;;        -- *s10 = s11
-        Stmt.ret []                     -- return
+        (*s10 ::= s11) ;;               -- *s10 = s11
+        ret []                          -- return
     }
   ]
 }

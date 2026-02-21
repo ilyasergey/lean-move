@@ -116,7 +116,7 @@ def t : FunDef := {
     { label := "l0"
       body :=
         (letsite s0 ← move var_cond) ;;  -- s0 = move(cond)
-        Stmt.branch s0 "l2" "l1"         -- if s0 then l2 else l1
+        branch s0 "l2" "l1"              -- if s0 then l2 else l1
     },
     -- l1 (false branch): x = move(a); y = move(b); jump l3;
     { label := "l1"
@@ -125,7 +125,7 @@ def t : FunDef := {
         (var_x ::= s1) ;;                -- x = s1
         (letsite s2 ← move var_b) ;;     -- s2 = move(b)
         (var_y ::= s2) ;;                -- y = s2
-        Stmt.jump "l3"
+        jump "l3"
     },
     -- l2 (true branch): x = move(b); y = move(a); jump l3;
     { label := "l2"
@@ -134,29 +134,29 @@ def t : FunDef := {
         (var_x ::= s3) ;;                -- x = s3
         (letsite s4 ← move var_a) ;;     -- s4 = move(a)
         (var_y ::= s4) ;;                -- y = s4
-        Stmt.jump "l3"
+        jump "l3"
     },
     -- l3: f = &mut copy(x).S::f; *copy(y) = S { f: *copy(f) }; *copy(f) = 0; return move(y);
     { label := "l3"
       body :=
         -- f = &mut copy(x).S::f
         (letsite s5 ← copy var_x) ;;
-        Stmt.letBind s6 (Expr.borrowMutField s5 (.trecord s_entries) field_f) ;;
+        (letsite s6 ← borrowMutField(s5, .trecord s_entries, field_f)) ;;
         (var_f ::= s6) ;;
         -- *copy(y) = S { f: *copy(f) }
         -- First read *copy(f), then pack into S, then write to *copy(y)
         (letsite s7 ← copy var_f) ;;
-        Stmt.letBind s8 (Expr.readRef s7) ;;              -- s8 = *s7 (the value in f)
-        Stmt.letBind s9 (Expr.pack "S" [(field_f, s8)]) ;; -- s9 = S { f: s8 }
+        (letsite s8 ← *s7) ;;                             -- s8 = *s7 (the value in f)
+        (letsite s9 ← pack("S", [(field_f, s8)])) ;;     -- s9 = S { f: s8 }
         (letsite s10 ← copy var_y) ;;
-        Stmt.writeRef s10 s9 ;;                           -- *s10 = s9 (write struct to y)
+        (*s10 ::= s9) ;;                                  -- *s10 = s9 (write struct to y)
         -- *copy(f) = 0
         (letsite s11 ← copy var_f) ;;
         (letsite s13 ← #0) ;;                             -- s13 = 0 (integer literal)
-        Stmt.writeRef s11 s13 ;;                          -- *s11 = s13
+        (*s11 ::= s13) ;;                                 -- *s11 = s13
         -- return move(y)
         (letsite s12 ← move var_y) ;;
-        Stmt.ret [s12]
+        ret [s12]
     }
   ]
 }

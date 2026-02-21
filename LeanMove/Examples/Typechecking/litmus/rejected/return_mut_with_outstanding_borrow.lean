@@ -29,10 +29,10 @@ This function takes a mutable reference to a record, borrows a field
 mutable reference while the field borrow is still alive.
 
 Rejected by condition 3 of the `ret` rule (writability): the returned
-mutable ref must have only trivial outbound paths to all tracked arefs.
+mutable ref must have only trivial outbound paths to locally-created refs (.refid).
 After `borrowField`, the pathEnv records `G(varRef(p), r') = [.field x]`
-where `r'` is the field borrow's aref. This is a non-trivial outbound
-path, so the return is rejected.
+where `r'` is the field borrow's aref (a .refid). This is a non-trivial outbound
+path to a .refid ref, so the return is rejected.
 
 This demonstrates **no flow from mutable to immutable reference upon return**:
 a function cannot return a mutable ref while an outstanding immutable borrow

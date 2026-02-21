@@ -101,13 +101,13 @@ def borrow : FunDef := {
       body :=
         -- Create first mutable borrow to field x
         (letsite s0 ← copy var_p) ;;     -- s0 = copy(p)
-        Stmt.letBind s1 (Expr.borrowMutField s0 (BasicMoveType.trecord point_entries) field_x) ;; -- s1 = &mut s0.x
+        (letsite s1 ← borrowMutField(s0, BasicMoveType.trecord point_entries, field_x)) ;; -- s1 = &mut s0.x
         (release s1) ;;                  -- release s1
         -- Create second mutable borrow to field y
         (letsite s2 ← copy var_p) ;;     -- s2 = copy(p)
-        Stmt.letBind s3 (Expr.borrowMutField s2 (BasicMoveType.trecord point_entries) field_y) ;; -- s3 = &mut s2.y
+        (letsite s3 ← borrowMutField(s2, BasicMoveType.trecord point_entries, field_y)) ;; -- s3 = &mut s2.y
         (release s3) ;;                  -- release s3
-        Stmt.ret []                      -- return unit
+        ret []                           -- return unit
     }
   ]
 }
@@ -139,25 +139,25 @@ def write : FunDef := {
         -- Simulate call to borrow by directly borrowing the fields
         -- (since MoveLight function calls are more complex to model)
         (letsite s0 ← copy var_p) ;;
-        Stmt.letBind s1 (Expr.borrowMutField s0 (.trecord point_entries) field_x) ;;
+        (letsite s1 ← borrowMutField(s0, .trecord point_entries, field_x)) ;;
         (var_x ::= s1) ;;
         (letsite s2 ← copy var_p) ;;
-        Stmt.letBind s3 (Expr.borrowMutField s2 (.trecord point_entries) field_y) ;;
+        (letsite s3 ← borrowMutField(s2, .trecord point_entries, field_y)) ;;
         (var_y ::= s3) ;;
         -- Now write through the refs
         (letsite s4 ← copy var_x) ;;
         (letsite s8 ← #0) ;;             -- s8 = 0 (integer literal)
-        Stmt.writeRef s4 s8 ;;           -- *x = 0
+        (*s4 ::= s8) ;;                   -- *x = 0
         (letsite s5 ← copy var_y) ;;
         (letsite s9 ← #0) ;;             -- s9 = 0 (integer literal)
-        Stmt.writeRef s5 s9 ;;           -- *y = 0
+        (*s5 ::= s9) ;;                  -- *y = 0
         (letsite s6 ← copy var_x) ;;
         (letsite s10 ← #0) ;;            -- s10 = 0 (integer literal)
-        Stmt.writeRef s6 s10 ;;          -- *x = 0 (again)
+        (*s6 ::= s10) ;;                 -- *x = 0 (again)
         (letsite s7 ← copy var_y) ;;
         (letsite s11 ← #0) ;;            -- s11 = 0 (integer literal)
-        Stmt.writeRef s7 s11 ;;          -- *y = 0 (again)
-        Stmt.ret []
+        (*s7 ::= s11) ;;                 -- *y = 0 (again)
+        ret []
     }
   ]
 }

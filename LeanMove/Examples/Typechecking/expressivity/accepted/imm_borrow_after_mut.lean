@@ -93,10 +93,10 @@ def direct : FunDef := {
         (var_rimm ::= s2) ;;            -- rimm = s2
         (letsite s3 ← copy var_rmut) ;; -- s3 = copy(rmut)
         (letsite s4 ← #0) ;;            -- s4 = 0 (integer literal for write)
-        Stmt.writeRef s3 s4 ;;          -- *s3 = s4
+        (*s3 ::= s4) ;;                 -- *s3 = s4
         (letsite s5 ← copy var_rimm) ;; -- s5 = copy(rimm)
-        Stmt.letBind s6 (Expr.readRef s5) ;; -- s6 = *s5 (discarded)
-        Stmt.ret []
+        (letsite s6 ← *s5) ;;           -- s6 = *s5 (discarded)
+        ret []
     }
   ]
 }
@@ -134,14 +134,14 @@ def copy_and_freeze : FunDef := {
         (letsite s1 ← &mut var_a) ;;    -- s1 = &mut a
         (var_rmut ::= s1) ;;            -- rmut = s1
         (letsite s2 ← copy var_rmut) ;; -- s2 = copy(rmut)
-        Stmt.letBind s3 (Expr.freeze s2) ;; -- s3 = freeze(s2)
+        (letsite s3 ← freeze s2) ;;     -- s3 = freeze(s2)
         (var_rimm ::= s3) ;;            -- rimm = s3
         (letsite s4 ← copy var_rmut) ;; -- s4 = copy(rmut)
         (letsite s7 ← #0) ;;            -- s7 = 0 (integer literal for write)
-        Stmt.writeRef s4 s7 ;;          -- *s4 = s7
+        (*s4 ::= s7) ;;                 -- *s4 = s7
         (letsite s5 ← copy var_rimm) ;; -- s5 = copy(rimm)
-        Stmt.letBind s6 (Expr.readRef s5) ;; -- s6 = *s5 (discarded)
-        Stmt.ret []
+        (letsite s6 ← *s5) ;;           -- s6 = *s5 (discarded)
+        ret []
     }
   ]
 }

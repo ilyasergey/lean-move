@@ -1466,9 +1466,7 @@ lemma extend_with_star_paths_to_non_member (target source : Aref) (pe : PathEnv)
   rw [if_neg (fun ⟨_, h⟩ => hv_ne_target h), if_neg hv_ne_target]
   by_cases hut : u = target
   · rw [if_pos hut]
-    intro hp; simp only [interpret_regex] at hp
-    obtain ⟨_, p2, _, _, h2⟩ := hp
-    exact h_to source v p2 hv_notin hvroot hv_ne_source.symm h2
+    exact fun ⟨p1, _, _, hp1, _⟩ => h_to source v p1 hv_notin hvroot hv_ne_source.symm hp1
   · rw [if_neg hut]
     exact h_to u v p hv_notin hvroot huv
 

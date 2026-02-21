@@ -122,25 +122,25 @@ def foo : FunDef := {
       body :=
         -- s = S { f: 42 }
         (letsite s0 ← #42) ;;
-        Stmt.letBind s1 (Expr.pack "S" [(field_f, s0)]) ;;
+        (letsite s1 ← pack("S", [(field_f, s0)])) ;;
         (var_s ::= s1) ;;
         -- r = &mut s
         (letsite s2 ← &mut var_s) ;;
         (var_r ::= s2) ;;
         -- f_ref = &copy(r).S::f
         (letsite s3 ← copy var_r) ;;
-        Stmt.letBind s4 (Expr.borrowField s3 (.trecord s_entries) field_f) ;;
+        (letsite s4 ← borrowField(s3, .trecord s_entries, field_f)) ;;
         (var_f_ref ::= s4) ;;
         -- *move(r) = T { g: 0 }  — overwrites S{f:42} with T{g:0}!
         (letsite s5 ← move var_r) ;;
         (letsite s6 ← #0) ;;
-        Stmt.letBind s7 (Expr.pack "T" [(field_g, s6)]) ;;
-        Stmt.writeRef s5 s7 ;;
+        (letsite s7 ← pack("T", [(field_g, s6)])) ;;
+        (*s5 ::= s7) ;;
         -- dummy = *copy(f_ref)  — DANGLING: field "f" no longer exists
         (letsite s8 ← copy var_f_ref) ;;
-        Stmt.letBind s9 (Expr.readRef s8) ;;
+        (letsite s9 ← *s8) ;;
         (var_dummy ::= s9) ;;
-        Stmt.ret []
+        ret []
     }
   ]
 }

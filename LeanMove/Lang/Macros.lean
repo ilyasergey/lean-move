@@ -75,7 +75,7 @@ macro "letsite" a:term " ← " "#" n:term : term =>
   `((fun cont => Stmt.letBind $a (Expr.intLit $n) cont : StmtBuilder))
 
 -- Write reference builder: *a ::= b (produces StmtBuilder)
-macro "*" a:term " ::= " b:term : term =>
+macro "*" a:term:max " ::= " b:term:21 : term =>
   `((fun cont => Stmt.writeRef $a $b cont : StmtBuilder))
 
 -- Release builder: release s (produces StmtBuilder)
@@ -90,6 +90,14 @@ macro "letsite" a:term " ← " "pack" "(" name:term "," fields:term ")" : term =
 macro "letsite" af:term " ← " "borrowField" "(" a:term "," bt:term "," f:term ")" : term =>
   `((fun cont => Stmt.letBind $af (Expr.borrowField $a $bt $f) cont : StmtBuilder))
 
+-- Borrow mutable field builder: letsite s ← borrowMutField(src, bt, f) (produces StmtBuilder)
+macro "letsite" af:term " ← " "borrowMutField" "(" a:term "," bt:term "," f:term ")" : term =>
+  `((fun cont => Stmt.letBind $af (Expr.borrowMutField $a $bt $f) cont : StmtBuilder))
+
+-- Unpack builder: unpack(fields, src) (produces StmtBuilder)
+macro "unpack" "(" fields:term "," src:term ")" : term =>
+  `((fun cont => Stmt.unpack $fields $src cont : StmtBuilder))
+
 -- Call builder: call(results, fname, args) (produces StmtBuilder)
 macro "call" "(" results:term "," fnName:term "," args:term ")" : term =>
   `((fun cont => Stmt.call $results $fnName $args cont : StmtBuilder))
@@ -100,7 +108,7 @@ macro "call" "(" results:term "," fnName:term "," args:term ")" : term =>
 macro "jump" l:term : term => `(Stmt.jump $l)
 
 -- Branch: branch cond "l1" "l2" (terminal Stmt)
-macro "branch" cond:term l1:term l2:term : term => `(Stmt.branch $cond $l1 $l2)
+macro "branch" cond:term:max l1:term:max l2:term : term => `(Stmt.branch $cond $l1 $l2)
 
 -- Return: ret [sites] (terminal Stmt)
 macro "ret" sites:term : term => `(Stmt.ret $sites)
@@ -123,7 +131,9 @@ macro "abort" s:term : term => `(Stmt.abort $s)
 - `* a ::= b` for write through reference
 - `release s` for releasing references
 - `letsite s ← pack("T", [(f, a)])` for packing structs
-- `letsite s ← borrowField(src, bt, f)` for borrowing fields
+- `letsite s ← borrowField(src, bt, f)` for borrowing immutable fields
+- `letsite s ← borrowMutField(src, bt, f)` for borrowing mutable fields
+- `unpack(fields, src)` for unpacking structs
 - `call(results, "fname", args)` for function calls
 
 ### Terminal statement macros (produce Stmt directly)
@@ -138,7 +148,10 @@ macro "abort" s:term : term => `(Stmt.abort $s)
 - Example: `(letsite s ← move x) ;; ret [s]`
   expands to: `Stmt.letBind s (Expr.usage (Usage.move x)) (Stmt.ret [s])`
 
-### Direct notation for other forms
-- `Stmt.letBind s (Expr.borrowMutField src name f) cont` for mutable field borrow
-- `Stmt.unpack [(f, s)] src cont` for unpacking structs
+### Note on partial application
+The following raw `Stmt` constructors also work as `StmtBuilder` via partial application:
+- `Stmt.writeRef a b` (equivalent to `*a ::= b`)
+- `Stmt.call results fname args` (equivalent to `call(results, fname, args)`)
+- `Stmt.unpack fields src` (equivalent to `unpack(fields, src)`)
+The macro forms are preferred for readability and closeness to Move IR syntax.
 -/

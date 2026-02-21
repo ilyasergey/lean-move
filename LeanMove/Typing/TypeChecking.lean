@@ -311,7 +311,8 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
   -- Checks four conditions:
   -- 1. Types conform: positional matching of returned sites against declared return types
   -- 2. No local borrowing: returned refs don't borrow locals (no path from root to returned ref)
-  -- 3. Writability: mutable returned refs have only trivial outbound paths
+  -- 3. Writability: mutable returned refs have only trivial outbound to non-returned live ref sites
+  --    (Checks against refs of live non-returned sites in siteEnv, not all pathEnv.refs)
   -- 4. No aliasing: no other returned ref reaches a mutable return
   | ret : ∀ (lenv : LabelEnv) (env : TypeEnv) (as : List Site) retTypes,
       -- 1. Types conform
@@ -319,10 +320,11 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
       -- 2. No local borrowing: returned refs don't borrow locals
       (∀ a ∈ as, ∀ bt r bk, AssocMap.lookup env.siteEnv a = some (.ref bt r bk) →
         ∀ p, ¬interpret_regex (env.pathEnv.paths (.root, r)) p) →
-      -- 3. Writability: mutable returned refs have only trivial outbound paths
+      -- 3. Writability: mutable returned refs have only trivial outbound to non-returned live sites
       (∀ a ∈ as, ∀ bt r, AssocMap.lookup env.siteEnv a = some (.ref bt r .siteBorrowMut) →
-        ∀ y, y ∈ env.pathEnv.refs →
-          ∀ p, interpret_regex (env.pathEnv.paths (r, y)) p → p = []) →
+        ∀ b, b ∉ as →
+          ∀ bt' r' bk', AssocMap.lookup env.siteEnv b = some (.ref bt' r' bk') →
+            ∀ p, interpret_regex (env.pathEnv.paths (r, r')) p → p = []) →
       -- 4. No aliasing: no other returned ref reaches a mutable return
       (∀ a₁ ∈ as, ∀ bt₁ r₁, AssocMap.lookup env.siteEnv a₁ = some (.ref bt₁ r₁ .siteBorrowMut) →
         ∀ a₂ ∈ as, a₁ ≠ a₂ →
@@ -533,8 +535,11 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
       populate_call_outputs env as rets outRefs = some env' →
       -- Mutable inputs isolated
       check_mutable_inputs_isolated env bs →
-      -- Continuation typed in env after output population + path connections
-      typecheck_stmt lenv (call_connect_inputs_outputs env' as bs) cont retTypes →
+      -- Continuation typed in env after output population + path connections + input consumption
+      typecheck_stmt lenv
+        (let env'' := call_connect_inputs_outputs env' as bs
+         {env'' with siteEnv := AssocMap.deleteAll env''.siteEnv bs})
+        cont retTypes →
       typecheck_stmt lenv env (.call as fnName bs cont) retTypes
 
   -- release(a); cont

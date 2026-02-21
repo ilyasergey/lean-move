@@ -167,19 +167,19 @@ def invalid : FunDef := {
         -- r = &mut a
         (letsite s1 ← &mut var_a) ;;
         (var_r ::= s1) ;;
-        -- mut1 = Self.id_mut(copy(r))  [using Stmt.call]
+        -- mut1 = Self.id_mut(copy(r))  [using call macro]
         (letsite s2 ← copy var_r) ;;
-        Stmt.call [s3] "id_mut" [s2] (
-          (var_mut1 ::= s3) ;;
-          -- imm1 = Self.id(&a)  [using Stmt.call]
-          (letsite s4 ← &var_a) ;;
-          Stmt.call [s5] "id" [s4] (
-            (var_imm1 ::= s5) ;;
-            -- *copy(mut1) = 0 -- ERROR: a is immutably borrowed via imm1
-            (letsite s6 ← copy var_mut1) ;;
-            (letsite s7 ← #0) ;;
-            Stmt.writeRef s6 s7 ;;
-            Stmt.ret []))
+        (call([s3], "id_mut", [s2])) ;;
+        (var_mut1 ::= s3) ;;
+        -- imm1 = Self.id(&a)  [using call macro]
+        (letsite s4 ← &var_a) ;;
+        (call([s5], "id", [s4])) ;;
+        (var_imm1 ::= s5) ;;
+        -- *copy(mut1) = 0 -- ERROR: a is immutably borrowed via imm1
+        (letsite s6 ← copy var_mut1) ;;
+        (letsite s7 ← #0) ;;
+        (*s6 ::= s7) ;;
+        ret []
     }
   ]
 }
@@ -187,9 +187,9 @@ def invalid : FunDef := {
 /-!
 ## Why this is rejected
 
-After `Stmt.call [s3] "id_mut" [s2]`, `call_connect_inputs_outputs` creates paths
+After `call([s3], "id_mut", [s2])`, `call_connect_inputs_outputs` creates paths
 connecting the mutable output ref (s3) to the mutable input ref (s2, which traces back
-to `r`'s borrow of `a`). Then after `Stmt.call [s5] "id" [s4]`, the immutable output
+to `r`'s borrow of `a`). Then after `call([s5], "id", [s4])`, the immutable output
 ref (s5) is connected to the immutable input ref (s4 = &a). When `writeRef` on
 `copy(mut1)` is checked, `check_outbound_bool` finds paths from `mut1`'s ref (through
 `r` and `.root`) to `imm1`'s ref, rejecting the write.

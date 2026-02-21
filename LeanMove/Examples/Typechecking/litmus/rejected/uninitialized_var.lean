@@ -68,7 +68,7 @@ def foo : FunDef := {
         -- y = copy(x) — ERROR: x never assigned
         (letsite s0 ← copy var_x) ;;
         (var_y ::= s0) ;;
-        Stmt.ret []
+        ret []
     }
   ]
 }

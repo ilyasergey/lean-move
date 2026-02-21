@@ -139,35 +139,35 @@ def t : FunDef := {
     { label := "l0"
       body :=
         (letsite s0 ← move var_cond) ;;  -- s0 = move(cond)
-        Stmt.branch s0 "l2" "l1"         -- if s0 then l2 else l1
+        branch s0 "l2" "l1"              -- if s0 then l2 else l1
     },
     -- l1 (false branch): x = &mut root.l; y = &mut x.l.l
     { label := "l1"
       body :=
         -- x = &mut copy(root).Tree::l
         (letsite s1 ← copy var_root) ;;
-        Stmt.letBind s2 (Expr.borrowMutField s1 (.trecord tree_entries) field_l) ;;
+        (letsite s2 ← borrowMutField(s1, .trecord tree_entries, field_l)) ;;
         (var_x ::= s2) ;;
         -- y = &mut (&mut copy(x).Sub1::l).Sub2::l
         (letsite s3 ← copy var_x) ;;
-        Stmt.letBind s4 (Expr.borrowMutField s3 (.trecord sub1_entries) field_l) ;;  -- Sub2
-        Stmt.letBind s5 (Expr.borrowMutField s4 (.trecord sub2_entries) field_l) ;;  -- u64
+        (letsite s4 ← borrowMutField(s3, .trecord sub1_entries, field_l)) ;;  -- Sub2
+        (letsite s5 ← borrowMutField(s4, .trecord sub2_entries, field_l)) ;;  -- u64
         (var_y ::= s5) ;;
-        Stmt.jump "l3"
+        jump "l3"
     },
     -- l2 (true branch): x = &mut root.r; y = &mut x.r.r
     { label := "l2"
       body :=
         -- x = &mut copy(root).Tree::r
         (letsite s1 ← copy var_root) ;;
-        Stmt.letBind s2 (Expr.borrowMutField s1 (.trecord tree_entries) field_r) ;;
+        (letsite s2 ← borrowMutField(s1, .trecord tree_entries, field_r)) ;;
         (var_x ::= s2) ;;
         -- y = &mut (&mut copy(x).Sub1::r).Sub2::r
         (letsite s3 ← copy var_x) ;;
-        Stmt.letBind s4 (Expr.borrowMutField s3 (.trecord sub1_entries) field_r) ;;  -- Sub2
-        Stmt.letBind s5 (Expr.borrowMutField s4 (.trecord sub2_entries) field_r) ;;  -- u64
+        (letsite s4 ← borrowMutField(s3, .trecord sub1_entries, field_r)) ;;  -- Sub2
+        (letsite s5 ← borrowMutField(s4, .trecord sub2_entries, field_r)) ;;  -- u64
         (var_y ::= s5) ;;
-        Stmt.jump "l3"
+        jump "l3"
     },
     -- l3: release x, write to root.l.r, write through y
     { label := "l3"
@@ -178,18 +178,18 @@ def t : FunDef := {
         -- *(&mut (&mut copy(root).Tree::l).Sub1::r) = Sub2 { l: 0, r: 0 }
         -- This is safe because root.l.r is not borrowed
         (letsite s7 ← copy var_root) ;;
-        Stmt.letBind s8 (Expr.borrowMutField s7 (.trecord tree_entries) field_l) ;;  -- &mut Sub1
-        Stmt.letBind s9 (Expr.borrowMutField s8 (.trecord sub1_entries) field_r) ;;  -- &mut Sub2
+        (letsite s8 ← borrowMutField(s7, .trecord tree_entries, field_l)) ;;  -- &mut Sub1
+        (letsite s9 ← borrowMutField(s8, .trecord sub1_entries, field_r)) ;;  -- &mut Sub2
         -- Pack Sub2 { l: 0, r: 0 }
         (letsite s13 ← #0) ;;            -- s13 = 0 (integer literal for l)
         (letsite s14 ← #0) ;;            -- s14 = 0 (integer literal for r)
-        Stmt.letBind s15 (Expr.pack "Sub2" [(field_l, s13), (field_r, s14)]) ;;
-        Stmt.writeRef s9 s15 ;;          -- *s9 = Sub2 { l: 0, r: 0 }
+        (letsite s15 ← pack("Sub2", [(field_l, s13), (field_r, s14)])) ;;
+        (*s9 ::= s15) ;;                 -- *s9 = Sub2 { l: 0, r: 0 }
         -- *move(y) = 0
         (letsite s10 ← move var_y) ;;
         (letsite s16 ← #0) ;;            -- s16 = 0 (integer literal)
-        Stmt.writeRef s10 s16 ;;
-        Stmt.ret []
+        (*s10 ::= s16) ;;
+        ret []
     }
   ]
 }

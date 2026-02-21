@@ -174,14 +174,14 @@ def field_dangling : FunDef := {
       body :=
         -- f = &copy(s).S::f (immutable borrow of field)
         (letsite s0 ← copy var_s) ;;
-        Stmt.letBind s1 (Expr.borrowField s0 (.trecord s_entries) field_f) ;;
+        (letsite s1 ← borrowField(s0, .trecord s_entries, field_f)) ;;
         (var_f ::= s1) ;;
         -- *move(s) = S { f: 0 } -- ERROR: s is borrowed via f
         (letsite s2 ← move var_s) ;;
         (letsite s3 ← #0) ;;
-        Stmt.letBind s4 (Expr.pack "S" [(field_f, s3)]) ;;
-        Stmt.writeRef s2 s4 ;;
-        Stmt.ret []
+        (letsite s4 ← pack("S", [(field_f, s3)])) ;;
+        (*s2 ::= s4) ;;
+        ret []
     }
   ]
 }
@@ -212,19 +212,19 @@ def nested_field_dangling : FunDef := {
       body :=
         -- s = &mut copy(p).P::s
         (letsite s0 ← copy var_p) ;;
-        Stmt.letBind s1 (Expr.borrowMutField s0 (.trecord p_entries) field_s) ;;
+        (letsite s1 ← borrowMutField(s0, .trecord p_entries, field_s)) ;;
         (var_s ::= s1) ;;
         -- f = &copy(s).S::f
         (letsite s2 ← copy var_s) ;;
-        Stmt.letBind s3 (Expr.borrowField s2 (.trecord s_entries) field_f) ;;
+        (letsite s3 ← borrowField(s2, .trecord s_entries, field_f)) ;;
         (var_f ::= s3) ;;
         -- *move(p) = P { s: S { f: 0 } } -- ERROR: p is borrowed
         (letsite s4 ← move var_p) ;;
         (letsite s5 ← #0) ;;
-        Stmt.letBind s6 (Expr.pack "S" [(field_f, s5)]) ;;
-        Stmt.letBind s7 (Expr.pack "P" [(field_s, s6)]) ;;
-        Stmt.writeRef s4 s7 ;;
-        Stmt.ret []
+        (letsite s6 ← pack("S", [(field_f, s5)])) ;;
+        (letsite s7 ← pack("P", [(field_s, s6)])) ;;
+        (*s4 ::= s7) ;;
+        ret []
     }
   ]
 }
@@ -270,15 +270,15 @@ def simple_call_dangling : FunDef := {
         -- m = &mut a
         (letsite s1 ← &mut var_a) ;;
         (var_m ::= s1) ;;
-        -- i = Self.f(copy(m))  [using Stmt.call]
+        -- i = Self.f(copy(m))  [using call macro]
         (letsite s2 ← copy var_m) ;;
-        Stmt.call [s3] "f" [s2] (
-          (var_i ::= s3) ;;
-          -- *copy(m) = 0 -- ERROR: m has immutable alias i
-          (letsite s4 ← copy var_m) ;;
-          (letsite s5 ← #0) ;;
-          Stmt.writeRef s4 s5 ;;
-          Stmt.ret [])
+        (call([s3], "f", [s2])) ;;
+        (var_i ::= s3) ;;
+        -- *copy(m) = 0 -- ERROR: m has immutable alias i
+        (letsite s4 ← copy var_m) ;;
+        (letsite s5 ← #0) ;;
+        (*s4 ::= s5) ;;
+        ret []
     }
   ]
 }
@@ -310,16 +310,16 @@ def field_call_dangling : FunDef := {
   blocks := [
     { label := "b0"
       body :=
-        -- f = Self.f(copy(s))  [using Stmt.call]
+        -- f = Self.f(copy(s))  [using call macro]
         (letsite s0 ← copy var_s) ;;
-        Stmt.call [s1] "f" [s0] (
-          (var_f ::= s1) ;;
-          -- *copy(s) = S { f: 0 } -- ERROR: s is borrowed via f
-          (letsite s2 ← copy var_s) ;;
-          (letsite s3 ← #0) ;;
-          Stmt.letBind s4 (Expr.pack "S" [(field_f, s3)]) ;;
-          Stmt.writeRef s2 s4 ;;
-          Stmt.ret [])
+        (call([s1], "f", [s0])) ;;
+        (var_f ::= s1) ;;
+        -- *copy(s) = S { f: 0 } -- ERROR: s is borrowed via f
+        (letsite s2 ← copy var_s) ;;
+        (letsite s3 ← #0) ;;
+        (letsite s4 ← pack("S", [(field_f, s3)])) ;;
+        (*s2 ::= s4) ;;
+        ret []
     }
   ]
 }
@@ -340,12 +340,12 @@ reference to another live reference, so the write is rejected:
   reference has outbound paths to both `s`'s and (transitively) `f`'s references. The
   `writeRef` through `move(p)` fails.
 
-- **simple_call_dangling:** After `Stmt.call [s3] "f" [s2]`, `call_connect_inputs_outputs`
+- **simple_call_dangling:** After `call([s3], "f", [s2])`, `call_connect_inputs_outputs`
   creates paths from the input ref (via copy(m)) to the immutable output ref (s3).
   `check_outbound_bool` on the subsequent `copy(m)` finds these outbound edges, so the
   `writeRef` is rejected.
 
-- **field_call_dangling:** After `Stmt.call [s1] "f" [s0]`, the output ref (s1) is
+- **field_call_dangling:** After `call([s1], "f", [s0])`, the output ref (s1) is
   connected to the input ref (via copy(s)). `check_outbound_bool` on the subsequent
   `copy(s)` finds the path to the output ref and rejects the `writeRef`.
 

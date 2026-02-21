@@ -267,14 +267,18 @@ def ret_refs_not_from_locals_bool (env : TypeEnv) (as : List Site) : Bool :=
     | some (.ref _ r _) => is_empty (simplify (env.pathEnv.paths (.root, r)))
     | _ => true
 
-/-- Boolean check: mutable returned refs have only trivial outbound paths.
-    For each mut ref returned site with aref r, ∀ y ∈ refs, G(r,y) matches only []. -/
+/-- Boolean check: mutable returned refs have only trivial outbound paths to non-returned live ref sites.
+    For each mut ref returned site with aref r, checks all non-returned ref-typed sites b in siteEnv:
+    G(r, r') must match only [] where r' is the aref of site b. -/
 def ret_mutable_writable_bool (env : TypeEnv) (as : List Site) : Bool :=
   as.all fun a =>
     match lookup env.siteEnv a with
     | some (.ref _ r .siteBorrowMut) =>
-      env.pathEnv.refs.all fun y =>
-        only_matches_empty (simplify (env.pathEnv.paths (r, y)))
+      env.siteEnv.entries.all fun (b, ty) =>
+        if b ∈ as then true  -- skip returned sites
+        else match ty with
+        | .ref _ r' _ => only_matches_empty (simplify (env.pathEnv.paths (r, r')))
+        | _ => true
     | _ => true
 
 /-- Boolean check: no other returned ref reaches a mutable return.
@@ -519,7 +523,8 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
           match populate_call_outputs env as rets outRefs with
           | some env' =>
             let env'' := call_connect_inputs_outputs env' as bs
-            check_stmt lenv env'' cont retTypes
+            let env''' := {env'' with siteEnv := AssocMap.deleteAll env''.siteEnv bs}
+            check_stmt lenv env''' cont retTypes
           | none => none
         else none
       | none => none

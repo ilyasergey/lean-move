@@ -76,9 +76,9 @@ def foo : FunDef := {
         (var_x ::= s0) ;;
         -- S { f: y } = copy(x) — ERROR: x is u64, not a record
         (letsite s1 ← copy var_x) ;;
-        Stmt.unpack [(field_f, s2)] s1 ;;
+        (unpack([(field_f, s2)], s1)) ;;
         (var_y ::= s2) ;;
-        Stmt.ret []
+        ret []
     }
   ]
 }

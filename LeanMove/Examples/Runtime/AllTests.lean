@@ -220,8 +220,16 @@ private def boxHeap : Heap × Loc :=
     (⟨"tl"⟩, .record [(⟨"x"⟩, .int 1), (⟨"y"⟩, .int 2)]),
     (⟨"br"⟩, .record [(⟨"x"⟩, .int 3), (⟨"y"⟩, .int 4)])])
 
+-- Runtime funEnv: fn_write calls "borrow", so we need it at runtime
+private def borrowFunEnvRT : AssocMap Id FunDef :=
+  AssocMap.insert AssocMap.empty "borrow" fn_borrow
+
+-- FunTypingEnv: maps "borrow" to its label env for type checking
+private def borrowFte : FunTypingEnv :=
+  AssocMap.insert AssocMap.empty "borrow" fn_borrow_lenvDec
+
 #guard (run 100 (initState fn_borrow AssocMap.empty [.ref boxHeap.2 []] boxHeap.1)).isHalted
-#guard (run 200 (initState fn_write AssocMap.empty [.ref boxHeap.2 []] boxHeap.1)).isHalted
+#guard (run 200 (initState fn_write borrowFunEnvRT [.ref boxHeap.2 []] boxHeap.1)).isHalted
 
 -- Type soundness: fn_borrow never produces a danglingRef error (ref-typed param)
 set_option maxRecDepth 4096 in
@@ -232,8 +240,8 @@ private theorem fn_borrow_no_danglingRef :
 -- Type soundness: fn_write never produces a danglingRef error (ref-typed param)
 set_option maxRecDepth 4096 in
 private theorem fn_write_no_danglingRef :
-    ∀ n loc, run n (initState fn_write empty [.ref boxHeap.2 []] boxHeap.1) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec fn_write fn_write_lenvDec empty empty [.ref boxHeap.2 []] boxHeap.1 (by rfl)
+    ∀ n loc, run n (initState fn_write borrowFunEnvRT [.ref boxHeap.2 []] boxHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec fn_write fn_write_lenvDec borrowFunEnvRT borrowFte [.ref boxHeap.2 []] boxHeap.1 (by rfl)
 
 end
 

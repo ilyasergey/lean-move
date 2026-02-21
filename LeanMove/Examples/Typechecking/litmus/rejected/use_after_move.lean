@@ -78,7 +78,7 @@ def foo : FunDef := {
         -- copy(x) — ERROR: x was moved, var_x is None
         (letsite s2 ← copy var_x) ;;
         (var_y ::= s2) ;;
-        Stmt.ret []
+        ret []
     }
   ]
 }

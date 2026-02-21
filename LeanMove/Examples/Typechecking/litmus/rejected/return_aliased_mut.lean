@@ -68,7 +68,7 @@ def fn_return_aliased : FunDef := {
       body :=
         (letsite s0 ← copy var_r) ;;
         (letsite s1 ← move var_r) ;;
-        Stmt.ret [s0, s1]
+        ret [s0, s1]
     }
   ]
 }

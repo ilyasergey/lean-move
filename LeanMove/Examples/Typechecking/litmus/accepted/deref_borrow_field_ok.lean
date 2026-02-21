@@ -211,8 +211,7 @@ theorem M_t_welltyped : ∃ lenv, typecheck_fun M_t lenv :=
   label b0:
       x = T{f: 2};         // M.new(2) inlined as pack
       x_ref = &x;          // borrow x into s1, then assign to x_ref
-      M.t(move(x_ref));    // move x_ref into s2, call M.t
-      release(s2);         // release borrow before returning
+      M.t(move(x_ref));    // move x_ref into s2, call M.t (call consumes s2)
       return;
   }
 -/
@@ -235,8 +234,7 @@ def foo : FunDef := {
         (var_x_ref ::= s1) ;;                                   -- x_ref = s1
         -- M.t(move(x_ref)) (in A-normal form: move then call)
         (letsite s2 ← move var_x_ref) ;;                        -- let s2 = move(x_ref)
-        (call([], "M.t", [s2])) ;;                              -- M.t(s2)
-        (release s2) ;;                                         -- release borrow
+        (call([], "M.t", [s2])) ;;                              -- M.t(s2) — consumes s2
         ret []                                                   -- return
     }
   ]

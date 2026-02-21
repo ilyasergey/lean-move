@@ -239,18 +239,41 @@ lemma ret_refs_not_from_locals_bool_sound (env : TypeEnv) (as : List Site) :
   rw [simplify_preserves_semantics] at this
   exact this hp
 
+private lemma list_lookup_mem {K V : Type} [DecidableEq K]
+    (l : List (K × V)) (k : K) (v : V) (h : List.lookup k l = some v) :
+    (k, v) ∈ l := by
+  induction l with
+  | nil => cases h
+  | cons hd tl ih =>
+    unfold List.lookup at h
+    split at h
+    · rename_i heq
+      have hk : k = hd.1 := beq_iff_eq.mp heq
+      have hv : hd.2 = v := by injection h
+      subst hk; subst hv; exact List.mem_cons_self ..
+    · exact List.mem_cons_of_mem _ (ih h)
+
+private lemma lookup_mem_entries {K V : Type} [DecidableEq K]
+    (m : AssocMap K V) (k : K) (v : V) (h : lookup m k = some v) :
+    (k, v) ∈ m.entries :=
+  list_lookup_mem m.entries k v h
+
 lemma ret_mutable_writable_bool_sound (env : TypeEnv) (as : List Site) :
     ret_mutable_writable_bool env as = true →
     (∀ a ∈ as, ∀ bt r, lookup env.siteEnv a = some (.ref bt r .siteBorrowMut) →
-      ∀ y, y ∈ env.pathEnv.refs →
-        ∀ p, interpret_regex (env.pathEnv.paths (r, y)) p → p = []) := by
-  intro h a ha bt r hlook y hy p hp
+      ∀ b, b ∉ as →
+        ∀ bt' r' bk', lookup env.siteEnv b = some (.ref bt' r' bk') →
+          ∀ p, interpret_regex (env.pathEnv.paths (r, r')) p → p = []) := by
+  intro h a ha bt r hlook b hb bt' r' bk' hlook_b p hp
   simp only [ret_mutable_writable_bool, List.all_eq_true] at h
   have ha' := h a ha
   simp only [hlook] at ha'
   have hall := List.all_eq_true.mp ha'
-  have hy' := hall y hy
-  have := only_matches_empty_sound _ hy' p
+  have hmem := lookup_mem_entries env.siteEnv b (.ref bt' r' bk') hlook_b
+  have hentry := hall (b, .ref bt' r' bk') hmem
+  simp only at hentry
+  rw [if_neg (by exact fun hmem => hb hmem)] at hentry
+  have := only_matches_empty_sound _ hentry p
   rw [simplify_preserves_semantics] at this
   exact this hp
 
@@ -1609,7 +1632,10 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
               (generateFreshRefs env rets) env' cont retTypes
               hlookup_fn htc_bs' hfresh' hnodup_as hfresh_refs hnodup
               hpop hiso'
-            exact ih_cont _ hwf' h
+            let env'' := call_connect_inputs_outputs env' as bs
+            have hwf_del : ({env'' with siteEnv := AssocMap.deleteAll env''.siteEnv bs}).WellFormed :=
+              ⟨hwf'.pathEnv_wf, SiteEnv.deleteAll_refs_not_root _ _ hwf'.siteEnv_wf, hwf'.varEnv_wf⟩
+            exact ih_cont _ hwf_del h
           · simp at h
         · simp at h
     · simp at h

@@ -81,7 +81,7 @@ def fn_return_local_borrow : FunDef := {
         (letsite s1 ← &mut var_a) ;;
         (var_r ::= s1) ;;
         (letsite s2 ← move var_r) ;;
-        Stmt.ret [s2]
+        ret [s2]
     }
   ]
 }

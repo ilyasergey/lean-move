@@ -77,13 +77,13 @@ def foo : FunDef := {
       body :=
         -- x = S { f: 42 }
         (letsite s0 ← #42) ;;
-        Stmt.letBind s1 (Expr.pack "S" [(field_f, s0)]) ;;
+        (letsite s1 ← pack("S", [(field_f, s0)])) ;;
         (var_x ::= s1) ;;
         -- f_ref = &copy(x).S::f — ERROR: copy(x) is a record, not a reference
         (letsite s2 ← copy var_x) ;;
-        Stmt.letBind s3 (Expr.borrowField s2 (.trecord s_entries) field_f) ;;
+        (letsite s3 ← borrowField(s2, .trecord s_entries, field_f)) ;;
         (var_f_ref ::= s3) ;;
-        Stmt.ret []
+        ret []
     }
   ]
 }

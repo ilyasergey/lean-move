@@ -233,7 +233,9 @@ private theorem inv_ret
     (∀ a ∈ sites, ∀ bt r bk, lookup env.siteEnv a = some (.ref bt r bk) →
       ∀ p, ¬interpret_regex (env.pathEnv.paths (.root, r)) p) ∧
     (∀ a ∈ sites, ∀ bt r, lookup env.siteEnv a = some (.ref bt r .siteBorrowMut) →
-      ∀ y, y ∈ env.pathEnv.refs → ∀ p, interpret_regex (env.pathEnv.paths (r, y)) p → p = []) ∧
+      ∀ b, b ∉ sites →
+        ∀ bt' r' bk', lookup env.siteEnv b = some (.ref bt' r' bk') →
+          ∀ p, interpret_regex (env.pathEnv.paths (r, r')) p → p = []) ∧
     (∀ a₁ ∈ sites, ∀ bt₁ r₁, lookup env.siteEnv a₁ = some (.ref bt₁ r₁ .siteBorrowMut) →
       ∀ a₂ ∈ sites, a₁ ≠ a₂ → ∀ bt₂ r₂ bk₂, lookup env.siteEnv a₂ = some (.ref bt₂ r₂ bk₂) →
         ∀ p, ¬interpret_regex (env.pathEnv.paths (r₂, r₁)) p) :=
@@ -251,7 +253,10 @@ private theorem inv_call
       List.Nodup outRefs ∧
       populate_call_outputs env results rets outRefs = some env' ∧
       check_mutable_inputs_isolated env args ∧
-      typecheck_stmt lenv (call_connect_inputs_outputs env' results args) cont retTypes :=
+      typecheck_stmt lenv
+        (let env'' := call_connect_inputs_outputs env' results args
+         {env'' with siteEnv := AssocMap.deleteAll env''.siteEnv args})
+        cont retTypes :=
   match h with
   | .call _ _ _ _ _ params rets outRefs env' _ _ hfun htc hfs hnd_sites hfr hnd hpop hiso hcont =>
     ⟨params, rets, outRefs, env', hfun, htc, hfs, hnd_sites, hfr, hnd, hpop, hiso, hcont⟩
@@ -2876,6 +2881,39 @@ private lemma lookup_deleteAll_some (l : AssocMap Site MoveType) (ks : List Site
   rw [← List.lookup_filter_notin l.entries k ks hnotin]
   exact h
 
+/-- Helper: if k ∉ ks, then lookup on deleteAll is the same as on the original -/
+private lemma lookup_deleteAll_not_mem (l : AssocMap Site MoveType) (ks : List Site)
+    (k : Site) (hnotin : k ∉ ks) :
+    lookup (deleteAll l ks) k = lookup l k := by
+  simp only [AssocMap.deleteAll, AssocMap.lookup]
+  rw [← List.lookup_filter_notin l.entries k ks hnotin]
+
+/-- Helper: types_conform is preserved when lookups agree on all listed sites -/
+private lemma types_conform_ext {se1 se2 : SiteEnv} {sites : List Site} {pts : List ParamType}
+    (htc : types_conform se1 sites pts)
+    (heq : ∀ s ∈ sites, lookup se1 s = lookup se2 s) :
+    types_conform se2 sites pts := by
+  induction sites generalizing pts with
+  | nil => cases pts <;> simp_all [types_conform]
+  | cons s ss ih =>
+    cases pts with
+    | nil => simp [types_conform] at htc
+    | cons p ps =>
+      simp only [types_conform] at htc ⊢
+      have hs_mem : s ∈ s :: ss := List.Mem.head ss
+      rw [← heq s hs_mem]
+      have heq' : ∀ s' ∈ ss, lookup se1 s' = lookup se2 s' :=
+        fun s' hs' => heq s' (List.Mem.tail s hs')
+      cases hlook : lookup se1 s with
+      | none => rw [hlook] at htc; exact htc
+      | some τ =>
+        rw [hlook] at htc
+        match p, τ with
+        | ⟨_, none⟩, .basic _ => exact ⟨htc.1, ih htc.2 heq'⟩
+        | ⟨_, some _⟩, .ref _ _ _ => exact ⟨htc.1, htc.2.1, ih htc.2.2 heq'⟩
+        | ⟨_, none⟩, .ref _ _ _ => exact htc
+        | ⟨_, some _⟩, .basic _ => exact htc
+
 /-- If collectPackFields succeeds and (f, a) ∈ fieldSites, the value at a is in fieldVals -/
 private lemma list_lookup_ne_none_of_mem [BEq α] [LawfulBEq α]
     {l : List (α × β)} {a : α} {b : β} (h : (a, b) ∈ l) : l.lookup a ≠ none := by
@@ -5410,8 +5448,13 @@ private theorem preservation_call (m m' : Machine) (env : TypeEnv) (lenv : Label
             intro loc path hne
             unfold Heap.readRef; rw [hheap_preserve loc hne]
 
-          -- stmt_typed: weaken from call_connect to popEnv
-          have hstmt_typed_pop : typecheck_stmt lenv popEnv cont retTypes := by
+          -- Define popEnvDel: popEnv with arg sites consumed
+          let popEnvDel := {popEnv with siteEnv := AssocMap.deleteAll popEnv.siteEnv argSites}
+          have hpopDelWf : popEnvDel.WellFormed :=
+            ⟨hpopWf.pathEnv_wf, SiteEnv.deleteAll_refs_not_root _ _ hpopWf.siteEnv_wf, hpopWf.varEnv_wf⟩
+
+          -- stmt_typed: weaken from ccDelEnv to popEnvDel
+          have hstmt_typed_pop : typecheck_stmt lenv popEnvDel cont retTypes := by
             have hiso_output : ∀ s ∈ results, ∀ bt r bk,
                 lookup popEnv.siteEnv s = some (.ref bt r bk) →
                 ∀ w, w ≠ r → (∀ p, ¬⟦popEnv.pathEnv.paths (w, r)⟧ p) ∧
@@ -5423,22 +5466,62 @@ private theorem preservation_call (m m' : Machine) (env : TypeEnv) (lenv : Label
                 · rw [hfresh_sites_none s hs] at h_old; cases h_old
                 · exact h_out
               exact houtRef_isolated r hr_out w hw
-            have hsub := call_connect_subsumes_self popEnv results argSites
+            -- subsumption: cc(popEnv) subsumes popEnv → ccDelEnv subsumes popEnvDel
+            have hsub_cc := call_connect_subsumes_self popEnv results argSites
               hpopSiteTracked hpopSle hiso_output
-            have hwf_cc := call_connect_inputs_outputs_wf popEnv results argSites hpopWf
-            exact typecheck_stmt_weaken lenv
-              (call_connect_inputs_outputs popEnv results argSites)
-              popEnv cont retTypes hcont_cc hsub
-              (call_connect_funEnv popEnv results argSites)
-              hwf_cc hpopWf
-              (by intro s bt r bk hlook; rw [call_connect_siteEnv] at hlook
-                  rw [call_connect_refs_eq popEnv results argSites hpopSiteTracked]
-                  exact hpopSiteTracked s bt r bk hlook)
-              (by intro x bt r bk ms hlook; rw [call_connect_varEnv] at hlook
-                  rw [call_connect_refs_eq popEnv results argSites hpopSiteTracked]
-                  exact hpopVarTracked x bt r bk ms hlook)
-              (by rw [call_connect_varEnv, call_connect_siteEnv]; exact hpopUnique)
-              hpopPtnm hpopPfnm hpopSle
+            have hsub_del : TypeEnv.subsumes
+                (let env'' := call_connect_inputs_outputs popEnv results argSites
+                 {env'' with siteEnv := AssocMap.deleteAll env''.siteEnv argSites})
+                popEnvDel := by
+              obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths⟩ := hsub_cc
+              exact ⟨σ, hid, hve, SiteEnvSubstEquiv_deleteAll σ _ _ argSites hse,
+                     hrefs, hinj, hnonroot, hpaths⟩
+            -- WF for ccDelEnv
+            have hwf_ccDel : (let env'' := call_connect_inputs_outputs popEnv results argSites
+                {env'' with siteEnv := AssocMap.deleteAll env''.siteEnv argSites}).WellFormed := by
+              have hwf_cc := call_connect_inputs_outputs_wf popEnv results argSites hpopWf
+              exact ⟨hwf_cc.pathEnv_wf, SiteEnv.deleteAll_refs_not_root _ _ hwf_cc.siteEnv_wf, hwf_cc.varEnv_wf⟩
+            -- site_tracked for ccDelEnv
+            have hst_ccDel : ∀ s bt r bk,
+                lookup (let env'' := call_connect_inputs_outputs popEnv results argSites
+                  {env'' with siteEnv := AssocMap.deleteAll env''.siteEnv argSites}).siteEnv s =
+                  some (.ref bt r bk) →
+                r ∈ (let env'' := call_connect_inputs_outputs popEnv results argSites
+                  {env'' with siteEnv := AssocMap.deleteAll env''.siteEnv argSites}).pathEnv.refs := by
+              intro s bt r bk hlook
+              have hlook_orig := lookup_deleteAll_some
+                (call_connect_inputs_outputs popEnv results argSites).siteEnv argSites s _ hlook
+              rw [call_connect_siteEnv] at hlook_orig
+              exact call_connect_refs_mono popEnv results argSites r
+                (hpopSiteTracked s bt r bk hlook_orig)
+            -- var_tracked for ccDelEnv
+            have hvt_ccDel : ∀ x bt r bk ms,
+                lookup (let env'' := call_connect_inputs_outputs popEnv results argSites
+                  {env'' with siteEnv := AssocMap.deleteAll env''.siteEnv argSites}).varEnv x =
+                  some (.validVar, .ref bt r bk, ms) →
+                r ∈ (let env'' := call_connect_inputs_outputs popEnv results argSites
+                  {env'' with siteEnv := AssocMap.deleteAll env''.siteEnv argSites}).pathEnv.refs := by
+              intro x bt r bk ms hlook
+              rw [call_connect_varEnv] at hlook
+              exact call_connect_refs_mono popEnv results argSites r
+                (hpopVarTracked x bt r bk ms hlook)
+            -- RefsUnique for ccDelEnv
+            have huniq_ccDel : RefsUnique
+                (call_connect_inputs_outputs popEnv results argSites).varEnv
+                (AssocMap.deleteAll (call_connect_inputs_outputs popEnv results argSites).siteEnv argSites) := by
+              rw [call_connect_varEnv, call_connect_siteEnv]
+              exact RefsUnique_deleteAll _ _ _ hpopUnique
+            exact typecheck_stmt_weaken lenv _ popEnvDel cont retTypes hcont_cc
+              hsub_del
+              (by simp only [call_connect_funEnv]; rfl)
+              hwf_ccDel
+              hpopDelWf
+              hst_ccDel
+              hvt_ccDel
+              huniq_ccDel
+              (by exact hpopPtnm)
+              (by exact hpopPfnm)
+              (by exact hpopSle)
 
           -- no_paths_to_root
           have hno_paths_to_root_pop : ∀ u p,
@@ -5536,9 +5619,22 @@ private theorem preservation_call (m m' : Machine) (env : TypeEnv) (lenv : Label
             hfdef_rets ▸ populate_call_outputs_types_conform env popEnv results rets outRefs
               hnodup_sites hpop
 
+          -- Disjointness: result sites are not in argSites
+          have hresults_disj : ∀ s ∈ results, s ∉ argSites := by
+            intro s hs hmem
+            obtain ⟨τ, hlook⟩ := types_conform_site_has_type env.siteEnv argSites params s
+              htypes_conf hmem
+            rw [hfresh_sites_none s hs] at hlook; cases hlook
+
+          -- types_conform for popEnvDel
+          have htypes_conform_del : types_conform popEnvDel.siteEnv results fdef.returnType :=
+            types_conform_ext htypes_conform_pop
+              (fun s hs => (lookup_deleteAll_not_mem popEnv.siteEnv argSites s
+                (hresults_disj s hs)).symm)
+
           -- Provide StackSafe witnesses
-          exact ⟨popEnv, lenv, retTypes, callerRmap,
-            ⟨hpopWf,
+          exact ⟨popEnvDel, lenv, retTypes, callerRmap,
+            ⟨hpopDelWf,
              hstmt_typed_pop,
              hwt.blocks_typed,
              hwt.lenv_empty_siteEnv,
@@ -5549,8 +5645,10 @@ private theorem preservation_call (m m' : Machine) (env : TypeEnv) (lenv : Label
              hwt.funEnv_typed,
              by intro x bt r bk ms h; rw [hpopVarEnv] at h
                 exact hpopRefsMono r (hwt.varEnv_refs_in_pathEnv x bt r bk ms h),
-             hpopSiteTracked,
-             hpopUnique,
+             by intro s bt r bk h
+                exact hpopSiteTracked s bt r bk
+                  (lookup_deleteAll_some popEnv.siteEnv argSites s _ h),
+             RefsUnique_deleteAll _ _ _ hpopUnique,
              hcrmap_root_none,
              hno_paths_to_root_pop,
              hroot_coherence_pop,
@@ -5558,18 +5656,34 @@ private theorem preservation_call (m m' : Machine) (env : TypeEnv) (lenv : Label
              hpopPtnm,
              hpopSle,
              hunmapped_isolated_pop,
-             hresult_unmapped,
-             hrefs_tracked_or_result,
+             by intro s bt r bk hs h
+                exact hresult_unmapped s bt r bk hs
+                  (lookup_deleteAll_some popEnv.siteEnv argSites s _ h),
+             by intro r hr
+                rcases hrefs_tracked_or_result r hr with rfl | hne | ⟨s, bt, bk, hs, hlook⟩
+                · exact Or.inl rfl
+                · exact Or.inr (Or.inl hne)
+                · right; right
+                  exact ⟨s, bt, bk, hs,
+                    by rw [lookup_deleteAll_not_mem popEnv.siteEnv argSites s
+                         (hresults_disj s hs)]; exact hlook⟩,
              hvar_con,
-             hsite_con,
+             by intro s τ h hs_nr
+                exact hsite_con s τ
+                  (lookup_deleteAll_some popEnv.siteEnv argSites s _ h) hs_nr,
              hrmap_live,
              hrmap_paths_pop,
              allocArgs_heap_loc_bound' m.heap fdef.params argVals heap' paramVarStore
                hallocArgs hwt.heap_loc_bound,
-             hrmap_ht,
+             by intro r bt loc path hcrmap hwitness
+                apply hrmap_ht r bt loc path hcrmap
+                rcases hwitness with ⟨x, bk, ms, hv⟩ | ⟨s, bk, hs, hs_nr⟩
+                · exact Or.inl ⟨x, bk, ms, hv⟩
+                · exact Or.inr ⟨s, bk,
+                    lookup_deleteAll_some popEnv.siteEnv argSites s _ hs, hs_nr⟩,
              by intro fn sig h; rw [hpopFunEnv] at h
                 exact hwt.funEnv_sig_consistent fn sig h,
-             htypes_conform_pop⟩,
+             htypes_conform_del⟩,
             htail⟩
 
 -- ============================================================
