@@ -18,6 +18,7 @@
 import LeanMove.Lang.MoveLight
 import LeanMove.Typing.Algorithmic.DecidableTypeEnv
 import LeanMove.Lang.Macros
+import LeanMove.Tests.Parsing.TestUtils
 
 /-!
 # Subtree Writes Release
@@ -310,5 +311,53 @@ theorem t_check : check_fun_dec t t_lenvDec = true := by rfl
 -- Main theorem: t is well-typed (relational)
 theorem t_welltyped : ∃ lenv, typecheck_fun t lenv :=
   ⟨_, check_fun_dec_sound _ _ t_check⟩
+
+-- -----------------------------------------------------
+-- -           Parsed MVIR Tests                       --
+-- -----------------------------------------------------
+
+open LeanMove.Tests.Parsing.TestUtils
+
+private def subtreeWritesReleaseMvir :=
+"// release is lossy in the graph, these writes are safe
+
+//# publish
+
+module 0x2.extension_after_join {
+
+struct Tree has copy, drop, store { l: Self.Sub1, r: Self.Sub1 }
+struct Sub1 has copy, drop, store { l: Self.Sub2, r: Self.Sub2 }
+struct Sub2 has copy, drop, store { l: u64, r: u64 }
+
+t(cond: bool, root: &mut Self.Tree) {
+    let x: &mut Self.Sub1;
+    let y: &mut u64;
+label l0:
+    jump_if (move(cond)) l2;
+label l1:
+    x = &mut copy(root).Tree::l;
+    y = &mut (&mut copy(x).Sub1::l).Sub2::l;
+    jump l3;
+label l2:
+    x = &mut copy(root).Tree::r;
+    y = &mut (&mut copy(x).Sub1::r).Sub2::r;
+    jump l3;
+label l3:
+    _ = move(x);
+    *(&mut (&mut copy(root).Tree::l).Sub1::r) = Sub2 { l: 0, r: 0 };
+    *move(y) = 0;
+    return;
+}
+
+
+}
+"
+
+-- Verify that parsing the MVIR succeeds
+#guard (parseAndTranslate subtreeWritesReleaseMvir).isOk
+
+private def parsedFuns := (parseAndTranslate subtreeWritesReleaseMvir).toOption.get!
+
+private def parsed_t := (findFun parsedFuns "t").get!
 
 end LeanMove.Tests.Expressivity.SubtreeWritesRelease

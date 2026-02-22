@@ -20,6 +20,7 @@ import LeanMove.Typing.TypeChecking
 import LeanMove.Typing.Algorithmic.AlgorithmicTypeChecking
 import LeanMove.Typing.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
+import LeanMove.Tests.Parsing.TestUtils
 
 /-!
 # Simple Dangling Reference Examples
@@ -392,5 +393,117 @@ def field_call_dangling_lenv := mkLabelEnv field_call_dangling field_call_funEnv
 #eval check_fun field_call_dangling field_call_dangling_lenv
 
 #guard !check_fun field_call_dangling field_call_dangling_lenv
+
+-- -----------------------------------------------------
+-- -           Parsed MVIR Tests                       --
+-- -----------------------------------------------------
+
+open LeanMove.Tests.Parsing.TestUtils
+
+private def simpleDanglingMvir :=
+"// simple tests that the verifier stops the creation of a dangling reference
+
+//# publish
+module 0x2.field {
+    struct S has copy, drop { f: u64 }
+    t(s: &mut Self.S) {
+        let f: &u64;
+    label b0:
+        f = &copy(s).S::f;
+        *move(s) = S { f: 0 };
+        return;
+    }
+}
+
+//# publish
+module 0x3.nested_field {
+    struct S has copy, drop { f: u64 }
+    struct P has copy, drop { s: Self.S }
+    t(p: &mut Self.P) {
+        let s: &mut Self.S;
+        let f: &u64;
+    label b0:
+        s = &mut copy(p).P::s;
+        f = &copy(s).S::f;
+        *move(p) = P { s: S { f: 0 } };
+        return;
+    }
+}
+
+//# publish
+module 0x4.vector {
+    t(v: &mut vector<u64>) {
+        let r: &mut u64;
+    label b0:
+        r = vec_mut_borrow<u64>(copy(v), 0);
+        *move(v) = vec_pack_0<u64>();
+        return;
+    }
+}
+
+//# publish
+module 0x5.simple_call {
+    f(r: &mut u64): &u64 {
+    label b0:
+        return freeze(move(r));
+    }
+
+    t() {
+        let a: u64;
+        let m: &mut u64;
+        let i: &u64;
+    label b0:
+        a = 0;
+        m = &mut a;
+        i = Self.f(copy(m));
+        *copy(m) = 0;
+        return;
+    }
+}
+
+
+
+//# publish
+module 0x5.field_call {
+    struct S has copy, drop { f: u64 }
+
+    f(r: &mut Self.S): &u64 {
+    label b0:
+        return &move(r).S::f;
+    }
+
+    t(s: &mut Self.S) {
+        let f: &u64;
+    label b0:
+        f = Self.f(copy(s));
+        *copy(s) = S { f: 0 };
+        return;
+    }
+}
+"
+
+#guard (parseAndTranslate simpleDanglingMvir).isOk
+
+private def parsedFuns := (parseAndTranslate simpleDanglingMvir).toOption.get!
+
+-- Module: field (no funEnv needed)
+private def parsed_field_t := (findFunInModule parsedFuns "field" "t").get!
+
+#guard !check_fun parsed_field_t (mkLabelEnv parsed_field_t)
+
+-- Module: nested_field (no funEnv needed)
+private def parsed_nested_field_t := (findFunInModule parsedFuns "nested_field" "t").get!
+
+#guard !check_fun parsed_nested_field_t (mkLabelEnv parsed_nested_field_t)
+
+-- Module: simple_call (needs simple_call_funEnv)
+private def parsed_simple_call_t := (findFunInModule parsedFuns "simple_call" "t").get!
+
+#guard !check_fun parsed_simple_call_t (mkLabelEnv parsed_simple_call_t simple_call_funEnv)
+
+-- Module: field_call (needs field_call_funEnv)
+private def parsed_field_call_t := (findFunInModule parsedFuns "field_call" "t").get!
+
+#guard !check_fun parsed_field_call_t (mkLabelEnv parsed_field_call_t field_call_funEnv)
 
 end LeanMove.Tests.Expressivity.SimpleDangling

@@ -19,6 +19,7 @@ import LeanMove.Lang.MoveLight
 import LeanMove.Typing.TypeChecking
 import LeanMove.Typing.Algorithmic.DecidableTypeEnv
 import LeanMove.Lang.Macros
+import LeanMove.Tests.Parsing.TestUtils
 
 /-!
 # Multiple Mutable Return Values
@@ -189,5 +190,53 @@ theorem borrow_welltyped : ∃ lenv, typecheck_fun borrow lenv :=
 
 theorem write_welltyped : ∃ lenv, typecheck_fun write lenv :=
   ⟨_, check_fun_dec_sound _ _ write_check⟩
+
+-- -----------------------------------------------------
+-- -    Type Checking Parsed MVIR Programs             --
+-- -----------------------------------------------------
+
+open LeanMove.Tests.Parsing.TestUtils
+
+private def multibleMutableReturnValuesMvir := "
+// all mutable return values of a call should writable
+
+//# publish
+
+module 0x2.Tester {
+
+struct Point has copy, drop, store { x: u64, y: u64 }
+
+borrow(p: &mut Self.Point): &mut u64 * &mut u64 {
+label b0:
+    return &mut copy(p).Point::x, &mut copy(p).Point::y;
+}
+
+write(p: &mut Self.Point) {
+    let x: &mut u64;
+    let y: &mut u64;
+label b0:
+    x, y = Self.borrow(copy(p));
+    *copy(x) = 0;
+    *copy(y) = 0;
+    *copy(x) = 0;
+    *copy(y) = 0;
+    return;
+}
+
+}
+"
+
+private def parsedFuns := (parseAndTranslate multibleMutableReturnValuesMvir).toOption.get!
+
+private def parsed_borrow :=
+  (findFunInModule parsedFuns "Tester" "borrow").get!
+
+private def parsed_write :=
+  (findFunInModule parsedFuns "Tester" "write").get!
+
+#guard check_fun_dec parsed_borrow (mkLabelEnvDec parsed_borrow)
+
+set_option maxRecDepth 4096 in
+#guard check_fun_dec parsed_write (mkLabelEnvDec parsed_write write_funEnv)
 
 end LeanMove.Tests.Expressivity.MultipleMutableReturnValues

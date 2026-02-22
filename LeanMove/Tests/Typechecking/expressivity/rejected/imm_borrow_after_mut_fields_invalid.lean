@@ -20,6 +20,7 @@ import LeanMove.Typing.TypeChecking
 import LeanMove.Typing.Algorithmic.AlgorithmicTypeChecking
 import LeanMove.Typing.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
+import LeanMove.Tests.Parsing.TestUtils
 
 /-!
 # Immutable Borrow After Mutable Fields - Invalid Module
@@ -196,5 +197,77 @@ def invalid_write_lenv := mkLabelEnv invalid_write
 -- Note: proving this formally requires the completeness theorem (check_fun_complete),
 -- which is not yet fully proven. The algorithmic rejection above demonstrates the result.
 
+
+-- -----------------------------------------------------
+-- -           Parsed MVIR Tests                       --
+-- -----------------------------------------------------
+
+open LeanMove.Tests.Parsing.TestUtils
+
+private def immBorrowAfterMutFieldsMvir :=
+"// can borrow imm fields after a mut borrow, but if the mut is a parent, it won't be writable
+
+//# publish
+module 0x2.field {
+
+    struct S has copy, drop { f: u64 }
+
+    t(s: Self.S) {
+        let s_imm: &Self.S;
+        let s_mut: &mut Self.S;
+        let f_imm: &u64;
+    label b0:
+        s_imm = &s;
+        s_mut = &mut s;
+        f_imm = &copy(s_imm).S::f;
+        return;
+    }
+}
+
+//# publish
+module 0x3.field {
+
+    struct S has copy, drop { f: u64 }
+
+    t(s: Self.S) {
+        let s_imm: &Self.S;
+        let s_mut: &mut Self.S;
+        let f_imm: &u64;
+    label b0:
+        // not really after, but also allowed
+        s_imm = &s;
+        f_imm = &copy(s_imm).S::f;
+        s_mut = &mut s;
+        return;
+    }
+}
+
+//# publish
+module 0x4.invalid_write {
+
+    struct S has copy, drop { f: u64 }
+
+    t(s: Self.S) {
+        let s_imm: &Self.S;
+        let s_mut: &mut Self.S;
+        let f_imm: &u64;
+    label b0:
+        s_imm = &s;
+        s_mut = &mut s;
+        f_imm = &copy(s_imm).S::f;
+        // cannot write to s_mut because of f_imm
+        *copy(s_mut) = S { f: 0 };
+        return;
+    }
+}
+"
+
+#guard (parseAndTranslate immBorrowAfterMutFieldsMvir).isOk
+
+private def parsedFuns := (parseAndTranslate immBorrowAfterMutFieldsMvir).toOption.get!
+
+private def parsed_invalid_write := (findFunInModule parsedFuns "invalid_write" "t").get!
+
+#guard !check_fun parsed_invalid_write (mkLabelEnv parsed_invalid_write)
 
 end LeanMove.Tests.Expressivity.ImmBorrowAfterMutFieldsInvalid

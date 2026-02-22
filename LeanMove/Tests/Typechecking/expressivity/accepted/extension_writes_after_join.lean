@@ -18,6 +18,7 @@
 import LeanMove.Lang.MoveLight
 import LeanMove.Typing.Algorithmic.DecidableTypeEnv
 import LeanMove.Lang.Macros
+import LeanMove.Tests.Parsing.TestUtils
 
 /-!
 # Extension Writes After Join
@@ -206,5 +207,51 @@ theorem t_check : check_fun_dec t t_lenvDec = true := by rfl
 -- Main theorem: t is well-typed (relational)
 theorem t_welltyped : ∃ lenv, typecheck_fun t lenv :=
   ⟨_, check_fun_dec_sound _ _ t_check⟩
+
+-- -----------------------------------------------------
+-- -           Parsed MVIR Tests                       --
+-- -----------------------------------------------------
+
+open LeanMove.Tests.Parsing.TestUtils
+
+private def extensionWritesAfterJoinMvir :=
+"// writing to extension after join
+
+//# publish
+
+module 0x2.extension_after_join {
+
+struct S has copy, drop, store { f: u64 }
+
+t(cond: bool, a: &mut Self.S, b: &mut Self.S): &mut Self.S {
+    let x: &mut Self.S;
+    let y: &mut Self.S;
+    let f: &mut u64;
+label l0:
+    jump_if (move(cond)) l2;
+label l1:
+    x = move(a);
+    y = move(b);
+    jump l3;
+label l2:
+    x = move(b);
+    y = move(a);
+    jump l3;
+label l3:
+    f = &mut copy(x).S::f;
+    *copy(y) = S { f: *copy(f) };
+    *copy(f) = 0;
+    return move(y);
+}
+
+}
+"
+
+-- Verify that parsing the MVIR succeeds
+#guard (parseAndTranslate extensionWritesAfterJoinMvir).isOk
+
+private def parsedFuns := (parseAndTranslate extensionWritesAfterJoinMvir).toOption.get!
+
+private def parsed_t := (findFun parsedFuns "t").get!
 
 end LeanMove.Tests.Expressivity.ExtensionWritesAfterJoin

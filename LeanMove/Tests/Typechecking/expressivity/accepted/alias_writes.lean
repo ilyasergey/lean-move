@@ -19,6 +19,7 @@ import LeanMove.Lang.MoveLight
 import LeanMove.Typing.TypeChecking
 import LeanMove.Typing.Algorithmic.DecidableTypeEnv
 import LeanMove.Lang.Macros
+import LeanMove.Tests.Parsing.TestUtils
 
 /-!
 # Alias Writes
@@ -256,5 +257,110 @@ theorem borrow_local_and_copy_ref_welltyped : ∃ lenv, typecheck_fun borrow_loc
 
 theorem borrow_local_and_copy_ref_reverse_welltyped : ∃ lenv, typecheck_fun borrow_local_and_copy_ref_reverse lenv :=
   ⟨_, check_fun_dec_sound _ _ borrow_local_and_copy_ref_reverse_check⟩
+
+-- -----------------------------------------------------
+-- -    Type Checking Parsed MVIR Programs             --
+-- -----------------------------------------------------
+
+open LeanMove.Tests.Parsing.TestUtils
+
+private def aliasWritesMvir := "
+// writing to alias writes should be consistent
+
+//# publish
+
+module 0x2.borrow_local_twice {
+
+t() {
+    let a: u64;
+    let x: &mut u64;
+    let y: &mut u64;
+label b0:
+    a = 0;
+    x = &mut a;
+    y = &mut a;
+    *move(x) = 0;
+    *move(y) = 0;
+    return;
+}
+
+}
+
+//# publish
+
+module 0x3.borrow_local_twice_reverse {
+
+t() {
+    let a: u64;
+    let x: &mut u64;
+    let y: &mut u64;
+label b0:
+    a = 0;
+    x = &mut a;
+    y = &mut a;
+    *move(y) = 0;
+    *move(x) = 0;
+    return;
+}
+
+}
+
+//# publish
+
+module 0x4.borrow_local_and_copy_ref {
+
+t() {
+    let a: u64;
+    let x: &mut u64;
+    let y: &mut u64;
+label b0:
+    a = 0;
+    x = &mut a;
+    y = copy(x);
+    *move(x) = 0;
+    *move(y) = 0;
+    return;
+}
+
+}
+
+//# publish
+
+module 0x5.borrow_local_and_copy_ref_reverse {
+
+t() {
+    let a: u64;
+    let x: &mut u64;
+    let y: &mut u64;
+label b0:
+    a = 0;
+    x = &mut a;
+    y = copy(x);
+    *move(y) = 0;
+    *move(x) = 0;
+    return;
+}
+
+}
+"
+
+private def parsedFuns := (parseAndTranslate aliasWritesMvir).toOption.get!
+
+private def parsed_borrow_local_twice :=
+  (findFunInModule parsedFuns "borrow_local_twice" "t").get!
+
+private def parsed_borrow_local_twice_reverse :=
+  (findFunInModule parsedFuns "borrow_local_twice_reverse" "t").get!
+
+private def parsed_borrow_local_and_copy_ref :=
+  (findFunInModule parsedFuns "borrow_local_and_copy_ref" "t").get!
+
+private def parsed_borrow_local_and_copy_ref_reverse :=
+  (findFunInModule parsedFuns "borrow_local_and_copy_ref_reverse" "t").get!
+
+#guard check_fun_dec parsed_borrow_local_twice (mkLabelEnvDec parsed_borrow_local_twice)
+#guard check_fun_dec parsed_borrow_local_twice_reverse (mkLabelEnvDec parsed_borrow_local_twice_reverse)
+#guard check_fun_dec parsed_borrow_local_and_copy_ref (mkLabelEnvDec parsed_borrow_local_and_copy_ref)
+#guard check_fun_dec parsed_borrow_local_and_copy_ref_reverse (mkLabelEnvDec parsed_borrow_local_and_copy_ref_reverse)
 
 end LeanMove.Tests.Expressivity.AliasWrites

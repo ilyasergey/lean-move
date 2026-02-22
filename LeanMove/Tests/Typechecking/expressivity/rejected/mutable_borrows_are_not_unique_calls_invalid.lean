@@ -20,6 +20,7 @@ import LeanMove.Typing.TypeChecking
 import LeanMove.Typing.Algorithmic.AlgorithmicTypeChecking
 import LeanMove.Typing.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
+import LeanMove.Tests.Parsing.TestUtils
 
 /-!
 # Mutable Borrows Not Unique Calls - Invalid Module
@@ -248,5 +249,91 @@ def call_and_write_invalid_lenv := mkLabelEnv call_and_write_invalid call_funEnv
 -- Test: algorithmic checker rejects call_and_write_invalid
 #guard !check_fun call_and_write_invalid call_and_write_invalid_lenv
 
+
+-- -----------------------------------------------------
+-- -           Parsed MVIR Tests                       --
+-- -----------------------------------------------------
+
+open LeanMove.Tests.Parsing.TestUtils
+
+private def mutableBorrowsNotUniqueCallsMvir :=
+"// mutable borrows are not unique
+
+//# publish
+module 0x4.call {
+
+    struct S has copy, drop { f: u64 }
+
+    borrow_f(s: &mut Self.S): &mut u64 {
+    label b0:
+        return &mut move(s).S::f;
+    }
+
+    create(s: &mut Self.S) {
+        let call: &mut u64;
+        let f: &mut u64;
+    label b0:
+        call = Self.borrow_f(copy(s));
+        f = &mut copy(s).S::f;
+        return;
+    }
+
+}
+
+//# publish
+module 0x5.call_and_write_invalid {
+
+    struct S has copy, drop { f: u64 }
+
+    borrow_f(s: &mut Self.S): &mut u64 {
+    label b0:
+        return &mut move(s).S::f;
+    }
+
+    write(s: &mut Self.S) {
+        let call: &mut u64;
+        let f: &mut u64;
+    label b0:
+        call = Self.borrow_f(copy(s));
+        f = &mut copy(s).S::f;
+        *copy(call) = 0;
+        *copy(f) = 0;
+        return;
+    }
+
+}
+
+//# publish
+module 0x6.call_and_write_valid {
+
+    struct S has copy, drop { f: u64 }
+
+    borrow_f(s: &mut Self.S): &mut u64 {
+    label b0:
+        return &mut move(s).S::f;
+    }
+
+    write(s: &mut Self.S) {
+        let call: &mut u64;
+        let f: &mut u64;
+    label b0:
+        call = Self.borrow_f(copy(s));
+        *move(call) = 0;
+        f = &mut copy(s).S::f;
+        *copy(f) = 0;
+
+        return;
+    }
+
+}
+"
+
+#guard (parseAndTranslate mutableBorrowsNotUniqueCallsMvir).isOk
+
+private def parsedFuns := (parseAndTranslate mutableBorrowsNotUniqueCallsMvir).toOption.get!
+
+private def parsed_call_and_write_invalid := (findFunInModule parsedFuns "call_and_write_invalid" "write").get!
+
+#guard !check_fun parsed_call_and_write_invalid (mkLabelEnv parsed_call_and_write_invalid call_funEnv)
 
 end LeanMove.Tests.Expressivity.MutableBorrowsNotUniqueCallsInvalid

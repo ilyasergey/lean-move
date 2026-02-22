@@ -19,6 +19,7 @@ import LeanMove.Lang.MoveLight
 import LeanMove.Typing.TypeChecking
 import LeanMove.Typing.Algorithmic.DecidableTypeEnv
 import LeanMove.Lang.Macros
+import LeanMove.Tests.Parsing.TestUtils
 
 /-!
 # Immutable Borrow After Mutable
@@ -168,5 +169,62 @@ theorem direct_welltyped : ∃ lenv, typecheck_fun direct lenv :=
 
 theorem copy_and_freeze_welltyped : ∃ lenv, typecheck_fun copy_and_freeze lenv :=
   ⟨_, check_fun_dec_sound _ _ copy_and_freeze_check⟩
+
+-- -----------------------------------------------------
+-- -    Type Checking Parsed MVIR Programs             --
+-- -----------------------------------------------------
+
+open LeanMove.Tests.Parsing.TestUtils
+
+private def immBorrowAfterMutMvir := "
+// can borrow immutable after mutable
+
+//# publish
+module 0x2.direct {
+
+    t() {
+        let a: u64;
+        let rmut: &mut u64;
+        let rimm: &u64;
+    label b0:
+        a = 0;
+        rmut = &mut a;
+        rimm = &a;
+        // rmut is writable and rimm is readable
+        *copy(rmut) = 0;
+        _ = *copy(rimm);
+        return;
+    }
+}
+
+//# publish
+module 0x3.copy_and_freeze {
+
+    t() {
+        let a: u64;
+        let rmut: &mut u64;
+        let rimm: &u64;
+    label b0:
+        a = 0;
+        rmut = &mut a;
+        rimm = freeze(copy(rmut));
+        // rmut is writable and rimm is readable
+        *copy(rmut) = 0;
+        _ = *copy(rimm);
+        return;
+    }
+}
+"
+
+private def parsedFuns := (parseAndTranslate immBorrowAfterMutMvir).toOption.get!
+
+private def parsed_direct :=
+  (findFunInModule parsedFuns "direct" "t").get!
+
+private def parsed_copy_and_freeze :=
+  (findFunInModule parsedFuns "copy_and_freeze" "t").get!
+
+#guard check_fun_dec parsed_direct (mkLabelEnvDec parsed_direct)
+#guard check_fun_dec parsed_copy_and_freeze (mkLabelEnvDec parsed_copy_and_freeze)
 
 end LeanMove.Tests.Expressivity.ImmBorrowAfterMut

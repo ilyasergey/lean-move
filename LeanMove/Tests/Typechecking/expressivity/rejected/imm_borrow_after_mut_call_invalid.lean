@@ -20,6 +20,7 @@ import LeanMove.Typing.TypeChecking
 import LeanMove.Typing.Algorithmic.AlgorithmicTypeChecking
 import LeanMove.Typing.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
+import LeanMove.Tests.Parsing.TestUtils
 
 /-!
 # Immutable Borrow After Mutable Call - Invalid Module
@@ -215,5 +216,90 @@ def invalid_lenv := mkLabelEnv invalid invalid_funEnv
 
 -- Test: algorithmic checker rejects invalid
 #guard !check_fun invalid invalid_lenv
+
+-- -----------------------------------------------------
+-- -           Parsed MVIR Tests                       --
+-- -----------------------------------------------------
+
+open LeanMove.Tests.Parsing.TestUtils
+
+private def immBorrowAfterMutCallMvir :=
+"// can create an immutabe extension via a call after a mut borrow,
+// but if the mut is a parent, it won't be writable
+
+//# publish
+module 0x2.valid {
+
+    id_mut(r: &mut u64): &mut u64 {
+    label b0:
+        return move(r);
+    }
+
+    id(r: &u64): &u64 {
+    label b0:
+        return move(r);
+    }
+
+    t() {
+        let a: u64;
+        let r: &mut u64;
+        let mut1: &mut u64;
+        let imm1: &u64;
+        let imm2: &u64;
+        let imm3: &u64;
+    label b0:
+        a = 0;
+        r = &mut a;
+        mut1 = Self.id_mut(copy(r));
+        // all valid
+        imm1 = Self.id(&a);
+        imm2 = Self.id(freeze(copy(r)));
+        imm3 = Self.id(freeze(copy(mut1)));
+        // all readable
+        _ = *copy(imm1);
+        _ = *copy(imm2);
+        _ = *copy(imm3);
+        return;
+    }
+}
+
+//# publish
+module 0x2.invalid {
+
+    id_mut(r: &mut u64): &mut u64 {
+    label b0:
+        return move(r);
+    }
+
+    id(r: &u64): &u64 {
+    label b0:
+        return move(r);
+    }
+
+    t() {
+        let a: u64;
+        let r: &mut u64;
+        let mut1: &mut u64;
+        let imm1: &u64;
+    label b0:
+        a = 0;
+        r = &mut a;
+        mut1 = Self.id_mut(copy(r));
+        // all valid
+        imm1 = Self.id(&a);
+        // cannot write to mut1
+        *copy(mut1) = 0;
+        return;
+    }
+}
+"
+
+#guard (parseAndTranslate immBorrowAfterMutCallMvir).isOk
+
+private def parsedFuns := (parseAndTranslate immBorrowAfterMutCallMvir).toOption.get!
+
+private def parsed_invalid := (findFunInModule parsedFuns "invalid" "t").get!
+
+#guard !check_fun parsed_invalid (mkLabelEnv parsed_invalid invalid_funEnv)
 
 end LeanMove.Tests.Expressivity.ImmBorrowAfterMutCallInvalid
