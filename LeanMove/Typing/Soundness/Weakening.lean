@@ -4230,14 +4230,126 @@ lemma call_connect_refs_mono
       simp only [ne_eq]; split
       · exact extend_with_star_refs_mono io1 io2 acc' r hacc'
       · exact hacc'
-  -- Rule 2
+  -- Rule 2 (extend_with_star_no_outbound — refs part is identical)
   apply foldl_refs_mono _ _ _ _ ?_ fun acc mout hacc =>
-    foldl_refs_mono _ _ _ _ hacc fun acc' minput hacc' =>
-      extend_with_star_refs_mono mout minput acc' r hacc'
+    foldl_refs_mono _ _ _ _ hacc fun acc' minput hacc' => by
+      exact extend_with_star_no_outbound_refs_mono mout minput acc' r hacc'
   -- Rule 1
   exact foldl_refs_mono _ _ _ _ hr fun acc iout hacc =>
     foldl_refs_mono _ _ _ _ hacc fun acc' input hacc' =>
       extend_with_star_refs_mono iout input acc' r hacc'
+
+-- ============================================================
+-- Helper lemmas for patch_root_outbound
+-- ============================================================
+
+/-- patch_root_outbound preserves self_loop_only_empty -/
+private lemma patch_root_outbound_self_loop_only_empty (mo : List Aref) (pe : PathEnv)
+    (hsl : ∀ u p, interpret_regex (pe.paths (u, u)) p → p = []) :
+    ∀ u p, interpret_regex ((patch_root_outbound mo pe).paths (u, u)) p → p = [] := by
+  intro u p hp
+  simp only [patch_root_outbound] at hp
+  split at hp
+  · simp only [interpret_regex] at hp; exact hp
+  · exact hsl u p hp
+
+/-- patch_root_outbound preserves paths_to_non_member -/
+private lemma patch_root_outbound_paths_to_nm (mo : List Aref) (pe : PathEnv)
+    (h_to : ∀ u v p, v ∉ pe.refs → v ≠ .root → u ≠ v → ¬interpret_regex (pe.paths (u, v)) p) :
+    ∀ u v p, v ∉ (patch_root_outbound mo pe).refs → v ≠ .root → u ≠ v →
+    ¬interpret_regex ((patch_root_outbound mo pe).paths (u, v)) p := by
+  intro u v p hv_nm hv_ne_root hu_ne_v hp
+  simp only [patch_root_outbound] at hp
+  rw [if_neg (by intro ⟨_, hv_root, _⟩; exact hv_ne_root hv_root)] at hp
+  exact h_to u v p hv_nm hv_ne_root hu_ne_v hp
+
+/-- patch_root_outbound preserves paths_from_non_member -/
+private lemma patch_root_outbound_paths_from_nm (mo : List Aref) (pe : PathEnv)
+    (h_from : ∀ u v p, u ∉ pe.refs → u ≠ .root → u ≠ v → ¬interpret_regex (pe.paths (u, v)) p) :
+    ∀ u v p, u ∉ (patch_root_outbound mo pe).refs → u ≠ .root → u ≠ v →
+    ¬interpret_regex ((patch_root_outbound mo pe).paths (u, v)) p := by
+  intro u v p hu_nm hu_ne_root hu_ne_v hp
+  simp only [patch_root_outbound] at hp
+  rw [if_neg (by
+    intro ⟨_, _, hu_tracked⟩
+    apply hu_nm
+    rw [List.any_eq_true] at hu_tracked
+    obtain ⟨x, hx, hxeq⟩ := hu_tracked
+    rw [beq_iff_eq] at hxeq; rw [← hxeq]; exact hx)] at hp
+  exact h_from u v p hu_nm hu_ne_root hu_ne_v hp
+
+/-- patch_root_outbound doesn't change refs -/
+private lemma patch_root_outbound_refs_eq (mo : List Aref) (pe : PathEnv) :
+    (patch_root_outbound mo pe).refs = pe.refs := rfl
+
+
+/-- patch_root_outbound preserves path inclusion under σ-substitution -/
+private lemma patch_root_outbound_path_incl (σ : Aref → Aref)
+    (mo_L : List Aref) (peL peE : PathEnv)
+    (hmo_tracked : ∀ r ∈ mo_L, r ∈ peL.refs)
+    (hpaths : ∀ u v, u ∈ peL.refs → v ∈ peL.refs →
+      ∀ path, ⟦peE.paths (σ u, σ v)⟧ path → ⟦peL.paths (u, v)⟧ path)
+    (hinj : ∀ u v, u ∈ peL.refs → v ∈ peL.refs → σ u = σ v → u = v)
+    (hnonroot : ∀ r, r ≠ .root → σ r ≠ .root)
+    (hid : ∀ r, (∀ n, r ≠ .refid n) → σ r = r)
+    (hrefs_fwd : ∀ u, u ∈ peL.refs → σ u ∈ peE.refs) :
+    ∀ u v, u ∈ peL.refs → v ∈ peL.refs →
+      ∀ path, ⟦(patch_root_outbound (mo_L.map σ) peE).paths (σ u, σ v)⟧ path →
+              ⟦(patch_root_outbound mo_L peL).paths (u, v)⟧ path := by
+  intro u v hu hv path hp
+  simp only [patch_root_outbound] at hp ⊢
+  split at hp
+  · next hcondE =>
+    obtain ⟨hmo_E, hroot_E, _⟩ := hcondE
+    have hcondL : mo_L.any (· == u) = true ∧ v = .root ∧ peL.refs.any (· == u) = true := by
+      refine ⟨?_, ?_, ?_⟩
+      · rw [List.any_eq_true] at hmo_E ⊢
+        obtain ⟨x, hx, hxeq⟩ := hmo_E
+        rw [beq_iff_eq] at hxeq; rw [List.mem_map] at hx
+        obtain ⟨y, hy, hysig⟩ := hx
+        have : y = u := hinj y u (hmo_tracked y hy) hu (hysig ▸ hxeq)
+        exact ⟨u, this ▸ hy, beq_self_eq_true u⟩
+      · by_contra hv_ne; exact hnonroot v hv_ne hroot_E
+      · rw [List.any_eq_true]; exact ⟨u, hu, beq_self_eq_true u⟩
+    rw [if_pos hcondL]; exact hp
+  · next hcondE =>
+    have hcondL_neg : ¬(mo_L.any (· == u) = true ∧ v = .root ∧
+        peL.refs.any (· == u) = true) := by
+      intro ⟨hmo_L, hroot_L, _⟩
+      rw [List.any_eq_true] at hmo_L
+      obtain ⟨x, hx, hxeq⟩ := hmo_L
+      rw [beq_iff_eq] at hxeq; subst hxeq; subst hroot_L
+      apply hcondE
+      refine ⟨?_, ?_, ?_⟩
+      · rw [List.any_eq_true]
+        exact ⟨σ x, List.mem_map_of_mem (f := σ) hx, beq_self_eq_true (σ x)⟩
+      · exact hid .root (fun n h => nomatch h)
+      · rw [List.any_eq_true]
+        exact ⟨σ x, hrefs_fwd x hu, beq_self_eq_true (σ x)⟩
+    rw [if_neg hcondL_neg]
+    exact hpaths u v hu hv path hp
+
+/-- patch_root_outbound preserves path monotonicity from pe0 -/
+private lemma patch_root_outbound_path_mono (pe0 : PathEnv) (mo : List Aref) (pe : PathEnv)
+    (hiso_mo : ∀ r ∈ mo, ∀ w, w ≠ r →
+      (∀ p, ¬⟦pe0.paths (w, r)⟧ p) ∧ (∀ p, ¬⟦pe0.paths (r, w)⟧ p))
+    (hsl : ∀ u p, ⟦pe0.paths (u, u)⟧ p → p = [])
+    (h_inc : ∀ u v p, ⟦pe0.paths (u, v)⟧ p → ⟦pe.paths (u, v)⟧ p) :
+    ∀ u v p, ⟦pe0.paths (u, v)⟧ p → ⟦(patch_root_outbound mo pe).paths (u, v)⟧ p := by
+  intro u v p hp
+  simp only [patch_root_outbound]
+  split
+  · next hcond =>
+    obtain ⟨hmo, hroot, _⟩ := hcond
+    subst hroot
+    rw [List.any_eq_true] at hmo
+    obtain ⟨x, hx, hxeq⟩ := hmo
+    rw [beq_iff_eq] at hxeq; rw [hxeq] at hx
+    by_cases hu_root : u = Aref.root
+    · subst hu_root; exact hsl _ p hp
+    · exact absurd hp ((hiso_mo u hx Aref.root (Ne.symm hu_root)).2 p)
+  · exact h_inc u v p hp
+
 
 /-- call_connect preserves self_loop_only_empty -/
 private lemma call_connect_self_loop_only_empty
@@ -4252,10 +4364,12 @@ private lemma call_connect_self_loop_only_empty
       simp only [ne_eq]; split
       · exact extend_with_star_self_loop_only_empty io1 io2 acc' hacc'
       · exact hacc'
-  -- Rule 2
+  -- Patch (patch_root_outbound)
+  apply patch_root_outbound_self_loop_only_empty
+  -- Rule 2 (extend_with_star_no_outbound)
   apply foldl_self_loop _ _ _ ?_ fun acc mout hacc =>
     foldl_self_loop _ _ _ hacc fun acc' minput hacc' =>
-      extend_with_star_self_loop_only_empty mout minput acc' hacc'
+      extend_with_star_no_outbound_self_loop_only_empty mout minput acc' hacc'
   -- Rule 1
   exact foldl_self_loop _ _ _ hsl fun acc iout hacc =>
     foldl_self_loop _ _ _ hacc fun acc' input hacc' =>
@@ -4298,6 +4412,47 @@ private lemma outer_foldl_ews_paths_to_nm (targets sources : List Aref) (pe : Pa
     simp only [List.foldl_cons]
     have ⟨h1_to, h1_mono⟩ := inner_foldl_ews_paths_to_nm t sources pe h_to hsources
     have ⟨ih_to, ih_mono⟩ := ih (sources.foldl (fun acc' source => extend_with_star t source acc') pe) h1_to
+      (fun s hs => h1_mono s (hsources s hs))
+      (fun t' ht' => h1_mono t' (htargets t' (List.mem_cons.mpr (Or.inr ht'))))
+    exact ⟨ih_to, fun r hr => ih_mono r (h1_mono r hr)⟩
+
+/-- Inner foldl of extend_with_star_no_outbound preserves paths_to_nm with refs monotonicity -/
+private lemma inner_foldl_ews_no_outbound_paths_to_nm (target : Aref) (sources : List Aref) (pe : PathEnv)
+    (h_to : ∀ u v p, v ∉ pe.refs → v ≠ .root → u ≠ v → ¬interpret_regex (pe.paths (u, v)) p)
+    (hsources : ∀ s ∈ sources, s ∈ pe.refs) :
+    (∀ u v p, v ∉ (sources.foldl (fun acc source => extend_with_star_no_outbound target source acc) pe).refs →
+      v ≠ .root → u ≠ v →
+      ¬interpret_regex ((sources.foldl (fun acc source => extend_with_star_no_outbound target source acc) pe).paths (u, v)) p) ∧
+    (∀ r ∈ pe.refs, r ∈ (sources.foldl (fun acc source => extend_with_star_no_outbound target source acc) pe).refs) := by
+  induction sources generalizing pe with
+  | nil => exact ⟨h_to, fun r hr => hr⟩
+  | cons s ss ih =>
+    simp only [List.foldl_cons]
+    have hsrc : s ∈ pe.refs := hsources s (List.mem_cons.mpr (Or.inl rfl))
+    have ⟨ih_to, ih_mono⟩ := ih (extend_with_star_no_outbound target s pe)
+      (extend_with_star_no_outbound_paths_to_non_member target s pe h_to (Or.inl hsrc))
+      (fun s' hs' => extend_with_star_no_outbound_refs_mono target s pe s'
+        (hsources s' (List.mem_cons.mpr (Or.inr hs'))))
+    exact ⟨ih_to, fun r hr => ih_mono r (extend_with_star_no_outbound_refs_mono target s pe r hr)⟩
+
+/-- Outer foldl of extend_with_star_no_outbound preserves paths_to_nm with refs monotonicity -/
+private lemma outer_foldl_ews_no_outbound_paths_to_nm (targets sources : List Aref) (pe : PathEnv)
+    (h_to : ∀ u v p, v ∉ pe.refs → v ≠ .root → u ≠ v → ¬interpret_regex (pe.paths (u, v)) p)
+    (hsources : ∀ s ∈ sources, s ∈ pe.refs)
+    (htargets : ∀ t ∈ targets, t ∈ pe.refs) :
+    (∀ u v p, v ∉ (targets.foldl (fun acc target =>
+      sources.foldl (fun acc' source => extend_with_star_no_outbound target source acc') acc) pe).refs →
+      v ≠ .root → u ≠ v →
+      ¬interpret_regex ((targets.foldl (fun acc target =>
+        sources.foldl (fun acc' source => extend_with_star_no_outbound target source acc') acc) pe).paths (u, v)) p) ∧
+    (∀ r ∈ pe.refs, r ∈ (targets.foldl (fun acc target =>
+      sources.foldl (fun acc' source => extend_with_star_no_outbound target source acc') acc) pe).refs) := by
+  induction targets generalizing pe with
+  | nil => exact ⟨h_to, fun r hr => hr⟩
+  | cons t ts ih =>
+    simp only [List.foldl_cons]
+    have ⟨h1_to, h1_mono⟩ := inner_foldl_ews_no_outbound_paths_to_nm t sources pe h_to hsources
+    have ⟨ih_to, ih_mono⟩ := ih (sources.foldl (fun acc' source => extend_with_star_no_outbound t source acc') pe) h1_to
       (fun s hs => h1_mono s (hsources s hs))
       (fun t' ht' => h1_mono t' (htargets t' (List.mem_cons.mpr (Or.inr ht'))))
     exact ⟨ih_to, fun r hr => ih_mono r (h1_mono r hr)⟩
@@ -4391,6 +4546,47 @@ private lemma outer_foldl_ews_paths_from_nm (targets sources : List Aref) (pe : 
     simp only [List.foldl_cons]
     have ⟨h1_from, h1_mono⟩ := inner_foldl_ews_paths_from_nm t sources pe h_from hsources
     have ⟨ih_from, ih_mono⟩ := ih (sources.foldl (fun acc' source => extend_with_star t source acc') pe) h1_from
+      (fun s hs => h1_mono s (hsources s hs))
+      (fun t' ht' => h1_mono t' (htargets t' (List.mem_cons.mpr (Or.inr ht'))))
+    exact ⟨ih_from, fun r hr => ih_mono r (h1_mono r hr)⟩
+
+/-- Inner foldl of extend_with_star_no_outbound preserves paths_from_nm with refs monotonicity -/
+private lemma inner_foldl_ews_no_outbound_paths_from_nm (target : Aref) (sources : List Aref) (pe : PathEnv)
+    (h_from : ∀ u v p, u ∉ pe.refs → u ≠ .root → u ≠ v → ¬interpret_regex (pe.paths (u, v)) p)
+    (hsources : ∀ s ∈ sources, s ∈ pe.refs) :
+    (∀ u v p, u ∉ (sources.foldl (fun acc source => extend_with_star_no_outbound target source acc) pe).refs →
+      u ≠ .root → u ≠ v →
+      ¬interpret_regex ((sources.foldl (fun acc source => extend_with_star_no_outbound target source acc) pe).paths (u, v)) p) ∧
+    (∀ r ∈ pe.refs, r ∈ (sources.foldl (fun acc source => extend_with_star_no_outbound target source acc) pe).refs) := by
+  induction sources generalizing pe with
+  | nil => exact ⟨h_from, fun r hr => hr⟩
+  | cons s ss ih =>
+    simp only [List.foldl_cons]
+    have hsrc : s ∈ pe.refs := hsources s (List.mem_cons.mpr (Or.inl rfl))
+    have ⟨ih_from, ih_mono⟩ := ih (extend_with_star_no_outbound target s pe)
+      (extend_with_star_no_outbound_paths_from_non_member target s pe h_from (Or.inl hsrc))
+      (fun s' hs' => extend_with_star_no_outbound_refs_mono target s pe s'
+        (hsources s' (List.mem_cons.mpr (Or.inr hs'))))
+    exact ⟨ih_from, fun r hr => ih_mono r (extend_with_star_no_outbound_refs_mono target s pe r hr)⟩
+
+/-- Outer foldl of extend_with_star_no_outbound preserves paths_from_nm with refs monotonicity -/
+private lemma outer_foldl_ews_no_outbound_paths_from_nm (targets sources : List Aref) (pe : PathEnv)
+    (h_from : ∀ u v p, u ∉ pe.refs → u ≠ .root → u ≠ v → ¬interpret_regex (pe.paths (u, v)) p)
+    (hsources : ∀ s ∈ sources, s ∈ pe.refs)
+    (htargets : ∀ t ∈ targets, t ∈ pe.refs) :
+    (∀ u v p, u ∉ (targets.foldl (fun acc target =>
+      sources.foldl (fun acc' source => extend_with_star_no_outbound target source acc') acc) pe).refs →
+      u ≠ .root → u ≠ v →
+      ¬interpret_regex ((targets.foldl (fun acc target =>
+        sources.foldl (fun acc' source => extend_with_star_no_outbound target source acc') acc) pe).paths (u, v)) p) ∧
+    (∀ r ∈ pe.refs, r ∈ (targets.foldl (fun acc target =>
+      sources.foldl (fun acc' source => extend_with_star_no_outbound target source acc') acc) pe).refs) := by
+  induction targets generalizing pe with
+  | nil => exact ⟨h_from, fun r hr => hr⟩
+  | cons t ts ih =>
+    simp only [List.foldl_cons]
+    have ⟨h1_from, h1_mono⟩ := inner_foldl_ews_no_outbound_paths_from_nm t sources pe h_from hsources
+    have ⟨ih_from, ih_mono⟩ := ih (sources.foldl (fun acc' source => extend_with_star_no_outbound t source acc') pe) h1_from
       (fun s hs => h1_mono s (hsources s hs))
       (fun t' ht' => h1_mono t' (htargets t' (List.mem_cons.mpr (Or.inr ht'))))
     exact ⟨ih_from, fun r hr => ih_mono r (h1_mono r hr)⟩
@@ -4500,12 +4696,13 @@ private lemma call_connect_paths_to_nm
   -- Rule 1
   have ⟨h1_to, h1_mono⟩ := outer_foldl_ews_paths_to_nm _ _ env.pathEnv h_to
     hinputs_tracked hio_tracked
-  -- Rule 2
-  have ⟨h2_to, h2_mono⟩ := outer_foldl_ews_paths_to_nm _ _ _ h1_to
+  -- Rule 2 (extend_with_star_no_outbound)
+  have ⟨h2_to, h2_mono⟩ := outer_foldl_ews_no_outbound_paths_to_nm _ _ _ h1_to
     (fun s hs => h1_mono s (hmi_tracked s hs))
     (fun t ht => h1_mono t (hmo_tracked t ht))
-  -- Rule 3 (conditional)
-  exact (outer_foldl_cond_ews_paths_to_nm _ _ _ h2_to
+  -- Rule 3 (conditional) with patch step
+  exact (outer_foldl_cond_ews_paths_to_nm _ _ _
+    (patch_root_outbound_paths_to_nm _ _ h2_to)
     (fun s hs => h2_mono s (h1_mono s (hio_tracked s hs)))
     (fun t ht => h2_mono t (h1_mono t (hio_tracked t ht)))).1
 
@@ -4562,12 +4759,14 @@ private lemma call_connect_paths_from_nm
   -- Rule 1
   have ⟨h1_from, h1_mono⟩ := outer_foldl_ews_paths_from_nm _ _ env.pathEnv h_from
     hinputs_tracked hio_tracked
-  -- Rule 2
-  have ⟨h2_from, h2_mono⟩ := outer_foldl_ews_paths_from_nm _ _ _ h1_from
+  -- Rule 2 (extend_with_star_no_outbound)
+  have ⟨h2_from, h2_mono⟩ := outer_foldl_ews_no_outbound_paths_from_nm _ _ _ h1_from
     (fun s hs => h1_mono s (hmi_tracked s hs))
     (fun t ht => h1_mono t (hmo_tracked t ht))
-  -- Rule 3 (conditional)
-  exact (outer_foldl_cond_ews_paths_from_nm _ _ _ h2_from
+  -- Patch: patch_root_outbound preserves paths_from_nm
+  -- Rule 3 (conditional): uses patched base
+  exact (outer_foldl_cond_ews_paths_from_nm _ _ _
+    (patch_root_outbound_paths_from_nm _ _ h2_from)
     (fun s hs => h2_mono s (h1_mono s (hio_tracked s hs)))
     (fun t ht => h2_mono t (h1_mono t (hio_tracked t ht)))).1
 
@@ -4601,6 +4800,36 @@ private lemma outer_foldl_ews_refs_eq (targets sources : List Aref) (pe : PathEn
     rw [ih _ (fun t' ht' => by rw [h1]; exact htargets t' (List.mem_cons.mpr (Or.inr ht')))]
     exact h1
 
+/-- extend_with_star_no_outbound doesn't change refs when target is already tracked -/
+private lemma extend_with_star_no_outbound_refs_eq (target source : Aref) (pe : PathEnv)
+    (h : target ∈ pe.refs) :
+    (extend_with_star_no_outbound target source pe).refs = pe.refs := by
+  simp only [extend_with_star_no_outbound, h, not_true_eq_false, ↓reduceIte]
+
+/-- Inner foldl of extend_with_star_no_outbound preserves refs exactly -/
+private lemma inner_foldl_ews_no_outbound_refs_eq (target : Aref) (sources : List Aref) (pe : PathEnv)
+    (h : target ∈ pe.refs) :
+    (sources.foldl (fun acc source => extend_with_star_no_outbound target source acc) pe).refs = pe.refs := by
+  induction sources generalizing pe with
+  | nil => rfl
+  | cons s ss ih =>
+    simp only [List.foldl_cons]
+    rw [ih (extend_with_star_no_outbound target s pe) (by rw [extend_with_star_no_outbound_refs_eq target s pe h]; exact h)]
+    exact extend_with_star_no_outbound_refs_eq target s pe h
+
+/-- Outer foldl of extend_with_star_no_outbound preserves refs exactly -/
+private lemma outer_foldl_ews_no_outbound_refs_eq (targets sources : List Aref) (pe : PathEnv)
+    (htargets : ∀ t ∈ targets, t ∈ pe.refs) :
+    (targets.foldl (fun acc target =>
+      sources.foldl (fun acc' source => extend_with_star_no_outbound target source acc') acc) pe).refs = pe.refs := by
+  induction targets generalizing pe with
+  | nil => rfl
+  | cons t ts ih =>
+    simp only [List.foldl_cons]
+    have h1 := inner_foldl_ews_no_outbound_refs_eq t sources pe (htargets t (List.mem_cons.mpr (Or.inl rfl)))
+    rw [ih _ (fun t' ht' => by rw [h1]; exact htargets t' (List.mem_cons.mpr (Or.inr ht')))]
+    exact h1
+
 /-- Inner conditional foldl of extend_with_star preserves refs exactly -/
 private lemma inner_foldl_cond_ews_refs_eq (target : Aref) (sources : List Aref) (pe : PathEnv)
     (h : target ∈ pe.refs) :
@@ -4629,6 +4858,18 @@ private lemma outer_foldl_cond_ews_refs_eq (targets sources : List Aref) (pe : P
     have h1 := inner_foldl_cond_ews_refs_eq t sources pe (htargets t (List.mem_cons.mpr (Or.inl rfl)))
     rw [ih _ (fun t' ht' => by rw [h1]; exact htargets t' (List.mem_cons.mpr (Or.inr ht')))]
     exact h1
+
+/-- Conditional foldl of extend_with_star over patch_root_outbound base preserves refs -/
+private lemma outer_foldl_cond_ews_patch_refs_eq (targets sources mo : List Aref) (pe : PathEnv)
+    (htargets : ∀ t ∈ targets, t ∈ pe.refs) :
+    (targets.foldl (fun acc target =>
+      sources.foldl (fun acc' source =>
+        if target ≠ source then extend_with_star target source acc' else acc') acc)
+      (patch_root_outbound mo pe)).refs = pe.refs := by
+  have h := outer_foldl_cond_ews_refs_eq targets sources (patch_root_outbound mo pe)
+    (fun t ht => htargets t ht)
+  simp only [patch_root_outbound_refs_eq] at h
+  exact h
 
 /-- call_connect preserves refs exactly when site_tracked holds -/
 lemma call_connect_refs_eq
@@ -4667,11 +4908,15 @@ lemma call_connect_refs_eq
   dsimp only []
   -- Rule 1: io targets, inputs sources
   have hR1 := outer_foldl_ews_refs_eq io inputs env.pathEnv hio_tracked
-  -- Rule 2: mo targets, mi sources
-  have hR2 := outer_foldl_ews_refs_eq mo mi _ (fun t ht => by rw [hR1]; exact hmo_tracked t ht)
-  -- Rule 3 (conditional): io targets, io sources
-  have hR3 := outer_foldl_cond_ews_refs_eq io io _ (fun t ht => by rw [hR2, hR1]; exact hio_tracked t ht)
-  exact hR3.trans (hR2.trans hR1)
+  -- Rule 2: mo targets, mi sources (extend_with_star_no_outbound)
+  have hR2 := outer_foldl_ews_no_outbound_refs_eq mo mi _ (fun t ht => by rw [hR1]; exact hmo_tracked t ht)
+  -- Rule 3 (conditional): io targets, io sources (over patch_root_outbound base)
+  -- Note: rw on hypotheses avoids let-binding vs expanded-form mismatch in goal
+  exact (outer_foldl_cond_ews_patch_refs_eq io io mo _
+    (fun t ht => by
+      have h := hio_tracked t ht
+      rw [← hR1, ← hR2] at h
+      exact h)).trans (hR2.trans hR1)
 
 /-- extend_with_star preserves path inclusion under a substitution σ.
     If interpret(peE.paths(σu, σv), p) → interpret(peL.paths(u,v), p) for all u,v ∈ refsL,
@@ -4729,6 +4974,57 @@ private lemma extend_with_star_path_inclusion (σ : Aref → Aref)
         simp only [interpret_regex] at hp ⊢
         obtain ⟨p1, p2, rfl, hp1, hp2⟩ := hp
         exact ⟨p1, p2, rfl, hincl sourceL v hsrc_mem hv p1 hp1, hp2⟩
+      · -- Neither u nor v is target: use base path
+        have hσu_ne : σ u ≠ σ targetL := fun h => hu_tgt (hinj u targetL hu htgt_mem h)
+        rw [if_neg hu_tgt] at ⊢
+        rw [if_neg hσu_ne] at hp
+        exact hincl u v hu hv path hp
+
+/-- extend_with_star_no_outbound preserves path inclusion under a substitution σ.
+    Like extend_with_star_path_inclusion but for the no_outbound variant.
+    The u = target case (outbound) is trivial since paths are Regex.empty. -/
+private lemma extend_with_star_no_outbound_path_inclusion (σ : Aref → Aref)
+    (targetL sourceL : Aref) (peL peE : PathEnv)
+    (hincl : ∀ u v, u ∈ peL.refs → v ∈ peL.refs →
+      ∀ path, interpret_regex (peE.paths (σ u, σ v)) path →
+              interpret_regex (peL.paths (u, v)) path)
+    (htgt_mem : targetL ∈ peL.refs) (hsrc_mem : sourceL ∈ peL.refs)
+    (hinj : ∀ u v, u ∈ peL.refs → v ∈ peL.refs → σ u = σ v → u = v) :
+    ∀ u v, u ∈ (extend_with_star_no_outbound targetL sourceL peL).refs →
+           v ∈ (extend_with_star_no_outbound targetL sourceL peL).refs →
+      ∀ path, interpret_regex ((extend_with_star_no_outbound (σ targetL) (σ sourceL) peE).paths (σ u, σ v)) path →
+              interpret_regex ((extend_with_star_no_outbound targetL sourceL peL).paths (u, v)) path := by
+  have hrefs_eq : (extend_with_star_no_outbound targetL sourceL peL).refs = peL.refs :=
+    extend_with_star_no_outbound_refs_eq targetL sourceL peL htgt_mem
+  intro u v hu hv path hp
+  rw [hrefs_eq] at hu hv
+  simp only [extend_with_star_no_outbound] at hp ⊢
+  by_cases huv_tgt : u = targetL ∧ v = targetL
+  · rw [if_pos huv_tgt] at ⊢
+    rw [if_pos ⟨congrArg σ huv_tgt.1, congrArg σ huv_tgt.2⟩] at hp
+    exact hp
+  · have hσuv_neg : ¬(σ u = σ targetL ∧ σ v = σ targetL) :=
+      fun ⟨h1, h2⟩ => huv_tgt ⟨hinj u targetL hu htgt_mem h1, hinj v targetL hv htgt_mem h2⟩
+    rw [if_neg huv_tgt] at ⊢
+    rw [if_neg hσuv_neg] at hp
+    by_cases hv_tgt : v = targetL
+    · -- v = targetL, u ≠ targetL: inbound path
+      have hu_ne : u ≠ targetL := fun h => huv_tgt ⟨h, hv_tgt⟩
+      have hσv_tgt : σ v = σ targetL := congrArg σ hv_tgt
+      rw [if_pos hv_tgt] at ⊢
+      rw [if_pos hσv_tgt] at hp
+      simp only [interpret_regex] at hp ⊢
+      obtain ⟨p1, p2, rfl, hp1, hp2⟩ := hp
+      exact ⟨p1, p2, rfl, hincl u sourceL hu hsrc_mem p1 hp1, hp2⟩
+    · have hσv_ne : σ v ≠ σ targetL := fun h => hv_tgt (hinj v targetL hv htgt_mem h)
+      rw [if_neg hv_tgt] at ⊢
+      rw [if_neg hσv_ne] at hp
+      by_cases hu_tgt : u = targetL
+      · -- u = targetL, v ≠ targetL: outbound path is Regex.empty — trivially no match
+        have hσu_tgt : σ u = σ targetL := congrArg σ hu_tgt
+        rw [if_pos hu_tgt] at ⊢
+        rw [if_pos hσu_tgt] at hp
+        exact nomatch hp
       · -- Neither u nor v is target: use base path
         have hσu_ne : σ u ≠ σ targetL := fun h => hu_tgt (hinj u targetL hu htgt_mem h)
         rw [if_neg hu_tgt] at ⊢
@@ -5055,6 +5351,61 @@ private lemma outer_foldl_ews_path_incl (σ : Aref → Aref)
       (fun s' hs' => hrefsL ▸ hsrc s' hs')
       (fun u v hu hv => hinj u v (hrefsL ▸ hu) (hrefsL ▸ hv))
 
+/-- Inner foldl of extend_with_star_no_outbound preserves path inclusion. -/
+private lemma inner_foldl_ews_no_outbound_path_incl (σ : Aref → Aref)
+    (target_L : Aref) (sources_L : List Aref) (peL peE : PathEnv)
+    (hincl : ∀ u v, u ∈ peL.refs → v ∈ peL.refs →
+      ∀ path, interpret_regex (peE.paths (σ u, σ v)) path →
+              interpret_regex (peL.paths (u, v)) path)
+    (htgt : target_L ∈ peL.refs)
+    (hsrc : ∀ s ∈ sources_L, s ∈ peL.refs)
+    (hinj : ∀ u v, u ∈ peL.refs → v ∈ peL.refs → σ u = σ v → u = v) :
+    let result_L := sources_L.foldl (fun acc s => extend_with_star_no_outbound target_L s acc) peL
+    let result_E := (sources_L.map σ).foldl (fun acc s => extend_with_star_no_outbound (σ target_L) s acc) peE
+    ∀ u v, u ∈ result_L.refs → v ∈ result_L.refs →
+      ∀ path, interpret_regex (result_E.paths (σ u, σ v)) path →
+              interpret_regex (result_L.paths (u, v)) path := by
+  induction sources_L generalizing peL peE with
+  | nil => exact hincl
+  | cons s ss ih =>
+    simp only [List.map, List.foldl_cons]
+    have hs_mem := hsrc s (List.mem_cons.mpr (Or.inl rfl))
+    have hrefsL := extend_with_star_no_outbound_refs_eq target_L s peL htgt
+    exact ih (extend_with_star_no_outbound target_L s peL) (extend_with_star_no_outbound (σ target_L) (σ s) peE)
+      (extend_with_star_no_outbound_path_inclusion σ target_L s peL peE hincl htgt hs_mem hinj)
+      (hrefsL ▸ htgt) (fun s' hs' => hrefsL ▸ hsrc s' (List.mem_cons.mpr (Or.inr hs')))
+      (fun u v hu hv => hinj u v (hrefsL ▸ hu) (hrefsL ▸ hv))
+
+/-- Outer foldl of extend_with_star_no_outbound preserves path inclusion. -/
+private lemma outer_foldl_ews_no_outbound_path_incl (σ : Aref → Aref)
+    (targets_L sources_L : List Aref) (peL peE : PathEnv)
+    (hincl : ∀ u v, u ∈ peL.refs → v ∈ peL.refs →
+      ∀ path, interpret_regex (peE.paths (σ u, σ v)) path →
+              interpret_regex (peL.paths (u, v)) path)
+    (htgt : ∀ t ∈ targets_L, t ∈ peL.refs)
+    (hsrc : ∀ s ∈ sources_L, s ∈ peL.refs)
+    (hinj : ∀ u v, u ∈ peL.refs → v ∈ peL.refs → σ u = σ v → u = v) :
+    let result_L := targets_L.foldl (fun acc t =>
+      sources_L.foldl (fun acc' s => extend_with_star_no_outbound t s acc') acc) peL
+    let result_E := (targets_L.map σ).foldl (fun acc t =>
+      (sources_L.map σ).foldl (fun acc' s => extend_with_star_no_outbound t s acc') acc) peE
+    ∀ u v, u ∈ result_L.refs → v ∈ result_L.refs →
+      ∀ path, interpret_regex (result_E.paths (σ u, σ v)) path →
+              interpret_regex (result_L.paths (u, v)) path := by
+  induction targets_L generalizing peL peE with
+  | nil => exact hincl
+  | cons t ts ih =>
+    simp only [List.map, List.foldl_cons]
+    have ht_mem := htgt t (List.mem_cons.mpr (Or.inl rfl))
+    have hrefsL := inner_foldl_ews_no_outbound_refs_eq t sources_L peL ht_mem
+    exact ih
+      (sources_L.foldl (fun acc' s => extend_with_star_no_outbound t s acc') peL)
+      ((sources_L.map σ).foldl (fun acc' s => extend_with_star_no_outbound (σ t) s acc') peE)
+      (inner_foldl_ews_no_outbound_path_incl σ t sources_L peL peE hincl ht_mem hsrc hinj)
+      (fun t' ht' => hrefsL ▸ htgt t' (List.mem_cons.mpr (Or.inr ht')))
+      (fun s' hs' => hrefsL ▸ hsrc s' hs')
+      (fun u v hu hv => hinj u v (hrefsL ▸ hu) (hrefsL ▸ hv))
+
 /-- Inner conditional foldl of extend_with_star preserves path inclusion. -/
 private lemma inner_foldl_cond_ews_path_incl (σ : Aref → Aref)
     (target_L : Aref) (sources_L : List Aref) (peL peE : PathEnv)
@@ -5221,9 +5572,9 @@ private lemma filterMap_allRef_map_σ (σ : Aref → Aref)
           simp only [applySubstMoveType] at hse_s; rw [← hse_s]
           cases bk <;> (simp only [List.map_cons]; exact congrArg _ ih)
 
-/-- Triple foldl of extend_with_star preserves path inclusion.
+/-- Quadruple foldl (with patch_root_outbound) preserves path inclusion.
     Takes filter lists as parameters with σ-mapping equalities, then uses subst
-    to convert E-side lists to .map σ form and composes the three foldl lemmas.
+    to convert E-side lists to .map σ form and composes the four steps.
     This avoids match-compilation mismatch issues between different definitions. -/
 private lemma path_inclusion_via_triple_foldl
     (σ : Aref → Aref) (peL peE : PathEnv)
@@ -5240,45 +5591,71 @@ private lemma path_inclusion_via_triple_foldl
       ∀ path, interpret_regex (peE.paths (σ u, σ v)) path →
               interpret_regex (peL.paths (u, v)) path)
     (hinj : ∀ u v, u ∈ peL.refs → v ∈ peL.refs → σ u = σ v → u = v)
+    -- Parameters for patch_root_outbound step
+    (hid : ∀ r, (∀ n, r ≠ .refid n) → σ r = r)
+    (hnonroot : ∀ r, r ≠ .root → σ r ≠ .root)
+    (hrefs_perm : (peL.refs.map σ).Perm peE.refs)
     (u v : Aref) (hu : u ∈ peL.refs) (hv : v ∈ peL.refs) :
     ∀ path,
     interpret_regex ((io_E.foldl (fun acc io1 =>
       io_E.foldl (fun acc' io2 =>
         if io1 ≠ io2 then extend_with_star io1 io2 acc' else acc') acc)
-      (mo_E.foldl (fun acc mout =>
-        mi_E.foldl (fun acc' minput => extend_with_star mout minput acc') acc)
-        (io_E.foldl (fun acc iout =>
-          inputs_E.foldl (fun acc' input => extend_with_star iout input acc') acc) peE))).paths (σ u, σ v)) path →
+      (patch_root_outbound mo_E
+        (mo_E.foldl (fun acc mout =>
+          mi_E.foldl (fun acc' minput => extend_with_star_no_outbound mout minput acc') acc)
+          (io_E.foldl (fun acc iout =>
+            inputs_E.foldl (fun acc' input => extend_with_star iout input acc') acc) peE)))).paths (σ u, σ v)) path →
     interpret_regex ((io_L.foldl (fun acc io1 =>
       io_L.foldl (fun acc' io2 =>
         if io1 ≠ io2 then extend_with_star io1 io2 acc' else acc') acc)
-      (mo_L.foldl (fun acc mout =>
-        mi_L.foldl (fun acc' minput => extend_with_star mout minput acc') acc)
-        (io_L.foldl (fun acc iout =>
-          inputs_L.foldl (fun acc' input => extend_with_star iout input acc') acc) peL))).paths (u, v)) path := by
+      (patch_root_outbound mo_L
+        (mo_L.foldl (fun acc mout =>
+          mi_L.foldl (fun acc' minput => extend_with_star_no_outbound mout minput acc') acc)
+          (io_L.foldl (fun acc iout =>
+            inputs_L.foldl (fun acc' input => extend_with_star iout input acc') acc) peL)))).paths (u, v)) path := by
   subst hio_map hinputs_map hmo_map hmi_map
   -- Rule 1: io over inputs
   have hR1_refs := outer_foldl_ews_refs_eq io_L inputs_L peL hio_tracked
   have hR1 := outer_foldl_ews_path_incl σ io_L inputs_L peL peE
     hpaths hio_tracked hinputs_tracked hinj
-  -- Rule 2: mo over mi
-  have hR2_refs := outer_foldl_ews_refs_eq mo_L mi_L _
+  -- Rule 2: mo over mi (extend_with_star_no_outbound)
+  have hR2_refs := outer_foldl_ews_no_outbound_refs_eq mo_L mi_L _
     (fun t ht => hR1_refs ▸ hmo_tracked t ht)
-  have hR2 := outer_foldl_ews_path_incl σ mo_L mi_L _ _ hR1
+  have hR2 := outer_foldl_ews_no_outbound_path_incl σ mo_L mi_L _ _ hR1
     (fun t ht => hR1_refs ▸ hmo_tracked t ht)
     (fun s hs => hR1_refs ▸ hmi_tracked s hs)
     (fun u v hu hv => hinj u v (hR1_refs ▸ hu) (hR1_refs ▸ hv))
-  -- Rule 3: io conditional over io
-  have hR3 := outer_foldl_cond_ews_path_incl σ io_L io_L _ _ hR2
+  -- Patch: patch_root_outbound
+  have hR12_refs := hR2_refs.trans hR1_refs
+  -- E-side refs are also preserved through Rules 1 and 2
+  have hR1_E_refs := outer_foldl_ews_refs_eq (io_L.map σ) (inputs_L.map σ) peE
+    (fun t ht => by
+      obtain ⟨t', ht', rfl⟩ := List.mem_map.mp ht
+      exact hrefs_perm.mem_iff.mp (List.mem_map_of_mem (f := σ) (hio_tracked t' ht')))
+  have hR2_E_refs := outer_foldl_ews_no_outbound_refs_eq (mo_L.map σ) (mi_L.map σ) _
+    (fun t ht => by
+      rw [hR1_E_refs]
+      obtain ⟨t', ht', rfl⟩ := List.mem_map.mp ht
+      exact hrefs_perm.mem_iff.mp (List.mem_map_of_mem (f := σ) (hmo_tracked t' ht')))
+  have hR12_E_refs := hR2_E_refs.trans hR1_E_refs
+  have hPatch := patch_root_outbound_path_incl σ mo_L _ _
+    (fun r hr => hR12_refs ▸ hmo_tracked r hr)
+    hR2
+    (fun u v hu hv => hinj u v (hR12_refs ▸ hu) (hR12_refs ▸ hv))
+    hnonroot
+    hid
+    (fun u hu => by rw [hR12_E_refs]; exact hrefs_perm.mem_iff.mp (List.mem_map_of_mem (f := σ) (hR12_refs ▸ hu)))
+  -- Rule 3: io conditional over io (over patched base)
+  have hR3 := outer_foldl_cond_ews_path_incl σ io_L io_L
+    (patch_root_outbound mo_L _) (patch_root_outbound (mo_L.map σ) _) hPatch
     (fun t ht => hR2_refs ▸ hR1_refs ▸ hio_tracked t ht)
     (fun s hs => hR2_refs ▸ hR1_refs ▸ hio_tracked s hs)
     (fun u v hu hv => hinj u v ((hR2_refs.trans hR1_refs) ▸ hu) ((hR2_refs.trans hR1_refs) ▸ hv))
-  have hR12_refs := hR2_refs.trans hR1_refs
-  have hR3_refs := outer_foldl_cond_ews_refs_eq io_L io_L _
+  have hR3_refs := outer_foldl_cond_ews_refs_eq io_L io_L (patch_root_outbound mo_L _)
     (fun t ht => hR2_refs ▸ hR1_refs ▸ hio_tracked t ht)
   exact hR3 u v
-    (by rw [hR3_refs, hR2_refs, hR1_refs]; exact hu)
-    (by rw [hR3_refs, hR2_refs, hR1_refs]; exact hv)
+    (by simp only [hR3_refs, patch_root_outbound_refs_eq, hR2_refs, hR1_refs]; exact hu)
+    (by simp only [hR3_refs, patch_root_outbound_refs_eq, hR2_refs, hR1_refs]; exact hv)
 
 /-- call_connect_inputs_outputs preserves subsumes.
     Since call_connect only changes pathEnv, conditions 1-6 carry over from the input subsumes.
@@ -5346,7 +5723,7 @@ private lemma call_connect_subsumes
             | ref bt rr bk => cases bk with
               | siteBorrowImm => simp
               | siteBorrowMut => simp only [Option.some.injEq]; intro h; subst h; exact hstL _ _ _ _ hlook)
-      hpaths hinj u v hu hv
+      hpaths hinj hid hnonroot hrefs u v hu hv
 
 /-- extend_with_star preserves path inclusion from pe0 when target is isolated in pe0. -/
 private lemma extend_with_star_path_mono (pe0 pe : PathEnv) (target source : Aref)
@@ -5407,6 +5784,68 @@ private lemma foldl_foldl_ewst_path_mono (pe0 : PathEnv)
       (fun t' ht' => hsl t' (List.mem_cons_of_mem _ ht'))
       (sources.foldl (fun pe' s => extend_with_star t s pe') pe)
       (foldl_ewst_path_mono pe0 t sources
+        (hiso t (List.mem_cons_self ..)) (hsl t (List.mem_cons_self ..)) pe h_inc)
+
+/-- extend_with_star_no_outbound preserves path inclusion from pe0 when target is isolated in pe0.
+    Like extend_with_star_path_mono but for the no_outbound variant. -/
+private lemma extend_with_star_no_outbound_path_mono (pe0 pe : PathEnv) (target source : Aref)
+    (hiso : ∀ w, w ≠ target → (∀ p, ¬⟦pe0.paths (w, target)⟧ p) ∧
+                               (∀ p, ¬⟦pe0.paths (target, w)⟧ p))
+    (hsl : ∀ p, ⟦pe0.paths (target, target)⟧ p → p = [])
+    (h_inc : ∀ u v p, ⟦pe0.paths (u, v)⟧ p → ⟦pe.paths (u, v)⟧ p) :
+    ∀ u v p, ⟦pe0.paths (u, v)⟧ p →
+      ⟦(extend_with_star_no_outbound target source pe).paths (u, v)⟧ p := by
+  intro u v p hp
+  by_cases hut : u = target
+  · by_cases hvt : v = target
+    · subst hut; subst hvt
+      have hpeq := hsl p hp
+      subst hpeq
+      simp only [extend_with_star_no_outbound, and_self, ↓reduceIte, interpret_regex]
+    · subst hut; exact absurd hp ((hiso v hvt).2 p)
+  · by_cases hvt : v = target
+    · subst hvt; exact absurd hp ((hiso u hut).1 p)
+    · show ⟦(extend_with_star_no_outbound target source pe).paths (u, v)⟧ p
+      simp only [extend_with_star_no_outbound]
+      rw [if_neg (fun ⟨h, _⟩ => hut h), if_neg hvt, if_neg hut]
+      exact h_inc u v p hp
+
+/-- Inner foldl of extend_with_star_no_outbound (fixed target, varying sources) preserves path inclusion. -/
+private lemma foldl_ews_no_outbound_path_mono (pe0 : PathEnv) (target : Aref)
+    (sources : List Aref)
+    (hiso : ∀ w, w ≠ target → (∀ p, ¬⟦pe0.paths (w, target)⟧ p) ∧
+                               (∀ p, ¬⟦pe0.paths (target, w)⟧ p))
+    (hsl : ∀ p, ⟦pe0.paths (target, target)⟧ p → p = []) :
+    ∀ (pe : PathEnv), (∀ u v p, ⟦pe0.paths (u, v)⟧ p → ⟦pe.paths (u, v)⟧ p) →
+    ∀ u v p, ⟦pe0.paths (u, v)⟧ p →
+      ⟦(sources.foldl (fun pe' s => extend_with_star_no_outbound target s pe') pe).paths (u, v)⟧ p := by
+  induction sources with
+  | nil => intro pe h_inc; exact h_inc
+  | cons s ss ih =>
+    intro pe h_inc
+    exact ih (extend_with_star_no_outbound target s pe)
+      (extend_with_star_no_outbound_path_mono pe0 pe target s hiso hsl h_inc)
+
+/-- Outer foldl of extend_with_star_no_outbound (varying targets, each with inner foldl over sources)
+    preserves path inclusion. -/
+private lemma foldl_foldl_ews_no_outbound_path_mono (pe0 : PathEnv)
+    (targets sources : List Aref)
+    (hiso : ∀ t ∈ targets, ∀ w, w ≠ t →
+      (∀ p, ¬⟦pe0.paths (w, t)⟧ p) ∧ (∀ p, ¬⟦pe0.paths (t, w)⟧ p))
+    (hsl : ∀ t ∈ targets, ∀ p, ⟦pe0.paths (t, t)⟧ p → p = []) :
+    ∀ (pe : PathEnv), (∀ u v p, ⟦pe0.paths (u, v)⟧ p → ⟦pe.paths (u, v)⟧ p) →
+    ∀ u v p, ⟦pe0.paths (u, v)⟧ p →
+      ⟦(targets.foldl (fun pe' t =>
+        sources.foldl (fun pe'' s => extend_with_star_no_outbound t s pe'') pe') pe).paths (u, v)⟧ p := by
+  induction targets with
+  | nil => intro pe h_inc; exact h_inc
+  | cons t ts ih =>
+    intro pe h_inc
+    exact ih
+      (fun t' ht' => hiso t' (List.mem_cons_of_mem _ ht'))
+      (fun t' ht' => hsl t' (List.mem_cons_of_mem _ ht'))
+      (sources.foldl (fun pe' s => extend_with_star_no_outbound t s pe') pe)
+      (foldl_ews_no_outbound_path_mono pe0 t sources
         (hiso t (List.mem_cons_self ..)) (hsl t (List.mem_cons_self ..)) pe h_inc)
 
 /-- Inner conditional foldl (fixed target, varying sources, skip self) preserves path inclusion. -/
@@ -5543,20 +5982,25 @@ lemma call_connect_subsumes_self (env' : TypeEnv) (results args : List Site)
       (List.filterMap (fun a => match lookup env'.siteEnv a with
         | some (.ref _ r _) => some r | _ => none) args)
       hiso_io hsl_io env'.pathEnv (fun _ _ _ h => h)
-    -- Rule 2: mo from mi
-    have h2 := foldl_foldl_ewst_path_mono env'.pathEnv
+    -- Rule 2: mo from mi (extend_with_star_no_outbound)
+    have h2 := foldl_foldl_ews_no_outbound_path_mono env'.pathEnv
       (List.filterMap (fun a => match lookup env'.siteEnv a with
         | some (.ref _ r .siteBorrowMut) => some r | _ => none) results)
       (List.filterMap (fun a => match lookup env'.siteEnv a with
         | some (.ref _ r .siteBorrowMut) => some r | _ => none) args)
       hiso_mo hsl_mo _ h1
+    -- Patch: patch_root_outbound
+    have h_patch := patch_root_outbound_path_mono env'.pathEnv
+      (List.filterMap (fun a => match lookup env'.siteEnv a with
+        | some (.ref _ r .siteBorrowMut) => some r | _ => none) results)
+      _ hiso_mo hsl h2
     -- Rule 3: io to io (conditional)
     have h3 := foldl_foldl_cond_ewst_path_mono env'.pathEnv
       (List.filterMap (fun a => match lookup env'.siteEnv a with
         | some (.ref _ r .siteBorrowImm) => some r | _ => none) results)
       (List.filterMap (fun a => match lookup env'.siteEnv a with
         | some (.ref _ r .siteBorrowImm) => some r | _ => none) results)
-      hiso_io hsl_io _ h2
+      hiso_io hsl_io _ h_patch
     exact h3 u v path hp
 
 private theorem weaken_call

@@ -299,8 +299,16 @@ open LeanMove.Examples.Expressivity.MultipleMutableReturnValues
 private def pointHeap : Heap × Loc :=
   Heap.empty.alloc (.record [(⟨"x"⟩, .int 10), (⟨"y"⟩, .int 20)])
 
+-- Runtime function environment: write calls borrow at runtime
+private def rtFunEnv : AssocMap Id FunDef :=
+  AssocMap.insert AssocMap.empty "borrow" borrow
+
+-- Typing function environment: maps "borrow" to its label env for soundness
+private def rtFte : FunTypingEnv :=
+  AssocMap.insert AssocMap.empty "borrow" borrow_lenvDec
+
 #guard (run 200 (initState borrow AssocMap.empty [.ref pointHeap.2 []] pointHeap.1)).isHalted
-#guard (run 200 (initState write AssocMap.empty [.ref pointHeap.2 []] pointHeap.1)).isHalted
+#guard (run 200 (initState write rtFunEnv [.ref pointHeap.2 []] pointHeap.1)).isHalted
 
 -- Type soundness: borrow never produces a danglingRef error (ref-typed param)
 set_option maxRecDepth 4096 in
@@ -311,8 +319,8 @@ private theorem borrow_no_danglingRef :
 -- Type soundness: write never produces a danglingRef error (ref-typed param)
 set_option maxRecDepth 4096 in
 private theorem write_no_danglingRef :
-    ∀ n loc, run n (initState write empty [.ref pointHeap.2 []] pointHeap.1) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec write write_lenvDec empty empty [.ref pointHeap.2 []] pointHeap.1 (by rfl)
+    ∀ n loc, run n (initState write rtFunEnv [.ref pointHeap.2 []] pointHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec write write_lenvDec rtFunEnv rtFte [.ref pointHeap.2 []] pointHeap.1 (by rfl)
 
 end
 
@@ -481,7 +489,11 @@ open LeanMove.Examples.Expressivity.MutableBorrowsNotUniqueCallsInvalid
 private def sHeap2 : Heap × Loc :=
   Heap.empty.alloc (.record [(⟨"f"⟩, .int 42)])
 
-#eval run 200 (initState call_and_write_invalid AssocMap.empty [.ref sHeap2.2 []] sHeap2.1)
+-- Runtime function environment: call_and_write_invalid calls borrow_f
+private def rtFunEnv2 : AssocMap Id FunDef :=
+  AssocMap.insert AssocMap.empty "borrow_f" borrow_f
+
+#eval run 200 (initState call_and_write_invalid rtFunEnv2 [.ref sHeap2.2 []] sHeap2.1)
 
 end
 

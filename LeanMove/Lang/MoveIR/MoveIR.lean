@@ -14,5 +14,7 @@
  limitations under the License.
 -/
 
-import LeanMove.Lang.MoveLight
-import LeanMove.Lang.MoveIR.MoveIR
+import LeanMove.Lang.MoveIR.Syntax
+import LeanMove.Lang.MoveIR.Parser
+import LeanMove.Lang.MoveIR.Translate
+import LeanMove.Lang.MoveIR.PrettyPrint

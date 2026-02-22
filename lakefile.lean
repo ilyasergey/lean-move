@@ -13,11 +13,12 @@ require batteries from
 require mathlib from
     git "https://github.com/leanprover-community/mathlib4.git" @ "v4.27.0"
 
--- Default target: everything (core + examples + runtime tests)
+-- Default target: everything (core + examples + runtime tests + parsing tests)
 -- Build with: lake build
 @[default_target]
 lean_lib «all» where
-  roots := #[`LeanMove, `LeanMove.Examples.Runtime.AllTests]
+  roots := #[`LeanMove, `LeanMove.Examples.Runtime.AllTests,
+             `LeanMove.Examples.Parsing.AllParseTests]
 
 -- Core library only (no examples or tests)
 -- Build with: lake build core
@@ -67,4 +68,10 @@ lean_lib «examples» where
 lean_lib «runtime» where
   srcDir := "LeanMove/Examples/Runtime"
   roots := #[`AllTests]
+
+-- Build target for parsing tests (MVIR parser)
+-- Build with: lake build parsing
+lean_lib «parsing» where
+  srcDir := "LeanMove/Examples/Parsing"
+  roots := #[`AllParseTests]
 

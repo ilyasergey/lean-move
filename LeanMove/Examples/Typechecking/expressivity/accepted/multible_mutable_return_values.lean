@@ -37,7 +37,7 @@ borrow(p: &mut Self.Point): &mut u64 * &mut u64
   Returns mutable refs to both x and y fields.
 
 write(p: &mut Self.Point)
-  Borrows both fields and writes 0 to each.
+  Calls borrow to get both field refs, then writes 0 to each twice.
 -/
 
 open LeanMove.Lang
@@ -64,63 +64,62 @@ def var_p : Var := ⟨"p"⟩
 def var_x : Var := ⟨"x"⟩
 def var_y : Var := ⟨"y"⟩
 
--- Sites
-def s0 : Site := .site 0
-def s1 : Site := .site 1
-def s2 : Site := .site 2
-def s3 : Site := .site 3
-def s4 : Site := .site 4
-def s5 : Site := .site 5
-def s6 : Site := .site 6
-def s7 : Site := .site 7
-def s8 : Site := .site 8   -- integer literal 0 for first write
-def s9 : Site := .site 9   -- integer literal 0 for second write
-def s10 : Site := .site 10 -- integer literal 0 for third write
-def s11 : Site := .site 11 -- integer literal 0 for fourth write
+-- Sites for borrow function
+def s0 : Site := .site 0   -- copy(p) for field x borrow
+def s1 : Site := .site 1   -- &mut s0.Point::x
+def s2 : Site := .site 2   -- copy(p) for field y borrow
+def s3 : Site := .site 3   -- &mut s2.Point::y
 
 /-
   borrow(p: &mut Self.Point): &mut u64 * &mut u64
   Returns mutable references to both x and y fields.
 
   Original MVIR:
-  label l0:
-      x = &mut copy(p).Point::x;
-      y = &mut copy(p).Point::y;
-      return copy(x), copy(y);
-
-  Simplified: MoveLight doesn't support tuple return types.
-  The key demonstration is that we CAN create multiple mutable borrows to different fields
-  simultaneously. We create both borrows, then release them and return unit.
+  label b0:
+      return &mut copy(p).Point::x, &mut copy(p).Point::y;
 -/
 def borrow : FunDef := {
   params := [(var_p, .ref (.trecord point_entries) r0 .siteBorrowMut)]
-  returnType := []
-  locals := []  -- No local variables needed for this simplified version
+  returnType := [⟨.u64, some true⟩, ⟨.u64, some true⟩]
+  locals := []
   blocks := [
-    { label := "l0"
+    { label := "b0"
       body :=
-        -- Create first mutable borrow to field x
-        (letsite s0 ← copy var_p) ;;     -- s0 = copy(p)
-        (letsite s1 ← borrowMutField(s0, BasicMoveType.trecord point_entries, field_x)) ;; -- s1 = &mut s0.x
-        (release s1) ;;                  -- release s1
-        -- Create second mutable borrow to field y
-        (letsite s2 ← copy var_p) ;;     -- s2 = copy(p)
-        (letsite s3 ← borrowMutField(s2, BasicMoveType.trecord point_entries, field_y)) ;; -- s3 = &mut s2.y
-        (release s3) ;;                  -- release s3
-        ret []                           -- return unit
+        (letsite s0 ← copy var_p) ;;
+        (letsite s1 ← borrowMutField(s0, .trecord point_entries, field_x)) ;;
+        (letsite s2 ← copy var_p) ;;
+        (letsite s3 ← borrowMutField(s2, .trecord point_entries, field_y)) ;;
+        ret [s1, s3]
     }
   ]
 }
 
+-- Sites for write function
+-- s0 = copy(p) for call argument
+-- s1, s2 = result sites from call (assigned to x, y)
+-- s3..s10 = writeRef flattening (4 writes, each needs copy + intLit)
+def ws0 : Site := .site 0   -- copy(p)
+def ws1 : Site := .site 1   -- call result for x
+def ws2 : Site := .site 2   -- call result for y
+def ws3 : Site := .site 3   -- copy(x)
+def ws4 : Site := .site 4   -- #0
+def ws5 : Site := .site 5   -- copy(y)
+def ws6 : Site := .site 6   -- #0
+def ws7 : Site := .site 7   -- copy(x)
+def ws8 : Site := .site 8   -- #0
+def ws9 : Site := .site 9   -- copy(y)
+def ws10 : Site := .site 10  -- #0
+
 /-
   write(p: &mut Self.Point)
-  Borrows both fields via borrow() and writes 0 to each.
+  Calls borrow to get both field refs, then writes 0 to each twice.
 
-  label l0:
-      x, y = Self.borrow(move(p));
+  Original MVIR:
+  label b0:
+      x, y = Self.borrow(copy(p));
       *copy(x) = 0;
       *copy(y) = 0;
-      *copy(x) = 0;   -- repeated writes to show all refs are usable
+      *copy(x) = 0;
       *copy(y) = 0;
       return;
 -/
@@ -128,35 +127,33 @@ def write : FunDef := {
   params := [(var_p, .ref (.trecord point_entries) r0 .siteBorrowMut)]
   returnType := []
   locals := [
-    -- Algorithmic checker generates .refid 1 for first borrowMutField (x = &mut p.x)
     { name := var_x, type := .ref .u64 (.refid 1) .siteBorrowMut },
-    -- Algorithmic checker generates .refid 2 for second borrowMutField (y = &mut p.y)
     { name := var_y, type := .ref .u64 (.refid 2) .siteBorrowMut }
   ]
   blocks := [
-    { label := "l0"
+    { label := "b0"
       body :=
-        -- Simulate call to borrow by directly borrowing the fields
-        -- (since MoveLight function calls are more complex to model)
-        (letsite s0 ← copy var_p) ;;
-        (letsite s1 ← borrowMutField(s0, .trecord point_entries, field_x)) ;;
-        (var_x ::= s1) ;;
-        (letsite s2 ← copy var_p) ;;
-        (letsite s3 ← borrowMutField(s2, .trecord point_entries, field_y)) ;;
-        (var_y ::= s3) ;;
-        -- Now write through the refs
-        (letsite s4 ← copy var_x) ;;
-        (letsite s8 ← #0) ;;             -- s8 = 0 (integer literal)
-        (*s4 ::= s8) ;;                   -- *x = 0
-        (letsite s5 ← copy var_y) ;;
-        (letsite s9 ← #0) ;;             -- s9 = 0 (integer literal)
-        (*s5 ::= s9) ;;                  -- *y = 0
-        (letsite s6 ← copy var_x) ;;
-        (letsite s10 ← #0) ;;            -- s10 = 0 (integer literal)
-        (*s6 ::= s10) ;;                 -- *x = 0 (again)
-        (letsite s7 ← copy var_y) ;;
-        (letsite s11 ← #0) ;;            -- s11 = 0 (integer literal)
-        (*s7 ::= s11) ;;                 -- *y = 0 (again)
+        -- x, y = Self.borrow(copy(p))
+        (letsite ws0 ← copy var_p) ;;
+        (call([ws1, ws2], "borrow", [ws0])) ;;
+        (var_x ::= ws1) ;;
+        (var_y ::= ws2) ;;
+        -- *copy(x) = 0
+        (letsite ws3 ← copy var_x) ;;
+        (letsite ws4 ← #0) ;;
+        (*ws3 ::= ws4) ;;
+        -- *copy(y) = 0
+        (letsite ws5 ← copy var_y) ;;
+        (letsite ws6 ← #0) ;;
+        (*ws5 ::= ws6) ;;
+        -- *copy(x) = 0 (again)
+        (letsite ws7 ← copy var_x) ;;
+        (letsite ws8 ← #0) ;;
+        (*ws7 ::= ws8) ;;
+        -- *copy(y) = 0 (again)
+        (letsite ws9 ← copy var_y) ;;
+        (letsite ws10 ← #0) ;;
+        (*ws9 ::= ws10) ;;
         ret []
     }
   ]
@@ -165,6 +162,9 @@ def write : FunDef := {
 -- -----------------------------------------------------
 -- -           Algorithmic Type Checking Tests        --
 -- -----------------------------------------------------
+
+-- Function signature for borrow: takes &mut Point, returns (&mut u64, &mut u64)
+def borrow_sig : FunSig := ⟨[⟨.trecord point_entries, some true⟩], [⟨.u64, some true⟩, ⟨.u64, some true⟩]⟩
 
 -- Initial environments (decidable)
 def borrow_initEnvDec : TypeEnvDec := {
@@ -175,20 +175,25 @@ def borrow_initEnvDec : TypeEnvDec := {
 }
 
 def borrow_lenvDec : LabelEnvDec :=
-  AssocMap.insert AssocMap.empty "l0" borrow_initEnvDec
+  AssocMap.insert AssocMap.empty "b0" borrow_initEnvDec
+
+-- Function environment for write (contains borrow's signature)
+def write_funEnv : FunEnv :=
+  AssocMap.insert AssocMap.empty "borrow" borrow_sig
 
 def write_initEnvDec : TypeEnvDec := {
   siteEnv := AssocMap.empty
   varEnv := init_fun_varEnv write
   pathEnv := init_fun_pathEnvDec write.params
-  funEnv := AssocMap.empty
+  funEnv := write_funEnv
 }
 
 def write_lenvDec : LabelEnvDec :=
-  AssocMap.insert AssocMap.empty "l0" write_initEnvDec
+  AssocMap.insert AssocMap.empty "b0" write_initEnvDec
 
 -- Theorems: both functions type check algorithmically
 theorem borrow_check : check_fun_dec borrow borrow_lenvDec = true := by rfl
+set_option maxRecDepth 4096 in
 theorem write_check : check_fun_dec write write_lenvDec = true := by rfl
 
 -- -----------------------------------------------------

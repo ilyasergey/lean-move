@@ -217,6 +217,37 @@ def extend_with_star (target source : Aref) (pe: PathEnv) : PathEnv :=
   let refs' := if target ∉ pe.refs then target :: pe.refs else pe.refs
   { pe with paths := paths', refs := refs' }
 
+/-- Like `extend_with_star`, but only adds **inbound** paths (from other refs to the target)
+    and no **outbound** paths (from the target to other refs).
+
+    Used for mutable call outputs: the callee's return rule guarantees
+    (`ret_mutable_writable_bool` + `ret_mutable_no_aliases_bool`) that mutable returned
+    refs have no non-trivial outbound to non-returned refs and don't alias each other.
+    So at the call site, we only need inbound paths (to freeze the input) but can
+    safely omit outbound paths, making the outputs immediately writable. -/
+def extend_with_star_no_outbound (target source : Aref) (pe: PathEnv) : PathEnv :=
+  let G := pe.paths
+  let paths' := fun (u, v) =>
+    if u = target ∧ v = target then Regex.ε  else
+    if v = target then Regex.concat (G (u, source)) (Regex.star (Regex.dot)) else
+    -- No outbound from target: the callee's return guarantees writability
+    if u = target then Regex.empty else
+    G (u, v)
+  let refs' := if target ∉ pe.refs then target :: pe.refs else pe.refs
+  { pe with paths := paths', refs := refs' }
+
+/-- After extending mutable outputs with no outbound, patch their outbound to .root to be ε.
+    This restores aliasing detection: when a later borrowImm/borrowMut creates a ref r3
+    via update_with_extension(r3, .root, path), the inbound to r3 from mout becomes
+    G(mout, .root) ∘ path = ε ∘ path = path, which is non-trivial when path is non-empty.
+    This blocks writes through mout via check_outbound_bool when conflicting borrows exist,
+    while still allowing writes when no conflicting borrows exist (since only_matches_empty(ε) = true).
+    The pe.refs.any guard ensures we only patch tracked refs (preserving WellFormed). -/
+def patch_root_outbound (mo : List Aref) (pe : PathEnv) : PathEnv :=
+  { pe with paths := fun (u, v) =>
+    if mo.any (· == u) ∧ v = .root ∧ pe.refs.any (· == u) then Regex.ε
+    else pe.paths (u, v) }
+
 -- z = &x
 def update_with_epsilon (z x : Aref) (pe: PathEnv)  : PathEnv :=
   update_with_extension z x [] pe

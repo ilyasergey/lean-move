@@ -174,7 +174,6 @@ def t : FunDef := {
       body :=
         -- _ = move(x) -- release x
         (letsite s6 ← move var_x) ;;
-        (release s6) ;;                 -- release moved ref to remove from path graph
         -- *(&mut (&mut copy(root).Tree::l).Sub1::r) = Sub2 { l: 0, r: 0 }
         -- This is safe because root.l.r is not borrowed
         (letsite s7 ← copy var_root) ;;

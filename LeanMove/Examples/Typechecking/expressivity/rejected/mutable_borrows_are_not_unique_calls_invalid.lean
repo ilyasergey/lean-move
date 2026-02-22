@@ -133,15 +133,45 @@ def var_s : Var := ⟨"s"⟩
 def var_call : Var := ⟨"call"⟩
 def var_f : Var := ⟨"f"⟩
 
--- Sites
-def s0 : Site := .site 0   -- copy(s) for call
-def s1 : Site := .site 1   -- &mut s0.S::f (result of borrow_f call)
+-- Sites for borrow_f function
+def bs0 : Site := .site 0   -- copy(s) in borrow_f
+def bs1 : Site := .site 1   -- &mut bs0.S::f in borrow_f
+
+-- Sites for call_and_write_invalid function
+def s0 : Site := .site 0   -- copy(s) for call argument
+def s1 : Site := .site 1   -- result site from call to borrow_f
 def s2 : Site := .site 2   -- copy(s) for f
 def s3 : Site := .site 3   -- &mut s2.S::f (for f)
 def s4 : Site := .site 4   -- copy(call)
 def s5 : Site := .site 5   -- integer literal 0 for first write
 def s6 : Site := .site 6   -- copy(f)
 def s7 : Site := .site 7   -- integer literal 0 for second write
+
+/-
+  borrow_f(s: &mut Self.S): &mut u64
+  Returns a mutable reference to the f field.
+-/
+def borrow_f : FunDef := {
+  params := [(var_s, .ref (.trecord s_entries) (.varRef var_s) .siteBorrowMut)]
+  returnType := [⟨.u64, some true⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite bs0 ← copy var_s) ;;
+        (letsite bs1 ← borrowMutField(bs0, .trecord s_entries, field_f)) ;;
+        ret [bs1]
+    }
+  ]
+}
+
+-- Function signature for borrow_f
+def borrow_f_sig : FunSig :=
+  ⟨[⟨.trecord s_entries, some true⟩], [⟨.u64, some true⟩]⟩
+
+-- Function environment containing borrow_f
+def call_funEnv : FunEnv :=
+  AssocMap.insert AssocMap.empty "borrow_f" borrow_f_sig
 
 /-
   call_and_write_invalid module: "we cannot write to either call or f since we
@@ -151,7 +181,7 @@ def s7 : Site := .site 7   -- integer literal 0 for second write
       let call: &mut u64;
       let f: &mut u64;
   label b0:
-      call = Self.borrow_f(copy(s));  -- inlined as: &mut copy(s).S::f
+      call = Self.borrow_f(copy(s));
       f = &mut copy(s).S::f;
       *copy(call) = 0;                -- ERROR: relationship with f unknown
       *copy(f) = 0;                   -- ERROR: relationship with call unknown
@@ -162,15 +192,15 @@ def call_and_write_invalid : FunDef := {
   params := [(var_s, .ref (.trecord s_entries) (.varRef var_s) .siteBorrowMut)]
   returnType := []
   locals := [
-    { name := var_call, type := .ref .u64 (.varRef var_s) .siteBorrowMut },
-    { name := var_f, type := .ref .u64 (.varRef var_s) .siteBorrowMut }
+    { name := var_call, type := .ref .u64 (.refid 1) .siteBorrowMut },
+    { name := var_f, type := .ref .u64 (.refid 2) .siteBorrowMut }
   ]
   blocks := [
     { label := "b0"
       body :=
-        -- call = Self.borrow_f(copy(s)) -- inlined as &mut copy(s).S::f
+        -- call = Self.borrow_f(copy(s))
         (letsite s0 ← copy var_s) ;;
-        (letsite s1 ← borrowMutField(s0, .trecord s_entries, field_f)) ;;
+        (call([s1], "borrow_f", [s0])) ;;
         (var_call ::= s1) ;;
         -- f = &mut copy(s).S::f
         (letsite s2 ← copy var_s) ;;
@@ -215,7 +245,7 @@ def call_and_write_invalid_initEnv : TypeEnv := {
   siteEnv := AssocMap.empty
   varEnv := init_fun_varEnv call_and_write_invalid
   pathEnv := PathEnv.init
-  funEnv := AssocMap.empty
+  funEnv := call_funEnv
 }
 
 -- LabelEnv for call_and_write_invalid

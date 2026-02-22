@@ -235,7 +235,7 @@ def foo : FunDef := {
         -- M.t(move(x_ref)) (in A-normal form: move then call)
         (letsite s2 ← move var_x_ref) ;;                        -- let s2 = move(x_ref)
         (call([], "M.t", [s2])) ;;                              -- M.t(s2) — consumes s2
-        ret []                                                   -- return
+        ret []                                                  -- return
     }
   ]
 }

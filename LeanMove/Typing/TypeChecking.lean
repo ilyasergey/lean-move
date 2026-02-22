@@ -166,11 +166,25 @@ def call_connect_inputs_outputs (env: TypeEnv) (as bs: List Site) : TypeEnv :=
     List.foldl (fun penv' input ↦ extend_with_star iout input penv') penv inputs
   ) env.pathEnv io
 
-  -- Rule 2: For any mutable output, it will be .*-extended from any mutable input only
-  -- target=mout (output gets new paths), source=minput (connectivity template)
+  -- Rule 2: For any mutable output, it will be extended from any mutable input only.
+  -- Uses extend_with_star_no_outbound: adds only inbound paths (to freeze the input)
+  -- but no outbound paths from the mutable output. The callee's return rule guarantees
+  -- (ret_mutable_writable_bool + ret_mutable_no_aliases_bool) that mutable returned refs
+  -- have no non-trivial outbound to non-returned refs and don't alias each other,
+  -- so mutable call outputs are immediately writable.
   let with_mo_from_mi : PathEnv := List.foldl (fun penv mout ↦
-    List.foldl (fun penv' minput ↦ extend_with_star mout minput penv') penv mi
+    List.foldl (fun penv' minput ↦ extend_with_star_no_outbound mout minput penv') penv mi
   ) with_io_from_inputs mo
+
+  -- Patch: Set outbound from each mutable output to .root = ε.
+  -- This restores aliasing detection for later borrows: when a subsequent
+  -- borrowImm/borrowMut of a local creates ref r3 via update_with_extension(r3, .root, path),
+  -- the path from mout to r3 becomes G(mout, .root) ∘ path = ε ∘ path = path ≠ ∅,
+  -- so check_outbound_bool blocks writes through mout when conflicting borrows exist.
+  -- Without this patch, G(mout, .root) = ∅ and the conflict is invisible.
+  -- For mutable outputs from parameter-level inputs (where source→root paths are ∅),
+  -- only_matches_empty(ε) = true, so writes remain allowed when there's no conflict.
+  let with_mo_patched := patch_root_outbound mo with_mo_from_mi
 
   -- Rule 3: Immutable outputs are .*-extended from each other
   -- For each pair (io1, io2) where io1 ≠ io2, add io1 →.* io2
@@ -178,7 +192,7 @@ def call_connect_inputs_outputs (env: TypeEnv) (as bs: List Site) : TypeEnv :=
     List.foldl (fun penv' io2 ↦
       if io1 ≠ io2 then extend_with_star io1 io2 penv' else penv'
     ) penv io
-  ) with_mo_from_mi io
+  ) with_mo_patched io
 
   { env with pathEnv := with_io_to_io }
 

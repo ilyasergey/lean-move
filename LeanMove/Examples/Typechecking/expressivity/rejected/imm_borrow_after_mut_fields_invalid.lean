@@ -137,9 +137,9 @@ def invalid_write : FunDef := {
   params := [(var_s, .basic (.trecord s_entries))]  -- s is an owned parameter
   returnType := []
   locals := [
-    { name := var_s_imm, type := .ref (.trecord s_entries) (.varRef var_s) .siteBorrowImm },
-    { name := var_s_mut, type := .ref (.trecord s_entries) (.varRef var_s) .siteBorrowMut },
-    { name := var_f_imm, type := .ref .u64 (.varRef var_s) .siteBorrowImm }
+    { name := var_s_imm, type := .ref (.trecord s_entries) (.refid 0) .siteBorrowImm },
+    { name := var_s_mut, type := .ref (.trecord s_entries) (.refid 1) .siteBorrowMut },
+    { name := var_f_imm, type := .ref .u64 (.refid 2) .siteBorrowImm }
   ]
   blocks := [
     { label := "b0"
