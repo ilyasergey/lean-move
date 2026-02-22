@@ -118,19 +118,7 @@ def var_r : Var := ⟨"r"⟩
 def var_mut1 : Var := ⟨"mut1"⟩
 def var_imm1 : Var := ⟨"imm1"⟩
 
-/- Hand-written sites commented out; using parsed MVIR version instead
-
--- Sites
-def s0 : Site := .site 0   -- integer literal 0 for a
-def s1 : Site := .site 1   -- &mut a
-def s2 : Site := .site 2   -- copy(r) [input to id_mut]
-def s3 : Site := .site 3   -- output of id_mut
-def s4 : Site := .site 4   -- &a [input to id]
-def s5 : Site := .site 5   -- output of id
-def s6 : Site := .site 6   -- copy(mut1)
-def s7 : Site := .site 7   -- integer literal 0 for write
-
--/
+-- Hand-written sites moved to Tests/Parsing/Test_imm_borrow_after_mut_call.lean
 
 -- Function signatures
 -- id_mut(r: &mut u64): &mut u64  { return move(r); }
@@ -138,61 +126,7 @@ def id_mut_sig : FunSig := ⟨[⟨.u64, some true⟩], [⟨.u64, some true⟩]�
 -- id(r: &u64): &u64  { return move(r); }
 def id_sig : FunSig := ⟨[⟨.u64, some false⟩], [⟨.u64, some false⟩]⟩
 
-/- Hand-written invalid FunDef commented out; using parsed MVIR version instead
-
-/-
-  invalid module: "cannot write to mut1"
-
-  t() {
-      let a: u64;
-      let r: &mut u64;
-      let mut1: &mut u64;
-      let imm1: &u64;
-  label b0:
-      a = 0;
-      r = &mut a;
-      mut1 = Self.id_mut(copy(r));  -- call id_mut
-      imm1 = Self.id(&a);           -- call id
-      *copy(mut1) = 0;              -- ERROR: cannot write, a has immutable alias imm1
-      return;
-  }
--/
-def invalid : FunDef := {
-  params := []
-  returnType := []
-  locals := [
-    { name := var_a, type := .basic .u64 },
-    { name := var_r, type := .ref .u64 (.refid 0) .siteBorrowMut },
-    { name := var_mut1, type := .ref .u64 (.refid 1) .siteBorrowMut },
-    { name := var_imm1, type := .ref .u64 (.refid 2) .siteBorrowImm }
-  ]
-  blocks := [
-    { label := "b0"
-      body :=
-        -- a = 0
-        (letsite s0 ← #0) ;;
-        (var_a ::= s0) ;;
-        -- r = &mut a
-        (letsite s1 ← &mut var_a) ;;
-        (var_r ::= s1) ;;
-        -- mut1 = Self.id_mut(copy(r))  [using call macro]
-        (letsite s2 ← copy var_r) ;;
-        (call([s3], "id_mut", [s2])) ;;
-        (var_mut1 ::= s3) ;;
-        -- imm1 = Self.id(&a)  [using call macro]
-        (letsite s4 ← &var_a) ;;
-        (call([s5], "id", [s4])) ;;
-        (var_imm1 ::= s5) ;;
-        -- *copy(mut1) = 0 -- ERROR: a is immutably borrowed via imm1
-        (letsite s6 ← copy var_mut1) ;;
-        (letsite s7 ← #0) ;;
-        (*s6 ::= s7) ;;
-        ret []
-    }
-  ]
-}
-
--/
+-- Hand-written FunDef moved to Tests/Parsing/Test_imm_borrow_after_mut_call.lean
 
 -- -----------------------------------------------------
 -- -           Parsed MVIR Definitions                 --
