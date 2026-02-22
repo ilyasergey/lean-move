@@ -15,4 +15,5 @@
 -/
 
 import LeanMove.Lang.MoveLight
+import LeanMove.Lang.PrettyPrint
 import LeanMove.Lang.MoveIR.MoveIR
