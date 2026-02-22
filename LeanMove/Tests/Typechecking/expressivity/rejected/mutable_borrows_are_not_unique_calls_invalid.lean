@@ -135,41 +135,7 @@ def var_s : Var := ⟨"s"⟩
 def var_call : Var := ⟨"call"⟩
 def var_f : Var := ⟨"f"⟩
 
-/- Hand-written sites and FunDefs commented out; using parsed MVIR versions instead
-
--- Sites for borrow_f function
-def bs0 : Site := .site 0   -- copy(s) in borrow_f
-def bs1 : Site := .site 1   -- &mut bs0.S::f in borrow_f
-
--- Sites for call_and_write_invalid function
-def s0 : Site := .site 0   -- copy(s) for call argument
-def s1 : Site := .site 1   -- result site from call to borrow_f
-def s2 : Site := .site 2   -- copy(s) for f
-def s3 : Site := .site 3   -- &mut s2.S::f (for f)
-def s4 : Site := .site 4   -- copy(call)
-def s5 : Site := .site 5   -- integer literal 0 for first write
-def s6 : Site := .site 6   -- copy(f)
-def s7 : Site := .site 7   -- integer literal 0 for second write
-
-/-
-  borrow_f(s: &mut Self.S): &mut u64
-  Returns a mutable reference to the f field.
--/
-def borrow_f : FunDef := {
-  params := [(var_s, .ref (.trecord s_entries) (.paramRef var_s) .siteBorrowMut)]
-  returnType := [⟨.u64, some true⟩]
-  locals := []
-  blocks := [
-    { label := "b0"
-      body :=
-        (letsite bs0 ← copy var_s) ;;
-        (letsite bs1 ← borrowMutField(bs0, .trecord s_entries, field_f)) ;;
-        ret [bs1]
-    }
-  ]
-}
-
--/
+-- Hand-written FunDefs moved to Tests/Parsing/Test_mutable_borrows_are_not_unique_calls.lean
 
 -- Function signature for borrow_f
 def borrow_f_sig : FunSig :=
@@ -178,56 +144,6 @@ def borrow_f_sig : FunSig :=
 -- Function environment containing borrow_f
 def call_funEnv : FunEnv :=
   AssocMap.insert AssocMap.empty "borrow_f" borrow_f_sig
-
-/- Hand-written call_and_write_invalid commented out; using parsed MVIR version instead
-
-/-
-  call_and_write_invalid module: "we cannot write to either call or f since we
-  do not know the relationship between them"
-
-  write(s: &mut Self.S) {
-      let call: &mut u64;
-      let f: &mut u64;
-  label b0:
-      call = Self.borrow_f(copy(s));
-      f = &mut copy(s).S::f;
-      *copy(call) = 0;                -- ERROR: relationship with f unknown
-      *copy(f) = 0;                   -- ERROR: relationship with call unknown
-      return;
-  }
--/
-def call_and_write_invalid : FunDef := {
-  params := [(var_s, .ref (.trecord s_entries) (.paramRef var_s) .siteBorrowMut)]
-  returnType := []
-  locals := [
-    { name := var_call, type := .ref .u64 (.refid 1) .siteBorrowMut },
-    { name := var_f, type := .ref .u64 (.refid 2) .siteBorrowMut }
-  ]
-  blocks := [
-    { label := "b0"
-      body :=
-        -- call = Self.borrow_f(copy(s))
-        (letsite s0 ← copy var_s) ;;
-        (call([s1], "borrow_f", [s0])) ;;
-        (var_call ::= s1) ;;
-        -- f = &mut copy(s).S::f
-        (letsite s2 ← copy var_s) ;;
-        (letsite s3 ← borrowMutField(s2, .trecord s_entries, field_f)) ;;
-        (var_f ::= s3) ;;
-        -- *copy(call) = 0 -- ERROR: relationship with f unknown
-        (letsite s4 ← copy var_call) ;;
-        (letsite s5 ← #0) ;;
-        (*s4 ::= s5) ;;
-        -- *copy(f) = 0 -- ERROR: relationship with call unknown
-        (letsite s6 ← copy var_f) ;;
-        (letsite s7 ← #0) ;;
-        (*s6 ::= s7) ;;
-        ret []
-    }
-  ]
-}
-
--/
 
 -- -----------------------------------------------------
 -- -           Parsed MVIR Definitions                 --
