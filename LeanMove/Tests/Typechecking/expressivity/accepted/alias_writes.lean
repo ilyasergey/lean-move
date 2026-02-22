@@ -264,85 +264,8 @@ theorem borrow_local_and_copy_ref_reverse_welltyped : ∃ lenv, typecheck_fun bo
 
 open LeanMove.Tests.Parsing.TestUtils
 
-private def aliasWritesMvir := "
-// writing to alias writes should be consistent
-
-//# publish
-
-module 0x2.borrow_local_twice {
-
-t() {
-    let a: u64;
-    let x: &mut u64;
-    let y: &mut u64;
-label b0:
-    a = 0;
-    x = &mut a;
-    y = &mut a;
-    *move(x) = 0;
-    *move(y) = 0;
-    return;
-}
-
-}
-
-//# publish
-
-module 0x3.borrow_local_twice_reverse {
-
-t() {
-    let a: u64;
-    let x: &mut u64;
-    let y: &mut u64;
-label b0:
-    a = 0;
-    x = &mut a;
-    y = &mut a;
-    *move(y) = 0;
-    *move(x) = 0;
-    return;
-}
-
-}
-
-//# publish
-
-module 0x4.borrow_local_and_copy_ref {
-
-t() {
-    let a: u64;
-    let x: &mut u64;
-    let y: &mut u64;
-label b0:
-    a = 0;
-    x = &mut a;
-    y = copy(x);
-    *move(x) = 0;
-    *move(y) = 0;
-    return;
-}
-
-}
-
-//# publish
-
-module 0x5.borrow_local_and_copy_ref_reverse {
-
-t() {
-    let a: u64;
-    let x: &mut u64;
-    let y: &mut u64;
-label b0:
-    a = 0;
-    x = &mut a;
-    y = copy(x);
-    *move(y) = 0;
-    *move(x) = 0;
-    return;
-}
-
-}
-"
+private def aliasWritesMvir :=
+  include_str "alias_writes.mvir"
 
 private def parsedFuns := (parseAndTranslate aliasWritesMvir).toOption.get!
 

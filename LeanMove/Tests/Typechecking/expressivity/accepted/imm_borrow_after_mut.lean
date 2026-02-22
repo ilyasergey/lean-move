@@ -176,45 +176,8 @@ theorem copy_and_freeze_welltyped : ∃ lenv, typecheck_fun copy_and_freeze lenv
 
 open LeanMove.Tests.Parsing.TestUtils
 
-private def immBorrowAfterMutMvir := "
-// can borrow immutable after mutable
-
-//# publish
-module 0x2.direct {
-
-    t() {
-        let a: u64;
-        let rmut: &mut u64;
-        let rimm: &u64;
-    label b0:
-        a = 0;
-        rmut = &mut a;
-        rimm = &a;
-        // rmut is writable and rimm is readable
-        *copy(rmut) = 0;
-        _ = *copy(rimm);
-        return;
-    }
-}
-
-//# publish
-module 0x3.copy_and_freeze {
-
-    t() {
-        let a: u64;
-        let rmut: &mut u64;
-        let rimm: &u64;
-    label b0:
-        a = 0;
-        rmut = &mut a;
-        rimm = freeze(copy(rmut));
-        // rmut is writable and rimm is readable
-        *copy(rmut) = 0;
-        _ = *copy(rimm);
-        return;
-    }
-}
-"
+private def immBorrowAfterMutMvir :=
+  include_str "imm_borrow_after_mut.mvir"
 
 private def parsedFuns := (parseAndTranslate immBorrowAfterMutMvir).toOption.get!
 

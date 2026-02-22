@@ -257,76 +257,7 @@ def call_and_write_invalid_lenv := mkLabelEnv call_and_write_invalid call_funEnv
 open LeanMove.Tests.Parsing.TestUtils
 
 private def mutableBorrowsNotUniqueCallsMvir :=
-"// mutable borrows are not unique
-
-//# publish
-module 0x4.call {
-
-    struct S has copy, drop { f: u64 }
-
-    borrow_f(s: &mut Self.S): &mut u64 {
-    label b0:
-        return &mut move(s).S::f;
-    }
-
-    create(s: &mut Self.S) {
-        let call: &mut u64;
-        let f: &mut u64;
-    label b0:
-        call = Self.borrow_f(copy(s));
-        f = &mut copy(s).S::f;
-        return;
-    }
-
-}
-
-//# publish
-module 0x5.call_and_write_invalid {
-
-    struct S has copy, drop { f: u64 }
-
-    borrow_f(s: &mut Self.S): &mut u64 {
-    label b0:
-        return &mut move(s).S::f;
-    }
-
-    write(s: &mut Self.S) {
-        let call: &mut u64;
-        let f: &mut u64;
-    label b0:
-        call = Self.borrow_f(copy(s));
-        f = &mut copy(s).S::f;
-        *copy(call) = 0;
-        *copy(f) = 0;
-        return;
-    }
-
-}
-
-//# publish
-module 0x6.call_and_write_valid {
-
-    struct S has copy, drop { f: u64 }
-
-    borrow_f(s: &mut Self.S): &mut u64 {
-    label b0:
-        return &mut move(s).S::f;
-    }
-
-    write(s: &mut Self.S) {
-        let call: &mut u64;
-        let f: &mut u64;
-    label b0:
-        call = Self.borrow_f(copy(s));
-        *move(call) = 0;
-        f = &mut copy(s).S::f;
-        *copy(f) = 0;
-
-        return;
-    }
-
-}
-"
+  include_str "mutable_borrows_are_not_unique_calls.mvir"
 
 #guard (parseAndTranslate mutableBorrowsNotUniqueCallsMvir).isOk
 

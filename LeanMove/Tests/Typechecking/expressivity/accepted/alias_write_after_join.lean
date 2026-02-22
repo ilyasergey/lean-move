@@ -221,40 +221,7 @@ theorem t_welltyped : ∃ lenv, typecheck_fun t lenv :=
 open LeanMove.Tests.Parsing.TestUtils
 
 private def aliasWriteAfterJoinMvir :=
-"// writing to alias after join
-
-//# publish
-
-module 0x2.alias_after_join_reborrow {
-
-t(cond: bool) {
-    let a: u64;
-    let b: u64;
-    let x: &mut u64;
-    let y: &mut u64;
-    let z: &mut u64;
-label l0:
-    a = 0;
-    b = 0;
-    jump_if (move(cond)) l2;
-label l1:
-    x = &mut a;
-    y = &mut b;
-    jump l3;
-label l2:
-    x = &mut b;
-    y = &mut a;
-    jump l3;
-label l3:
-    z = &mut a;
-    *move(z) = 0;
-    *move(x) = 0;
-    *move(y) = 0;
-    return;
-}
-
-}
-"
+  include_str "alias_write_after_join.mvir"
 
 -- Verify that parsing the MVIR succeeds
 #guard (parseAndTranslate aliasWriteAfterJoinMvir).isOk
