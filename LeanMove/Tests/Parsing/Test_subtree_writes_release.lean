@@ -19,40 +19,8 @@ open LeanMove.Lang.MoveIR.Translate
 open LeanMove.Tests.Parsing.TestUtils
 open LeanMove.Tests.Expressivity.SubtreeWritesRelease
 
-def subtreeWritesReleaseMvir := "
-// release is lossy in the graph, these writes are safe
-
-//# publish
-
-module 0x2.extension_after_join {
-
-struct Tree has copy, drop, store { l: Self.Sub1, r: Self.Sub1 }
-struct Sub1 has copy, drop, store { l: Self.Sub2, r: Self.Sub2 }
-struct Sub2 has copy, drop, store { l: u64, r: u64 }
-
-t(cond: bool, root: &mut Self.Tree) {
-    let x: &mut Self.Sub1;
-    let y: &mut u64;
-label l0:
-    jump_if (move(cond)) l2;
-label l1:
-    x = &mut copy(root).Tree::l;
-    y = &mut (&mut copy(x).Sub1::l).Sub2::l;
-    jump l3;
-label l2:
-    x = &mut copy(root).Tree::r;
-    y = &mut (&mut copy(x).Sub1::r).Sub2::r;
-    jump l3;
-label l3:
-    _ = move(x);
-    *(&mut (&mut copy(root).Tree::l).Sub1::r) = Sub2 { l: 0, r: 0 };
-    *move(y) = 0;
-    return;
-}
-
-
-}
-"
+def subtreeWritesReleaseMvir :=
+  include_str "../Typechecking/expressivity/accepted/subtree_writes_release.mvir"
 
 -- Parse succeeds
 #guard (parseMvir subtreeWritesReleaseMvir).isOk

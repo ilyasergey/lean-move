@@ -18,38 +18,8 @@ open LeanMove.Lang.MoveIR.Translate
 open LeanMove.Tests.Parsing.TestUtils
 open LeanMove.Tests.Expressivity.ExtensionWritesAfterJoin
 
-def extensionWritesAfterJoinMvir := "
-// writing to extension after join
-
-//# publish
-
-module 0x2.extension_after_join {
-
-struct S has copy, drop, store { f: u64 }
-
-t(cond: bool, a: &mut Self.S, b: &mut Self.S): &mut Self.S {
-    let x: &mut Self.S;
-    let y: &mut Self.S;
-    let f: &mut u64;
-label l0:
-    jump_if (move(cond)) l2;
-label l1:
-    x = move(a);
-    y = move(b);
-    jump l3;
-label l2:
-    x = move(b);
-    y = move(a);
-    jump l3;
-label l3:
-    f = &mut copy(x).S::f;
-    *copy(y) = S { f: *copy(f) };
-    *copy(f) = 0;
-    return move(y);
-}
-
-}
-"
+def extensionWritesAfterJoinMvir :=
+  include_str "../Typechecking/expressivity/accepted/extension_writes_after_join.mvir"
 
 -- Parse succeeds
 #guard (parseMvir extensionWritesAfterJoinMvir).isOk

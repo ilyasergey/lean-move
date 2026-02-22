@@ -22,6 +22,33 @@ core calculus of the Move intermediate representation — and proved it
   concrete heap, and certified free of dangling references — all within a
   single `lake build`.
 
+### Limitations and scope
+
+MoveLight is a deliberately simplified model of the Move borrow checker.
+The formalisation does **not** cover:
+
+- **Generics and type parameters.** MoveLight has no polymorphism;
+  all types are monomorphic (`u64`, `bool`, records with fixed fields).
+- **Abilities beyond copy/drop.** Move's `store` and `key` abilities
+  are parsed but not enforced. Resource linearity (must-use semantics)
+  is not modelled.
+- **Vectors and built-in container types.** `vec_mut_borrow`, `vec_pack_0`,
+  etc. are recognised by the parser but produce unsupported-operation
+  placeholders during translation.
+- **Global storage operations.** `move_to`, `move_from`, `borrow_global`,
+  `exists` are not modelled.
+- **Multi-signer and script functions.** The formalisation focuses on
+  single-module, intra-procedural borrow checking.
+- **Loops with complex invariants.** Back edges are supported via label
+  environments, but the formalisation does not synthesise loop invariants;
+  they must be provided as part of the label environment.
+
+These restrictions keep the core calculus small enough for complete
+machine-checked soundness proofs while still capturing the essence of
+Move's reference-safety discipline — aliased mutable borrows, field
+borrows, freeze, release, cross-function borrow propagation, and
+control-flow joins.
+
 ---
 
 ## Part I — Definitions and Statements
