@@ -17,7 +17,7 @@
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Typing.TypeChecking
-import LeanMove.Typing.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Typing.Algorithmic.AlgorithmicTypeChecking
 import LeanMove.Typing.Algorithmic.DecidableTypeEnv
 import LeanMove.Lang.Macros
 
@@ -30,7 +30,7 @@ mutable reference while the field borrow is still alive.
 
 Rejected by condition 3 of the `ret` rule (writability): the returned
 mutable ref must have only trivial outbound paths to locally-created refs (.refid).
-After `borrowField`, the pathEnv records `G(varRef(p), r') = [.field x]`
+After `borrowField`, the pathEnv records `G(paramRef(p), r') = [.field x]`
 where `r'` is the field borrow's aref (a .refid). This is a non-trivial outbound
 path to a .refid ref, so the return is rejected.
 
@@ -45,7 +45,7 @@ label b0:
     s0 = copy(p);              // s0: &mut Point (same aref as p)
     s1 = &s0.Point::x;         // s1: &u64, immutable field borrow
     s2 = move(p);              // s2: &mut Point (move p out)
-    return s2;                  // REJECTED: G(varRef(p), aref(s1)) = [.field x] ≠ {ε}
+    return s2;                  // REJECTED: G(paramRef(p), aref(s1)) = [.field x] ≠ {ε}
 }
 ```
 -/
@@ -76,7 +76,7 @@ def s2 : Site := .site 2
   Borrows a field of p, then tries to return p — should be rejected.
 -/
 def fn_return_mut_with_field_borrow : FunDef := {
-  params := [(var_p, .ref (.trecord point_entries) (.varRef var_p) .siteBorrowMut)]
+  params := [(var_p, .ref (.trecord point_entries) (.paramRef var_p) .siteBorrowMut)]
   returnType := [⟨.trecord point_entries, some true⟩]
   locals := []
   blocks := [

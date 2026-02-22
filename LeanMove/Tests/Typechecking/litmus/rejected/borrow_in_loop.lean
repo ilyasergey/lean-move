@@ -17,7 +17,7 @@
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Typing.TypeChecking
-import LeanMove.Typing.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Typing.Algorithmic.AlgorithmicTypeChecking
 import LeanMove.Typing.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
 
@@ -68,7 +68,7 @@ def foo : FunDef := {
   returnType := []
   locals := [
     { name := var_x, type := .basic .u64 },
-    { name := var_r, type := .ref .u64 (.varRef var_x) .siteBorrowImm }
+    { name := var_r, type := .ref .u64 (.paramRef var_x) .siteBorrowImm }
   ]
   blocks := [
     { label := "l0"

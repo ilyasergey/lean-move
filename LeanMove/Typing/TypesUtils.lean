@@ -146,7 +146,7 @@ theorem freshRefInEnv_iff_freshRefInEnvBool (r : Aref) (env : TypeEnv) :
     · rw [List.any_eq_false]; intro x hx
       simp only [beq_iff_eq]; exact fun heq => hsite (heq ▸ hx)
     · cases r with
-      | varRef v => exact absurd rfl (hnv v)
+      | paramRef v => exact absurd rfl (hnv v)
       | _ => trivial
   · intro h
     simp only [freshRefInEnvBool] at h
@@ -181,7 +181,7 @@ theorem nextFreshRefInEnv_fresh (env : TypeEnv) :
     exact (hnotIn r (List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inr hr)))) _ rfl).symm
   · rw [List.any_eq_false]; intro r hr; simp only [beq_iff_eq]
     exact (hnotIn r (List.mem_append.mpr (Or.inr hr)) _ rfl).symm
-  · trivial  -- nextFreshRefInEnv returns .refid, not .varRef
+  · trivial  -- nextFreshRefInEnv returns .refid, not .paramRef
 
 -- nextFreshRefInEnv is fresh (Prop version)
 theorem nextFreshRefInEnv_fresh_prop (env : TypeEnv) :
@@ -192,9 +192,9 @@ theorem nextFreshRefInEnv_fresh_prop (env : TypeEnv) :
 lemma nextFreshRefInEnv_not_root (env : TypeEnv) : nextFreshRefInEnv env ≠ Aref.root := by
   simp only [nextFreshRefInEnv]; intro h; cases h
 
--- nextFreshRefInEnv is never varRef
-lemma nextFreshRefInEnv_not_varRef (env : TypeEnv) (x : Var) :
-    nextFreshRefInEnv env ≠ Aref.varRef x := by
+-- nextFreshRefInEnv is never paramRef
+lemma nextFreshRefInEnv_not_paramRef (env : TypeEnv) (x : Var) :
+    nextFreshRefInEnv env ≠ Aref.paramRef x := by
   simp only [nextFreshRefInEnv]; intro h; cases h
 
 -- nextFreshRefInEnv is not in pathEnv.refs
@@ -222,7 +222,7 @@ lemma refid_ge_start_fresh (env : TypeEnv) (n : Nat)
     exact (hnotIn r (List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inr hr))))).symm
   · rw [List.any_eq_false]; intro r hr; simp only [beq_iff_eq]
     exact (hnotIn r (List.mem_append.mpr (Or.inr hr))).symm
-  · trivial  -- .refid n is not .varRef
+  · trivial  -- .refid n is not .paramRef
 
 -- Key lemma: freshRefInEnvBool means the ref doesn't appear in any VarEnv entry
 lemma freshRefInEnvBool_ne_varEnv_ref (t : Aref) (env : TypeEnv) (x : Var)
@@ -265,14 +265,14 @@ lemma freshRefInEnv_ne_siteEnv_ref (t : Aref) (env : TypeEnv) (s : Site)
   exact freshRefInEnvBool_ne_siteEnv_ref t env s τ s_ref isBor
     ((freshRefInEnv_iff_freshRefInEnvBool t env).mp hfresh) hlookup
 
--- Extract not_varRef from freshRefInEnv
-lemma freshRefInEnv_not_varRef (r : Aref) (env : TypeEnv)
-    (hfresh : freshRefInEnv r env) : ∀ v, r ≠ .varRef v := hfresh.2.2.2
+-- Extract not_paramRef from freshRefInEnv
+lemma freshRefInEnv_not_paramRef (r : Aref) (env : TypeEnv)
+    (hfresh : freshRefInEnv r env) : ∀ v, r ≠ .paramRef v := hfresh.2.2.2
 
--- Extract not_varRef from freshRefInEnvBool
-lemma freshRefInEnvBool_not_varRef (r : Aref) (env : TypeEnv)
-    (hfresh : freshRefInEnvBool r env = true) : ∀ v, r ≠ .varRef v :=
-  freshRefInEnv_not_varRef r env ((freshRefInEnv_iff_freshRefInEnvBool r env).mpr hfresh)
+-- Extract not_paramRef from freshRefInEnvBool
+lemma freshRefInEnvBool_not_paramRef (r : Aref) (env : TypeEnv)
+    (hfresh : freshRefInEnvBool r env = true) : ∀ v, r ≠ .paramRef v :=
+  freshRefInEnv_not_paramRef r env ((freshRefInEnv_iff_freshRefInEnvBool r env).mpr hfresh)
 
 -- Extract freshRefInEnv from freshRefInEnvBool
 lemma freshRefInEnvBool_implies_freshRefInEnv (r : Aref) (env : TypeEnv)
@@ -394,7 +394,7 @@ lemma delete_ref_node_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFo
       rw [if_neg (fun ⟨h, _⟩ => hur h), if_neg (not_or.mpr ⟨hur, hur⟩)]
       exact hwf.self_loop_accepts_nil u
 
-/-- nextFreshRef always returns a .refid, never .root or .varRef -/
+/-- nextFreshRef always returns a .refid, never .root or .paramRef -/
 lemma nextFreshRef_not_root (pe : PathEnv) : nextFreshRef pe ≠ Aref.root := by
   simp only [nextFreshRef]
   intro h
@@ -405,8 +405,8 @@ lemma nextFreshRef_is_refid (pe : PathEnv) : ∃ n, nextFreshRef pe = Aref.refid
   simp only [nextFreshRef]
   exact ⟨_, rfl⟩
 
-/-- nextFreshRef never returns a varRef -/
-lemma nextFreshRef_not_varRef (pe : PathEnv) (x : Var) : nextFreshRef pe ≠ Aref.varRef x := by
+/-- nextFreshRef never returns a paramRef -/
+lemma nextFreshRef_not_paramRef (pe : PathEnv) (x : Var) : nextFreshRef pe ≠ Aref.paramRef x := by
   simp only [nextFreshRef]
   intro h
   cases h
@@ -418,7 +418,7 @@ lemma nextFreshRef_not_varRef (pe : PathEnv) (x : Var) : nextFreshRef pe ≠ Are
 /-- All references in a SiteEnv are not root.
     This invariant is maintained because refs come from:
     1. nextFreshRef (always .refid n)
-    2. Function parameters (always .varRef x)
+    2. Function parameters (always .paramRef x)
     3. Copies of existing refs (preserves non-root) -/
 def SiteEnv.RefsNotRoot (senv : SiteEnv) : Prop :=
   ∀ s τ, lookup senv s = some τ →
@@ -576,7 +576,7 @@ lemma moveTypeRefsNotRoot_eq (τ : MoveType) :
     moveTypeRefsNotRoot τ = (match τ with | .ref _ r _ => r ≠ Aref.root | .basic _ => True) := by
   cases τ <;> rfl
 
-/-- An Aref is a "fresh ref" if it's a refid (not root or varRef) -/
+/-- An Aref is a "fresh ref" if it's a refid (not root or paramRef) -/
 def Aref.isFreshRef (a : Aref) : Prop := ∃ n, a = Aref.refid n
 
 lemma Aref.isFreshRef_not_root (a : Aref) (h : Aref.isFreshRef a) : a ≠ Aref.root := by
@@ -585,7 +585,7 @@ lemma Aref.isFreshRef_not_root (a : Aref) (h : Aref.isFreshRef a) : a ≠ Aref.r
   intro hcontra
   cases hcontra
 
-lemma Aref.isFreshRef_not_varRef (a : Aref) (h : Aref.isFreshRef a) (x : Var) : a ≠ Aref.varRef x := by
+lemma Aref.isFreshRef_not_paramRef (a : Aref) (h : Aref.isFreshRef a) (x : Var) : a ≠ Aref.paramRef x := by
   obtain ⟨n, hn⟩ := h
   rw [hn]
   intro hcontra
@@ -605,7 +605,7 @@ lemma Aref.Compatible_preserves_not_root (r1 r2 : Aref)
   cases r1 with
   | root => exact hnotroot rfl
   | refid _ => exact absurd hcompat (by simp [Aref.Compatible])
-  | varRef _ => exact absurd hcompat (by simp [Aref.Compatible])
+  | paramRef _ => exact absurd hcompat (by simp [Aref.Compatible])
 
 /-- Helper function: predicate that a MoveType's ref is a fresh ref (refid) -/
 def moveTypeIsFreshRef (τ : MoveType) : Prop :=
@@ -731,8 +731,8 @@ lemma PathEnv.init_fun_wellformed (f : FunDef) :
     · cases r with
       | root => exact absurd rfl heq
       | refid n => simp [heq]
-      | varRef x =>
-        have hni : Aref.varRef x ∉ _ := fun h => hr (List.mem_cons_of_mem _ h)
+      | paramRef x =>
+        have hni : Aref.paramRef x ∉ _ := fun h => hr (List.mem_cons_of_mem _ h)
         simp [heq]
   · -- root_in_refs
     unfold init_fun_pathEnv
@@ -743,7 +743,7 @@ lemma PathEnv.init_fun_wellformed (f : FunDef) :
     cases u with
     | root => exact absurd rfl huroot
     | refid _ => simp [huroot]
-    | varRef _ => simp [huroot]
+    | paramRef _ => simp [huroot]
   · -- self_loop_accepts_nil
     intro u; simp only [init_fun_pathEnv, ↓reduceIte, interpret_regex]
 
@@ -900,8 +900,8 @@ lemma no_match_union [DecidableEq α] {r1 r2 : Regex α}
   | inl h => exact h1 q h
   | inr h => exact h2 q h
 
-/-- update_with_extension preserves WellFormed when z ≠ root and z is not a varRef.
-    In practice, z is always a fresh ref from nextFreshRef (never .root or varRef). -/
+/-- update_with_extension preserves WellFormed when z ≠ root and z is not a paramRef.
+    In practice, z is always a fresh ref from nextFreshRef (never .root or paramRef). -/
 lemma update_with_extension_wellformed (z x : Aref) (path : List PathElement) (pe : PathEnv)
     (hwf : PathEnv.WellFormed pe) (hz_not_root : z ≠ Aref.root) :
     PathEnv.WellFormed (update_with_extension z x path pe) := by
@@ -1136,7 +1136,7 @@ lemma garbage_collect_wellformed (pe : PathEnv) (r : Aref) (hwf : PathEnv.WellFo
     Transfers edges from r to r' and removes r. -/
 lemma consume_ref_transfer_wellformed (pe : PathEnv) (r r' : Aref) (hwf : PathEnv.WellFormed pe)
     (hr_not_root : r ≠ Aref.root)
-    (hr'_fresh : r' ∉ pe.refs) (_ : ∀ v, r' ≠ Aref.varRef v) :
+    (hr'_fresh : r' ∉ pe.refs) (_ : ∀ v, r' ≠ Aref.paramRef v) :
     PathEnv.WellFormed (consume_ref_transfer pe r r') := by
   constructor
   · -- refs_complete: refs not in new list have empty paths from root

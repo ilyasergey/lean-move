@@ -17,7 +17,7 @@
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Typing.TypeChecking
-import LeanMove.Typing.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Typing.Algorithmic.AlgorithmicTypeChecking
 import LeanMove.Lang.Macros
 
 /-!
@@ -33,14 +33,14 @@ fn_return_local_borrow(): &mut u64 {
 label b0:
     a = 42;
     r = &mut a;
-    return move(r);   // REJECTED: r borrows local a, so G(root, varRef(r)) ≠ ∅
+    return move(r);   // REJECTED: r borrows local a, so G(root, paramRef(r)) ≠ ∅
 }
 ```
 
 After `r = &mut a`, the pathEnv has:
-- G(root, varRef(a)) = root_to_var "a"
-- G(varRef(a), varRef(r)) = ε  (or similar extension)
-- So G(root, varRef(r)) contains paths via root → a → r
+- G(root, paramRef(a)) = root_to_var "a"
+- G(paramRef(a), paramRef(r)) = ε  (or similar extension)
+- So G(root, paramRef(r)) contains paths via root → a → r
 
 The return of `move(r)` is rejected because the returned ref's aref
 has a non-empty path from `.root`, violating "no local borrowing".

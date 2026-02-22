@@ -126,7 +126,7 @@ def ppTestOutput : String :=
 
 -- Parameters with types
 #guard hasSubstr ppTestOutput ".siteBorrowMut"
-#guard hasSubstr ppTestOutput ".varRef"
+#guard hasSubstr ppTestOutput ".paramRef"
 
 -- Return types
 #guard hasSubstr ppTestOutput "some true"

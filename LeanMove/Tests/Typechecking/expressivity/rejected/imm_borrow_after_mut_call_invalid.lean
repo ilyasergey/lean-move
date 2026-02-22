@@ -17,7 +17,7 @@
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Typing.TypeChecking
-import LeanMove.Typing.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Typing.Algorithmic.AlgorithmicTypeChecking
 import LeanMove.Typing.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
 

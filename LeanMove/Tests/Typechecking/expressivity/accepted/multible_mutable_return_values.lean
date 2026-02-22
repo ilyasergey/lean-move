@@ -57,7 +57,7 @@ def point_entries : AssocMap Field BasicMoveType :=
   insert (insert empty field_x .u64) field_y .u64
 
 -- Abstract reference for the parameter
-def r0 : Aref := .varRef ⟨"p"⟩
+def r0 : Aref := .paramRef ⟨"p"⟩
 
 -- Variables
 def var_p : Var := ⟨"p"⟩

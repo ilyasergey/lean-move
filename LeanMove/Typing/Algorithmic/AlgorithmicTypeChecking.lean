@@ -85,7 +85,7 @@ def applySubstVarEnvList (σ : List (Aref × Aref)) (ve : VarEnv) : VarEnv :=
   ⟨ve.entries.map fun (x, (isv, τ, ms)) => (x, (isv, applySubstMoveTypeList σ τ, ms))⟩
 
 /-- Compute a refid substitution by comparing VALID ref-typed entries in two VarEnvs.
-    Maps envL's .refid placeholders → env's actual arefs (which may be .varRef or .refid).
+    Maps envL's .refid placeholders → env's actual arefs (which may be .paramRef or .refid).
     Only valid entries participate: invalid entries use MoveType.compatible separately.
     Returns none if conflicting or non-injective. -/
 def computeRefSubst (ve_target ve_source : VarEnv) : Option (List (Aref × Aref)) :=
@@ -140,7 +140,7 @@ def siteenv_subst_equiv_bool (σ : List (Aref × Aref)) (se1 se2 : SiteEnv) : Bo
   se2.entries.all (fun (k, _) => (lookup se1 k).isSome)
 
 /-- EnvL refids that are not yet mapped by σ (not keys in σ).
-    Non-refid arefs (.root, .varRef) are always identity-mapped, never unmapped. -/
+    Non-refid arefs (.root, .paramRef) are always identity-mapped, never unmapped. -/
 private def unmappedRefs (σ : List (Aref × Aref))
     (refsL : List Aref) : List Aref :=
   refsL.filter fun r => match r with

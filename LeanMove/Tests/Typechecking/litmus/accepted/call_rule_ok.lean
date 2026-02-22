@@ -68,7 +68,7 @@ def id_mut_sig : FunSig := ⟨[⟨.u64, some true⟩], [⟨.u64, some true⟩]�
 -- ═══════════════════════════════════════════════════════
 
 def fn_deref : FunDef := {
-  params := [(var_r, .ref .u64 (.varRef var_r) .siteBorrowMut)]
+  params := [(var_r, .ref .u64 (.paramRef var_r) .siteBorrowMut)]
   returnType := [⟨.u64, none⟩]
   locals := []
   blocks := [
@@ -90,7 +90,7 @@ theorem fn_deref_check : check_fun_dec fn_deref fn_deref_lenvDec = true := by rf
 -- ═══════════════════════════════════════════════════════
 
 def fn_id_mut : FunDef := {
-  params := [(var_r, .ref .u64 (.varRef var_r) .siteBorrowMut)]
+  params := [(var_r, .ref .u64 (.paramRef var_r) .siteBorrowMut)]
   returnType := [⟨.u64, some true⟩]
   locals := []
   blocks := [

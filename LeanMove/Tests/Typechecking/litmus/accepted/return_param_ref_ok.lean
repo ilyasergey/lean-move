@@ -35,9 +35,9 @@ because no references are involved.
 Takes `r: &mut u64` and returns `move(r)` as `&mut u64`.
 Passes because:
 - **types_conform**: the returned site type matches `⟨.u64, some true⟩`
-- **no local borrowing**: `r`'s aref is `.varRef var_r`, which is a parameter ref.
-  The pathEnv has no path from `.root` to `.varRef var_r`.
-- **writability**: `.varRef var_r` has only trivial self-loops in the pathEnv
+- **no local borrowing**: `r`'s aref is `.paramRef var_r`, which is a parameter ref.
+  The pathEnv has no path from `.root` to `.paramRef var_r`.
+- **writability**: `.paramRef var_r` has only trivial self-loops in the pathEnv
   (no outbound edges to other arefs)
 - **no aliasing**: only one returned ref, so no aliasing possible
 
@@ -46,7 +46,7 @@ Takes `r1: &mut u64` and `r2: &mut u64`, returns both.
 Passes because:
 - Both are parameter refs with no root paths
 - Each has only trivial self-loops (independent parameters)
-- No aliasing: `G(varRef r1, varRef r2) = ∅` and vice versa
+- No aliasing: `G(paramRef r1, paramRef r2) = ∅` and vice versa
 -/
 
 open LeanMove.Lang
@@ -110,7 +110,7 @@ theorem fn_return_basic_welltyped : ∃ lenv, typecheck_fun fn_return_basic lenv
   }
 -/
 def fn_return_param_ref : FunDef := {
-  params := [(var_r, .ref .u64 (.varRef var_r) .siteBorrowMut)]
+  params := [(var_r, .ref .u64 (.paramRef var_r) .siteBorrowMut)]
   returnType := [⟨.u64, some true⟩]
   locals := []
   blocks := [
@@ -141,8 +141,8 @@ theorem fn_return_param_ref_welltyped : ∃ lenv, typecheck_fun fn_return_param_
   }
 -/
 def fn_return_two : FunDef := {
-  params := [(var_r1, .ref .u64 (.varRef var_r1) .siteBorrowMut),
-             (var_r2, .ref .u64 (.varRef var_r2) .siteBorrowMut)]
+  params := [(var_r1, .ref .u64 (.paramRef var_r1) .siteBorrowMut),
+             (var_r2, .ref .u64 (.paramRef var_r2) .siteBorrowMut)]
   returnType := [⟨.u64, some true⟩, ⟨.u64, some true⟩]
   locals := []
   blocks := [

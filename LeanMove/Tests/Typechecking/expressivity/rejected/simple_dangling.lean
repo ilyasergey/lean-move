@@ -17,7 +17,7 @@
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Typing.TypeChecking
-import LeanMove.Typing.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Typing.Algorithmic.AlgorithmicTypeChecking
 import LeanMove.Typing.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
 
@@ -164,7 +164,7 @@ def s9 : Site := .site 9
   }
 -/
 def field_dangling : FunDef := {
-  params := [(var_s, .ref (.trecord s_entries) (.varRef var_s) .siteBorrowMut)]
+  params := [(var_s, .ref (.trecord s_entries) (.paramRef var_s) .siteBorrowMut)]
   returnType := []
   locals := [
     { name := var_f, type := .ref .u64 (.refid 0) .siteBorrowImm }
@@ -201,7 +201,7 @@ def field_dangling : FunDef := {
   }
 -/
 def nested_field_dangling : FunDef := {
-  params := [(var_p, .ref (.trecord p_entries) (.varRef var_p) .siteBorrowMut)]
+  params := [(var_p, .ref (.trecord p_entries) (.paramRef var_p) .siteBorrowMut)]
   returnType := []
   locals := [
     { name := var_s, type := .ref (.trecord s_entries) (.refid 1) .siteBorrowMut },
@@ -302,7 +302,7 @@ def field_call_funSig : FunSig := ⟨[⟨.trecord s_entries, some true⟩], [⟨
   }
 -/
 def field_call_dangling : FunDef := {
-  params := [(var_s, .ref (.trecord s_entries) (.varRef var_s) .siteBorrowMut)]
+  params := [(var_s, .ref (.trecord s_entries) (.paramRef var_s) .siteBorrowMut)]
   returnType := []
   locals := [
     { name := var_f, type := .ref .u64 (.refid 0) .siteBorrowImm }

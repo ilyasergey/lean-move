@@ -83,7 +83,7 @@ def tree_entries : AssocMap Field BasicMoveType :=
   insert (insert empty field_l (.trecord sub1_entries)) field_r (.trecord sub1_entries)
 
 -- Abstract reference for the parameter
-def root_var : Aref := .varRef ⟨"root"⟩
+def root_var : Aref := .paramRef ⟨"root"⟩
 
 -- Variables
 def var_cond : Var := ⟨"cond"⟩

@@ -173,7 +173,7 @@ deriving Repr, DecidableEq, Inhabited, Hashable
 inductive Aref where
   | root : Aref
   | refid : Nat → Aref
-  | varRef : Var → Aref
+  | paramRef : Var → Aref
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 -- Borrowing kind: tracks only mutability, NOT provenance
@@ -223,7 +223,7 @@ instance : DecidableEq MoveType := fun t1 t2 =>
     isFalse (fun heq => h (MoveType.beq_of_eq t1 t2 heq))
 
 /-- Two Arefs are compatible if neither is root, or both are root.
-    All non-root arefs (.refid, .varRef) are mutually compatible.
+    All non-root arefs (.refid, .paramRef) are mutually compatible.
     This allows the checker to be agnostic to the exact aref values in declared types. -/
 def Aref.compatible : Aref → Aref → Bool
   | .root, .root => true
@@ -282,7 +282,7 @@ theorem MoveType.compatible_of_beq (t1 t2 : MoveType) :
     cases r with
     | root => exact trivial
     | refid n => exact trivial
-    | varRef x => exact trivial
+    | paramRef x => exact trivial
 
 /- ====================================================== -/
 /-       Language Constructs                               -/

@@ -52,7 +52,7 @@ def ppField : Field → String
 def ppAref : Aref → String
   | .root => ".root"
   | .refid n => s!"(.refid {n})"
-  | .varRef v => s!"(.varRef {ppVar v})"
+  | .paramRef v => s!"(.paramRef {ppVar v})"
 
 def ppBorrowingKind : BorrowingKind → String
   | .siteBorrowImm => ".siteBorrowImm"

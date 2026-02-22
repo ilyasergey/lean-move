@@ -24,7 +24,7 @@ This involves:
 1. Flattening nested expressions into sequences of `letBind` with fresh sites
 2. Resolving struct types (Self.S → trecord)
 3. Converting `jump_if` to `branch` with fallthrough label
-4. Assigning Arefs to parameters (varRef) and locals (refid)
+4. Assigning Arefs to parameters (paramRef) and locals (refid)
 -/
 
 namespace LeanMove.Lang.MoveIR.Translate
@@ -356,9 +356,9 @@ def translateFunDef (mfun : MvirFunDef) : TransM FunDef := do
   let structs := (← get).structs
   -- Reset site counter for each function
   modify fun s => { s with nextSiteId := 0, nextRefId := 1 }
-  -- Translate parameters: each gets .varRef aref
+  -- Translate parameters: each gets .paramRef aref
   let params := mfun.params.map fun p =>
-    (⟨p.name⟩, resolveType structs (.varRef ⟨p.name⟩) p.type)
+    (⟨p.name⟩, resolveType structs (.paramRef ⟨p.name⟩) p.type)
   -- Translate return types
   let returnType := mfun.returnTypes.map (resolveParamType structs)
   -- Translate locals: ref types get sequential .refid

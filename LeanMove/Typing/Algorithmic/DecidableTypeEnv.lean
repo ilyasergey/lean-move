@@ -283,7 +283,7 @@ private theorem Aref_isFreshRef_bool_sound (a : Aref) :
   cases a with
   | refid n => exact ⟨n, rfl⟩
   | root => simp [Aref.isFreshRef_bool] at h
-  | varRef _ => simp [Aref.isFreshRef_bool] at h
+  | paramRef _ => simp [Aref.isFreshRef_bool] at h
 
 private theorem SiteEnv_refsNotRoot_bool_sound (senv : SiteEnv) :
     SiteEnv.refsNotRoot_bool senv = true → SiteEnv.RefsNotRoot senv := by

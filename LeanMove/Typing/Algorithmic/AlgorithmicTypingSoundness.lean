@@ -14,14 +14,14 @@
  limitations under the License.
 -/
 
-import LeanMove.Typing.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Typing.Algorithmic.AlgorithmicTypeChecking
 import LeanMove.Typing.TypesUtils
 
 /-!
 # Algorithmic Typing Soundness for MoveLight
 
 This file contains soundness proofs for the algorithmic type
-checker defined in `TypeCheckingAlgorithmic.lean` with respect to the relational
+checker defined in `AlgorithmicTypeChecking.lean` with respect to the relational
 specification in `TypeChecking.lean`.
 
 ## Main Results
@@ -713,9 +713,9 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
           · exact nextFreshRefInEnv_fresh_prop env
           · have hr_not_root : r ≠ Aref.root := hwf.siteEnv_wf src (.ref bt r isBor) hlookup
             have hr'_fresh : r' ∉ env.pathEnv.refs := nextFreshRefInEnv_not_in_pathEnv env
-            have hr'_not_varRef : ∀ v, r' ≠ Aref.varRef v := nextFreshRefInEnv_not_varRef env
+            have hr'_not_paramRef : ∀ v, r' ≠ Aref.paramRef v := nextFreshRefInEnv_not_paramRef env
             have hpe' := consume_ref_transfer_wellformed env.pathEnv r r' hwf.pathEnv_wf
-              hr_not_root hr'_fresh hr'_not_varRef
+              hr_not_root hr'_fresh hr'_not_paramRef
             have hτ : match (MoveType.ref bt r' .siteBorrowImm) with | .ref _ r'' _ => r'' ≠ Aref.root | .basic _ => True :=
               nextFreshRefInEnv_not_root env
             have hwf' := TypeEnv.delete_insert_pathEnv_wf env src a (.ref bt r' .siteBorrowImm) _ hwf hpe' hτ
@@ -994,7 +994,7 @@ private lemma computeRefSubst_values_not_root (ve1 ve2 : VarEnv) (pairs : List (
     | ref bt ar bk =>
       cases ar with
       | root => simp at hfm
-      | varRef _ => simp at hfm
+      | paramRef _ => simp at hfm
       | refid n =>
         -- Now: .validVar, .ref bt (.refid n) bk
         -- hfm is about: match lookup ve2 x with | some (.validVar, .ref _ r2 _, _) => ...
@@ -1038,7 +1038,7 @@ private lemma findRefExtension_keys_refid
       obtain ⟨a, _, ha_eq⟩ := List.exists_of_findSome?_eq_some h
       cases a with
       | root => simp at ha_eq
-      | varRef v =>
+      | paramRef v =>
         dsimp only at ha_eq
         split at ha_eq
         · simp at ha_eq
@@ -1081,7 +1081,7 @@ private lemma findRefExtension_values_not_root
       obtain ⟨a, _, ha_eq⟩ := List.exists_of_findSome?_eq_some h
       cases a with
       | root => simp at ha_eq
-      | varRef v =>
+      | paramRef v =>
         dsimp only at ha_eq
         split at ha_eq
         · simp at ha_eq
@@ -1400,8 +1400,8 @@ theorem subsumes_bool_implies_subsumes (envL env : TypeEnv)
           simp only [σ]
           cases r with
           | root => exact absurd rfl hr
-          | varRef v =>
-            have := applySubstArefList_non_refid pairs hkeys (.varRef v) (fun n h => by cases h)
+          | paramRef v =>
+            have := applySubstArefList_non_refid pairs hkeys (.paramRef v) (fun n h => by cases h)
             rw [this]; intro h; cases h
           | refid n =>
             simp only [applySubstArefList]
@@ -1444,9 +1444,9 @@ private lemma generateFreshRefs_not_root (env : TypeEnv) (rets : List ParamType)
   obtain ⟨_, _, rfl⟩ := hr
   exact Aref.noConfusion
 
--- generateFreshRefs produces only .refid refs (not varRef)
-private lemma generateFreshRefs_not_varRef (env : TypeEnv) (rets : List ParamType) :
-    ∀ r ∈ generateFreshRefs env rets, ∀ v, r ≠ Aref.varRef v := by
+-- generateFreshRefs produces only .refid refs (not paramRef)
+private lemma generateFreshRefs_not_paramRef (env : TypeEnv) (rets : List ParamType) :
+    ∀ r ∈ generateFreshRefs env rets, ∀ v, r ≠ Aref.paramRef v := by
   unfold generateFreshRefs
   intro r hr v
   simp only [List.mem_map, List.mem_range] at hr

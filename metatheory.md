@@ -40,7 +40,7 @@ LeanMove/
 │   ├── TypeChecking.lean          Relational typing rules
 │   │
 │   ├── Algorithmic/
-│   │   ├── TypeCheckingAlgorithmic.lean       Executable type checker
+│   │   ├── AlgorithmicTypeChecking.lean       Executable type checker
 │   │   ├── AlgorithmicTypingSoundness.lean    Algorithmic ⇒ relational
 │   │   └── DecidableTypeEnv.lean              Decidable environment checks
 │   │
@@ -77,7 +77,7 @@ Types are either *basic* (`u64`, `bool`, `unit`, records) or *references*
 `ref τ r bk`, carrying a basic content type `τ`, an abstract reference `r :
 Aref`, and a borrowing kind `bk` (immutable or mutable). Abstract references
 (`Aref`) are either `.root` (the local variable root), `.refid n` (a
-placeholder used during type checking), or `.varRef v` (tied to parameter `v`).
+placeholder used during type checking), or `.paramRef v` (tied to parameter `v`).
 
 ### Operational semantics (`Semantics/Smallstep.lean`)
 
@@ -169,7 +169,7 @@ The executable checker mirrors the relational rules:
 
 | File | Role |
 |---|---|
-| `TypeCheckingAlgorithmic.lean` | `check_stmt_dec`, `check_fun_dec`, `subsumes_bool` |
+| `AlgorithmicTypeChecking.lean` | `check_stmt_dec`, `check_fun_dec`, `subsumes_bool` |
 | `AlgorithmicTypingSoundness.lean` | `check_fun_dec_sound : check_fun_dec f lenvDec = true → typecheck_fun f lenvDec.toLabelEnv` |
 | `DecidableTypeEnv.lean` | Decidable `PathEnvDec`, `TypeEnvDec`, `LabelEnvDec`; `checkFunEnv`; `allVarRefsTracked_bool` |
 
@@ -249,7 +249,7 @@ provide two mechanisms:
    environments with arbitrary template refids (e.g., 1–5); `freshenBlockEnv`
    shifts them to a safe range.
 
-2. **`extendRefSubst`** (`TypeCheckingAlgorithmic.lean`): during subsumption
+2. **`extendRefSubst`** (`AlgorithmicTypeChecking.lean`): during subsumption
    checking, after the initial substitution σ is computed from valid
    variables, `extendRefSubst` uses backtracking search (`findRefExtension`)
    to pair remaining unmapped label-environment refids with unmatched checker
@@ -374,7 +374,7 @@ via one of several operations:
 **Decidable path checks.** The typing rules query the path graph via
 `check_outbound` and `not_borrowed`, both of which ask whether certain
 regexes accept only the empty word (or nothing at all). The decidable
-checker (`TypeCheckingAlgorithmic.lean`) answers these queries by:
+checker (`AlgorithmicTypeChecking.lean`) answers these queries by:
 
 1. **Simplifying** the regex (`simplify`): eliminates derivatives and nested
    constructs, producing a derivative-free regex.

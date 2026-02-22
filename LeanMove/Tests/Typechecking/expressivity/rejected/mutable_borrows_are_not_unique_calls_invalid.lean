@@ -17,7 +17,7 @@
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Typing.TypeChecking
-import LeanMove.Typing.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Typing.Algorithmic.AlgorithmicTypeChecking
 import LeanMove.Typing.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
 
@@ -152,7 +152,7 @@ def s7 : Site := .site 7   -- integer literal 0 for second write
   Returns a mutable reference to the f field.
 -/
 def borrow_f : FunDef := {
-  params := [(var_s, .ref (.trecord s_entries) (.varRef var_s) .siteBorrowMut)]
+  params := [(var_s, .ref (.trecord s_entries) (.paramRef var_s) .siteBorrowMut)]
   returnType := [⟨.u64, some true⟩]
   locals := []
   blocks := [
@@ -189,7 +189,7 @@ def call_funEnv : FunEnv :=
   }
 -/
 def call_and_write_invalid : FunDef := {
-  params := [(var_s, .ref (.trecord s_entries) (.varRef var_s) .siteBorrowMut)]
+  params := [(var_s, .ref (.trecord s_entries) (.paramRef var_s) .siteBorrowMut)]
   returnType := []
   locals := [
     { name := var_call, type := .ref .u64 (.refid 1) .siteBorrowMut },

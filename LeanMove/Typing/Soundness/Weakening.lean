@@ -382,30 +382,30 @@ private lemma Aref_Compatible_subst {r r' : Aref} {σ : Aref → Aref}
       cases hσr : (σ (.refid n)) with
       | root => exact absurd hσr hσne
       | refid _ => trivial
-      | varRef _ => trivial
-    | varRef _ =>
+      | paramRef _ => trivial
+    | paramRef _ =>
       unfold Aref.Compatible
       cases hσr : (σ (.refid n)) with
       | root => exact absurd hσr hσne
       | refid _ => trivial
-      | varRef _ => trivial
-  | varRef v =>
-    have hne : Aref.varRef v ≠ .root := by intro h; cases h
+      | paramRef _ => trivial
+  | paramRef v =>
+    have hne : Aref.paramRef v ≠ .root := by intro h; cases h
     have hσne := hσ hne
     cases r' with
     | root => exact absurd hcompat (by simp [Aref.Compatible])
     | refid _ =>
       unfold Aref.Compatible
-      cases hσr : (σ (.varRef v)) with
+      cases hσr : (σ (.paramRef v)) with
       | root => exact absurd hσr hσne
       | refid _ => trivial
-      | varRef _ => trivial
-    | varRef _ =>
+      | paramRef _ => trivial
+    | paramRef _ =>
       unfold Aref.Compatible
-      cases hσr : (σ (.varRef v)) with
+      cases hσr : (σ (.paramRef v)) with
       | root => exact absurd hσr hσne
       | refid _ => trivial
-      | varRef _ => trivial
+      | paramRef _ => trivial
 
 -- ============================================================
 -- Helper: MoveType.compatible through baseCompatible + σ
@@ -452,12 +452,12 @@ private lemma MoveType_compatible_of_baseCompatible_subst (σ : Aref → Aref) (
             cases hσr2 : σ r2 with
             | root => exact absurd hσr2 (hσ_nonroot r2 hτ'_notroot)
             | refid _ => trivial
-            | varRef _ => trivial
-          | varRef _ =>
+            | paramRef _ => trivial
+          | paramRef _ =>
             cases hσr2 : σ r2 with
             | root => exact absurd hσr2 (hσ_nonroot r2 hτ'_notroot)
             | refid _ => trivial
-            | varRef _ => trivial
+            | paramRef _ => trivial
         · rw [← hcompat.2.2]; exact hbc.2.symm
 
 -- ============================================================
@@ -1688,12 +1688,12 @@ private theorem weaken_let_bind_borrowImm
   -- Freshness of r in envL
   have hr_fresh_pe : r ∉ envL.pathEnv.refs := freshRefInEnv_implies_freshRef r envL hfresh
   have hr_ne_root : r ≠ .root := fun h => hr_fresh_pe (h ▸ hroot)
-  have hr_not_varRef : ∀ v, r ≠ .varRef v := (hfresh.2.2 : _ ∧ _).2
+  have hr_not_paramRef : ∀ v, r ≠ .paramRef v := (hfresh.2.2 : _ ∧ _).2
   have hr_refid : ∃ n, r = .refid n := by
     cases r with
     | root => exact absurd rfl hr_ne_root
     | refid n => exact ⟨n, rfl⟩
-    | varRef v => exact absurd rfl (hr_not_varRef v)
+    | paramRef v => exact absurd rfl (hr_not_paramRef v)
   have hσ_root : σ .root = .root := hid .root (fun n => Aref.noConfusion)
   -- Pick fresh r' for env
   let r' := nextFreshRefInEnv env
@@ -1826,12 +1826,12 @@ private theorem weaken_let_bind_borrowMut
   simp only [applySubstMoveType] at hlook_env
   have hr_fresh_pe : r ∉ envL.pathEnv.refs := freshRefInEnv_implies_freshRef r envL hfresh
   have hr_ne_root : r ≠ .root := fun h => hr_fresh_pe (h ▸ hroot)
-  have hr_not_varRef : ∀ v, r ≠ .varRef v := (hfresh.2.2 : _ ∧ _).2
+  have hr_not_paramRef : ∀ v, r ≠ .paramRef v := (hfresh.2.2 : _ ∧ _).2
   have hr_refid : ∃ n, r = .refid n := by
     cases r with
     | root => exact absurd rfl hr_ne_root
     | refid n => exact ⟨n, rfl⟩
-    | varRef v => exact absurd rfl (hr_not_varRef v)
+    | paramRef v => exact absurd rfl (hr_not_paramRef v)
   have hσ_root : σ .root = .root := hid .root (fun n => Aref.noConfusion)
   let r' := nextFreshRefInEnv env
   have hr'_fresh_prop := nextFreshRefInEnv_fresh_prop env
@@ -1953,12 +1953,12 @@ private theorem weaken_let_bind_borrowField
   -- Freshness of rf in envL
   have hrf_fresh_pe : rf ∉ envL.pathEnv.refs := freshRefInEnv_implies_freshRef rf envL hfresh
   have hrf_ne_root : rf ≠ .root := fun h => hrf_fresh_pe (h ▸ hroot)
-  have hrf_not_varRef : ∀ v, rf ≠ .varRef v := (hfresh.2.2 : _ ∧ _).2
+  have hrf_not_paramRef : ∀ v, rf ≠ .paramRef v := (hfresh.2.2 : _ ∧ _).2
   have hrf_refid : ∃ n, rf = .refid n := by
     cases rf with
     | root => exact absurd rfl hrf_ne_root
     | refid n => exact ⟨n, rfl⟩
-    | varRef v => exact absurd rfl (hrf_not_varRef v)
+    | paramRef v => exact absurd rfl (hrf_not_paramRef v)
   -- Pick fresh rf' for env
   let rf' := nextFreshRefInEnv env
   have hrf'_fresh_prop := nextFreshRefInEnv_fresh_prop env
@@ -2079,12 +2079,12 @@ private theorem weaken_let_bind_borrowMutField
   simp only [applySubstMoveType] at hlook_a_env
   have hrf_fresh_pe : rf ∉ envL.pathEnv.refs := freshRefInEnv_implies_freshRef rf envL hfresh
   have hrf_ne_root : rf ≠ .root := fun h => hrf_fresh_pe (h ▸ hroot)
-  have hrf_not_varRef : ∀ v, rf ≠ .varRef v := (hfresh.2.2 : _ ∧ _).2
+  have hrf_not_paramRef : ∀ v, rf ≠ .paramRef v := (hfresh.2.2 : _ ∧ _).2
   have hrf_refid : ∃ n, rf = .refid n := by
     cases rf with
     | root => exact absurd rfl hrf_ne_root
     | refid n => exact ⟨n, rfl⟩
-    | varRef v => exact absurd rfl (hrf_not_varRef v)
+    | paramRef v => exact absurd rfl (hrf_not_paramRef v)
   let rf' := nextFreshRefInEnv env
   have hrf'_fresh_prop := nextFreshRefInEnv_fresh_prop env
   have hrf'_fresh_pe := nextFreshRefInEnv_not_in_pathEnv env
@@ -2192,12 +2192,12 @@ private theorem weaken_let_bind_freeze
   -- Freshness of r' in envL
   have hr'_fresh_pe : r' ∉ envL.pathEnv.refs := freshRefInEnv_implies_freshRef r' envL hfresh
   have hr'_ne_root : r' ≠ .root := fun h => hr'_fresh_pe (h ▸ hroot)
-  have hr'_not_varRef : ∀ v, r' ≠ .varRef v := (hfresh.2.2 : _ ∧ _).2
+  have hr'_not_paramRef : ∀ v, r' ≠ .paramRef v := (hfresh.2.2 : _ ∧ _).2
   have hr'_refid : ∃ n, r' = .refid n := by
     cases r' with
     | root => exact absurd rfl hr'_ne_root
     | refid n => exact ⟨n, rfl⟩
-    | varRef v => exact absurd rfl (hr'_not_varRef v)
+    | paramRef v => exact absurd rfl (hr'_not_paramRef v)
   -- r is tracked in envL (from site_tracked + lookup)
   have hr_mem : r ∈ envL.pathEnv.refs := hsite_tracked _ _ _ _ hlook
   have hr_ne_r' : r ≠ r' := fun h => hr'_fresh_pe (h ▸ hr_mem)
@@ -2206,7 +2206,7 @@ private theorem weaken_let_bind_freeze
   have hr''_fresh_prop := nextFreshRefInEnv_fresh_prop env
   have hr''_fresh_pe := nextFreshRefInEnv_not_in_pathEnv env
   have hr''_not_root := nextFreshRefInEnv_not_root env
-  have hr''_not_varRef := nextFreshRefInEnv_not_varRef env
+  have hr''_not_paramRef := nextFreshRefInEnv_not_paramRef env
   have hr''_not_mapped : r'' ∉ envL.pathEnv.refs.map σ := fun h => hr''_fresh_pe (hrefs.mem_iff.mp h)
   -- σ r ∈ env.pathEnv.refs
   have hσr_mem : σ r ∈ env.pathEnv.refs := hrefs.mem_iff.mp (List.mem_map_of_mem hr_mem)
@@ -2261,14 +2261,14 @@ private theorem weaken_let_bind_freeze
   · exact hfuneq
   · -- WellFormed envL'
     exact ⟨consume_ref_transfer_wellformed envL.pathEnv r r'
-            hwfL.pathEnv_wf hr_ne_root hr'_fresh_pe hr'_not_varRef,
+            hwfL.pathEnv_wf hr_ne_root hr'_fresh_pe hr'_not_paramRef,
            SiteEnv.insert_refs_not_root _ _ _
             (SiteEnv.delete_refs_not_root _ _ hwfL.siteEnv_wf) hr'_ne_root,
            hwfL.varEnv_wf⟩
   · -- WellFormed env'
     exact ⟨consume_ref_transfer_wellformed env.pathEnv (σ r) r''
             hwfE.pathEnv_wf (hnonroot r hr_ne_root) hr''_fresh_pe
-            (fun v => hr''_not_varRef v),
+            (fun v => hr''_not_paramRef v),
            SiteEnv.insert_refs_not_root _ _ _
             (SiteEnv.delete_refs_not_root _ _ hwfE.siteEnv_wf) hr''_not_root,
            hwfE.varEnv_wf⟩
@@ -2355,7 +2355,7 @@ private theorem weaken_var_assign_valid
   have hr''_fresh_prop := nextFreshRefInEnv_fresh_prop env
   have hr''_fresh_pe := nextFreshRefInEnv_not_in_pathEnv env
   have hr''_not_root := nextFreshRefInEnv_not_root env
-  have hr''_not_varRef := nextFreshRefInEnv_not_varRef env
+  have hr''_not_paramRef := nextFreshRefInEnv_not_paramRef env
   -- Apply var_assign_valid rule for env with r''
   apply typecheck_stmt.var_assign_valid lenv env _ _ ax τ _ r'' _ _
     hms hlook_x_env hlook_a_env
@@ -2970,13 +2970,13 @@ private theorem weaken_let_bind_copy_ref
   -- Freshness of t in envL
   have ht_fresh_pe : t ∉ envL.pathEnv.refs := freshRefInEnv_implies_freshRef t envL hfresh
   have ht_ne_root : t ≠ .root := fun h => ht_fresh_pe (h ▸ hroot)
-  have ht_not_varRef : ∀ v, t ≠ .varRef v := freshRefInEnv_not_varRef t envL hfresh
-  -- t is a refid (from ht_ne_root + ht_not_varRef)
+  have ht_not_paramRef : ∀ v, t ≠ .paramRef v := freshRefInEnv_not_paramRef t envL hfresh
+  -- t is a refid (from ht_ne_root + ht_not_paramRef)
   have ht_refid : ∃ n, t = .refid n := by
     cases t with
     | root => exact absurd rfl ht_ne_root
     | refid n => exact ⟨n, rfl⟩
-    | varRef v => exact absurd rfl (ht_not_varRef v)
+    | paramRef v => exact absurd rfl (ht_not_paramRef v)
   -- Pick fresh t' for env
   let t' := nextFreshRefInEnv env
   have ht'_fresh_prop := nextFreshRefInEnv_fresh_prop env
@@ -3194,8 +3194,8 @@ private lemma makeFreshRefs_not_root (env : TypeEnv) (n : Nat) :
   obtain ⟨_, _, rfl⟩ := hr
   exact fun h => by cases h
 
-private lemma makeFreshRefs_not_varRef (env : TypeEnv) (n : Nat) :
-    ∀ r ∈ makeFreshRefs env n, ∀ v, r ≠ Aref.varRef v := by
+private lemma makeFreshRefs_not_paramRef (env : TypeEnv) (n : Nat) :
+    ∀ r ∈ makeFreshRefs env n, ∀ v, r ≠ Aref.paramRef v := by
   intro r hr v
   simp [makeFreshRefs] at hr
   obtain ⟨_, _, rfl⟩ := hr
@@ -5195,13 +5195,13 @@ private lemma populate_call_outputs_subsumes
                 freshRefInEnv_implies_freshRef rE envE hrE_fresh
               have hrL_ne_root := hnotRootL rL (List.mem_cons.mpr (Or.inl rfl))
               have hrE_ne_root := hnotRootE rE (List.mem_cons.mpr (Or.inl rfl))
-              -- rL is a refid (from freshRefInEnv includes not_varRef + not_root)
-              have hrL_not_varRef : ∀ v, rL ≠ .varRef v := (hrL_fresh.2.2 : _ ∧ _).2
+              -- rL is a refid (from freshRefInEnv includes not_paramRef + not_root)
+              have hrL_not_paramRef : ∀ v, rL ≠ .paramRef v := (hrL_fresh.2.2 : _ ∧ _).2
               have hrL_refid : ∃ n, rL = .refid n := by
                 cases rL with
                 | root => exact absurd rfl hrL_ne_root
                 | refid n => exact ⟨n, rfl⟩
-                | varRef v => exact absurd rfl (hrL_not_varRef v)
+                | paramRef v => exact absurd rfl (hrL_not_paramRef v)
               have hrE_not_mapped : rE ∉ envL.pathEnv.refs.map σ :=
                 fun h => hrE_fresh_pe (hrefs.mem_iff.mp h)
               -- Extended σ

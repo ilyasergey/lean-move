@@ -24,7 +24,7 @@ may differ between parsed and hand-written versions, so we check structural
 equality up to consistent renaming.
 
 - **Sites**: bijective mapping per block (each parsed site maps to exactly one hand-written site)
-- **Arefs**: bijective mapping (refids matched up to permutation; varRefs match by name)
+- **Arefs**: bijective mapping (refids matched up to permutation; paramRefs match by name)
 - **Labels**: bijective mapping (block labels are internal names that can differ)
 - **Variable names**: exact match (these come from the MVIR source)
 -/
@@ -84,7 +84,7 @@ def matchSite (l r : Site) : AlphaM Bool := do
 def matchAref (l r : Aref) : AlphaM Bool := do
   match l, r with
   | .root, .root => pure true
-  | .varRef v1, .varRef v2 => pure (v1 == v2)
+  | .paramRef v1, .paramRef v2 => pure (v1 == v2)
   | .refid _, .refid _ =>
     let s ← get
     match lookupMapping s.arefMap l with

@@ -343,14 +343,14 @@ def freshRefInEnv (r : Aref) (env : TypeEnv) : Prop :=
   freshRef r env.pathEnv ∧
   r ∉ collectVarEnvRefs env.varEnv ∧
   r ∉ collectSiteEnvRefs env.siteEnv ∧
-  (∀ v, r ≠ .varRef v)
+  (∀ v, r ≠ .paramRef v)
 
 /-- Boolean version of freshRefInEnv for use in algorithmic type checking -/
 def freshRefInEnvBool (r : Aref) (env : TypeEnv) : Bool :=
   freshRefBool r env.pathEnv &&
   !(collectVarEnvRefs env.varEnv).contains r &&
   !(collectSiteEnvRefs env.siteEnv).contains r &&
-  match r with | .varRef _ => false | _ => true
+  match r with | .paramRef _ => false | _ => true
 
 /-- Compute a fresh Aref by finding the maximum refid across all TypeEnv components -/
 def nextFreshRefInEnv (env : TypeEnv) : Aref :=
@@ -423,7 +423,7 @@ def SiteEnvSubstEquiv (σ : Aref → Aref) (se1 se2 : SiteEnv) : Prop :=
     after renaming envL's refid placeholders via σ, the VarEnvs and SiteEnvs
     match env's, the PathEnv refs match env's, and env's paths are included
     in envL's paths.
-    σ maps envL's .refid arefs → env's actual arefs (which may include .varRef).
+    σ maps envL's .refid arefs → env's actual arefs (which may include .paramRef).
     Used at jump/branch targets where envL is a label environment. -/
 def TypeEnv.subsumes (envL env : TypeEnv) : Prop :=
   ∃ σ : Aref → Aref,

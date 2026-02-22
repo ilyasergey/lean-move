@@ -17,7 +17,7 @@
 
 import LeanMove.Lang.MoveLight
 import LeanMove.Typing.TypeChecking
-import LeanMove.Typing.Algorithmic.TypeCheckingAlgorithmic
+import LeanMove.Typing.Algorithmic.AlgorithmicTypeChecking
 import LeanMove.Typing.Algorithmic.DecidableTypeEnv
 import LeanMove.Lang.Macros
 
@@ -36,9 +36,9 @@ label b0:
 ```
 
 After `copy(r)` and `move(r)`, both returned sites hold refs to the same
-underlying aref (`varRef r`). The no-aliasing condition checks:
+underlying aref (`paramRef r`). The no-aliasing condition checks:
   G(r₂, r₁) = ∅ for each pair where r₁ is a mutable return.
-Since both refs point to `varRef r`, the self-loop gives G(varRef r, varRef r) = {ε} ≠ ∅.
+Since both refs point to `paramRef r`, the self-loop gives G(paramRef r, paramRef r) = {ε} ≠ ∅.
 -/
 
 open LeanMove.Lang
@@ -60,7 +60,7 @@ def s1 : Site := .site 1
   Returns two aliased mutable refs — should be rejected.
 -/
 def fn_return_aliased : FunDef := {
-  params := [(var_r, .ref .u64 (.varRef var_r) .siteBorrowMut)]
+  params := [(var_r, .ref .u64 (.paramRef var_r) .siteBorrowMut)]
   returnType := [⟨.u64, some true⟩, ⟨.u64, some true⟩]
   locals := []
   blocks := [

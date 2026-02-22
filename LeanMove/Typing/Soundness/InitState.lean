@@ -562,7 +562,7 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     cases r with
     | root => simp at this
     | refid _ => exact Aref.noConfusion
-    | varRef _ => exact Aref.noConfusion
+    | paramRef _ => exact Aref.noConfusion
   params_nodup := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
     obtain ⟨⟨⟨⟨_, hnd⟩, _⟩, _⟩, _⟩ := hcheck
