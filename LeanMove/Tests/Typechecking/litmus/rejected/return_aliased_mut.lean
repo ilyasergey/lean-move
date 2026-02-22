@@ -73,15 +73,7 @@ def fn_return_aliased : FunDef := {
   ]
 }
 
-def fn_return_aliased_initEnv : TypeEnv := {
-  siteEnv := empty
-  varEnv := init_fun_varEnv fn_return_aliased
-  pathEnv := (init_fun_pathEnvDec fn_return_aliased.params).toPathEnv
-  funEnv := empty
-}
-
-def fn_return_aliased_lenv : LabelEnv :=
-  insert empty "b0" fn_return_aliased_initEnv
+def fn_return_aliased_lenv := mkLabelEnv fn_return_aliased
 
 -- The algorithmic checker rejects this
 #guard !check_fun fn_return_aliased fn_return_aliased_lenv

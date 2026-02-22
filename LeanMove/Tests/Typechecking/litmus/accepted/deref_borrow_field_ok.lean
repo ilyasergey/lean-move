@@ -136,10 +136,7 @@ def M_new : FunDef := {
 }
 
 -- Decidable label environment for M.new
-def M_new_lenvDec : LabelEnvDec :=
-  insert empty "b0"
-    { siteEnv := empty, varEnv := init_fun_varEnv M_new,
-      pathEnv := .init, funEnv := module_funEnv }
+def M_new_lenvDec := mkLabelEnvDec M_new module_funEnv
 
 -- Test theorem: M.new type checks algorithmically
 theorem M_new_check : check_fun_dec M_new M_new_lenvDec = true := by rfl
@@ -186,10 +183,7 @@ def M_t : FunDef := {
 }
 
 -- Decidable label environment for M.t
-def M_t_lenvDec : LabelEnvDec :=
-  insert empty "b0"
-    { siteEnv := empty, varEnv := init_fun_varEnv M_t,
-      pathEnv := init_fun_pathEnvDec M_t.params, funEnv := module_funEnv }
+def M_t_lenvDec := mkLabelEnvDec M_t module_funEnv
 
 -- Test theorem: M.t type checks algorithmically
 theorem M_t_check : check_fun_dec M_t M_t_lenvDec = true := by rfl
@@ -241,10 +235,7 @@ def foo : FunDef := {
 }
 
 -- Decidable label environment for foo
-def foo_lenvDec : LabelEnvDec :=
-  insert empty "b0"
-    { siteEnv := empty, varEnv := init_fun_varEnv foo,
-      pathEnv := .init, funEnv := module_funEnv }
+def foo_lenvDec := mkLabelEnvDec foo module_funEnv
 
 -- Test theorem: foo type checks algorithmically
 theorem foo_check : check_fun_dec foo foo_lenvDec = true := by rfl

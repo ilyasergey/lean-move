@@ -99,15 +99,7 @@ After `move(x)`, the interpreter sets `varStore[x] = None`. When `copy(x)` execu
 -- -           Algorithmic Type Checking Tests        --
 -- -----------------------------------------------------
 
-def foo_initEnv : TypeEnv := {
-  siteEnv := AssocMap.empty
-  varEnv := init_fun_varEnv foo
-  pathEnv := PathEnv.init
-  funEnv := AssocMap.empty
-}
-
-def foo_lenv : LabelEnv :=
-  AssocMap.insert AssocMap.empty "b0" foo_initEnv
+def foo_lenv := mkLabelEnv foo
 
 #eval check_fun foo foo_lenv
 

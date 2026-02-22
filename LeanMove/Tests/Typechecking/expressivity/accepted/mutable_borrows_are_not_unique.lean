@@ -356,25 +356,9 @@ def fields_write : FunDef := {
 -- -----------------------------------------------------
 
 -- Initial environments (decidable)
-def fields_initEnvDec : TypeEnvDec := {
-  siteEnv := AssocMap.empty
-  varEnv := init_fun_varEnv fields
-  pathEnv := init_fun_pathEnvDec fields.params
-  funEnv := AssocMap.empty
-}
+def fields_lenvDec := mkLabelEnvDec fields
 
-def fields_lenvDec : LabelEnvDec :=
-  AssocMap.insert AssocMap.empty "b0" fields_initEnvDec
-
-def fields_write_initEnvDec : TypeEnvDec := {
-  siteEnv := AssocMap.empty
-  varEnv := init_fun_varEnv fields_write
-  pathEnv := init_fun_pathEnvDec fields_write.params
-  funEnv := AssocMap.empty
-}
-
-def fields_write_lenvDec : LabelEnvDec :=
-  AssocMap.insert AssocMap.empty "b0" fields_write_initEnvDec
+def fields_write_lenvDec := mkLabelEnvDec fields_write
 
 -- Theorems: both functions type check algorithmically
 set_option maxRecDepth 4096 in

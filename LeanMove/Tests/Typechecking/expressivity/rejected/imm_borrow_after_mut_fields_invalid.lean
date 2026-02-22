@@ -184,17 +184,7 @@ borrow rules.
 -- -           Algorithmic Type Checking Tests        --
 -- -----------------------------------------------------
 
--- Initial environment for invalid_write function
-def invalid_write_initEnv : TypeEnv := {
-  siteEnv := AssocMap.empty
-  varEnv := init_fun_varEnv invalid_write
-  pathEnv := PathEnv.init
-  funEnv := AssocMap.empty
-}
-
--- LabelEnv for invalid_write
-def invalid_write_lenv : LabelEnv :=
-  AssocMap.insert AssocMap.empty "b0" invalid_write_initEnv
+def invalid_write_lenv := mkLabelEnv invalid_write
 
 -- Debug
 #eval check_fun invalid_write invalid_write_lenv

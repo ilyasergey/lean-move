@@ -240,17 +240,7 @@ small-step semantics intentionally does not enforce borrow rules.
 -- -           Algorithmic Type Checking Tests        --
 -- -----------------------------------------------------
 
--- Initial environment for call_and_write_invalid function
-def call_and_write_invalid_initEnv : TypeEnv := {
-  siteEnv := AssocMap.empty
-  varEnv := init_fun_varEnv call_and_write_invalid
-  pathEnv := PathEnv.init
-  funEnv := call_funEnv
-}
-
--- LabelEnv for call_and_write_invalid
-def call_and_write_invalid_lenv : LabelEnv :=
-  AssocMap.insert AssocMap.empty "b0" call_and_write_invalid_initEnv
+def call_and_write_invalid_lenv := mkLabelEnv call_and_write_invalid call_funEnv
 
 -- Debug
 #eval check_fun call_and_write_invalid call_and_write_invalid_lenv

@@ -229,6 +229,41 @@ access, function calls, control-flow joins, loops, packing/unpacking records,
 and aliasing patterns — all drawn from the Move bytecode verifier's own test
 suite.
 
+### Test environment construction (`DecidableTypeEnv.lean`)
+
+Writing type-checking tests requires constructing `LabelEnvDec` values that
+the algorithmic checker can verify by `rfl` reduction. For single-block
+functions this is straightforward — `mkLabelEnvDec f` derives the initial
+decidable environment from the function's parameters and locals. For
+multi-block programs with control-flow joins (branches, loops), the label
+environment must include entries for each block with the correct path graph,
+which involves abstract references (`Aref`) that the checker assigns
+dynamically.
+
+To decouple test environments from the checker's internal numbering, we
+provide two mechanisms:
+
+1. **`freshenBlockEnv f env`** (`DecidableTypeEnv.lean`): replaces all
+   `.refid N` values in a `TypeEnvDec` with fresh refids that don't collide
+   with the function's parameter/local declarations. Test authors write
+   environments with arbitrary template refids (e.g., 1–5); `freshenBlockEnv`
+   shifts them to a safe range.
+
+2. **`extendRefSubst`** (`TypeCheckingAlgorithmic.lean`): during subsumption
+   checking, after the initial substitution σ is computed from valid
+   variables, `extendRefSubst` uses backtracking search (`findRefExtension`)
+   to pair remaining unmapped label-environment refids with unmatched checker
+   refids. The pairing is validated by `regexSubsumedBy` path checks, making
+   it order-independent — the test environment's refid ordering need not match
+   the checker's.
+
+Together, these let multi-block test environments (e.g.,
+`subtree_writes_release.lean` with 5 intermediate abstract references and a
+7-node path graph) be written with simple, readable template values rather
+than reverse-engineered checker constants. The soundness of this extension is
+proved in `AlgorithmicTypingSoundness.lean` (`findRefExtension_keys_refid`,
+`findRefExtension_values_not_root`).
+
 ---
 
 ## Part II — Proof Architecture

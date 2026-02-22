@@ -203,13 +203,13 @@ def t_branch_varEnv : VarEnv :=
   update ve var_cond (.invalidVar, .basic .tbool, .mutable)
 
 -- VarEnv at l3 entry (x,y assigned/valid; cond still invalid)
--- Checker assigns refid 5 to x and refid 8 to y in both branches
+-- Template refids: arbitrary fresh values, freshened by freshenBlockEnv
 def t_l3_varEnv : VarEnv :=
   let ve := t_branch_varEnv
-  let ve := update ve var_x (.validVar, .ref (.trecord sub1_entries) (.refid 5) .siteBorrowMut, .mutable)
-  update ve var_y (.validVar, .ref .u64 (.refid 8) .siteBorrowMut, .mutable)
+  let ve := update ve var_x (.validVar, .ref (.trecord sub1_entries) (.refid 2) .siteBorrowMut, .mutable)
+  update ve var_y (.validVar, .ref .u64 (.refid 5) .siteBorrowMut, .mutable)
 
--- Regex helpers matching the structural forms produced by the checker.
+-- Regex helpers matching the structural forms of field paths.
 -- Forward paths: extend ε by field chars
 private def fl := Regex.concat Regex.ε (Regex.char (PathElement.field field_l))
 private def fr := Regex.concat Regex.ε (Regex.char (PathElement.field field_r))
@@ -226,82 +226,85 @@ private def dfr2 := Regex.deriv dfr (PathElement.field field_r)
 private def dfl3 := Regex.deriv dfl2 (PathElement.field field_l)
 private def dfr3 := Regex.deriv dfr2 (PathElement.field field_r)
 
--- Abbreviations for ref pairs
+-- Template refs: arbitrary fresh values (not tied to checker's numbering)
+-- r1: copy alias of root, r2: x (var), r3: copy alias of x
+-- r4: borrowMutField intermediate, r5: y (var)
+private def r1 : Aref := .refid 1
+private def r2 : Aref := .refid 2
+private def r3 : Aref := .refid 3
 private def r4 : Aref := .refid 4
 private def r5 : Aref := .refid 5
-private def r6 : Aref := .refid 6
-private def r7 : Aref := .refid 7
-private def r8 : Aref := .refid 8
 
--- l3 PathEnvDec: paths computed from both branches (l1 uses field_l, l2 uses field_r).
--- At jump "l3", the checker produces pathEnv.refs = [r8, r7, r6, r5, r4, .root, r0].
--- The l3 paths are unions of the left (field_l) and right (field_r) branch paths.
--- Self-loops (ε) and root paths (empty) are handled automatically by toPathEnv.
+-- l3 PathEnvDec: paths from both branches (l1 uses field_l, l2 uses field_r).
+-- Uses arbitrary template refids; freshenBlockEnv + extendRefSubst handle the mapping.
 def t_l3_pathEnvDec : PathEnvDec :=
-  { refs := [r8, r7, r6, r5, r4, .root, root_var]
+  { refs := [r5, r4, r3, r2, r1, .root, root_var]
     paths :=
       (AssocMap.empty
-      -- r0 ↔ r4: ε (copy alias, same in both branches)
-      |>.insert (root_var, .refid 4) Regex.ε
-      |>.insert (.refid 4, root_var) Regex.ε
-      -- r0 ↔ r5: union fl fr / union dfl dfr
-      |>.insert (root_var, r5) (.union fl fr)
-      |>.insert (r5, root_var) (.union dfl dfr)
-      -- r0 ↔ r6: union fl fr / union dfl dfr (r6 is alias of r5)
-      |>.insert (root_var, r6) (.union fl fr)
-      |>.insert (r6, root_var) (.union dfl dfr)
-      -- r0 ↔ r7: union fl2 fr2 / union dfl2 dfr2
-      |>.insert (root_var, r7) (.union fl2 fr2)
-      |>.insert (r7, root_var) (.union dfl2 dfr2)
-      -- r0 ↔ r8: union fl3 fr3 / union dfl3 dfr3
-      |>.insert (root_var, r8) (.union fl3 fr3)
-      |>.insert (r8, root_var) (.union dfl3 dfr3)
+      -- root_var ↔ r1: ε (copy alias, same in both branches)
+      |>.insert (root_var, r1) Regex.ε
+      |>.insert (r1, root_var) Regex.ε
+      -- root_var ↔ r2: union fl fr / union dfl dfr
+      |>.insert (root_var, r2) (.union fl fr)
+      |>.insert (r2, root_var) (.union dfl dfr)
+      -- root_var ↔ r3: union fl fr / union dfl dfr (r3 is alias of r2)
+      |>.insert (root_var, r3) (.union fl fr)
+      |>.insert (r3, root_var) (.union dfl dfr)
+      -- root_var ↔ r4: union fl2 fr2 / union dfl2 dfr2
+      |>.insert (root_var, r4) (.union fl2 fr2)
+      |>.insert (r4, root_var) (.union dfl2 dfr2)
+      -- root_var ↔ r5: union fl3 fr3 / union dfl3 dfr3
+      |>.insert (root_var, r5) (.union fl3 fr3)
+      |>.insert (r5, root_var) (.union dfl3 dfr3)
+      -- r1 ↔ r2: union fl fr / union dfl dfr
+      |>.insert (r1, r2) (.union fl fr)
+      |>.insert (r2, r1) (.union dfl dfr)
+      -- r1 ↔ r3: union fl fr / union dfl dfr
+      |>.insert (r1, r3) (.union fl fr)
+      |>.insert (r3, r1) (.union dfl dfr)
+      -- r2 ↔ r3: ε (alias, same in both branches)
+      |>.insert (r2, r3) Regex.ε
+      |>.insert (r3, r2) Regex.ε
+      -- r2 ↔ r4: union fl fr / union dfl dfr
+      |>.insert (r2, r4) (.union fl fr)
+      |>.insert (r4, r2) (.union dfl dfr)
+      -- r2 ↔ r5: union fl2 fr2 / union dfl2 dfr2
+      |>.insert (r2, r5) (.union fl2 fr2)
+      |>.insert (r5, r2) (.union dfl2 dfr2)
+      -- r3 ↔ r4: union fl fr / union dfl dfr
+      |>.insert (r3, r4) (.union fl fr)
+      |>.insert (r4, r3) (.union dfl dfr)
+      -- r3 ↔ r5: union fl2 fr2 / union dfl2 dfr2
+      |>.insert (r3, r5) (.union fl2 fr2)
+      |>.insert (r5, r3) (.union dfl2 dfr2)
       -- r4 ↔ r5: union fl fr / union dfl dfr
-      |>.insert (.refid 4, r5) (.union fl fr)
-      |>.insert (r5, .refid 4) (.union dfl dfr)
-      -- r4 ↔ r6: union fl fr / union dfl dfr
-      |>.insert (.refid 4, r6) (.union fl fr)
-      |>.insert (r6, .refid 4) (.union dfl dfr)
-      -- r5 ↔ r6: ε (alias, same in both branches)
-      |>.insert (r5, r6) Regex.ε
-      |>.insert (r6, r5) Regex.ε
-      -- r5 ↔ r7: union fl fr / union dfl dfr
-      |>.insert (r5, r7) (.union fl fr)
-      |>.insert (r7, r5) (.union dfl dfr)
-      -- r5 ↔ r8: union fl2 fr2 / union dfl2 dfr2
-      |>.insert (r5, r8) (.union fl2 fr2)
-      |>.insert (r8, r5) (.union dfl2 dfr2)
-      -- r6 ↔ r7: union fl fr / union dfl dfr
-      |>.insert (r6, r7) (.union fl fr)
-      |>.insert (r7, r6) (.union dfl dfr)
-      -- r6 ↔ r8: union fl2 fr2 / union dfl2 dfr2
-      |>.insert (r6, r8) (.union fl2 fr2)
-      |>.insert (r8, r6) (.union dfl2 dfr2)
-      -- r7 ↔ r8: union fl fr / union dfl dfr
-      |>.insert (r7, r8) (.union fl fr)
-      |>.insert (r8, r7) (.union dfl dfr)
-      -- r4 ↔ r7: union fl2 fr2 / union dfl2 dfr2
-      |>.insert (.refid 4, r7) (.union fl2 fr2)
-      |>.insert (r7, .refid 4) (.union dfl2 dfr2)
-      -- r4 ↔ r8: union fl3 fr3 / union dfl3 dfr3
-      |>.insert (.refid 4, r8) (.union fl3 fr3)
-      |>.insert (r8, .refid 4) (.union dfl3 dfr3))
+      |>.insert (r4, r5) (.union fl fr)
+      |>.insert (r5, r4) (.union dfl dfr)
+      -- r1 ↔ r4: union fl2 fr2 / union dfl2 dfr2
+      |>.insert (r1, r4) (.union fl2 fr2)
+      |>.insert (r4, r1) (.union dfl2 dfr2)
+      -- r1 ↔ r5: union fl3 fr3 / union dfl3 dfr3
+      |>.insert (r1, r5) (.union fl3 fr3)
+      |>.insert (r5, r1) (.union dfl3 dfr3))
   }
+
+-- Template for l3 environment (uses simple refids that get freshened)
+private def t_l3_env_template : TypeEnvDec :=
+  { siteEnv := AssocMap.empty, varEnv := t_l3_varEnv,
+    pathEnv := t_l3_pathEnvDec, funEnv := AssocMap.empty }
 
 -- Decidable label environment
 def t_lenvDec : LabelEnvDec :=
   insert (insert (insert (insert AssocMap.empty
-    "l0" { siteEnv := AssocMap.empty, varEnv := init_fun_varEnv t,
-           pathEnv := init_fun_pathEnvDec t.params, funEnv := AssocMap.empty })
+    "l0" (mkInitEnvDec t))
     "l1" { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
            pathEnv := init_fun_pathEnvDec t.params, funEnv := AssocMap.empty })
     "l2" { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
            pathEnv := init_fun_pathEnvDec t.params, funEnv := AssocMap.empty })
-    "l3" { siteEnv := AssocMap.empty, varEnv := t_l3_varEnv,
-           pathEnv := t_l3_pathEnvDec, funEnv := AssocMap.empty }
+    "l3" (freshenBlockEnv t t_l3_env_template)
 
 -- Theorem: t is well-typed (algorithmic, decidable)
-set_option maxRecDepth 8192 in
+set_option maxRecDepth 16384 in
 theorem t_check : check_fun_dec t t_lenvDec = true := by rfl
 
 -- Main theorem: t is well-typed (relational)

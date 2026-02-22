@@ -220,37 +220,13 @@ def borrow_local_and_copy_ref_reverse : FunDef := {
 -- -----------------------------------------------------
 
 -- Initial environments (decidable)
-def borrow_local_twice_lenvDec : LabelEnvDec :=
-  AssocMap.insert AssocMap.empty "l0" {
-    siteEnv := AssocMap.empty
-    varEnv := init_fun_varEnv borrow_local_twice
-    pathEnv := .init
-    funEnv := AssocMap.empty
-  }
+def borrow_local_twice_lenvDec := mkLabelEnvDec borrow_local_twice
 
-def borrow_local_twice_reverse_lenvDec : LabelEnvDec :=
-  AssocMap.insert AssocMap.empty "l0" {
-    siteEnv := AssocMap.empty
-    varEnv := init_fun_varEnv borrow_local_twice_reverse
-    pathEnv := .init
-    funEnv := AssocMap.empty
-  }
+def borrow_local_twice_reverse_lenvDec := mkLabelEnvDec borrow_local_twice_reverse
 
-def borrow_local_and_copy_ref_lenvDec : LabelEnvDec :=
-  AssocMap.insert AssocMap.empty "l0" {
-    siteEnv := AssocMap.empty
-    varEnv := init_fun_varEnv borrow_local_and_copy_ref
-    pathEnv := .init
-    funEnv := AssocMap.empty
-  }
+def borrow_local_and_copy_ref_lenvDec := mkLabelEnvDec borrow_local_and_copy_ref
 
-def borrow_local_and_copy_ref_reverse_lenvDec : LabelEnvDec :=
-  AssocMap.insert AssocMap.empty "l0" {
-    siteEnv := AssocMap.empty
-    varEnv := init_fun_varEnv borrow_local_and_copy_ref_reverse
-    pathEnv := .init
-    funEnv := AssocMap.empty
-  }
+def borrow_local_and_copy_ref_reverse_lenvDec := mkLabelEnvDec borrow_local_and_copy_ref_reverse
 
 -- Theorems: all functions type check algorithmically
 theorem borrow_local_twice_check :

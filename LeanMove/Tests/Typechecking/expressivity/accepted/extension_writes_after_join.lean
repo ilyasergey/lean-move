@@ -171,31 +171,34 @@ def t_branch_varEnv : VarEnv :=
   update ve var_cond (.invalidVar, .basic .tbool, .mutable)
 
 -- VarEnv at l3 entry (a,b moved/invalid, x,y valid)
--- Order of updates must match checker's execution in l1: move a, assign x, move b, assign y
+-- Template refids: simple sequential values, freshened by freshenBlockEnv
 def t_l3_varEnv : VarEnv :=
   let ve := t_branch_varEnv
-  let ve := update ve var_a (.invalidVar, .ref (.trecord s_entries) ((.refid 4)) .siteBorrowMut, .mutable)
+  let ve := update ve var_a (.invalidVar, .ref (.trecord s_entries) (.refid 60) .siteBorrowMut, .mutable)
   let ve := update ve var_x (.validVar, .ref (.trecord s_entries) (.refid 1) .siteBorrowMut, .mutable)
-  let ve := update ve var_b (.invalidVar, .ref (.trecord s_entries) (.refid 5) .siteBorrowMut, .mutable)
-  update ve var_y (.validVar, .ref (.trecord s_entries) (.refid 305) .siteBorrowMut, .mutable)
+  let ve := update ve var_b (.invalidVar, .ref (.trecord s_entries) (.refid 50) .siteBorrowMut, .mutable)
+  update ve var_y (.validVar, .ref (.trecord s_entries) (.refid 2) .siteBorrowMut, .mutable)
 
--- PathEnvDec at l3: must track .refid refs from both branches
+-- PathEnvDec at l3: tracks refs for valid vars x and y
 def t_l3_pathEnvDec : PathEnvDec := {
-  refs := [.root, .refid 1, .refid 305]
+  refs := [.root, .refid 1, .refid 2]
   paths := .empty
 }
+
+-- Template for l3 environment (uses simple refids that get freshened)
+private def t_l3_env_template : TypeEnvDec :=
+  { siteEnv := AssocMap.empty, varEnv := t_l3_varEnv,
+    pathEnv := t_l3_pathEnvDec, funEnv := AssocMap.empty }
 
 -- Label environment (decidable)
 def t_lenvDec : LabelEnvDec :=
   insert (insert (insert (insert AssocMap.empty
-    "l0" { siteEnv := AssocMap.empty, varEnv := init_fun_varEnv t,
-           pathEnv := init_fun_pathEnvDec t.params, funEnv := AssocMap.empty })
+    "l0" (mkInitEnvDec t))
     "l1" { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
            pathEnv := init_fun_pathEnvDec t.params, funEnv := AssocMap.empty })
     "l2" { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
            pathEnv := init_fun_pathEnvDec t.params, funEnv := AssocMap.empty })
-    "l3" { siteEnv := AssocMap.empty, varEnv := t_l3_varEnv,
-           pathEnv := t_l3_pathEnvDec, funEnv := AssocMap.empty }
+    "l3" (freshenBlockEnv t t_l3_env_template)
 
 -- Theorem: t is well-typed (algorithmic, decidable)
 theorem t_check : check_fun_dec t t_lenvDec = true := by rfl

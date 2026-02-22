@@ -617,6 +617,21 @@ def typecheck_block (lenv : LabelEnv) (block : Block) (expectedEnv : TypeEnv) (r
 def init_fun_varEnv (f : FunDef) : VarEnv :=
   add_locals_to_varEnv (init_varEnv_from_params f.params) f.locals
 
+/-- Construct the initial TypeEnv for a function.
+    Derives siteEnv (empty), varEnv (from params + locals), and pathEnv (from params). -/
+def mkInitEnv (f : FunDef) (funEnv : FunEnv := AssocMap.empty) : TypeEnv :=
+  { siteEnv := AssocMap.empty
+    varEnv := init_fun_varEnv f
+    pathEnv := init_fun_pathEnv f
+    funEnv := funEnv }
+
+/-- Construct a LabelEnv for a single-block function.
+    Uses the first block's label as the entry point. -/
+def mkLabelEnv (f : FunDef) (funEnv : FunEnv := AssocMap.empty) : LabelEnv :=
+  match f.blocks with
+  | b :: _ => AssocMap.insert AssocMap.empty b.label (mkInitEnv f funEnv)
+  | [] => AssocMap.empty
+
 /--
   Type checking relation for functions.
 

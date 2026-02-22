@@ -90,14 +90,7 @@ def fn_return_mut_with_field_borrow : FunDef := {
   ]
 }
 
-def fn_initEnv : TypeEnv := {
-  siteEnv := empty
-  varEnv := init_fun_varEnv fn_return_mut_with_field_borrow
-  pathEnv := (init_fun_pathEnvDec fn_return_mut_with_field_borrow.params).toPathEnv
-  funEnv := empty
-}
-
-def fn_lenv : LabelEnv := insert empty "b0" fn_initEnv
+def fn_lenv := mkLabelEnv fn_return_mut_with_field_borrow
 
 -- The algorithmic checker rejects this
 #guard !check_fun fn_return_mut_with_field_borrow fn_lenv

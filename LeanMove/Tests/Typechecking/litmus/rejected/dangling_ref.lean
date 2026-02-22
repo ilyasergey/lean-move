@@ -167,17 +167,7 @@ a `danglingRef` runtime error. This is a genuine dangling pointer.
 -- -           Algorithmic Type Checking Tests        --
 -- -----------------------------------------------------
 
--- Initial environment for foo
-def foo_initEnv : TypeEnv := {
-  siteEnv := AssocMap.empty
-  varEnv := init_fun_varEnv foo
-  pathEnv := PathEnv.init
-  funEnv := AssocMap.empty
-}
-
--- LabelEnv for foo
-def foo_lenv : LabelEnv :=
-  AssocMap.insert AssocMap.empty "b0" foo_initEnv
+def foo_lenv := mkLabelEnv foo
 
 -- Debug
 #eval check_fun foo foo_lenv

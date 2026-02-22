@@ -139,8 +139,73 @@ def siteenv_subst_equiv_bool (σ : List (Aref × Aref)) (se1 se2 : SiteEnv) : Bo
     | none => false) &&
   se2.entries.all (fun (k, _) => (lookup se1 k).isSome)
 
+/-- EnvL refids that are not yet mapped by σ (not keys in σ).
+    Non-refid arefs (.root, .varRef) are always identity-mapped, never unmapped. -/
+private def unmappedRefs (σ : List (Aref × Aref))
+    (refsL : List Aref) : List Aref :=
+  refsL.filter fun r => match r with
+    | .refid _ => !(σ.any (fun (k, _) => k == r))
+    | _ => false
+
+/-- Env refs not claimed by σ targets or identity-mapped non-refid arefs. -/
+private def unmatchedRefs (σ : List (Aref × Aref))
+    (refsL refsE : List Aref) : List Aref :=
+  let σ_targets := σ.map (·.2)
+  -- Non-refid arefs in envL are identity-mapped
+  let nonRefidL := refsL.filter fun r => match r with
+    | .refid _ => false
+    | _ => true
+  refsE.filter fun r =>
+    !(σ_targets.contains r) && !(nonRefidL.contains r)
+
+/-- Backtracking search: pair unmapped envL refs with unmatched env refs,
+    validated by path subsumption. Structurally recursive on `unmapped`.
+    Only pairs .refid keys with non-root values (well-formedness invariant).
+    Returns the extended σ if a valid pairing exists, none otherwise. -/
+def findRefExtension (σ : List (Aref × Aref))
+    (unmapped : List Aref) (unmatched : List Aref)
+    (refsL : List Aref) (envL env : TypeEnv)
+    : Option (List (Aref × Aref)) :=
+  match unmapped with
+  | [] =>
+    -- All paired: validate full path subsumption
+    if unmatched.isEmpty &&
+       refsL.all (fun u => refsL.all (fun v =>
+         regexSubsumedBy
+           (env.pathEnv.paths (applySubstArefList σ u, applySubstArefList σ v))
+           (envL.pathEnv.paths (u, v))))
+    then some σ
+    else none
+  | u :: us =>
+    -- Only extend with .refid keys (non-refid arefs should be identity-mapped)
+    match u with
+    | .refid _ =>
+      -- Try pairing u with each candidate in unmatched
+      unmatched.findSome? fun u' =>
+        -- Skip .root as target value
+        match u' with
+        | .root => none
+        | _ =>
+          let σ' := (u, u') :: σ
+          -- Check injectivity: u' not already a target
+          if σ.any (fun (_, t) => t == u') then none
+          else findRefExtension σ' us (unmatched.erase u') refsL envL env
+    | _ => none  -- non-refid unmapped ref: ill-formed input
+
+/-- Extend σ by finding a valid order-independent pairing for unmapped pathEnv refs.
+    Returns the extended σ, or the original σ if no extension needed. -/
+def extendRefSubst (σ : List (Aref × Aref))
+    (refsL refsE : List Aref) (envL env : TypeEnv)
+    : Option (List (Aref × Aref)) :=
+  let um := unmappedRefs σ refsL
+  let un := unmatchedRefs σ refsL refsE
+  if um.length != un.length then none
+  else if um.isEmpty then some σ
+  else findRefExtension σ um un refsL envL env
+
 /-- Check that envL subsumes env with refid unification.
-    Computes σ mapping envL's .refid placeholders to env's actual arefs, then checks:
+    Computes σ mapping envL's .refid placeholders to env's actual arefs, then
+    extends σ by order-independent matching of unmapped pathEnv refs, and checks:
     1. SiteEnvs match after σ
     2. VarEnvs match after σ (exact for valid, compatible for invalid)
     3. PathEnv refs match after σ
@@ -148,21 +213,24 @@ def siteenv_subst_equiv_bool (σ : List (Aref × Aref)) (se1 se2 : SiteEnv) : Bo
 def TypeEnv.subsumes_bool (envL env : TypeEnv) : Bool :=
   match computeRefSubst envL.varEnv env.varEnv with
   | none => false
-  | some σ =>
-    siteenv_subst_equiv_bool σ envL.siteEnv env.siteEnv &&
-    varenv_subst_equiv_bool σ envL.varEnv env.varEnv &&
-    -- Check that mapped refs are a permutation of env's refs
-    -- (both nodup + same length + containment → Perm)
-    (let mapped := envL.pathEnv.refs.map (applySubstArefList σ)
-     mapped.length == env.pathEnv.refs.length &&
-     mapped.eraseDups.length == mapped.length &&
-     mapped.all (fun r => env.pathEnv.refs.contains r)) &&
-    -- Check that env's refs have no duplicates (implies σ is injective on envL's refs)
-    (env.pathEnv.refs.eraseDups.length == env.pathEnv.refs.length) &&
-    envL.pathEnv.refs.all fun u =>
-      envL.pathEnv.refs.all fun v =>
-        regexSubsumedBy (env.pathEnv.paths (applySubstArefList σ u, applySubstArefList σ v))
-          (envL.pathEnv.paths (u, v))
+  | some σ_var =>
+    match extendRefSubst σ_var envL.pathEnv.refs env.pathEnv.refs envL env with
+    | none => false
+    | some σ =>
+      siteenv_subst_equiv_bool σ envL.siteEnv env.siteEnv &&
+      varenv_subst_equiv_bool σ envL.varEnv env.varEnv &&
+      -- Check that mapped refs are a permutation of env's refs
+      -- (both nodup + same length + containment → Perm)
+      (let mapped := envL.pathEnv.refs.map (applySubstArefList σ)
+       mapped.length == env.pathEnv.refs.length &&
+       mapped.eraseDups.length == mapped.length &&
+       mapped.all (fun r => env.pathEnv.refs.contains r)) &&
+      -- Check that env's refs have no duplicates (implies σ is injective on envL's refs)
+      (env.pathEnv.refs.eraseDups.length == env.pathEnv.refs.length) &&
+      envL.pathEnv.refs.all fun u =>
+        envL.pathEnv.refs.all fun v =>
+          regexSubsumedBy (env.pathEnv.paths (applySubstArefList σ u, applySubstArefList σ v))
+            (envL.pathEnv.paths (u, v))
 
 /-- Boolean check for all_fresh_sites -/
 def all_fresh_sites_bool (env: TypeEnv) (as: List Site) : Bool :=

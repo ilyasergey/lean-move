@@ -209,17 +209,7 @@ guarantee of `imm1`. The small-step semantics intentionally does not enforce bor
 def invalid_funEnv : FunEnv :=
   AssocMap.insert (AssocMap.insert AssocMap.empty "id_mut" id_mut_sig) "id" id_sig
 
--- Initial environment for invalid function
-def invalid_initEnv : TypeEnv := {
-  siteEnv := AssocMap.empty
-  varEnv := init_fun_varEnv invalid
-  pathEnv := init_fun_pathEnv invalid
-  funEnv := invalid_funEnv
-}
-
--- LabelEnv for invalid
-def invalid_lenv : LabelEnv :=
-  AssocMap.insert AssocMap.empty "b0" invalid_initEnv
+def invalid_lenv := mkLabelEnv invalid invalid_funEnv
 
 #eval check_fun invalid invalid_lenv
 

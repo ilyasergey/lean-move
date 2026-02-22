@@ -162,27 +162,11 @@ def fn_write : FunDef := {
 -- -----------------------------------------------------
 
 -- Initial environments (decidable)
-def fn_borrow_initEnvDec : TypeEnvDec := {
-  siteEnv := AssocMap.empty
-  varEnv := init_fun_varEnv fn_borrow
-  pathEnv := init_fun_pathEnvDec fn_borrow.params
-  funEnv := AssocMap.empty
-}
-
-def fn_borrow_lenvDec : LabelEnvDec :=
-  AssocMap.insert AssocMap.empty "l0" fn_borrow_initEnvDec
+def fn_borrow_lenvDec := mkLabelEnvDec fn_borrow
 
 def borrow_funEnv : FunEnv := AssocMap.insert AssocMap.empty "borrow" borrow_sig
 
-def fn_write_initEnvDec : TypeEnvDec := {
-  siteEnv := AssocMap.empty
-  varEnv := init_fun_varEnv fn_write
-  pathEnv := init_fun_pathEnvDec fn_write.params
-  funEnv := borrow_funEnv
-}
-
-def fn_write_lenvDec : LabelEnvDec :=
-  AssocMap.insert AssocMap.empty "l0" fn_write_initEnvDec
+def fn_write_lenvDec := mkLabelEnvDec fn_write borrow_funEnv
 
 -- Test theorems: both functions type check algorithmically
 theorem fn_borrow_check : check_fun_dec fn_borrow fn_borrow_lenvDec = true := by rfl

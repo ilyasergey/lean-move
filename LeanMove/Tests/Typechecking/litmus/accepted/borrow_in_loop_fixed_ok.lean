@@ -106,10 +106,7 @@ def foo : FunDef := {
 }
 
 -- Decidable label environment for foo
-def foo_lenvDec : LabelEnvDec :=
-  insert empty "l0"
-    { siteEnv := empty, varEnv := init_fun_varEnv foo,
-      pathEnv := .init, funEnv := empty }
+def foo_lenvDec := mkLabelEnvDec foo
 
 -- Test theorem: foo type checks algorithmically
 theorem foo_check : check_fun_dec foo foo_lenvDec = true := by rfl

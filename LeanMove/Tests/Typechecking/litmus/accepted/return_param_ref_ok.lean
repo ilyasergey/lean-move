@@ -91,10 +91,7 @@ def fn_return_basic : FunDef := {
   ]
 }
 
-def fn_return_basic_lenvDec : LabelEnvDec :=
-  insert empty "b0"
-    { siteEnv := empty, varEnv := init_fun_varEnv fn_return_basic,
-      pathEnv := init_fun_pathEnvDec fn_return_basic.params, funEnv := empty }
+def fn_return_basic_lenvDec := mkLabelEnvDec fn_return_basic
 
 theorem fn_return_basic_check :
     check_fun_dec fn_return_basic fn_return_basic_lenvDec = true := by rfl
@@ -125,10 +122,7 @@ def fn_return_param_ref : FunDef := {
   ]
 }
 
-def fn_return_param_ref_lenvDec : LabelEnvDec :=
-  insert empty "b0"
-    { siteEnv := empty, varEnv := init_fun_varEnv fn_return_param_ref,
-      pathEnv := init_fun_pathEnvDec fn_return_param_ref.params, funEnv := empty }
+def fn_return_param_ref_lenvDec := mkLabelEnvDec fn_return_param_ref
 
 theorem fn_return_param_ref_check :
     check_fun_dec fn_return_param_ref fn_return_param_ref_lenvDec = true := by rfl
@@ -161,10 +155,7 @@ def fn_return_two : FunDef := {
   ]
 }
 
-def fn_return_two_lenvDec : LabelEnvDec :=
-  insert empty "b0"
-    { siteEnv := empty, varEnv := init_fun_varEnv fn_return_two,
-      pathEnv := init_fun_pathEnvDec fn_return_two.params, funEnv := empty }
+def fn_return_two_lenvDec := mkLabelEnvDec fn_return_two
 
 theorem fn_return_two_check :
     check_fun_dec fn_return_two fn_return_two_lenvDec = true := by rfl

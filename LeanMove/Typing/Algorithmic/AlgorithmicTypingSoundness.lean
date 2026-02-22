@@ -1015,6 +1015,123 @@ private lemma computeRefSubst_values_not_root (ve1 ve2 : VarEnv) (pairs : List (
               subst hv
               exact hno_root x (.validVar, .ref bt2 r2 bk2, ms2) hlookup_ve2
 
+/-- All keys in the extended σ produced by findRefExtension are refids.
+    Follows from: input σ has refid keys + the `.refid _` match guard in findRefExtension.
+    Every pair added by findRefExtension has a `.refid n` key (from the match guard),
+    and all original pairs are preserved. -/
+private lemma findRefExtension_keys_refid
+    {σ σ' : List (Aref × Aref)}
+    {unmapped unmatched refsL : List Aref}
+    {envL env : TypeEnv}
+    (hσ : ∀ k v, (k, v) ∈ σ → ∃ n, k = .refid n)
+    (h : findRefExtension σ unmapped unmatched refsL envL env = some σ') :
+    ∀ k v, (k, v) ∈ σ' → ∃ n, k = .refid n := by
+  induction unmapped generalizing σ unmatched with
+  | nil =>
+    simp only [findRefExtension] at h
+    split at h <;> simp at h
+    subst h; exact hσ
+  | cons u us ih =>
+    simp only [findRefExtension] at h
+    split at h
+    · rename_i n -- u = .refid n
+      obtain ⟨a, _, ha_eq⟩ := List.exists_of_findSome?_eq_some h
+      cases a with
+      | root => simp at ha_eq
+      | varRef v =>
+        dsimp only at ha_eq
+        split at ha_eq
+        · simp at ha_eq
+        · exact ih (fun k w hkw => by
+            simp only [List.mem_cons, Prod.mk.injEq] at hkw
+            rcases hkw with ⟨rfl, _⟩ | hm
+            · exact ⟨n, rfl⟩
+            · exact hσ k w hm) ha_eq
+      | refid m =>
+        dsimp only at ha_eq
+        split at ha_eq
+        · simp at ha_eq
+        · exact ih (fun k w hkw => by
+            simp only [List.mem_cons, Prod.mk.injEq] at hkw
+            rcases hkw with ⟨rfl, _⟩ | hm
+            · exact ⟨n, rfl⟩
+            · exact hσ k w hm) ha_eq
+    · simp at h -- non-refid case, contradiction
+
+/-- All values in the extended σ produced by findRefExtension are not root.
+    Follows from: input σ has non-root values + the `.root => none` guard in findRefExtension.
+    Every pair added by findRefExtension has a non-root value (from the match guard),
+    and all original pairs are preserved. -/
+private lemma findRefExtension_values_not_root
+    {σ σ' : List (Aref × Aref)}
+    {unmapped unmatched refsL : List Aref}
+    {envL env : TypeEnv}
+    (hσ : ∀ k v, (k, v) ∈ σ → v ≠ .root)
+    (h : findRefExtension σ unmapped unmatched refsL envL env = some σ') :
+    ∀ k v, (k, v) ∈ σ' → v ≠ .root := by
+  induction unmapped generalizing σ unmatched with
+  | nil =>
+    simp only [findRefExtension] at h
+    split at h <;> simp at h
+    subst h; exact hσ
+  | cons u us ih =>
+    simp only [findRefExtension] at h
+    split at h
+    · rename_i n -- u = .refid n
+      obtain ⟨a, _, ha_eq⟩ := List.exists_of_findSome?_eq_some h
+      cases a with
+      | root => simp at ha_eq
+      | varRef v =>
+        dsimp only at ha_eq
+        split at ha_eq
+        · simp at ha_eq
+        · exact ih (fun k w hkw => by
+            simp only [List.mem_cons, Prod.mk.injEq] at hkw
+            rcases hkw with ⟨_, rfl⟩ | hm
+            · exact nofun
+            · exact hσ k w hm) ha_eq
+      | refid m =>
+        dsimp only at ha_eq
+        split at ha_eq
+        · simp at ha_eq
+        · exact ih (fun k w hkw => by
+            simp only [List.mem_cons, Prod.mk.injEq] at hkw
+            rcases hkw with ⟨_, rfl⟩ | hm
+            · exact nofun
+            · exact hσ k w hm) ha_eq
+    · simp at h -- non-refid case, contradiction
+
+/-- All keys in σ from extendRefSubst are refids. -/
+private lemma extendRefSubst_keys_refid
+    {σ_var σ : List (Aref × Aref)}
+    {refsL refsE : List Aref}
+    {envL env : TypeEnv}
+    (hσ_var : ∀ k v, (k, v) ∈ σ_var → ∃ n, k = .refid n)
+    (h : extendRefSubst σ_var refsL refsE envL env = some σ) :
+    ∀ k v, (k, v) ∈ σ → ∃ n, k = .refid n := by
+  simp only [extendRefSubst] at h
+  split at h
+  · simp at h -- length mismatch
+  · split at h
+    · -- no extension needed: σ = σ_var
+      simp at h; subst h; exact hσ_var
+    · exact findRefExtension_keys_refid hσ_var h
+
+/-- All values in σ from extendRefSubst are not root. -/
+private lemma extendRefSubst_values_not_root
+    {σ_var σ : List (Aref × Aref)}
+    {refsL refsE : List Aref}
+    {envL env : TypeEnv}
+    (hσ_var : ∀ k v, (k, v) ∈ σ_var → v ≠ .root)
+    (h : extendRefSubst σ_var refsL refsE envL env = some σ) :
+    ∀ k v, (k, v) ∈ σ → v ≠ .root := by
+  simp only [extendRefSubst] at h
+  split at h
+  · simp at h
+  · split at h
+    · simp at h; subst h; exact hσ_var
+    · exact findRefExtension_values_not_root hσ_var h
+
 /-- Helper: List.lookup returning some implies the pair is in the list -/
 private lemma List_lookup_mem {α β : Type} [BEq α] [LawfulBEq α]
     (l : List (α × β)) (k : α) (v : β)
@@ -1218,80 +1335,85 @@ theorem subsumes_bool_implies_subsumes (envL env : TypeEnv)
   -- Case split on computeRefSubst result
   split at h
   · simp at h  -- none case: contradiction
-  · rename_i pairs heq_subst
-    -- Decompose the && chain using simple Bool helpers
-    have and_left  {a b : Bool} (h : (a && b) = true) : a = true := by cases a <;> simp_all
-    have and_right {a b : Bool} (h : (a && b) = true) : b = true := by cases a <;> simp_all
-    -- The && chain structure is: se && ve && (len && mapped_nd && containment) && nodup && paths
-    -- After simp, the `let mapped` is inlined
-    simp only [Bool.and_eq_true] at h
-    obtain ⟨⟨⟨⟨hse, hve⟩, hrefs_combined⟩, hnodup_raw⟩, hpaths_raw⟩ := h
-    -- Decompose the refs check sub-chain: ((len ∧ mapped_nd) ∧ containment)
-    have hlen_raw := hrefs_combined.1.1
-    have hmapped_nd_raw := hrefs_combined.1.2
-    have hcontains_raw := hrefs_combined.2
-    simp only [List.all_eq_true] at hpaths_raw
-    -- Define σ as the function version of the substitution
-    let σ : Aref → Aref := fun r => applySubstArefList pairs r
-    -- Extract the perm-related facts
-    have hlen : (envL.pathEnv.refs.map σ).length = env.pathEnv.refs.length :=
-      beq_iff_eq.mp hlen_raw
-    have hnodup_len : env.pathEnv.refs.length = env.pathEnv.refs.eraseDups.length :=
-      (beq_iff_eq.mp hnodup_raw).symm
-    have hnd : env.pathEnv.refs.Nodup :=
-      List.nodup_of_length_eraseDups env.pathEnv.refs hnodup_len
-    have hmapped_nd_len : (envL.pathEnv.refs.map σ).length =
-        (envL.pathEnv.refs.map σ).eraseDups.length :=
-      (beq_iff_eq.mp hmapped_nd_raw).symm
-    have hnd_map : (envL.pathEnv.refs.map σ).Nodup :=
-      List.nodup_of_length_eraseDups _ hmapped_nd_len
-    have hcontains : ∀ r ∈ envL.pathEnv.refs.map σ, r ∈ env.pathEnv.refs := by
-      simp only [List.all_eq_true, List.contains_eq_any_beq, List.any_eq_true,
-                 beq_iff_eq] at hcontains_raw
-      intro r hr
-      obtain ⟨r', hr'_mem, rfl⟩ := hcontains_raw r hr
-      exact hr'_mem
-    -- Derive Perm
-    have hrefs_perm : (envL.pathEnv.refs.map σ).Perm env.pathEnv.refs :=
-      perm_of_nodup_nodup_subset_length_eq _ _ hnd_map hnd hlen hcontains
-    refine ⟨σ, ?_, ?_, ?_, ?_, ?_, ?_⟩
-    · -- σ is identity on non-refid arefs
-      intro r hr
-      exact applySubstArefList_non_refid pairs
-        (computeRefSubst_keys_refid envL.varEnv env.varEnv pairs heq_subst) r hr
-    · -- VarEnvSubstEquiv σ envL.varEnv env.varEnv
-      exact varenv_subst_equiv_bool_sound pairs envL.varEnv env.varEnv hve
-    · -- SiteEnvSubstEquiv σ envL.siteEnv env.siteEnv
-      exact siteenv_subst_equiv_bool_sound pairs envL.siteEnv env.siteEnv hse
-    · -- (envL.pathEnv.refs.map σ).Perm env.pathEnv.refs
-      exact hrefs_perm
-    · -- σ is injective on envL.pathEnv.refs
-      intro u v hu hv huv
-      exact List.inj_on_of_nodup_map hnd_map u hu v hv huv
-    · -- (nonroot ∧ paths) - last two fields
-      constructor
-      · -- σ doesn't create roots: applySubstArefList never maps non-root to root
+  · rename_i σ_var heq_subst
+    -- Case split on extendRefSubst result
+    split at h
+    · simp at h  -- none case: contradiction
+    · rename_i pairs heq_ext
+      -- Decompose the && chain using simple Bool helpers
+      have and_left  {a b : Bool} (h : (a && b) = true) : a = true := by cases a <;> simp_all
+      have and_right {a b : Bool} (h : (a && b) = true) : b = true := by cases a <;> simp_all
+      -- The && chain structure is: se && ve && (len && mapped_nd && containment) && nodup && paths
+      -- After simp, the `let mapped` is inlined
+      simp only [Bool.and_eq_true] at h
+      obtain ⟨⟨⟨⟨hse, hve⟩, hrefs_combined⟩, hnodup_raw⟩, hpaths_raw⟩ := h
+      -- Decompose the refs check sub-chain: ((len ∧ mapped_nd) ∧ containment)
+      have hlen_raw := hrefs_combined.1.1
+      have hmapped_nd_raw := hrefs_combined.1.2
+      have hcontains_raw := hrefs_combined.2
+      simp only [List.all_eq_true] at hpaths_raw
+      -- Derive key properties of the extended σ
+      have hkeys_var := computeRefSubst_keys_refid envL.varEnv env.varEnv σ_var heq_subst
+      have hkeys := extendRefSubst_keys_refid hkeys_var heq_ext
+      have hvals_var := computeRefSubst_values_not_root envL.varEnv env.varEnv σ_var heq_subst hno_root
+      have hvals := extendRefSubst_values_not_root hvals_var heq_ext
+      -- Define σ as the function version of the substitution
+      let σ : Aref → Aref := fun r => applySubstArefList pairs r
+      -- Extract the perm-related facts
+      have hlen : (envL.pathEnv.refs.map σ).length = env.pathEnv.refs.length :=
+        beq_iff_eq.mp hlen_raw
+      have hnodup_len : env.pathEnv.refs.length = env.pathEnv.refs.eraseDups.length :=
+        (beq_iff_eq.mp hnodup_raw).symm
+      have hnd : env.pathEnv.refs.Nodup :=
+        List.nodup_of_length_eraseDups env.pathEnv.refs hnodup_len
+      have hmapped_nd_len : (envL.pathEnv.refs.map σ).length =
+          (envL.pathEnv.refs.map σ).eraseDups.length :=
+        (beq_iff_eq.mp hmapped_nd_raw).symm
+      have hnd_map : (envL.pathEnv.refs.map σ).Nodup :=
+        List.nodup_of_length_eraseDups _ hmapped_nd_len
+      have hcontains : ∀ r ∈ envL.pathEnv.refs.map σ, r ∈ env.pathEnv.refs := by
+        simp only [List.all_eq_true, List.contains_eq_any_beq, List.any_eq_true,
+                   beq_iff_eq] at hcontains_raw
         intro r hr
-        simp only [σ]
-        have hkeys := computeRefSubst_keys_refid envL.varEnv env.varEnv pairs heq_subst
-        cases r with
-        | root => exact absurd rfl hr
-        | varRef v =>
-          have := applySubstArefList_non_refid pairs hkeys (.varRef v) (fun n h => by cases h)
-          rw [this]; intro h; cases h
-        | refid n =>
-          simp only [applySubstArefList]
-          cases hlook : pairs.lookup (.refid n) with
-          | none => intro h; cases h  -- identity: .refid n ≠ .root
-          | some r' =>
-            -- r' is a value from computeRefSubst, hence not root
-            have hvals := computeRefSubst_values_not_root envL.varEnv env.varEnv pairs heq_subst hno_root
-            exact hvals (.refid n) r' (List_lookup_mem pairs (.refid n) r' hlook)
-      · -- Path inclusion: env ⊆ envL after σ
-        intro u v hu hv path hinterp
-        have hu' := hpaths_raw u hu
-        have huv := hu' v hv
-        exact regexSubsumedBy_sound _ _ huv path hinterp
+        obtain ⟨r', hr'_mem, rfl⟩ := hcontains_raw r hr
+        exact hr'_mem
+      -- Derive Perm
+      have hrefs_perm : (envL.pathEnv.refs.map σ).Perm env.pathEnv.refs :=
+        perm_of_nodup_nodup_subset_length_eq _ _ hnd_map hnd hlen hcontains
+      refine ⟨σ, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · -- σ is identity on non-refid arefs
+        intro r hr
+        exact applySubstArefList_non_refid pairs hkeys r hr
+      · -- VarEnvSubstEquiv σ envL.varEnv env.varEnv
+        exact varenv_subst_equiv_bool_sound pairs envL.varEnv env.varEnv hve
+      · -- SiteEnvSubstEquiv σ envL.siteEnv env.siteEnv
+        exact siteenv_subst_equiv_bool_sound pairs envL.siteEnv env.siteEnv hse
+      · -- (envL.pathEnv.refs.map σ).Perm env.pathEnv.refs
+        exact hrefs_perm
+      · -- σ is injective on envL.pathEnv.refs
+        intro u v hu hv huv
+        exact List.inj_on_of_nodup_map hnd_map u hu v hv huv
+      · -- (nonroot ∧ paths) - last two fields
+        constructor
+        · -- σ doesn't create roots: applySubstArefList never maps non-root to root
+          intro r hr
+          simp only [σ]
+          cases r with
+          | root => exact absurd rfl hr
+          | varRef v =>
+            have := applySubstArefList_non_refid pairs hkeys (.varRef v) (fun n h => by cases h)
+            rw [this]; intro h; cases h
+          | refid n =>
+            simp only [applySubstArefList]
+            cases hlook : pairs.lookup (.refid n) with
+            | none => intro h; cases h  -- identity: .refid n ≠ .root
+            | some r' =>
+              exact hvals (.refid n) r' (List_lookup_mem pairs (.refid n) r' hlook)
+        · -- Path inclusion: env ⊆ envL after σ
+          intro u v hu hv path hinterp
+          have hu' := hpaths_raw u hu
+          have huv := hu' v hv
+          exact regexSubsumedBy_sound _ _ huv path hinterp
 
 /- ---------------------------------------------------- -/
 /-       Statement type checking soundness               -/

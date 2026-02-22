@@ -111,6 +111,82 @@ def LabelEnvDec.toLabelEnv (led : LabelEnvDec) : LabelEnv :=
   mapValues led TypeEnvDec.toTypeEnv
 
 /- ---------------------------------------------------- -/
+/-       Environment Construction Utilities             -/
+/- ---------------------------------------------------- -/
+
+/-- Construct the initial decidable TypeEnv for a function.
+    Derives siteEnv (empty), varEnv (from params + locals), and pathEnv (from params). -/
+def mkInitEnvDec (f : FunDef) (funEnv : FunEnv := AssocMap.empty) : TypeEnvDec :=
+  { siteEnv := AssocMap.empty
+    varEnv := init_fun_varEnv f
+    pathEnv := init_fun_pathEnvDec f.params
+    funEnv := funEnv }
+
+/-- Construct a LabelEnvDec for a single-block function.
+    Uses the first block's label as the entry point. -/
+def mkLabelEnvDec (f : FunDef) (funEnv : FunEnv := AssocMap.empty) : LabelEnvDec :=
+  match f.blocks with
+  | b :: _ => AssocMap.insert AssocMap.empty b.label (mkInitEnvDec f funEnv)
+  | [] => AssocMap.empty
+
+/-- Compute the maximum .refid value from a FunDef's params and locals.
+    Returns 0 if no .refid arefs are present. -/
+def maxFunDefRefId (f : FunDef) : Nat :=
+  let paramRefs := f.params.filterMap fun (_, τ) =>
+    match τ with | .ref _ r _ => some (getRefId r) | _ => none
+  let localRefs := f.locals.filterMap fun loc =>
+    match loc.type with | .ref _ r _ => some (getRefId r) | _ => none
+  (paramRefs ++ localRefs).foldl max 0
+
+/-- Collect all distinct .refid values from a PathEnvDec's refs list and path keys. -/
+private def collectPathEnvDecRefIds (pe : PathEnvDec) : List Nat :=
+  let fromRefs := pe.refs.filterMap fun r =>
+    match r with | .refid n => some n | _ => none
+  let fromPaths := pe.paths.entries.foldl (fun acc ((u, v), _) =>
+    let acc := match u with | .refid n => n :: acc | _ => acc
+    match v with | .refid n => n :: acc | _ => acc) []
+  (fromRefs ++ fromPaths).eraseDups
+
+/-- Collect all distinct .refid values from a TypeEnvDec (varEnv + siteEnv + pathEnv). -/
+private def collectEnvDecRefIds (env : TypeEnvDec) : List Nat :=
+  let fromVarEnv := (collectVarEnvRefs env.varEnv).filterMap fun r =>
+    match r with | .refid n => some n | _ => none
+  let fromSiteEnv := (collectSiteEnvRefs env.siteEnv).filterMap fun r =>
+    match r with | .refid n => some n | _ => none
+  let fromPathEnv := collectPathEnvDecRefIds env.pathEnv
+  (fromVarEnv ++ fromSiteEnv ++ fromPathEnv).eraseDups
+
+/-- Apply a list-based aref substitution to a PathEnvDec. -/
+def applySubstPathEnvDec (σ : List (Aref × Aref)) (pe : PathEnvDec) : PathEnvDec :=
+  { refs := pe.refs.map (applySubstArefList σ)
+    paths := ⟨pe.paths.entries.map fun ((u, v), r) =>
+      ((applySubstArefList σ u, applySubstArefList σ v), r)⟩ }
+
+/-- Apply a list-based aref substitution to a SiteEnv. -/
+private def applySubstSiteEnvList (σ : List (Aref × Aref)) (se : SiteEnv) : SiteEnv :=
+  ⟨se.entries.map fun (k, τ) => (k, applySubstMoveTypeList σ τ)⟩
+
+/-- Apply a list-based aref substitution to a TypeEnvDec.
+    Substitutes in varEnv, siteEnv, and pathEnv consistently. -/
+def applySubstEnvDec (σ : List (Aref × Aref)) (env : TypeEnvDec) : TypeEnvDec :=
+  { siteEnv := applySubstSiteEnvList σ env.siteEnv
+    varEnv := applySubstVarEnvList σ env.varEnv
+    pathEnv := applySubstPathEnvDec σ env.pathEnv
+    funEnv := env.funEnv }
+
+/-- Replace all `.refid N` in a TypeEnvDec with fresh refids that don't collide
+    with the function signature. The substitution is consistent: same input refid
+    always maps to the same fresh refid.
+
+    The subsumption check's `computeRefSubst` will map these fresh refids
+    to the checker's actual assigned refids via σ. -/
+def freshenBlockEnv (f : FunDef) (env : TypeEnvDec) : TypeEnvDec :=
+  let maxId := maxFunDefRefId f
+  let templateRefIds := collectEnvDecRefIds env
+  let σ := templateRefIds.zipIdx.map fun (n, i) => (Aref.refid n, Aref.refid (maxId + 1 + i))
+  applySubstEnvDec σ env
+
+/- ---------------------------------------------------- -/
 /-       Boolean WF Checks                              -/
 /- ---------------------------------------------------- -/
 

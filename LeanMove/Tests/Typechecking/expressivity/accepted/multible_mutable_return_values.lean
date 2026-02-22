@@ -167,29 +167,13 @@ def write : FunDef := {
 def borrow_sig : FunSig := ⟨[⟨.trecord point_entries, some true⟩], [⟨.u64, some true⟩, ⟨.u64, some true⟩]⟩
 
 -- Initial environments (decidable)
-def borrow_initEnvDec : TypeEnvDec := {
-  siteEnv := AssocMap.empty
-  varEnv := init_fun_varEnv borrow
-  pathEnv := init_fun_pathEnvDec borrow.params
-  funEnv := AssocMap.empty
-}
-
-def borrow_lenvDec : LabelEnvDec :=
-  AssocMap.insert AssocMap.empty "b0" borrow_initEnvDec
+def borrow_lenvDec := mkLabelEnvDec borrow
 
 -- Function environment for write (contains borrow's signature)
 def write_funEnv : FunEnv :=
   AssocMap.insert AssocMap.empty "borrow" borrow_sig
 
-def write_initEnvDec : TypeEnvDec := {
-  siteEnv := AssocMap.empty
-  varEnv := init_fun_varEnv write
-  pathEnv := init_fun_pathEnvDec write.params
-  funEnv := write_funEnv
-}
-
-def write_lenvDec : LabelEnvDec :=
-  AssocMap.insert AssocMap.empty "b0" write_initEnvDec
+def write_lenvDec := mkLabelEnvDec write write_funEnv
 
 -- Theorems: both functions type check algorithmically
 theorem borrow_check : check_fun_dec borrow borrow_lenvDec = true := by rfl

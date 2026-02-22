@@ -361,31 +361,13 @@ mechanism — the small-step semantics intentionally does not enforce it.
 -- -           Algorithmic Type Checking Tests        --
 -- -----------------------------------------------------
 
--- Initial environment for field_dangling
-def field_dangling_initEnv : TypeEnv := {
-  siteEnv := AssocMap.empty
-  varEnv := init_fun_varEnv field_dangling
-  pathEnv := init_fun_pathEnv field_dangling
-  funEnv := AssocMap.empty
-}
-
-def field_dangling_lenv : LabelEnv :=
-  AssocMap.insert AssocMap.empty "b0" field_dangling_initEnv
+def field_dangling_lenv := mkLabelEnv field_dangling
 
 #eval check_fun field_dangling field_dangling_lenv
 
 #guard !check_fun field_dangling field_dangling_lenv
 
--- Initial environment for nested_field_dangling
-def nested_field_dangling_initEnv : TypeEnv := {
-  siteEnv := AssocMap.empty
-  varEnv := init_fun_varEnv nested_field_dangling
-  pathEnv := init_fun_pathEnv nested_field_dangling
-  funEnv := AssocMap.empty
-}
-
-def nested_field_dangling_lenv : LabelEnv :=
-  AssocMap.insert AssocMap.empty "b0" nested_field_dangling_initEnv
+def nested_field_dangling_lenv := mkLabelEnv nested_field_dangling
 
 #eval check_fun nested_field_dangling nested_field_dangling_lenv
 
@@ -395,16 +377,7 @@ def nested_field_dangling_lenv : LabelEnv :=
 def simple_call_funEnv : FunEnv :=
   AssocMap.insert AssocMap.empty "f" simple_call_funSig
 
--- Initial environment for simple_call_dangling
-def simple_call_dangling_initEnv : TypeEnv := {
-  siteEnv := AssocMap.empty
-  varEnv := init_fun_varEnv simple_call_dangling
-  pathEnv := init_fun_pathEnv simple_call_dangling
-  funEnv := simple_call_funEnv
-}
-
-def simple_call_dangling_lenv : LabelEnv :=
-  AssocMap.insert AssocMap.empty "b0" simple_call_dangling_initEnv
+def simple_call_dangling_lenv := mkLabelEnv simple_call_dangling simple_call_funEnv
 
 #eval check_fun simple_call_dangling simple_call_dangling_lenv
 
@@ -414,16 +387,7 @@ def simple_call_dangling_lenv : LabelEnv :=
 def field_call_funEnv : FunEnv :=
   AssocMap.insert AssocMap.empty "f" field_call_funSig
 
--- Initial environment for field_call_dangling
-def field_call_dangling_initEnv : TypeEnv := {
-  siteEnv := AssocMap.empty
-  varEnv := init_fun_varEnv field_call_dangling
-  pathEnv := init_fun_pathEnv field_call_dangling
-  funEnv := field_call_funEnv
-}
-
-def field_call_dangling_lenv : LabelEnv :=
-  AssocMap.insert AssocMap.empty "b0" field_call_dangling_initEnv
+def field_call_dangling_lenv := mkLabelEnv field_call_dangling field_call_funEnv
 
 #eval check_fun field_call_dangling field_call_dangling_lenv
 

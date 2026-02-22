@@ -154,8 +154,8 @@ def t : FunDef := {
 -- Abbreviations for path elements and refs
 def rta : PathElement := .root_to_var var_a
 def rtb : PathElement := .root_to_var var_b
-def r1 : Aref := .refid 4
-def r2 : Aref := .refid 5
+def r1 : Aref := .refid 1
+def r2 : Aref := .refid 2
 
 -- -----------------------------------------------------
 -- -           Algorithmic Type Checking Tests        --
@@ -187,17 +187,20 @@ def t_l3_pathEnvDec : PathEnvDec := {
       (r2, r1) ((∂[rtb] (.ε ⬝ ⌜rta⌝)) ∣ (∂[rta] (.ε ⬝ ⌜rtb⌝)))
 }
 
+-- Template for l3 environment (uses simple refids that get freshened)
+private def t_l3_env_template : TypeEnvDec :=
+  { siteEnv := AssocMap.empty, varEnv := t_l3_varEnv,
+    pathEnv := t_l3_pathEnvDec, funEnv := AssocMap.empty }
+
 -- Label environment (decidable)
 def t_lenvDec : LabelEnvDec :=
   insert (insert (insert (insert AssocMap.empty
-    "l0" { siteEnv := AssocMap.empty, varEnv := init_fun_varEnv t,
-           pathEnv := .init, funEnv := AssocMap.empty })
+    "l0" (mkInitEnvDec t))
     "l1" { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
            pathEnv := .init, funEnv := AssocMap.empty })
     "l2" { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
            pathEnv := .init, funEnv := AssocMap.empty })
-    "l3" { siteEnv := AssocMap.empty, varEnv := t_l3_varEnv,
-           pathEnv := t_l3_pathEnvDec, funEnv := AssocMap.empty }
+    "l3" (freshenBlockEnv t t_l3_env_template)
 
 -- Theorem: t is well-typed (algorithmic)
 theorem t_check : check_fun_dec t t_lenvDec = true := by rfl

@@ -86,15 +86,7 @@ def fn_return_local_borrow : FunDef := {
   ]
 }
 
-def fn_return_local_borrow_initEnv : TypeEnv := {
-  siteEnv := empty
-  varEnv := init_fun_varEnv fn_return_local_borrow
-  pathEnv := PathEnv.init
-  funEnv := empty
-}
-
-def fn_return_local_borrow_lenv : LabelEnv :=
-  insert empty "b0" fn_return_local_borrow_initEnv
+def fn_return_local_borrow_lenv := mkLabelEnv fn_return_local_borrow
 
 -- The algorithmic checker rejects this
 #guard !check_fun fn_return_local_borrow fn_return_local_borrow_lenv

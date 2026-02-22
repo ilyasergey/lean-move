@@ -81,10 +81,7 @@ def fn_deref : FunDef := {
   ]
 }
 
-def fn_deref_lenvDec : LabelEnvDec :=
-  insert empty "b0"
-    { siteEnv := empty, varEnv := init_fun_varEnv fn_deref,
-      pathEnv := init_fun_pathEnvDec fn_deref.params, funEnv := empty }
+def fn_deref_lenvDec := mkLabelEnvDec fn_deref
 
 theorem fn_deref_check : check_fun_dec fn_deref fn_deref_lenvDec = true := by rfl
 
@@ -105,10 +102,7 @@ def fn_id_mut : FunDef := {
   ]
 }
 
-def fn_id_mut_lenvDec : LabelEnvDec :=
-  insert empty "b0"
-    { siteEnv := empty, varEnv := init_fun_varEnv fn_id_mut,
-      pathEnv := init_fun_pathEnvDec fn_id_mut.params, funEnv := empty }
+def fn_id_mut_lenvDec := mkLabelEnvDec fn_id_mut
 
 theorem fn_id_mut_check : check_fun_dec fn_id_mut fn_id_mut_lenvDec = true := by rfl
 
@@ -154,10 +148,7 @@ def basic_return_then_write : FunDef := {
 
 def deref_funEnv : FunEnv := insert empty "deref" deref_sig
 
-def basic_return_then_write_lenvDec : LabelEnvDec :=
-  insert empty "b0"
-    { siteEnv := empty, varEnv := init_fun_varEnv basic_return_then_write,
-      pathEnv := .init, funEnv := deref_funEnv }
+def basic_return_then_write_lenvDec := mkLabelEnvDec basic_return_then_write deref_funEnv
 
 theorem basic_return_then_write_check :
     check_fun_dec basic_return_then_write basic_return_then_write_lenvDec = true := by rfl
@@ -210,10 +201,7 @@ def read_call_output : FunDef := {
 
 def id_mut_funEnv : FunEnv := insert empty "id_mut" id_mut_sig
 
-def read_call_output_lenvDec : LabelEnvDec :=
-  insert empty "b0"
-    { siteEnv := empty, varEnv := init_fun_varEnv read_call_output,
-      pathEnv := .init, funEnv := id_mut_funEnv }
+def read_call_output_lenvDec := mkLabelEnvDec read_call_output id_mut_funEnv
 
 theorem read_call_output_check :
     check_fun_dec read_call_output read_call_output_lenvDec = true := by rfl

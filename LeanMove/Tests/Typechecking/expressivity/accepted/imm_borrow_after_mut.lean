@@ -151,25 +151,9 @@ def copy_and_freeze : FunDef := {
 -- -----------------------------------------------------
 
 -- Initial environments (decidable)
-def direct_initEnvDec : TypeEnvDec := {
-  siteEnv := AssocMap.empty
-  varEnv := init_fun_varEnv direct
-  pathEnv := .init
-  funEnv := AssocMap.empty
-}
+def direct_lenvDec := mkLabelEnvDec direct
 
-def direct_lenvDec : LabelEnvDec :=
-  AssocMap.insert AssocMap.empty "l0" direct_initEnvDec
-
-def copy_and_freeze_initEnvDec : TypeEnvDec := {
-  siteEnv := AssocMap.empty
-  varEnv := init_fun_varEnv copy_and_freeze
-  pathEnv := .init
-  funEnv := AssocMap.empty
-}
-
-def copy_and_freeze_lenvDec : LabelEnvDec :=
-  AssocMap.insert AssocMap.empty "l0" copy_and_freeze_initEnvDec
+def copy_and_freeze_lenvDec := mkLabelEnvDec copy_and_freeze
 
 -- Theorems: both functions type check algorithmically
 theorem direct_check : check_fun_dec direct direct_lenvDec = true := by rfl
