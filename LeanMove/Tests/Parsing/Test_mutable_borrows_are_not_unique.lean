@@ -107,7 +107,7 @@ module 0x3.fields_write {
   match parseAndTranslate mutableBorrowsAreNotUniqueMvir with
   | .ok results =>
     match findFunInModule results "fields" "create" with
-    | some fd => alphaEquivFunDef fd fields
+    | some fd => alphaEquivFunDef fd parsed_fields
     | none => false
   | .error _ => false
 
@@ -115,6 +115,6 @@ module 0x3.fields_write {
   match parseAndTranslate mutableBorrowsAreNotUniqueMvir with
   | .ok results =>
     match findFunInModule results "fields_write" "write" with
-    | some fd => alphaEquivFunDef fd fields_write
+    | some fd => alphaEquivFunDef fd parsed_fields_write
     | none => false
   | .error _ => false

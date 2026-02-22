@@ -67,7 +67,7 @@ module 0x3.copy_and_freeze {
   match parseAndTranslate immBorrowAfterMutMvir with
   | .ok results =>
     match findFunInModule results "direct" "t" with
-    | some fd => alphaEquivFunDef fd direct
+    | some fd => alphaEquivFunDef fd parsed_direct
     | none => false
   | .error _ => false
 
@@ -75,6 +75,6 @@ module 0x3.copy_and_freeze {
   match parseAndTranslate immBorrowAfterMutMvir with
   | .ok results =>
     match findFunInModule results "copy_and_freeze" "t" with
-    | some fd => alphaEquivFunDef fd copy_and_freeze
+    | some fd => alphaEquivFunDef fd parsed_copy_and_freeze
     | none => false
   | .error _ => false

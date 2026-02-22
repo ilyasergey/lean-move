@@ -48,6 +48,8 @@ def var_a : Var := ⟨"a"⟩
 def var_rmut : Var := ⟨"rmut"⟩
 def var_rimm : Var := ⟨"rimm"⟩
 
+/- Hand-written FunDefs (replaced by parsed MVIR versions below)
+
 -- Sites
 def s0 : Site := .site 0   -- constant 0
 def s1 : Site := .site 1   -- &mut a
@@ -58,23 +60,6 @@ def s5 : Site := .site 5   -- copy(rimm)
 def s6 : Site := .site 6   -- *copy(rimm)
 def s7 : Site := .site 7   -- second constant 0 (for copy_and_freeze write)
 
-/-
-  Module 1: direct
-  Creates mutable ref, then direct immutable borrow.
-
-  t() {
-    let a: u64;
-    let rmut: &mut u64;
-    let rimm: &u64;
-  label l0:
-    a = 0;
-    rmut = &mut a;
-    rimm = &a;
-    *copy(rmut) = 0;
-    _ = *copy(rimm);
-    return;
-  }
--/
 def direct : FunDef := {
   params := []
   returnType := []
@@ -102,23 +87,6 @@ def direct : FunDef := {
   ]
 }
 
-/-
-  Module 2: copy_and_freeze
-  Creates mutable ref, copies and freezes it to get immutable ref.
-
-  t() {
-    let a: u64;
-    let rmut: &mut u64;
-    let rimm: &u64;
-  label l0:
-    a = 0;
-    rmut = &mut a;
-    rimm = freeze(copy(rmut));
-    *copy(rmut) = 0;
-    _ = *copy(rimm);
-    return;
-  }
--/
 def copy_and_freeze : FunDef := {
   params := []
   returnType := []
@@ -147,31 +115,10 @@ def copy_and_freeze : FunDef := {
   ]
 }
 
--- -----------------------------------------------------
--- -           Algorithmic Type Checking Tests        --
--- -----------------------------------------------------
-
--- Initial environments (decidable)
-def direct_lenvDec := mkLabelEnvDec direct
-
-def copy_and_freeze_lenvDec := mkLabelEnvDec copy_and_freeze
-
--- Theorems: both functions type check algorithmically
-theorem direct_check : check_fun_dec direct direct_lenvDec = true := by rfl
-theorem copy_and_freeze_check : check_fun_dec copy_and_freeze copy_and_freeze_lenvDec = true := by rfl
+-/
 
 -- -----------------------------------------------------
--- -           Relational Type Checking Theorems      --
--- -----------------------------------------------------
-
-theorem direct_welltyped : ∃ lenv, typecheck_fun direct lenv :=
-  ⟨_, check_fun_dec_sound _ _ direct_check⟩
-
-theorem copy_and_freeze_welltyped : ∃ lenv, typecheck_fun copy_and_freeze lenv :=
-  ⟨_, check_fun_dec_sound _ _ copy_and_freeze_check⟩
-
--- -----------------------------------------------------
--- -    Type Checking Parsed MVIR Programs             --
+-- -    Parsed MVIR Programs                           --
 -- -----------------------------------------------------
 
 open LeanMove.Tests.Parsing.TestUtils
@@ -181,13 +128,33 @@ private def immBorrowAfterMutMvir :=
 
 private def parsedFuns := (parseAndTranslate immBorrowAfterMutMvir).toOption.get!
 
-private def parsed_direct :=
+def parsed_direct :=
   (findFunInModule parsedFuns "direct" "t").get!
 
-private def parsed_copy_and_freeze :=
+def parsed_copy_and_freeze :=
   (findFunInModule parsedFuns "copy_and_freeze" "t").get!
 
-#guard check_fun_dec parsed_direct (mkLabelEnvDec parsed_direct)
-#guard check_fun_dec parsed_copy_and_freeze (mkLabelEnvDec parsed_copy_and_freeze)
+-- -----------------------------------------------------
+-- -           Algorithmic Type Checking Tests        --
+-- -----------------------------------------------------
+
+-- Initial environments (decidable)
+def direct_lenvDec := mkLabelEnvDec parsed_direct
+
+def copy_and_freeze_lenvDec := mkLabelEnvDec parsed_copy_and_freeze
+
+-- Theorems: both functions type check algorithmically
+theorem direct_check : check_fun_dec parsed_direct direct_lenvDec = true := by native_decide
+theorem copy_and_freeze_check : check_fun_dec parsed_copy_and_freeze copy_and_freeze_lenvDec = true := by native_decide
+
+-- -----------------------------------------------------
+-- -           Relational Type Checking Theorems      --
+-- -----------------------------------------------------
+
+theorem direct_welltyped : ∃ lenv, typecheck_fun parsed_direct lenv :=
+  ⟨_, check_fun_dec_sound _ _ direct_check⟩
+
+theorem copy_and_freeze_welltyped : ∃ lenv, typecheck_fun parsed_copy_and_freeze lenv :=
+  ⟨_, check_fun_dec_sound _ _ copy_and_freeze_check⟩
 
 end LeanMove.Tests.Expressivity.ImmBorrowAfterMut

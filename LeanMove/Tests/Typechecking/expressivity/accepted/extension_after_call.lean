@@ -65,6 +65,8 @@ def var_tl : Var := ⟨"tl"⟩
 def var_x : Var := ⟨"x"⟩
 def var_y : Var := ⟨"y"⟩
 
+/- Hand-written FunDefs (replaced by parsed MVIR versions below)
+
 -- Sites
 def s0 : Site := .site 0
 def s1 : Site := .site 1
@@ -79,14 +81,6 @@ def s9 : Site := .site 9
 def s10 : Site := .site 10 -- integer literal 0 for *x write
 def s11 : Site := .site 11 -- integer literal 0 for *y write
 
-/-
-  borrow(b: &mut Self.Box): &mut Self.Point
-  Returns a mutable reference to the top-left point.
-
-  label l0:
-      tl = &mut copy(b).Box::tl;
-      return copy(tl);
--/
 def fn_borrow : FunDef := {
   params := [(var_b, .ref (.trecord box_entries) (.paramRef var_b) .siteBorrowMut)]
   returnType := [⟨.trecord point_entries, some true⟩]
@@ -105,21 +99,6 @@ def fn_borrow : FunDef := {
   ]
 }
 
--- Function signature for borrow
-def borrow_sig : FunSig := ⟨[⟨.trecord box_entries, some true⟩], [⟨.trecord point_entries, some true⟩]⟩
-
-/-
-  write(b: &mut Self.Box): &mut Self.Point
-  Borrows the top-left point, writes zeros to both coordinates.
-
-  label l0:
-      p = Self.borrow(copy(b));
-      x = &mut copy(p).Point::x;
-      *move(x) = 0;
-      y = &mut copy(p).Point::y;
-      *move(y) = 0;
-      return move(p);
--/
 def fn_write : FunDef := {
   params := [(var_b, .ref (.trecord box_entries) (.paramRef var_b) .siteBorrowMut)]
   returnType := [⟨.trecord point_entries, some true⟩]
@@ -158,34 +137,13 @@ def fn_write : FunDef := {
   ]
 }
 
--- -----------------------------------------------------
--- -           Algorithmic Type Checking Tests        --
--- -----------------------------------------------------
+-/
 
--- Initial environments (decidable)
-def fn_borrow_lenvDec := mkLabelEnvDec fn_borrow
-
-def borrow_funEnv : FunEnv := AssocMap.insert AssocMap.empty "borrow" borrow_sig
-
-def fn_write_lenvDec := mkLabelEnvDec fn_write borrow_funEnv
-
--- Test theorems: both functions type check algorithmically
-theorem fn_borrow_check : check_fun_dec fn_borrow fn_borrow_lenvDec = true := by rfl
-
-theorem fn_write_check : check_fun_dec fn_write fn_write_lenvDec = true := by rfl
+-- Function signature for borrow
+def borrow_sig : FunSig := ⟨[⟨.trecord box_entries, some true⟩], [⟨.trecord point_entries, some true⟩]⟩
 
 -- -----------------------------------------------------
--- -           Relational Type Checking Theorems      --
--- -----------------------------------------------------
-
-theorem borrow_welltyped : ∃ lenv, typecheck_fun fn_borrow lenv :=
-  ⟨_, check_fun_dec_sound _ _ fn_borrow_check⟩
-
-theorem write_welltyped : ∃ lenv, typecheck_fun fn_write lenv :=
-  ⟨_, check_fun_dec_sound _ _ fn_write_check⟩
-
--- -----------------------------------------------------
--- -    Type Checking Parsed MVIR Programs             --
+-- -    Parsed MVIR Programs                           --
 -- -----------------------------------------------------
 
 open LeanMove.Tests.Parsing.TestUtils
@@ -195,13 +153,36 @@ private def extensionAfterCallMvir :=
 
 private def parsedFuns := (parseAndTranslate extensionAfterCallMvir).toOption.get!
 
-private def parsed_fn_borrow :=
+def parsed_fn_borrow :=
   (findFun parsedFuns "borrow").get!
 
-private def parsed_fn_write :=
+def parsed_fn_write :=
   (findFun parsedFuns "write").get!
 
-#guard check_fun_dec parsed_fn_borrow (mkLabelEnvDec parsed_fn_borrow)
-#guard check_fun_dec parsed_fn_write (mkLabelEnvDec parsed_fn_write borrow_funEnv)
+-- -----------------------------------------------------
+-- -           Algorithmic Type Checking Tests        --
+-- -----------------------------------------------------
+
+-- Initial environments (decidable)
+def fn_borrow_lenvDec := mkLabelEnvDec parsed_fn_borrow
+
+def borrow_funEnv : FunEnv := AssocMap.insert AssocMap.empty "borrow" borrow_sig
+
+def fn_write_lenvDec := mkLabelEnvDec parsed_fn_write borrow_funEnv
+
+-- Test theorems: both functions type check algorithmically
+theorem fn_borrow_check : check_fun_dec parsed_fn_borrow fn_borrow_lenvDec = true := by native_decide
+
+theorem fn_write_check : check_fun_dec parsed_fn_write fn_write_lenvDec = true := by native_decide
+
+-- -----------------------------------------------------
+-- -           Relational Type Checking Theorems      --
+-- -----------------------------------------------------
+
+theorem borrow_welltyped : ∃ lenv, typecheck_fun parsed_fn_borrow lenv :=
+  ⟨_, check_fun_dec_sound _ _ fn_borrow_check⟩
+
+theorem write_welltyped : ∃ lenv, typecheck_fun parsed_fn_write lenv :=
+  ⟨_, check_fun_dec_sound _ _ fn_write_check⟩
 
 end LeanMove.Tests.Expressivity.ExtensionAfterCall

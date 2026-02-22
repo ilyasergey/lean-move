@@ -89,6 +89,6 @@ module 0x4.invalid_write {
   match parseAndTranslate immBorrowAfterMutFieldsMvir with
   | .ok results =>
     match findFunInModule results "invalid_write" "t" with
-    | some fd => alphaEquivFunDef fd invalid_write
+    | some fd => alphaEquivFunDef fd parsed_invalid_write
     | none => false
   | .error _ => false

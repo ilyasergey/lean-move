@@ -104,6 +104,6 @@ module 0x6.call_and_write_valid {
   match parseAndTranslate mutableBorrowsAreNotUniqueCallsMvir with
   | .ok results =>
     match findFunInModule results "call_and_write_invalid" "write" with
-    | some fd => alphaEquivFunDef fd call_and_write_invalid
+    | some fd => alphaEquivFunDef fd parsed_call_and_write_invalid
     | none => false
   | .error _ => false

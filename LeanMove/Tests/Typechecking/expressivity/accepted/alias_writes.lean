@@ -51,6 +51,8 @@ def var_a : Var := ⟨"a"⟩
 def var_x : Var := ⟨"x"⟩
 def var_y : Var := ⟨"y"⟩
 
+/- Hand-written site definitions and FunDefs (superseded by parsed MVIR versions)
+
 -- Sites (temporaries in A-normal form)
 def s0 : Site := .site 0   -- integer literal 0 (for a = 0)
 def s1 : Site := .site 1   -- &mut a
@@ -216,50 +218,10 @@ def borrow_local_and_copy_ref_reverse : FunDef := {
   ]
 }
 
--- -----------------------------------------------------
--- -           Algorithmic Type Checking Tests        --
--- -----------------------------------------------------
-
--- Initial environments (decidable)
-def borrow_local_twice_lenvDec := mkLabelEnvDec borrow_local_twice
-
-def borrow_local_twice_reverse_lenvDec := mkLabelEnvDec borrow_local_twice_reverse
-
-def borrow_local_and_copy_ref_lenvDec := mkLabelEnvDec borrow_local_and_copy_ref
-
-def borrow_local_and_copy_ref_reverse_lenvDec := mkLabelEnvDec borrow_local_and_copy_ref_reverse
-
--- Theorems: all functions type check algorithmically
-theorem borrow_local_twice_check :
-  check_fun_dec borrow_local_twice borrow_local_twice_lenvDec = true := by rfl
-
-theorem borrow_local_twice_reverse_check :
-  check_fun_dec borrow_local_twice_reverse borrow_local_twice_reverse_lenvDec = true := by rfl
-
-theorem borrow_local_and_copy_ref_check :
-  check_fun_dec borrow_local_and_copy_ref borrow_local_and_copy_ref_lenvDec = true := by rfl
-
-theorem borrow_local_and_copy_ref_reverse_check :
-  check_fun_dec borrow_local_and_copy_ref_reverse borrow_local_and_copy_ref_reverse_lenvDec = true := by rfl
+-/
 
 -- -----------------------------------------------------
--- -           Relational Type Checking Theorems      --
--- -----------------------------------------------------
-
-theorem borrow_local_twice_welltyped : ∃ lenv, typecheck_fun borrow_local_twice lenv :=
-  ⟨_, check_fun_dec_sound _ _ borrow_local_twice_check⟩
-
-theorem borrow_local_twice_reverse_welltyped : ∃ lenv, typecheck_fun borrow_local_twice_reverse lenv :=
-  ⟨_, check_fun_dec_sound _ _ borrow_local_twice_reverse_check⟩
-
-theorem borrow_local_and_copy_ref_welltyped : ∃ lenv, typecheck_fun borrow_local_and_copy_ref lenv :=
-  ⟨_, check_fun_dec_sound _ _ borrow_local_and_copy_ref_check⟩
-
-theorem borrow_local_and_copy_ref_reverse_welltyped : ∃ lenv, typecheck_fun borrow_local_and_copy_ref_reverse lenv :=
-  ⟨_, check_fun_dec_sound _ _ borrow_local_and_copy_ref_reverse_check⟩
-
--- -----------------------------------------------------
--- -    Type Checking Parsed MVIR Programs             --
+-- -    Parsed MVIR Programs                           --
 -- -----------------------------------------------------
 
 open LeanMove.Tests.Parsing.TestUtils
@@ -269,21 +231,58 @@ private def aliasWritesMvir :=
 
 private def parsedFuns := (parseAndTranslate aliasWritesMvir).toOption.get!
 
-private def parsed_borrow_local_twice :=
+def parsed_borrow_local_twice :=
   (findFunInModule parsedFuns "borrow_local_twice" "t").get!
 
-private def parsed_borrow_local_twice_reverse :=
+def parsed_borrow_local_twice_reverse :=
   (findFunInModule parsedFuns "borrow_local_twice_reverse" "t").get!
 
-private def parsed_borrow_local_and_copy_ref :=
+def parsed_borrow_local_and_copy_ref :=
   (findFunInModule parsedFuns "borrow_local_and_copy_ref" "t").get!
 
-private def parsed_borrow_local_and_copy_ref_reverse :=
+def parsed_borrow_local_and_copy_ref_reverse :=
   (findFunInModule parsedFuns "borrow_local_and_copy_ref_reverse" "t").get!
 
-#guard check_fun_dec parsed_borrow_local_twice (mkLabelEnvDec parsed_borrow_local_twice)
-#guard check_fun_dec parsed_borrow_local_twice_reverse (mkLabelEnvDec parsed_borrow_local_twice_reverse)
-#guard check_fun_dec parsed_borrow_local_and_copy_ref (mkLabelEnvDec parsed_borrow_local_and_copy_ref)
-#guard check_fun_dec parsed_borrow_local_and_copy_ref_reverse (mkLabelEnvDec parsed_borrow_local_and_copy_ref_reverse)
+-- -----------------------------------------------------
+-- -           Algorithmic Type Checking Tests        --
+-- -----------------------------------------------------
+
+-- Initial environments (decidable)
+def borrow_local_twice_lenvDec := mkLabelEnvDec parsed_borrow_local_twice
+
+def borrow_local_twice_reverse_lenvDec := mkLabelEnvDec parsed_borrow_local_twice_reverse
+
+def borrow_local_and_copy_ref_lenvDec := mkLabelEnvDec parsed_borrow_local_and_copy_ref
+
+def borrow_local_and_copy_ref_reverse_lenvDec := mkLabelEnvDec parsed_borrow_local_and_copy_ref_reverse
+
+-- Theorems: all functions type check algorithmically
+theorem borrow_local_twice_check :
+  check_fun_dec parsed_borrow_local_twice borrow_local_twice_lenvDec = true := by native_decide
+
+theorem borrow_local_twice_reverse_check :
+  check_fun_dec parsed_borrow_local_twice_reverse borrow_local_twice_reverse_lenvDec = true := by native_decide
+
+theorem borrow_local_and_copy_ref_check :
+  check_fun_dec parsed_borrow_local_and_copy_ref borrow_local_and_copy_ref_lenvDec = true := by native_decide
+
+theorem borrow_local_and_copy_ref_reverse_check :
+  check_fun_dec parsed_borrow_local_and_copy_ref_reverse borrow_local_and_copy_ref_reverse_lenvDec = true := by native_decide
+
+-- -----------------------------------------------------
+-- -           Relational Type Checking Theorems      --
+-- -----------------------------------------------------
+
+theorem borrow_local_twice_welltyped : ∃ lenv, typecheck_fun parsed_borrow_local_twice lenv :=
+  ⟨_, check_fun_dec_sound _ _ borrow_local_twice_check⟩
+
+theorem borrow_local_twice_reverse_welltyped : ∃ lenv, typecheck_fun parsed_borrow_local_twice_reverse lenv :=
+  ⟨_, check_fun_dec_sound _ _ borrow_local_twice_reverse_check⟩
+
+theorem borrow_local_and_copy_ref_welltyped : ∃ lenv, typecheck_fun parsed_borrow_local_and_copy_ref lenv :=
+  ⟨_, check_fun_dec_sound _ _ borrow_local_and_copy_ref_check⟩
+
+theorem borrow_local_and_copy_ref_reverse_welltyped : ∃ lenv, typecheck_fun parsed_borrow_local_and_copy_ref_reverse lenv :=
+  ⟨_, check_fun_dec_sound _ _ borrow_local_and_copy_ref_reverse_check⟩
 
 end LeanMove.Tests.Expressivity.AliasWrites

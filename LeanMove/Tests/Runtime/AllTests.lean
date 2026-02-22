@@ -165,27 +165,27 @@ end
 section
 open LeanMove.Tests.Expressivity.AliasWrites
 
-#guard (run 200 (initState borrow_local_twice AssocMap.empty [])).isHalted
-#guard (run 200 (initState borrow_local_twice_reverse AssocMap.empty [])).isHalted
-#guard (run 200 (initState borrow_local_and_copy_ref AssocMap.empty [])).isHalted
-#guard (run 200 (initState borrow_local_and_copy_ref_reverse AssocMap.empty [])).isHalted
+#guard (run 200 (initState parsed_borrow_local_twice AssocMap.empty [])).isHalted
+#guard (run 200 (initState parsed_borrow_local_twice_reverse AssocMap.empty [])).isHalted
+#guard (run 200 (initState parsed_borrow_local_and_copy_ref AssocMap.empty [])).isHalted
+#guard (run 200 (initState parsed_borrow_local_and_copy_ref_reverse AssocMap.empty [])).isHalted
 
 -- Type soundness: all four alias_writes functions never produce danglingRef errors
 private theorem borrow_local_twice_no_danglingRef :
-    ∀ n loc, run n (initState borrow_local_twice empty []) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec borrow_local_twice borrow_local_twice_lenvDec empty empty [] Heap.empty (by rfl)
+    ∀ n loc, run n (initState parsed_borrow_local_twice empty []) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec parsed_borrow_local_twice borrow_local_twice_lenvDec empty empty [] Heap.empty (by native_decide)
 
 private theorem borrow_local_twice_reverse_no_danglingRef :
-    ∀ n loc, run n (initState borrow_local_twice_reverse empty []) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec borrow_local_twice_reverse borrow_local_twice_reverse_lenvDec empty empty [] Heap.empty (by rfl)
+    ∀ n loc, run n (initState parsed_borrow_local_twice_reverse empty []) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec parsed_borrow_local_twice_reverse borrow_local_twice_reverse_lenvDec empty empty [] Heap.empty (by native_decide)
 
 private theorem borrow_local_and_copy_ref_no_danglingRef :
-    ∀ n loc, run n (initState borrow_local_and_copy_ref empty []) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec borrow_local_and_copy_ref borrow_local_and_copy_ref_lenvDec empty empty [] Heap.empty (by rfl)
+    ∀ n loc, run n (initState parsed_borrow_local_and_copy_ref empty []) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec parsed_borrow_local_and_copy_ref borrow_local_and_copy_ref_lenvDec empty empty [] Heap.empty (by native_decide)
 
 private theorem borrow_local_and_copy_ref_reverse_no_danglingRef :
-    ∀ n loc, run n (initState borrow_local_and_copy_ref_reverse empty []) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec borrow_local_and_copy_ref_reverse borrow_local_and_copy_ref_reverse_lenvDec empty empty [] Heap.empty (by rfl)
+    ∀ n loc, run n (initState parsed_borrow_local_and_copy_ref_reverse empty []) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec parsed_borrow_local_and_copy_ref_reverse borrow_local_and_copy_ref_reverse_lenvDec empty empty [] Heap.empty (by native_decide)
 
 end
 
@@ -195,17 +195,17 @@ end
 section
 open LeanMove.Tests.Expressivity.AliasWriteAfterJoin
 
-#guard (run 200 (initState t AssocMap.empty [.bool true])).isHalted
-#guard (run 200 (initState t AssocMap.empty [.bool false])).isHalted
+#guard (run 200 (initState parsed_t AssocMap.empty [.bool true])).isHalted
+#guard (run 200 (initState parsed_t AssocMap.empty [.bool false])).isHalted
 
 -- Type soundness: t never produces a danglingRef error (for any boolean argument)
 private theorem alias_write_join_t_true_no_danglingRef :
-    ∀ n loc, run n (initState t empty [.bool true]) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec t t_lenvDec empty empty [.bool true] Heap.empty (by rfl)
+    ∀ n loc, run n (initState parsed_t empty [.bool true]) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec parsed_t t_lenvDec empty empty [.bool true] Heap.empty (by native_decide)
 
 private theorem alias_write_join_t_false_no_danglingRef :
-    ∀ n loc, run n (initState t empty [.bool false]) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec t t_lenvDec empty empty [.bool false] Heap.empty (by rfl)
+    ∀ n loc, run n (initState parsed_t empty [.bool false]) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec parsed_t t_lenvDec empty empty [.bool false] Heap.empty (by native_decide)
 
 end
 
@@ -222,26 +222,26 @@ private def boxHeap : Heap × Loc :=
 
 -- Runtime funEnv: fn_write calls "borrow", so we need it at runtime
 private def borrowFunEnvRT : AssocMap Id FunDef :=
-  AssocMap.insert AssocMap.empty "borrow" fn_borrow
+  AssocMap.insert AssocMap.empty "borrow" parsed_fn_borrow
 
 -- FunTypingEnv: maps "borrow" to its label env for type checking
 private def borrowFte : FunTypingEnv :=
   AssocMap.insert AssocMap.empty "borrow" fn_borrow_lenvDec
 
-#guard (run 100 (initState fn_borrow AssocMap.empty [.ref boxHeap.2 []] boxHeap.1)).isHalted
-#guard (run 200 (initState fn_write borrowFunEnvRT [.ref boxHeap.2 []] boxHeap.1)).isHalted
+#guard (run 100 (initState parsed_fn_borrow AssocMap.empty [.ref boxHeap.2 []] boxHeap.1)).isHalted
+#guard (run 200 (initState parsed_fn_write borrowFunEnvRT [.ref boxHeap.2 []] boxHeap.1)).isHalted
 
 -- Type soundness: fn_borrow never produces a danglingRef error (ref-typed param)
 set_option maxRecDepth 4096 in
 private theorem fn_borrow_no_danglingRef :
-    ∀ n loc, run n (initState fn_borrow empty [.ref boxHeap.2 []] boxHeap.1) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec fn_borrow fn_borrow_lenvDec empty empty [.ref boxHeap.2 []] boxHeap.1 (by rfl)
+    ∀ n loc, run n (initState parsed_fn_borrow empty [.ref boxHeap.2 []] boxHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec parsed_fn_borrow fn_borrow_lenvDec empty empty [.ref boxHeap.2 []] boxHeap.1 (by native_decide)
 
 -- Type soundness: fn_write never produces a danglingRef error (ref-typed param)
 set_option maxRecDepth 4096 in
 private theorem fn_write_no_danglingRef :
-    ∀ n loc, run n (initState fn_write borrowFunEnvRT [.ref boxHeap.2 []] boxHeap.1) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec fn_write fn_write_lenvDec borrowFunEnvRT borrowFte [.ref boxHeap.2 []] boxHeap.1 (by rfl)
+    ∀ n loc, run n (initState parsed_fn_write borrowFunEnvRT [.ref boxHeap.2 []] boxHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec parsed_fn_write fn_write_lenvDec borrowFunEnvRT borrowFte [.ref boxHeap.2 []] boxHeap.1 (by native_decide)
 
 end
 
@@ -257,16 +257,16 @@ private def twoStructsHeap : Heap × Loc × Loc :=
   let (h2, l2) := h1.alloc s
   (h2, l1, l2)
 
-#guard (run 200 (initState t AssocMap.empty [.bool true, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1)).isHalted
-#guard (run 200 (initState t AssocMap.empty [.bool false, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1)).isHalted
+#guard (run 200 (initState parsed_t AssocMap.empty [.bool true, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1)).isHalted
+#guard (run 200 (initState parsed_t AssocMap.empty [.bool false, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1)).isHalted
 
 private theorem ext_writes_join_t_true_no_danglingRef :
-    ∀ n loc, run n (initState t empty [.bool true, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec t t_lenvDec empty empty [.bool true, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1 (by rfl)
+    ∀ n loc, run n (initState parsed_t empty [.bool true, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec parsed_t t_lenvDec empty empty [.bool true, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1 (by native_decide)
 
 private theorem ext_writes_join_t_false_no_danglingRef :
-    ∀ n loc, run n (initState t empty [.bool false, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec t t_lenvDec empty empty [.bool false, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1 (by rfl)
+    ∀ n loc, run n (initState parsed_t empty [.bool false, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec parsed_t t_lenvDec empty empty [.bool false, .ref twoStructsHeap.2.1 [], .ref twoStructsHeap.2.2 []] twoStructsHeap.1 (by native_decide)
 
 end
 
@@ -276,17 +276,17 @@ end
 section
 open LeanMove.Tests.Expressivity.ImmBorrowAfterMut
 
-#guard (run 200 (initState direct AssocMap.empty [])).isHalted
-#guard (run 200 (initState copy_and_freeze AssocMap.empty [])).isHalted
+#guard (run 200 (initState parsed_direct AssocMap.empty [])).isHalted
+#guard (run 200 (initState parsed_copy_and_freeze AssocMap.empty [])).isHalted
 
 -- Type soundness: both functions never produce danglingRef errors
 private theorem direct_no_danglingRef :
-    ∀ n loc, run n (initState direct empty []) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec direct direct_lenvDec empty empty [] Heap.empty (by rfl)
+    ∀ n loc, run n (initState parsed_direct empty []) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec parsed_direct direct_lenvDec empty empty [] Heap.empty (by native_decide)
 
 private theorem copy_and_freeze_no_danglingRef :
-    ∀ n loc, run n (initState copy_and_freeze empty []) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec copy_and_freeze copy_and_freeze_lenvDec empty empty [] Heap.empty (by rfl)
+    ∀ n loc, run n (initState parsed_copy_and_freeze empty []) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec parsed_copy_and_freeze copy_and_freeze_lenvDec empty empty [] Heap.empty (by native_decide)
 
 end
 
@@ -301,26 +301,26 @@ private def pointHeap : Heap × Loc :=
 
 -- Runtime function environment: write calls borrow at runtime
 private def rtFunEnv : AssocMap Id FunDef :=
-  AssocMap.insert AssocMap.empty "borrow" borrow
+  AssocMap.insert AssocMap.empty "borrow" parsed_borrow
 
 -- Typing function environment: maps "borrow" to its label env for soundness
 private def rtFte : FunTypingEnv :=
   AssocMap.insert AssocMap.empty "borrow" borrow_lenvDec
 
-#guard (run 200 (initState borrow AssocMap.empty [.ref pointHeap.2 []] pointHeap.1)).isHalted
-#guard (run 200 (initState write rtFunEnv [.ref pointHeap.2 []] pointHeap.1)).isHalted
+#guard (run 200 (initState parsed_borrow AssocMap.empty [.ref pointHeap.2 []] pointHeap.1)).isHalted
+#guard (run 200 (initState parsed_write rtFunEnv [.ref pointHeap.2 []] pointHeap.1)).isHalted
 
 -- Type soundness: borrow never produces a danglingRef error (ref-typed param)
 set_option maxRecDepth 4096 in
 private theorem borrow_no_danglingRef :
-    ∀ n loc, run n (initState borrow empty [.ref pointHeap.2 []] pointHeap.1) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec borrow borrow_lenvDec empty empty [.ref pointHeap.2 []] pointHeap.1 (by rfl)
+    ∀ n loc, run n (initState parsed_borrow empty [.ref pointHeap.2 []] pointHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec parsed_borrow borrow_lenvDec empty empty [.ref pointHeap.2 []] pointHeap.1 (by native_decide)
 
 -- Type soundness: write never produces a danglingRef error (ref-typed param)
 set_option maxRecDepth 4096 in
 private theorem write_no_danglingRef :
-    ∀ n loc, run n (initState write rtFunEnv [.ref pointHeap.2 []] pointHeap.1) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec write write_lenvDec rtFunEnv rtFte [.ref pointHeap.2 []] pointHeap.1 (by rfl)
+    ∀ n loc, run n (initState parsed_write rtFunEnv [.ref pointHeap.2 []] pointHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec parsed_write write_lenvDec rtFunEnv rtFte [.ref pointHeap.2 []] pointHeap.1 (by native_decide)
 
 end
 
@@ -335,20 +335,20 @@ private def pairHeap : Heap × Loc :=
     (⟨"s1"⟩, .record [(⟨"f"⟩, .int 1)]),
     (⟨"s2"⟩, .record [(⟨"f"⟩, .int 2)])])
 
-#guard (run 300 (initState fields AssocMap.empty [.ref pairHeap.2 []] pairHeap.1)).isHalted
-#guard (run 500 (initState fields_write AssocMap.empty [.ref pairHeap.2 []] pairHeap.1)).isHalted
+#guard (run 300 (initState parsed_fields AssocMap.empty [.ref pairHeap.2 []] pairHeap.1)).isHalted
+#guard (run 500 (initState parsed_fields_write AssocMap.empty [.ref pairHeap.2 []] pairHeap.1)).isHalted
 
 -- Type soundness: fields never produces a danglingRef error (ref-typed param)
 set_option maxRecDepth 8192 in
 private theorem fields_no_danglingRef :
-    ∀ n loc, run n (initState fields empty [.ref pairHeap.2 []] pairHeap.1) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec fields fields_lenvDec empty empty [.ref pairHeap.2 []] pairHeap.1 (by rfl)
+    ∀ n loc, run n (initState parsed_fields empty [.ref pairHeap.2 []] pairHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec parsed_fields fields_lenvDec empty empty [.ref pairHeap.2 []] pairHeap.1 (by native_decide)
 
 -- Type soundness: fields_write never produces a danglingRef error (ref-typed param)
 set_option maxRecDepth 8192 in
 private theorem fields_write_no_danglingRef :
-    ∀ n loc, run n (initState fields_write empty [.ref pairHeap.2 []] pairHeap.1) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec fields_write fields_write_lenvDec empty empty [.ref pairHeap.2 []] pairHeap.1 (by rfl)
+    ∀ n loc, run n (initState parsed_fields_write empty [.ref pairHeap.2 []] pairHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec parsed_fields_write fields_write_lenvDec empty empty [.ref pairHeap.2 []] pairHeap.1 (by native_decide)
 
 end
 
@@ -363,19 +363,19 @@ private def treeHeap : Heap × Loc :=
   let s1 (a b c d : Nat) := Value.record [(⟨"l"⟩, s2 a b), (⟨"r"⟩, s2 c d)]
   Heap.empty.alloc (.record [(⟨"l"⟩, s1 1 2 3 4), (⟨"r"⟩, s1 5 6 7 8)])
 
-#guard (run 300 (initState t AssocMap.empty [.bool true, .ref treeHeap.2 []] treeHeap.1)).isHalted
-#guard (run 300 (initState t AssocMap.empty [.bool false, .ref treeHeap.2 []] treeHeap.1)).isHalted
+#guard (run 300 (initState parsed_t AssocMap.empty [.bool true, .ref treeHeap.2 []] treeHeap.1)).isHalted
+#guard (run 300 (initState parsed_t AssocMap.empty [.bool false, .ref treeHeap.2 []] treeHeap.1)).isHalted
 
 -- Type soundness: t never produces a danglingRef error (bool + ref-typed params)
 set_option maxRecDepth 16384 in
 private theorem subtree_t_true_no_danglingRef :
-    ∀ n loc, run n (initState t empty [.bool true, .ref treeHeap.2 []] treeHeap.1) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec t t_lenvDec empty empty [.bool true, .ref treeHeap.2 []] treeHeap.1 (by rfl)
+    ∀ n loc, run n (initState parsed_t empty [.bool true, .ref treeHeap.2 []] treeHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec parsed_t t_lenvDec empty empty [.bool true, .ref treeHeap.2 []] treeHeap.1 (by native_decide)
 
 set_option maxRecDepth 16384 in
 private theorem subtree_t_false_no_danglingRef :
-    ∀ n loc, run n (initState t empty [.bool false, .ref treeHeap.2 []] treeHeap.1) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec t t_lenvDec empty empty [.bool false, .ref treeHeap.2 []] treeHeap.1 (by rfl)
+    ∀ n loc, run n (initState parsed_t empty [.bool false, .ref treeHeap.2 []] treeHeap.1) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec parsed_t t_lenvDec empty empty [.bool false, .ref treeHeap.2 []] treeHeap.1 (by native_decide)
 
 end
 
@@ -444,19 +444,19 @@ open LeanMove.Tests.Expressivity.SimpleDangling
 private def sHeap : Heap × Loc :=
   Heap.empty.alloc (.record [(⟨"f"⟩, .int 42)])
 
-#eval run 200 (initState field_dangling AssocMap.empty [.ref sHeap.2 []] sHeap.1)
+#eval run 200 (initState parsed_field_t AssocMap.empty [.ref sHeap.2 []] sHeap.1)
 
 -- nested_field_dangling(p: &mut P), P = {s: S} = {s: {f: u64}}
 private def pHeap : Heap × Loc :=
   Heap.empty.alloc (.record [(⟨"s"⟩, .record [(⟨"f"⟩, .int 42)])])
 
-#eval run 200 (initState nested_field_dangling AssocMap.empty [.ref pHeap.2 []] pHeap.1)
+#eval run 200 (initState parsed_nested_field_t AssocMap.empty [.ref pHeap.2 []] pHeap.1)
 
 -- simple_call_dangling() — no params
-#eval run 200 (initState simple_call_dangling AssocMap.empty [])
+#eval run 200 (initState parsed_simple_call_t AssocMap.empty [])
 
 -- field_call_dangling(s: &mut S)
-#eval run 200 (initState field_call_dangling AssocMap.empty [.ref sHeap.2 []] sHeap.1)
+#eval run 200 (initState parsed_field_call_t AssocMap.empty [.ref sHeap.2 []] sHeap.1)
 
 end
 
@@ -466,7 +466,7 @@ end
 section
 open LeanMove.Tests.Expressivity.ImmBorrowAfterMutCallInvalid
 
-#eval run 200 (initState invalid AssocMap.empty [])
+#eval run 200 (initState parsed_invalid AssocMap.empty [])
 
 end
 
@@ -476,7 +476,7 @@ end
 section
 open LeanMove.Tests.Expressivity.ImmBorrowAfterMutFieldsInvalid
 
-#eval run 200 (initState invalid_write AssocMap.empty [.record [(⟨"f"⟩, .int 42)]])
+#eval run 200 (initState parsed_invalid_write AssocMap.empty [.record [(⟨"f"⟩, .int 42)]])
 
 end
 
@@ -491,9 +491,9 @@ private def sHeap2 : Heap × Loc :=
 
 -- Runtime function environment: call_and_write_invalid calls borrow_f
 private def rtFunEnv2 : AssocMap Id FunDef :=
-  AssocMap.insert AssocMap.empty "borrow_f" borrow_f
+  AssocMap.insert AssocMap.empty "borrow_f" parsed_borrow_f
 
-#eval run 200 (initState call_and_write_invalid rtFunEnv2 [.ref sHeap2.2 []] sHeap2.1)
+#eval run 200 (initState parsed_call_and_write_invalid rtFunEnv2 [.ref sHeap2.2 []] sHeap2.1)
 
 end
 

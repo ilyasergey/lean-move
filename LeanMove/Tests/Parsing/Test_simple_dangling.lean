@@ -117,7 +117,7 @@ module 0x5.field_call {
   match parseAndTranslate simpleDanglingMvir with
   | .ok results =>
     match findFunInModule results "field" "t" with
-    | some fd => alphaEquivFunDef fd field_dangling
+    | some fd => alphaEquivFunDef fd parsed_field_t
     | none => false
   | .error _ => false
 
@@ -125,7 +125,7 @@ module 0x5.field_call {
   match parseAndTranslate simpleDanglingMvir with
   | .ok results =>
     match findFunInModule results "nested_field" "t" with
-    | some fd => alphaEquivFunDef fd nested_field_dangling
+    | some fd => alphaEquivFunDef fd parsed_nested_field_t
     | none => false
   | .error _ => false
 
@@ -135,7 +135,7 @@ module 0x5.field_call {
   match parseAndTranslate simpleDanglingMvir with
   | .ok results =>
     match findFunInModule results "simple_call" "t" with
-    | some fd => alphaEquivFunDef fd simple_call_dangling
+    | some fd => alphaEquivFunDef fd parsed_simple_call_t
     | none => false
   | .error _ => false
 
@@ -143,6 +143,6 @@ module 0x5.field_call {
   match parseAndTranslate simpleDanglingMvir with
   | .ok results =>
     match findFunInModule results "field_call" "t" with
-    | some fd => alphaEquivFunDef fd field_call_dangling
+    | some fd => alphaEquivFunDef fd parsed_field_call_t
     | none => false
   | .error _ => false

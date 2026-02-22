@@ -117,6 +117,8 @@ def var_r : Var := ⟨"r"⟩
 def var_mut1 : Var := ⟨"mut1"⟩
 def var_imm1 : Var := ⟨"imm1"⟩
 
+/- Hand-written sites commented out; using parsed MVIR version instead
+
 -- Sites
 def s0 : Site := .site 0   -- integer literal 0 for a
 def s1 : Site := .site 1   -- &mut a
@@ -127,11 +129,15 @@ def s5 : Site := .site 5   -- output of id
 def s6 : Site := .site 6   -- copy(mut1)
 def s7 : Site := .site 7   -- integer literal 0 for write
 
+-/
+
 -- Function signatures
 -- id_mut(r: &mut u64): &mut u64  { return move(r); }
 def id_mut_sig : FunSig := ⟨[⟨.u64, some true⟩], [⟨.u64, some true⟩]⟩
 -- id(r: &u64): &u64  { return move(r); }
 def id_sig : FunSig := ⟨[⟨.u64, some false⟩], [⟨.u64, some false⟩]⟩
+
+/- Hand-written invalid FunDef commented out; using parsed MVIR version instead
 
 /-
   invalid module: "cannot write to mut1"
@@ -185,6 +191,23 @@ def invalid : FunDef := {
   ]
 }
 
+-/
+
+-- -----------------------------------------------------
+-- -           Parsed MVIR Definitions                 --
+-- -----------------------------------------------------
+
+open LeanMove.Tests.Parsing.TestUtils
+
+private def immBorrowAfterMutCallMvir :=
+  include_str "imm_borrow_after_mut_call.mvir"
+
+#guard (parseAndTranslate immBorrowAfterMutCallMvir).isOk
+
+private def parsedFuns := (parseAndTranslate immBorrowAfterMutCallMvir).toOption.get!
+
+def parsed_invalid := (findFunInModule parsedFuns "invalid" "t").get!
+
 /-!
 ## Why this is rejected
 
@@ -210,28 +233,11 @@ guarantee of `imm1`. The small-step semantics intentionally does not enforce bor
 def invalid_funEnv : FunEnv :=
   AssocMap.insert (AssocMap.insert AssocMap.empty "id_mut" id_mut_sig) "id" id_sig
 
-def invalid_lenv := mkLabelEnv invalid invalid_funEnv
+def invalid_lenv := mkLabelEnv parsed_invalid invalid_funEnv
 
-#eval check_fun invalid invalid_lenv
+#eval check_fun parsed_invalid invalid_lenv
 
 -- Test: algorithmic checker rejects invalid
-#guard !check_fun invalid invalid_lenv
-
--- -----------------------------------------------------
--- -           Parsed MVIR Tests                       --
--- -----------------------------------------------------
-
-open LeanMove.Tests.Parsing.TestUtils
-
-private def immBorrowAfterMutCallMvir :=
-  include_str "imm_borrow_after_mut_call.mvir"
-
-#guard (parseAndTranslate immBorrowAfterMutCallMvir).isOk
-
-private def parsedFuns := (parseAndTranslate immBorrowAfterMutCallMvir).toOption.get!
-
-private def parsed_invalid := (findFunInModule parsedFuns "invalid" "t").get!
-
-#guard !check_fun parsed_invalid (mkLabelEnv parsed_invalid invalid_funEnv)
+#guard !check_fun parsed_invalid invalid_lenv
 
 end LeanMove.Tests.Expressivity.ImmBorrowAfterMutCallInvalid

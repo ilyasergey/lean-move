@@ -110,6 +110,8 @@ def var_s_mut : Var := ⟨"s_mut"⟩
 def var_s_imm : Var := ⟨"s_imm"⟩
 def var_f_imm : Var := ⟨"f_imm"⟩
 
+/- Hand-written sites and FunDef commented out; using parsed MVIR version instead
+
 -- Sites
 def s0 : Site := .site 0   -- &s (for s_imm)
 def s1 : Site := .site 1   -- &mut s (for s_mut)
@@ -165,6 +167,23 @@ def invalid_write : FunDef := {
   ]
 }
 
+-/
+
+-- -----------------------------------------------------
+-- -           Parsed MVIR Definitions                 --
+-- -----------------------------------------------------
+
+open LeanMove.Tests.Parsing.TestUtils
+
+private def immBorrowAfterMutFieldsMvir :=
+  include_str "imm_borrow_after_mut_fields.mvir"
+
+#guard (parseAndTranslate immBorrowAfterMutFieldsMvir).isOk
+
+private def parsedFuns := (parseAndTranslate immBorrowAfterMutFieldsMvir).toOption.get!
+
+def parsed_invalid_write := (findFunInModule parsedFuns "invalid_write" "t").get!
+
 /-!
 ## Why this is rejected
 
@@ -185,34 +204,16 @@ borrow rules.
 -- -           Algorithmic Type Checking Tests        --
 -- -----------------------------------------------------
 
-def invalid_write_lenv := mkLabelEnv invalid_write
+def invalid_write_lenv := mkLabelEnv parsed_invalid_write
 
 -- Debug
-#eval check_fun invalid_write invalid_write_lenv
+#eval check_fun parsed_invalid_write invalid_write_lenv
 
 -- Test: algorithmic checker rejects invalid_write
-#guard !check_fun invalid_write invalid_write_lenv
+#guard !check_fun parsed_invalid_write invalid_write_lenv
 
 -- Theorem: invalid_write is ILL-typed (REJECTED by type checker)
 -- Note: proving this formally requires the completeness theorem (check_fun_complete),
 -- which is not yet fully proven. The algorithmic rejection above demonstrates the result.
-
-
--- -----------------------------------------------------
--- -           Parsed MVIR Tests                       --
--- -----------------------------------------------------
-
-open LeanMove.Tests.Parsing.TestUtils
-
-private def immBorrowAfterMutFieldsMvir :=
-  include_str "imm_borrow_after_mut_fields.mvir"
-
-#guard (parseAndTranslate immBorrowAfterMutFieldsMvir).isOk
-
-private def parsedFuns := (parseAndTranslate immBorrowAfterMutFieldsMvir).toOption.get!
-
-private def parsed_invalid_write := (findFunInModule parsedFuns "invalid_write" "t").get!
-
-#guard !check_fun parsed_invalid_write (mkLabelEnv parsed_invalid_write)
 
 end LeanMove.Tests.Expressivity.ImmBorrowAfterMutFieldsInvalid

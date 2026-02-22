@@ -59,7 +59,7 @@ label b0:
   match parseAndTranslate multibleMutableReturnValuesMvir with
   | .ok results =>
     match findFunInModule results "Tester" "borrow" with
-    | some fd => alphaEquivFunDef fd borrow
+    | some fd => alphaEquivFunDef fd parsed_borrow
     | none => false
   | .error _ => false
 
@@ -67,7 +67,7 @@ label b0:
   match parseAndTranslate multibleMutableReturnValuesMvir with
   | .ok results =>
     match findFunInModule results "Tester" "write" with
-    | some fd => alphaEquivFunDef fd write
+    | some fd => alphaEquivFunDef fd parsed_write
     | none => false
   | .error _ => false
 

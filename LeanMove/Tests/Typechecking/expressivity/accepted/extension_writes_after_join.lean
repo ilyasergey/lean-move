@@ -84,6 +84,7 @@ def var_x : Var := ⟨"x"⟩
 def var_y : Var := ⟨"y"⟩
 def var_f : Var := ⟨"f"⟩
 
+/- Hand-written FunDef (replaced by parsed MVIR version below)
 -- Sites
 def s0 : Site := .site 0
 def s1 : Site := .site 1
@@ -161,6 +162,23 @@ def t : FunDef := {
     }
   ]
 }
+-/
+
+-- -----------------------------------------------------
+-- -           Parsed MVIR                             --
+-- -----------------------------------------------------
+
+open LeanMove.Tests.Parsing.TestUtils
+
+private def extensionWritesAfterJoinMvir :=
+  include_str "extension_writes_after_join.mvir"
+
+-- Verify that parsing the MVIR succeeds
+#guard (parseAndTranslate extensionWritesAfterJoinMvir).isOk
+
+private def parsedFuns := (parseAndTranslate extensionWritesAfterJoinMvir).toOption.get!
+
+def parsed_t := (findFun parsedFuns "t").get!
 
 -- -----------------------------------------------------
 -- -           Decidable Type Checking                --
@@ -168,7 +186,7 @@ def t : FunDef := {
 
 -- VarEnv at l1/l2 entry (after l0: cond consumed)
 def t_branch_varEnv : VarEnv :=
-  let ve := init_fun_varEnv t
+  let ve := init_fun_varEnv parsed_t
   update ve var_cond (.invalidVar, .basic .tbool, .mutable)
 
 -- VarEnv at l3 entry (a,b moved/invalid, x,y valid)
@@ -194,36 +212,18 @@ private def t_l3_env_template : TypeEnvDec :=
 -- Label environment (decidable)
 def t_lenvDec : LabelEnvDec :=
   insert (insert (insert (insert AssocMap.empty
-    "l0" (mkInitEnvDec t))
+    "l0" (mkInitEnvDec parsed_t))
     "l1" { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
-           pathEnv := init_fun_pathEnvDec t.params, funEnv := AssocMap.empty })
+           pathEnv := init_fun_pathEnvDec parsed_t.params, funEnv := AssocMap.empty })
     "l2" { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
-           pathEnv := init_fun_pathEnvDec t.params, funEnv := AssocMap.empty })
-    "l3" (freshenBlockEnv t t_l3_env_template)
+           pathEnv := init_fun_pathEnvDec parsed_t.params, funEnv := AssocMap.empty })
+    "l3" (freshenBlockEnv parsed_t t_l3_env_template)
 
 -- Theorem: t is well-typed (algorithmic, decidable)
-theorem t_check : check_fun_dec t t_lenvDec = true := by rfl
+theorem t_check : check_fun_dec parsed_t t_lenvDec = true := by native_decide
 
 -- Main theorem: t is well-typed (relational)
-theorem t_welltyped : ∃ lenv, typecheck_fun t lenv :=
+theorem t_welltyped : ∃ lenv, typecheck_fun parsed_t lenv :=
   ⟨_, check_fun_dec_sound _ _ t_check⟩
-
--- -----------------------------------------------------
--- -           Parsed MVIR Tests                       --
--- -----------------------------------------------------
-
-open LeanMove.Tests.Parsing.TestUtils
-
-private def extensionWritesAfterJoinMvir :=
-  include_str "extension_writes_after_join.mvir"
-
--- Verify that parsing the MVIR succeeds
-#guard (parseAndTranslate extensionWritesAfterJoinMvir).isOk
-
-private def parsedFuns := (parseAndTranslate extensionWritesAfterJoinMvir).toOption.get!
-
-private def parsed_t := (findFun parsedFuns "t").get!
-
-#guard check_fun_dec parsed_t t_lenvDec
 
 end LeanMove.Tests.Expressivity.ExtensionWritesAfterJoin

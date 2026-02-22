@@ -64,6 +64,6 @@ label l3:
   match parseAndTranslate aliasWriteAfterJoinMvir with
   | .ok results =>
     match findFun results "t" with
-    | some fd => alphaEquivFunDef fd t
+    | some fd => alphaEquivFunDef fd parsed_t
     | none => false
   | .error _ => false

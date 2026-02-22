@@ -134,6 +134,8 @@ def var_s : Var := ⟨"s"⟩
 def var_call : Var := ⟨"call"⟩
 def var_f : Var := ⟨"f"⟩
 
+/- Hand-written sites and FunDefs commented out; using parsed MVIR versions instead
+
 -- Sites for borrow_f function
 def bs0 : Site := .site 0   -- copy(s) in borrow_f
 def bs1 : Site := .site 1   -- &mut bs0.S::f in borrow_f
@@ -166,6 +168,8 @@ def borrow_f : FunDef := {
   ]
 }
 
+-/
+
 -- Function signature for borrow_f
 def borrow_f_sig : FunSig :=
   ⟨[⟨.trecord s_entries, some true⟩], [⟨.u64, some true⟩]⟩
@@ -173,6 +177,8 @@ def borrow_f_sig : FunSig :=
 -- Function environment containing borrow_f
 def call_funEnv : FunEnv :=
   AssocMap.insert AssocMap.empty "borrow_f" borrow_f_sig
+
+/- Hand-written call_and_write_invalid commented out; using parsed MVIR version instead
 
 /-
   call_and_write_invalid module: "we cannot write to either call or f since we
@@ -220,6 +226,25 @@ def call_and_write_invalid : FunDef := {
   ]
 }
 
+-/
+
+-- -----------------------------------------------------
+-- -           Parsed MVIR Definitions                 --
+-- -----------------------------------------------------
+
+open LeanMove.Tests.Parsing.TestUtils
+
+private def mutableBorrowsNotUniqueCallsMvir :=
+  include_str "mutable_borrows_are_not_unique_calls.mvir"
+
+#guard (parseAndTranslate mutableBorrowsNotUniqueCallsMvir).isOk
+
+private def parsedFuns := (parseAndTranslate mutableBorrowsNotUniqueCallsMvir).toOption.get!
+
+def parsed_borrow_f := (findFunInModule parsedFuns "call_and_write_invalid" "borrow_f").get!
+
+def parsed_call_and_write_invalid := (findFunInModule parsedFuns "call_and_write_invalid" "write").get!
+
 /-!
 ## Why this is rejected
 
@@ -241,30 +266,12 @@ small-step semantics intentionally does not enforce borrow rules.
 -- -           Algorithmic Type Checking Tests        --
 -- -----------------------------------------------------
 
-def call_and_write_invalid_lenv := mkLabelEnv call_and_write_invalid call_funEnv
+def call_and_write_invalid_lenv := mkLabelEnv parsed_call_and_write_invalid call_funEnv
 
 -- Debug
-#eval check_fun call_and_write_invalid call_and_write_invalid_lenv
+#eval check_fun parsed_call_and_write_invalid call_and_write_invalid_lenv
 
 -- Test: algorithmic checker rejects call_and_write_invalid
-#guard !check_fun call_and_write_invalid call_and_write_invalid_lenv
-
-
--- -----------------------------------------------------
--- -           Parsed MVIR Tests                       --
--- -----------------------------------------------------
-
-open LeanMove.Tests.Parsing.TestUtils
-
-private def mutableBorrowsNotUniqueCallsMvir :=
-  include_str "mutable_borrows_are_not_unique_calls.mvir"
-
-#guard (parseAndTranslate mutableBorrowsNotUniqueCallsMvir).isOk
-
-private def parsedFuns := (parseAndTranslate mutableBorrowsNotUniqueCallsMvir).toOption.get!
-
-private def parsed_call_and_write_invalid := (findFunInModule parsedFuns "call_and_write_invalid" "write").get!
-
-#guard !check_fun parsed_call_and_write_invalid (mkLabelEnv parsed_call_and_write_invalid call_funEnv)
+#guard !check_fun parsed_call_and_write_invalid call_and_write_invalid_lenv
 
 end LeanMove.Tests.Expressivity.MutableBorrowsNotUniqueCallsInvalid

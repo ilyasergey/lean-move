@@ -141,6 +141,8 @@ def var_f_1_2 : Var := ⟨"f_1_2"⟩
 def var_f_2_1 : Var := ⟨"f_2_1"⟩
 def var_f_2_2 : Var := ⟨"f_2_2"⟩
 
+/- Hand-written site definitions and FunDefs (superseded by parsed MVIR versions)
+
 -- Sites (temporaries for A-normal form)
 def s0 : Site := .site 0
 def s1 : Site := .site 1
@@ -352,34 +354,10 @@ def fields_write : FunDef := {
   ]
 }
 
--- -----------------------------------------------------
--- -           Algorithmic Type Checking Tests        --
--- -----------------------------------------------------
-
--- Initial environments (decidable)
-def fields_lenvDec := mkLabelEnvDec fields
-
-def fields_write_lenvDec := mkLabelEnvDec fields_write
-
--- Theorems: both functions type check algorithmically
-set_option maxRecDepth 4096 in
-theorem fields_check : check_fun_dec fields fields_lenvDec = true := by rfl
-
-set_option maxRecDepth 4096 in
-theorem fields_write_check : check_fun_dec fields_write fields_write_lenvDec = true := by rfl
+-/
 
 -- -----------------------------------------------------
--- -           Relational Type Checking Theorems      --
--- -----------------------------------------------------
-
-theorem fields_welltyped : ∃ lenv, typecheck_fun fields lenv :=
-  ⟨_, check_fun_dec_sound _ _ fields_check⟩
-
-theorem fields_write_welltyped : ∃ lenv, typecheck_fun fields_write lenv :=
-  ⟨_, check_fun_dec_sound _ _ fields_write_check⟩
-
--- -----------------------------------------------------
--- -    Type Checking Parsed MVIR Programs             --
+-- -    Parsed MVIR Programs                           --
 -- -----------------------------------------------------
 
 open LeanMove.Tests.Parsing.TestUtils
@@ -389,15 +367,35 @@ private def mutableBorrowsNotUniqueMvir :=
 
 private def parsedFuns := (parseAndTranslate mutableBorrowsNotUniqueMvir).toOption.get!
 
-private def parsed_fields :=
+def parsed_fields :=
   (findFunInModule parsedFuns "fields" "create").get!
 
-private def parsed_fields_write :=
+def parsed_fields_write :=
   (findFunInModule parsedFuns "fields_write" "write").get!
 
-#guard check_fun_dec parsed_fields (mkLabelEnvDec parsed_fields)
+-- -----------------------------------------------------
+-- -           Algorithmic Type Checking Tests        --
+-- -----------------------------------------------------
+
+-- Initial environments (decidable)
+def fields_lenvDec := mkLabelEnvDec parsed_fields
+
+def fields_write_lenvDec := mkLabelEnvDec parsed_fields_write
+
+-- Theorems: both functions type check algorithmically
+theorem fields_check : check_fun_dec parsed_fields fields_lenvDec = true := by native_decide
 
 set_option maxRecDepth 4096 in
-#guard check_fun_dec parsed_fields_write (mkLabelEnvDec parsed_fields_write)
+theorem fields_write_check : check_fun_dec parsed_fields_write fields_write_lenvDec = true := by native_decide
+
+-- -----------------------------------------------------
+-- -           Relational Type Checking Theorems      --
+-- -----------------------------------------------------
+
+theorem fields_welltyped : ∃ lenv, typecheck_fun parsed_fields lenv :=
+  ⟨_, check_fun_dec_sound _ _ fields_check⟩
+
+theorem fields_write_welltyped : ∃ lenv, typecheck_fun parsed_fields_write lenv :=
+  ⟨_, check_fun_dec_sound _ _ fields_write_check⟩
 
 end LeanMove.Tests.Expressivity.MutableBorrowsNotUnique

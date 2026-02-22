@@ -140,6 +140,8 @@ def var_a : Var := ⟨"a"⟩
 def var_m : Var := ⟨"m"⟩
 def var_i : Var := ⟨"i"⟩
 
+/- Hand-written sites and FunDefs commented out; using parsed MVIR versions instead
+
 -- Sites
 def s0 : Site := .site 0
 def s1 : Site := .site 1
@@ -232,8 +234,12 @@ def nested_field_dangling : FunDef := {
 
 -- Module 3: vector - Skipped (MoveLight doesn't have native vector support)
 
+-/
+
 -- Function signature for f(r: &mut u64): &u64
 def simple_call_funSig : FunSig := ⟨[⟨.u64, some true⟩], [⟨.u64, some false⟩]⟩
+
+/- Hand-written simple_call_dangling commented out; using parsed MVIR version instead
 
 /-
   Module 4: simple_call
@@ -284,8 +290,12 @@ def simple_call_dangling : FunDef := {
   ]
 }
 
+-/
+
 -- Function signature for f(r: &mut S): &u64
 def field_call_funSig : FunSig := ⟨[⟨.trecord s_entries, some true⟩], [⟨.u64, some false⟩]⟩
+
+/- Hand-written field_call_dangling commented out; using parsed MVIR version instead
 
 /-
   Module 5: field_call
@@ -325,6 +335,33 @@ def field_call_dangling : FunDef := {
   ]
 }
 
+-/
+
+-- -----------------------------------------------------
+-- -           Parsed MVIR Definitions                 --
+-- -----------------------------------------------------
+
+open LeanMove.Tests.Parsing.TestUtils
+
+private def simpleDanglingMvir :=
+  include_str "simple_dangling.mvir"
+
+#guard (parseAndTranslate simpleDanglingMvir).isOk
+
+private def parsedFuns := (parseAndTranslate simpleDanglingMvir).toOption.get!
+
+-- Module: field (no funEnv needed)
+def parsed_field_t := (findFunInModule parsedFuns "field" "t").get!
+
+-- Module: nested_field (no funEnv needed)
+def parsed_nested_field_t := (findFunInModule parsedFuns "nested_field" "t").get!
+
+-- Module: simple_call (needs simple_call_funEnv)
+def parsed_simple_call_t := (findFunInModule parsedFuns "simple_call" "t").get!
+
+-- Module: field_call (needs field_call_funEnv)
+def parsed_field_call_t := (findFunInModule parsedFuns "field_call" "t").get!
+
 /-!
 ## Why these are rejected
 
@@ -362,69 +399,36 @@ mechanism — the small-step semantics intentionally does not enforce it.
 -- -           Algorithmic Type Checking Tests        --
 -- -----------------------------------------------------
 
-def field_dangling_lenv := mkLabelEnv field_dangling
+def field_dangling_lenv := mkLabelEnv parsed_field_t
 
-#eval check_fun field_dangling field_dangling_lenv
+#eval check_fun parsed_field_t field_dangling_lenv
 
-#guard !check_fun field_dangling field_dangling_lenv
+#guard !check_fun parsed_field_t field_dangling_lenv
 
-def nested_field_dangling_lenv := mkLabelEnv nested_field_dangling
+def nested_field_dangling_lenv := mkLabelEnv parsed_nested_field_t
 
-#eval check_fun nested_field_dangling nested_field_dangling_lenv
+#eval check_fun parsed_nested_field_t nested_field_dangling_lenv
 
-#guard !check_fun nested_field_dangling nested_field_dangling_lenv
+#guard !check_fun parsed_nested_field_t nested_field_dangling_lenv
 
 -- Function environment for simple_call (contains signature of f)
 def simple_call_funEnv : FunEnv :=
   AssocMap.insert AssocMap.empty "f" simple_call_funSig
 
-def simple_call_dangling_lenv := mkLabelEnv simple_call_dangling simple_call_funEnv
+def simple_call_dangling_lenv := mkLabelEnv parsed_simple_call_t simple_call_funEnv
 
-#eval check_fun simple_call_dangling simple_call_dangling_lenv
+#eval check_fun parsed_simple_call_t simple_call_dangling_lenv
 
-#guard !check_fun simple_call_dangling simple_call_dangling_lenv
+#guard !check_fun parsed_simple_call_t simple_call_dangling_lenv
 
 -- Function environment for field_call (contains signature of f)
 def field_call_funEnv : FunEnv :=
   AssocMap.insert AssocMap.empty "f" field_call_funSig
 
-def field_call_dangling_lenv := mkLabelEnv field_call_dangling field_call_funEnv
+def field_call_dangling_lenv := mkLabelEnv parsed_field_call_t field_call_funEnv
 
-#eval check_fun field_call_dangling field_call_dangling_lenv
+#eval check_fun parsed_field_call_t field_call_dangling_lenv
 
-#guard !check_fun field_call_dangling field_call_dangling_lenv
-
--- -----------------------------------------------------
--- -           Parsed MVIR Tests                       --
--- -----------------------------------------------------
-
-open LeanMove.Tests.Parsing.TestUtils
-
-private def simpleDanglingMvir :=
-  include_str "simple_dangling.mvir"
-
-#guard (parseAndTranslate simpleDanglingMvir).isOk
-
-private def parsedFuns := (parseAndTranslate simpleDanglingMvir).toOption.get!
-
--- Module: field (no funEnv needed)
-private def parsed_field_t := (findFunInModule parsedFuns "field" "t").get!
-
-#guard !check_fun parsed_field_t (mkLabelEnv parsed_field_t)
-
--- Module: nested_field (no funEnv needed)
-private def parsed_nested_field_t := (findFunInModule parsedFuns "nested_field" "t").get!
-
-#guard !check_fun parsed_nested_field_t (mkLabelEnv parsed_nested_field_t)
-
--- Module: simple_call (needs simple_call_funEnv)
-private def parsed_simple_call_t := (findFunInModule parsedFuns "simple_call" "t").get!
-
-#guard !check_fun parsed_simple_call_t (mkLabelEnv parsed_simple_call_t simple_call_funEnv)
-
--- Module: field_call (needs field_call_funEnv)
-private def parsed_field_call_t := (findFunInModule parsedFuns "field_call" "t").get!
-
-#guard !check_fun parsed_field_call_t (mkLabelEnv parsed_field_call_t field_call_funEnv)
+#guard !check_fun parsed_field_call_t field_call_dangling_lenv
 
 end LeanMove.Tests.Expressivity.SimpleDangling

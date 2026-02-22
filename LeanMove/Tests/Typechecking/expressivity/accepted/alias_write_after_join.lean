@@ -77,6 +77,7 @@ def var_y : Var := ⟨"y"⟩
 def var_z : Var := ⟨"z"⟩
 def var_cond : Var := ⟨"cond"⟩
 
+/- Hand-written FunDef (replaced by parsed MVIR version below)
 -- Sites (temporaries in A-normal form)
 def s0 : Site := .site 0   -- integer literal 0 for a
 def s1 : Site := .site 1   -- integer literal 0 for b
@@ -151,6 +152,23 @@ def t : FunDef := {
     }
   ]
 }
+-/
+
+-- -----------------------------------------------------
+-- -           Parsed MVIR                             --
+-- -----------------------------------------------------
+
+open LeanMove.Tests.Parsing.TestUtils
+
+private def aliasWriteAfterJoinMvir :=
+  include_str "alias_write_after_join.mvir"
+
+-- Verify that parsing the MVIR succeeds
+#guard (parseAndTranslate aliasWriteAfterJoinMvir).isOk
+
+private def parsedFuns := (parseAndTranslate aliasWriteAfterJoinMvir).toOption.get!
+
+def parsed_t := (findFun parsedFuns "t").get!
 
 -- Abbreviations for path elements and refs
 def rta : PathElement := .root_to_var var_a
@@ -164,7 +182,7 @@ def r2 : Aref := .refid 2
 
 -- VarEnv at l1/l2 entry (after l0: a,b assigned, cond consumed)
 def t_branch_varEnv : VarEnv :=
-  let ve := init_fun_varEnv t
+  let ve := init_fun_varEnv parsed_t
   let ve := update ve var_a (.validVar, .basic .u64, .mutable)
   let ve := update ve var_b (.validVar, .basic .u64, .mutable)
   update ve var_cond (.invalidVar, .basic .tbool, .mutable)
@@ -196,40 +214,22 @@ private def t_l3_env_template : TypeEnvDec :=
 -- Label environment (decidable)
 def t_lenvDec : LabelEnvDec :=
   insert (insert (insert (insert AssocMap.empty
-    "l0" (mkInitEnvDec t))
+    "l0" (mkInitEnvDec parsed_t))
     "l1" { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
            pathEnv := .init, funEnv := AssocMap.empty })
     "l2" { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
            pathEnv := .init, funEnv := AssocMap.empty })
-    "l3" (freshenBlockEnv t t_l3_env_template)
+    "l3" (freshenBlockEnv parsed_t t_l3_env_template)
 
 -- Theorem: t is well-typed (algorithmic)
-theorem t_check : check_fun_dec t t_lenvDec = true := by rfl
+theorem t_check : check_fun_dec parsed_t t_lenvDec = true := by native_decide
 
 -- -----------------------------------------------------
 -- -           Relational Type Checking Theorems      --
 -- -----------------------------------------------------
 
 -- Main theorem: t is well-typed (relational)
-theorem t_welltyped : ∃ lenv, typecheck_fun t lenv :=
+theorem t_welltyped : ∃ lenv, typecheck_fun parsed_t lenv :=
   ⟨_, check_fun_dec_sound _ _ t_check⟩
-
--- -----------------------------------------------------
--- -           Parsed MVIR Tests                       --
--- -----------------------------------------------------
-
-open LeanMove.Tests.Parsing.TestUtils
-
-private def aliasWriteAfterJoinMvir :=
-  include_str "alias_write_after_join.mvir"
-
--- Verify that parsing the MVIR succeeds
-#guard (parseAndTranslate aliasWriteAfterJoinMvir).isOk
-
-private def parsedFuns := (parseAndTranslate aliasWriteAfterJoinMvir).toOption.get!
-
-private def parsed_t := (findFun parsedFuns "t").get!
-
-#guard check_fun_dec parsed_t t_lenvDec
 
 end LeanMove.Tests.Expressivity.AliasWriteAfterJoin

@@ -113,7 +113,7 @@ label b0:
   match parseAndTranslate aliasWritesMvir with
   | .ok results =>
     match findFunInModule results "borrow_local_twice" "t" with
-    | some fd => alphaEquivFunDef fd borrow_local_twice
+    | some fd => alphaEquivFunDef fd parsed_borrow_local_twice
     | none => false
   | .error _ => false
 
@@ -121,7 +121,7 @@ label b0:
   match parseAndTranslate aliasWritesMvir with
   | .ok results =>
     match findFunInModule results "borrow_local_twice_reverse" "t" with
-    | some fd => alphaEquivFunDef fd borrow_local_twice_reverse
+    | some fd => alphaEquivFunDef fd parsed_borrow_local_twice_reverse
     | none => false
   | .error _ => false
 
@@ -129,7 +129,7 @@ label b0:
   match parseAndTranslate aliasWritesMvir with
   | .ok results =>
     match findFunInModule results "borrow_local_and_copy_ref" "t" with
-    | some fd => alphaEquivFunDef fd borrow_local_and_copy_ref
+    | some fd => alphaEquivFunDef fd parsed_borrow_local_and_copy_ref
     | none => false
   | .error _ => false
 
@@ -137,6 +137,6 @@ label b0:
   match parseAndTranslate aliasWritesMvir with
   | .ok results =>
     match findFunInModule results "borrow_local_and_copy_ref_reverse" "t" with
-    | some fd => alphaEquivFunDef fd borrow_local_and_copy_ref_reverse
+    | some fd => alphaEquivFunDef fd parsed_borrow_local_and_copy_ref_reverse
     | none => false
   | .error _ => false

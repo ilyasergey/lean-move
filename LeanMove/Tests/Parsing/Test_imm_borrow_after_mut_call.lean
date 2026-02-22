@@ -100,6 +100,6 @@ module 0x2.invalid {
   match parseAndTranslate immBorrowAfterMutCallMvir with
   | .ok results =>
     match findFunInModule results "invalid" "t" with
-    | some fd => alphaEquivFunDef fd invalid
+    | some fd => alphaEquivFunDef fd parsed_invalid
     | none => false
   | .error _ => false
