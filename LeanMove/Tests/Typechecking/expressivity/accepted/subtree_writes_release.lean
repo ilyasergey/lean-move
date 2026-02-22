@@ -328,4 +328,7 @@ private def parsedFuns := (parseAndTranslate subtreeWritesReleaseMvir).toOption.
 
 private def parsed_t := (findFun parsedFuns "t").get!
 
+set_option maxRecDepth 16384 in
+#guard check_fun_dec parsed_t t_lenvDec
+
 end LeanMove.Tests.Expressivity.SubtreeWritesRelease

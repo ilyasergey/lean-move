@@ -224,4 +224,6 @@ private def parsedFuns := (parseAndTranslate extensionWritesAfterJoinMvir).toOpt
 
 private def parsed_t := (findFun parsedFuns "t").get!
 
+#guard check_fun_dec parsed_t t_lenvDec
+
 end LeanMove.Tests.Expressivity.ExtensionWritesAfterJoin

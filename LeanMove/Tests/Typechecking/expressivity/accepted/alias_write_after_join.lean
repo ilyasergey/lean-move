@@ -230,4 +230,6 @@ private def parsedFuns := (parseAndTranslate aliasWriteAfterJoinMvir).toOption.g
 
 private def parsed_t := (findFun parsedFuns "t").get!
 
+#guard check_fun_dec parsed_t t_lenvDec
+
 end LeanMove.Tests.Expressivity.AliasWriteAfterJoin
