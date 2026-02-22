@@ -45,6 +45,7 @@ def hasSubstr (s sub : String) : Bool :=
 
 -- End-to-end example: parse MVIR text, translate to MoveLight, and pretty-print.
 -- The output uses the macro syntax from Macros.lean (letsite, ;;, copy, etc.)
+/-
 #eval do
   let mvir := "
 //# publish
@@ -70,6 +71,7 @@ module 0x1.Example {
     | some fd => IO.println (ppFunDef "swap" fd)
     | none => IO.println "Function not found"
   | .error e => IO.println s!"Parse/translate error: {e}"
+-/
 
 /- ====================================================== -/
 /-       Test MVIR Source                                  -/
@@ -111,7 +113,7 @@ def ppTestOutput : String :=
   | .error e => s!"Error: {e}"
 
 -- Display the output
-#eval IO.println ppTestOutput
+-- #eval IO.println ppTestOutput
 
 /- ====================================================== -/
 /-       Output Verification                              -/
@@ -173,7 +175,7 @@ def ppBorrowF : String :=
     | none => "not found"
   | .error e => s!"Error: {e}"
 
-#eval IO.println ppBorrowF
+-- #eval IO.println ppBorrowF
 
 -- Verify single-function output
 #guard hasSubstr ppBorrowF "def borrow_f : FunDef"
@@ -212,7 +214,7 @@ def ppMultiBlockOutput : String :=
   | .ok results => ppTranslateResults results
   | .error e => s!"Error: {e}"
 
-#eval IO.println ppMultiBlockOutput
+-- #eval IO.println ppMultiBlockOutput
 
 -- Multi-block: should have branch and jump syntax
 #guard hasSubstr ppMultiBlockOutput "branch"

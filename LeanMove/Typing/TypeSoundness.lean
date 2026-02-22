@@ -21,12 +21,20 @@ import LeanMove.Typing.Algorithmic.DecidableTypeEnv
 /-!
 # Type Soundness: Main Theorems
 
-A well-typed MoveLight function never produces a `danglingRef` error at runtime.
+A well-typed MoveLight function never produces a non-acceptable error at runtime.
+The type system rules out 8 of 11 runtime error constructors:
+`danglingRef`, `uninitializedVar`, `uninitializedSite`, `unknownLabel`,
+`unknownFunction`, `arityMismatch`, `invalidFieldAccess`, `typeMismatch`.
 
-Two versions are provided:
-- `type_soundness`: relational version using `typecheck_fun` and propositional assumptions
-- `type_soundness_dec`: fully decidable version using a single boolean check
-  `SoundnessAssumptions.checkDecidable` (which includes `check_fun_dec` and `checkFunEnv`)
+Only 3 error constructors are acceptable (not preventable by the type system):
+`divisionByZero` (runtime arithmetic), `outOfFuel` (bounded interpreter),
+and `aborted` (well-typed `abort` statement or `skip` in callee).
+
+Four versions are provided:
+- `type_soundness`: general version ruling out all non-acceptable errors
+- `type_soundness_no_danglingRef`: backward-compatible corollary for `danglingRef`
+- `type_soundness_dec`: decidable version ruling out all non-acceptable errors
+- `type_soundness_dec_no_danglingRef`: decidable backward-compatible corollary
 -/
 
 namespace LeanMove.Typing.TypeSoundness
@@ -37,30 +45,62 @@ open LeanMove.Typing
 open LeanMove.Semantics
 open AssocMap
 
+-- ============================================================
+-- General type soundness (relational version)
+-- ============================================================
+
 /-- The main type soundness theorem: a well-typed function never produces
-    a danglingRef error at runtime, regardless of fuel. -/
+    a non-acceptable error at runtime, regardless of fuel.
+    Acceptable errors: `divisionByZero`, `outOfFuel`, `aborted`. -/
 theorem type_soundness (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunDef)
     (args : List Value) (heap : Heap)
     (htyped : typecheck_fun f lenv)
     (hfunEnv : ∀ fname fdef, lookup funEnv fname = some fdef → FunTypeSafe fdef funEnv)
+    (ha : SoundnessAssumptions f lenv funEnv heap args)
+    (e : RuntimeError) (hna : ¬e.isAcceptable) :
+    ∀ n, Semantics.run n (initState f funEnv args heap) ≠ .error e :=
+  safe_run_no_unacceptable_error (initState f funEnv args heap)
+    (initState_safe f lenv funEnv args heap htyped hfunEnv ha) e hna
+
+/-- Backward-compatible corollary: a well-typed function never produces
+    a `danglingRef` error at runtime. -/
+theorem type_soundness_no_danglingRef (f : FunDef) (lenv : LabelEnv)
+    (funEnv : AssocMap Id FunDef) (args : List Value) (heap : Heap)
+    (htyped : typecheck_fun f lenv)
+    (hfunEnv : ∀ fname fdef, lookup funEnv fname = some fdef → FunTypeSafe fdef funEnv)
     (ha : SoundnessAssumptions f lenv funEnv heap args) :
     ∀ n loc, Semantics.run n (initState f funEnv args heap) ≠ .error (.danglingRef loc) :=
-  safe_run_no_danglingRef (initState f funEnv args heap) (initState_safe f lenv funEnv args heap htyped hfunEnv ha)
+  fun n loc => type_soundness f lenv funEnv args heap htyped hfunEnv ha
+    (.danglingRef loc) (by simp [RuntimeError.isAcceptable]) n
 
-/-- Decidable type soundness theorem: a single boolean check suffices.
-    `SoundnessAssumptions.checkDecidable` verifies everything: function type-checking
-    (`check_fun_dec`), function environment well-typedness (`checkFunEnv`), funEnv
-    signature matching, and all remaining semantic prerequisites. -/
+-- ============================================================
+-- Decidable type soundness
+-- ============================================================
+
+/-- Decidable type soundness theorem: a single boolean check suffices to
+    rule out all non-acceptable errors at runtime. -/
 theorem type_soundness_dec (f : FunDef) (lenvDec : LabelEnvDec)
     (funEnv : AssocMap Id FunDef) (fte : FunTypingEnv)
     (args : List Value) (heap : Heap)
-    (hdec : SoundnessAssumptions.checkDecidable f lenvDec funEnv fte heap args = true) :
-    ∀ n loc, Semantics.run n (initState f funEnv args heap) ≠ .error (.danglingRef loc) := by
+    (hdec : SoundnessAssumptions.checkDecidable f lenvDec funEnv fte heap args = true)
+    (e : RuntimeError) (hna : ¬e.isAcceptable) :
+    ∀ n, Semantics.run n (initState f funEnv args heap) ≠ .error e := by
   have hcd := hdec
   simp only [SoundnessAssumptions.checkDecidable, Bool.and_eq_true] at hcd
   exact type_soundness f lenvDec.toLabelEnv funEnv args heap
-    (check_fun_dec_sound f lenvDec hcd.1.1.1.1.1.1.1.1.1.1.1.1.1.1)
-    (checkFunEnv_sound funEnv fte hcd.1.1.1.1.1.1.1.1.1.1.1.1.1.2)
+    (check_fun_dec_sound f lenvDec hcd.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1)
+    (checkFunEnv_sound funEnv fte hcd.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.2)
     (SoundnessAssumptions.of_check f lenvDec funEnv fte heap args hdec)
+    e hna
+
+/-- Decidable backward-compatible corollary: a single boolean check suffices to
+    rule out `danglingRef` errors at runtime. -/
+theorem type_soundness_dec_no_danglingRef (f : FunDef) (lenvDec : LabelEnvDec)
+    (funEnv : AssocMap Id FunDef) (fte : FunTypingEnv)
+    (args : List Value) (heap : Heap)
+    (hdec : SoundnessAssumptions.checkDecidable f lenvDec funEnv fte heap args = true) :
+    ∀ n loc, Semantics.run n (initState f funEnv args heap) ≠ .error (.danglingRef loc) :=
+  fun n loc => type_soundness_dec f lenvDec funEnv fte args heap hdec
+    (.danglingRef loc) (by simp [RuntimeError.isAcceptable]) n
 
 end LeanMove.Typing.TypeSoundness

@@ -122,6 +122,8 @@ theorem wellTypedState_heap_alloc
       exact ⟨val, hread, hht⟩
     funEnv_sig_consistent := hwt.funEnv_sig_consistent
     refs_tracked_mapped := hwt.refs_tracked_mapped
+    lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
+    has_return_info := hwt.has_return_info
   }
 
 /-- StackSafe is preserved under heap.alloc -/
@@ -141,11 +143,11 @@ theorem stackSafe_heap_alloc (stack : List Frame) (ri : Option ReturnInfo)
       -- Extract TypeEnv.WellFormed separately to avoid rcases auto-destructuring the structure
       have henv_wf : TypeEnv.WellFormed cE := hfields.1
       obtain ⟨hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
-        hlenv_vu, hlenv_fe, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
+        hlenv_vu, hlenv_fe, hlenv_lib, hhas_ri, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
         hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hrtm, hvar_con, hsite_con, hrmap_live, hrmap_paths_f,
         hhlb, hrmap_ht, hfe_sig, htc⟩ := hfields.2
       refine ⟨cE, cL, cR, cM, ⟨henv_wf, hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
-        hlenv_vu, hlenv_fe, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
+        hlenv_vu, hlenv_fe, hlenv_lib, hhas_ri, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
         hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hrtm, ?_, ?_, ?_, ?_, ?_, ?_, ?_, htc⟩, ?_⟩
       · -- var_consistent
         intro x isv τ ms hvar
@@ -346,6 +348,8 @@ theorem wellTypedState_heap_writeRef
             exact hread_old
         funEnv_sig_consistent := hwt.funEnv_sig_consistent
         refs_tracked_mapped := hwt.refs_tracked_mapped
+        lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
+        has_return_info := hwt.has_return_info
       }
 
 /-- StackSafe is preserved under heap.writeRef -/
@@ -370,7 +374,7 @@ theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
       -- Extract TypeEnv.WellFormed separately to avoid rcases auto-destructuring the structure
       have henv_wf : TypeEnv.WellFormed cE := hfields.1
       obtain ⟨hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
-        hlenv_vu, hlenv_fe, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
+        hlenv_vu, hlenv_fe, hlenv_lib, hhas_ri, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
         hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hrtm, hvar_con, hsite_con, hrmap_live, hrmap_paths_f,
         hhlb, hrmap_ht, hfe_sig, htc⟩ := hfields.2
       -- Extract base value and writePath facts for field maintenance
@@ -392,7 +396,7 @@ theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
           have hread_loc : heap'.read loc = some newRoot := by
             rw [← hwr']; simp [Heap.write, Heap.read, lookup_insert_same]
           refine ⟨cE, cL, cR, cM, ⟨henv_wf, hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
-            hlenv_vu, hlenv_fe, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
+            hlenv_vu, hlenv_fe, hlenv_lib, hhas_ri, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
             hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hrtm, ?_, ?_, ?_, ?_, ?_, ?_, ?_, htc⟩, ?_⟩
           · -- var_consistent
             intro x isv τ_x ms hvar

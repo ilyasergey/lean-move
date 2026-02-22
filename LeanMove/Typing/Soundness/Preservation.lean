@@ -416,6 +416,8 @@ private theorem preservation_intLit (m m' : Machine) (env : TypeEnv) (lenv : Lab
         · exact Or.inr ⟨s', bk, by rw [lookup_insert_ne _ s s' _ heq] at hsite; exact hsite⟩
     funEnv_sig_consistent := hwt.funEnv_sig_consistent
     refs_tracked_mapped := hwt.refs_tracked_mapped
+    lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
+    has_return_info := hwt.has_return_info
   }
 
 private theorem preservation_copy_val (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -470,6 +472,8 @@ private theorem preservation_copy_val (m m' : Machine) (env : TypeEnv) (lenv : L
         · exact Or.inr ⟨s', bk, by rw [lookup_insert_ne _ s s' _ heq] at hsite; exact hsite⟩
     funEnv_sig_consistent := hwt.funEnv_sig_consistent
     refs_tracked_mapped := hwt.refs_tracked_mapped
+    lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
+    has_return_info := hwt.has_return_info
   }
 
 /-- When PathEnv is extended via `update_with_epsilon t s_orig pe` and rmap is
@@ -914,6 +918,8 @@ private theorem preservation_copy_ref (m m' : Machine) (env : TypeEnv) (lenv : L
           right
           show (if ref = t then some (loc', path) else rmap.map ref) ≠ none
           simp [heq]; exact h
+    lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
+    has_return_info := hwt.has_return_info
   } -- end copy_ref
 
 private theorem preservation_move (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -1102,6 +1108,8 @@ private theorem preservation_move (m m' : Machine) (env : TypeEnv) (lenv : Label
           exact Or.inr ⟨s', bk, hsite⟩
     funEnv_sig_consistent := hwt.funEnv_sig_consistent
     refs_tracked_mapped := hwt.refs_tracked_mapped
+    lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
+    has_return_info := hwt.has_return_info
   }
 
 /-- Reusable helper: rmap_paths is preserved by update_with_extension r .root [.root_to_var x]
@@ -1445,6 +1453,8 @@ private theorem preservation_borrow (m : Machine) (env : TypeEnv) (lenv : LabelE
           show (if ref = r then some (loc, []) else rmap.map ref) ≠ none
           have hne : ref ≠ r := fun heq => hr_fresh_pe (heq ▸ href_old)
           simp [hne]; exact h
+    lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
+    has_return_info := hwt.has_return_info
   }
 
 /-- Preservation for borrowImm: thin wrapper around preservation_borrow. -/
@@ -1903,6 +1913,8 @@ private theorem preservation_borrowField (m : Machine) (env : TypeEnv) (lenv : L
           show (if ref = rf then some (loc, path ++ [field]) else rmap.map ref) ≠ none
           have hne : ref ≠ rf := fun heq => hrf_fresh_pe (heq ▸ href_old)
           simp [hne]; exact h
+    lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
+    has_return_info := hwt.has_return_info
   }
 
 /-- Preservation for borrowField: thin wrapper around preservation_borrowField. -/
@@ -2205,6 +2217,8 @@ private theorem preservation_readRef (m m' : Machine) (env : TypeEnv) (lenv : La
         intro ref href
         simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at href
         exact hwt.refs_tracked_mapped ref href.1
+      lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
+      has_return_info := hwt.has_return_info
     }
 
 /-- If evalBinop succeeds and binop_type determines the output type,
@@ -2263,28 +2277,54 @@ private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : Labe
       obtain ⟨v, hvs, hm⟩ := hwt.site_consistent s' τ' hl
       exact ⟨v, by rw [lookup_insert_ne _ s s' _ heq]; exact hvs, hm⟩
   simp only [step, hstmt, hrsa, hrsb] at hstep
-  have hva_int : ∃ n, va = .int n := by
-    cases va with
-    | int n => exact ⟨n, rfl⟩
-    | _ => exfalso; simp at hstep
-  have hvb_int : ∃ n, vb = .int n := by
-    obtain ⟨n, rfl⟩ := hva_int
-    cases vb with
-    | int n => exact ⟨n, rfl⟩
-    | _ => exfalso; simp at hstep
-  obtain ⟨na, rfl⟩ := hva_int
-  obtain ⟨nb, rfl⟩ := hvb_int
-  simp only [] at hstep
-  cases heval : evalBinop op na nb <;> simp [heval] at hstep
-  rename_i result
-  subst hstep
+  -- Case-split on va/vb: both ints or both bools (use type info to eliminate cross cases)
+  have ⟨result, hht_result, hm'_eq⟩ : ∃ result, HasType result bt3 ∧
+      m' = { frame := { m.frame with
+                siteStore := AssocMap.insert m.frame.siteStore s result
+                stmt := cont },
+             stack := m.stack, heap := m.heap } := by
+    -- Case-split on va and vb to reduce the match in hstep
+    cases hva_eq : va with
+    | int na =>
+      cases hvb_eq : vb with
+      | int nb =>
+        simp only [hva_eq, hvb_eq] at hstep
+        cases heval : evalBinop op na nb <;> simp [heval] at hstep
+        exact ⟨_, evalBinop_has_type op bt1 bt2 bt3 na nb _ hbt heval, hstep.symm⟩
+      | bool _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
+      | unit => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
+      | record _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
+      | ref _ _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
+    | bool ba =>
+      cases hvb_eq : vb with
+      | bool bb =>
+        simp only [hva_eq, hvb_eq] at hstep
+        cases heval : evalBinopBool op ba bb <;> simp [heval] at hstep
+        rename_i result
+        refine ⟨result, ?_, hstep.symm⟩
+        have hbt1 : bt1 = .tbool := by
+          rw [hva_eq] at hma; cases hma with | bool => rfl
+        subst hbt1
+        cases op <;> simp only [binop_type] at hbt <;>
+          (try (cases bt2 <;> simp at hbt)) <;>
+          subst hbt <;>
+          simp only [evalBinopBool, Option.some.injEq] at heval <;>
+          subst heval <;> exact HasType.bool _
+      | int _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
+      | unit => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
+      | record _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
+      | ref _ _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
+    | unit => simp only [hva_eq] at hstep; nomatch hstep
+    | record _ => simp only [hva_eq] at hstep; nomatch hstep
+    | ref _ _ => simp only [hva_eq] at hstep; nomatch hstep
+  subst hm'_eq
   refine ⟨{env with siteEnv := insert (delete (delete env.siteEnv sA) sB) s (.basic bt3)},
           lenv, retTypes, rmap, ?_, hss⟩
   exact {
     env_wf := TypeEnv.delete_delete_insert_wf env sA sB s (.basic bt3) hwt.env_wf trivial
     stmt_typed := hcont
     var_consistent := hwt.var_consistent
-    site_consistent := hsc result (evalBinop_has_type op bt1 bt2 bt3 na nb result hbt heval)
+    site_consistent := hsc result hht_result
     rmap_live := hwt.rmap_live
     rmap_paths := hwt.rmap_paths
     varEnv_refs_in_pathEnv := hwt.varEnv_refs_in_pathEnv
@@ -2366,6 +2406,8 @@ private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : Labe
           exact Or.inr ⟨s', bk, hsite⟩
     funEnv_sig_consistent := hwt.funEnv_sig_consistent
     refs_tracked_mapped := hwt.refs_tracked_mapped
+    lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
+    has_return_info := hwt.has_return_info
   }
 
 private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -2434,6 +2476,8 @@ private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : La
       intro ref href
       simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at href
       exact hwt.refs_tracked_mapped ref href.1
+    lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
+    has_return_info := hwt.has_return_info
   }
 
 private theorem preservation_writeRef (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -2747,6 +2791,8 @@ private theorem preservation_writeRef (m m' : Machine) (env : TypeEnv) (lenv : L
       intro ref href
       simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at href
       exact hwt.refs_tracked_mapped ref href.1
+    lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
+    has_return_info := hwt.has_return_info
   }
 
 -- ============================================================
@@ -3098,6 +3144,8 @@ private theorem preservation_pack (m m' : Machine) (env : TypeEnv) (lenv : Label
             exact Or.inr ⟨s', bk, lookup_deleteAll_some env.siteEnv _ s' _ hsite⟩
       funEnv_sig_consistent := hwt.funEnv_sig_consistent
       refs_tracked_mapped := hwt.refs_tracked_mapped
+      lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
+      has_return_info := hwt.has_return_info
     }
 
 private theorem preservation_assign_valid (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -3429,6 +3477,8 @@ private theorem preservation_assign_valid (m m' : Machine) (env : TypeEnv) (lenv
         intro ref href
         rw [hgc_refs] at href
         exact hwt.refs_tracked_mapped ref href
+      lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
+      has_return_info := hwt.has_return_info
     }
 
 private theorem preservation_assign_invalid (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -3649,6 +3699,8 @@ private theorem preservation_assign_invalid (m m' : Machine) (env : TypeEnv) (le
       exact ⟨val, hread, hht⟩
     funEnv_sig_consistent := hwt.funEnv_sig_consistent
     refs_tracked_mapped := hwt.refs_tracked_mapped
+    lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
+    has_return_info := hwt.has_return_info
   }
 
 /-- Preservation for freeze: converts a (possibly mutable) reference to an immutable one.
@@ -4000,6 +4052,8 @@ private theorem preservation_freeze (m m' : Machine) (env : TypeEnv) (lenv : Lab
           show (if ref = r' then some (loc, path) else rmap.map ref) ≠ none
           have hne : ref ≠ r' := fun heq => hr'_fresh_pe (heq ▸ href_old)
           simp [hne]; exact h
+    lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
+    has_return_info := hwt.has_return_info
   }
 
 -- ============================================================
@@ -4172,6 +4226,8 @@ private theorem preservation_unpack (m m' : Machine) (env : TypeEnv) (lenv : Lab
           exact Or.inr ⟨s', bk, hsite⟩
     funEnv_sig_consistent := hwt.funEnv_sig_consistent
     refs_tracked_mapped := hwt.refs_tracked_mapped
+    lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
+    has_return_info := hwt.has_return_info
   }
 
 -- ============================================================
@@ -4288,6 +4344,8 @@ private theorem preservation_jump (m m' : Machine) (env : TypeEnv) (lenv : Label
         · simp [hse s] at hsite
       funEnv_sig_consistent := hwt.funEnv_sig_consistent
       refs_tracked_mapped := hwt.refs_tracked_mapped
+      lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
+      has_return_info := hwt.has_return_info
     }
 
 -- ============================================================
@@ -4387,6 +4445,8 @@ private theorem preservation_branch (m m' : Machine) (env : TypeEnv) (lenv : Lab
             · simp [hse' s] at hsite
           funEnv_sig_consistent := hwt.funEnv_sig_consistent
           refs_tracked_mapped := hwt.refs_tracked_mapped
+          lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
+          has_return_info := hwt.has_return_info
         }
     | false =>
       -- step uses l2
@@ -4448,6 +4508,8 @@ private theorem preservation_branch (m m' : Machine) (env : TypeEnv) (lenv : Lab
             · simp [hse' s] at hsite
           funEnv_sig_consistent := hwt.funEnv_sig_consistent
           refs_tracked_mapped := hwt.refs_tracked_mapped
+          lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
+          has_return_info := hwt.has_return_info
         }
 
 -- ============================================================
@@ -4494,7 +4556,8 @@ private theorem preservation_ret (m m' : Machine) (env : TypeEnv) (lenv : LabelE
           obtain ⟨cE, cL, cR, cM, hfields, hrest⟩ := hss
           have henv_wf : TypeEnv.WellFormed cE := hfields.1
           obtain ⟨hstmt_caller, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
-            hlenv_vu, hlenv_fe, hfe_typed, hve_refs, hse_refs, hlru,
+            hlenv_vu, hlenv_fe, hlenv_lib, hcaller_has_ri,
+            hfe_typed, hve_refs, hse_refs, hlru,
             hrmap_root, hno_paths_root, hroot_coh, hpfnm, hptnm, hsle,
             hiso_unmapped, hrru, hrtm, hvar_con, hsite_con, hrmap_live, hrmap_paths_f,
             hhlb, hrmap_ht, hfe_sig, htc_caller⟩ := hfields.2
@@ -4776,6 +4839,8 @@ private theorem preservation_ret (m m' : Machine) (env : TypeEnv) (lenv : LabelE
               · right
                 exact RefMap.extendWithReturns_maps_result_ref cM cE.siteEnv
                   ri.resultSites vals m.heap ref hrvt_caller s_r bt_r bk_r hs_r hse_r
+            lenv_labels_in_blocks := hlenv_lib
+            has_return_info := hcaller_has_ri
           }
 
 -- ============================================================
@@ -4896,7 +4961,7 @@ private theorem preservation_call (m m' : Machine) (env : TypeEnv) (lenv : Label
   -- 3. Get FunTypeSafe from funEnv_typed
   have hfts := hwt.funEnv_typed fname fdef hfdef_lookup
   obtain ⟨callee_lenv, htyped_fun, hlenv_wf_callee, hlenv_es_callee, hlenv_vt_callee,
-    hlenv_vu_callee, hlenv_sig_callee, hlenv_complete_callee, hlenv_fe_callee,
+    hlenv_vu_callee, hlenv_sig_callee, hlenv_complete_callee, hlenv_lib_callee, hlenv_fe_callee,
     hlenv_pfnm_callee, hlenv_ptnm_callee, hlenv_sle_callee,
     hparams_nodup, hparam_refs_distinct, hparam_refs_not_root, hentry_varEnv_exact⟩ := hfts
 
@@ -5234,6 +5299,8 @@ private theorem preservation_call (m m' : Machine) (env : TypeEnv) (lenv : Label
                   subst hveq
                   have hrmap := hrmap_of_param x bt r' bk loc path hmem_zip
                   rw [hrmap]; simp
+            lenv_labels_in_blocks := hlenv_lib_callee
+            has_return_info := fun _ => rfl
           }
         · -- StackSafe for the new stack
           -- Define restricted rmap: agrees with rmap on env.pathEnv.refs, none elsewhere
@@ -5642,6 +5709,8 @@ private theorem preservation_call (m m' : Machine) (env : TypeEnv) (lenv : Label
              hwt.lenv_var_tracked,
              hwt.lenv_var_unique,
              by intro L envL h; rw [hpopFunEnv]; exact hwt.lenv_funEnv_eq L envL h,
+             hwt.lenv_labels_in_blocks,
+             hwt.has_return_info,
              hwt.funEnv_typed,
              by intro x bt r bk ms h; rw [hpopVarEnv] at h
                 exact hpopRefsMono r (hwt.varEnv_refs_in_pathEnv x bt r bk ms h),

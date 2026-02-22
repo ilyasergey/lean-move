@@ -755,6 +755,8 @@ def checkFunEnv (funEnv : AssocMap Id FunDef) (fte : FunTypingEnv) : Bool :=
       LabelEnvDec.allVarRefsUnique_bool lenvDec &&
       LabelEnvDec.checkFunEnvConsistent lenvDec &&
       checkFunEnvSigs lenvDec funEnv &&
+      -- lenv_labels_in_blocks: every lenv entry has a corresponding block
+      lenvDec.entries.all (fun (l, _) => fdef.blocks.any (fun b => b.label == l)) &&
       -- params_nodup: parameter names are unique
       decide ((fdef.params.map Prod.fst).Nodup) &&
       -- param_refs_distinct: ref-typed param refs are distinct

@@ -14,13 +14,16 @@ core calculus of the Move intermediate representation — and proved it
 - The type checker is **executable**: it runs as a boolean function inside
   Lean and can verify programs by kernel reduction (`by rfl`).
 - The soundness theorem guarantees that well-typed programs **never produce
-  dangling-pointer errors** at runtime, under assumptions that are
-  **decidable** and **practically satisfiable** (parameter well-formedness,
-  heap validity, callee typing).
+  non-acceptable errors** at runtime. The type system rules out **8 of 11**
+  runtime error constructors — including dangling references,
+  uninitialized variables, type mismatches, unknown labels/functions,
+  arity mismatches, and invalid field accesses. Only 3 *acceptable*
+  errors remain: `divisionByZero` (runtime arithmetic), `outOfFuel`
+  (bounded interpreter), and `aborted` (well-typed `abort` statement).
 - We demonstrate this end-to-end on programs drawn from the **Move bytecode
   verifier's own test suite**: each program is type-checked, executed on a
-  concrete heap, and certified free of dangling references — all within a
-  single `lake build`.
+  concrete heap, and certified free of all preventable errors — all within
+  a single `lake build`.
 
 ### Limitations and scope
 
@@ -77,10 +80,10 @@ LeanMove/
 │   │   ├── Preservation.lean      Preservation theorem (per-rule case proofs)
 │   │   ├── Weakening.lean         Weakening / subsumption lemmas
 │   │   ├── StackSafeUtils.lean    Stack frame safety utilities
-│   │   ├── Progress.lean          No danglingRef from well-typed states
+│   │   ├── Progress.lean          step_error_is_acceptable (all 8 error types)
 │   │   └── SafeExec.lean          SafeExecState, iterated safety
 │   │
-│   └── TypeSoundness.lean         Main theorems: type_soundness, type_soundness_dec
+│   └── TypeSoundness.lean         Main theorems (general + backward-compatible corollaries)
 │
 ├── Structures/                    AssocMap, Regex, ListUtils, PathMap
 │
@@ -118,9 +121,25 @@ The interpreter defines:
 | `run (fuel : Nat) : ExecState → ExecState` | Bounded evaluation |
 | `initState` | Build initial machine from function, arguments, heap |
 
-Errors include `danglingRef loc` (dereferencing freed memory), as well as
-`uninitializedVar`, `typeMismatch`, etc. Type soundness rules out
-`danglingRef`; other errors correspond to statically prevented operations.
+Runtime errors are classified into **preventable** (ruled out by the type
+system) and **acceptable** (not preventable):
+
+| Error | Preventable? | Reason |
+|---|---|---|
+| `danglingRef` | Yes | Borrow tracking ensures valid references |
+| `uninitializedVar` | Yes | Type system tracks valid/invalid var status |
+| `uninitializedSite` | Yes | Sites always initialized by letBind before use |
+| `unknownLabel` | Yes | Label env covers all jump/branch targets |
+| `unknownFunction` | Yes | FunEnv consistency checked |
+| `arityMismatch` | Yes | Parameter/return counts checked |
+| `invalidFieldAccess` | Yes | Not produced by current step (0 sites) |
+| `typeMismatch` | Yes | All production sites preventable |
+| `divisionByZero` | No | Runtime arithmetic |
+| `outOfFuel` | No | Bounded interpreter limitation |
+| `aborted` | No | Well-typed `abort` statement or `skip` in callee |
+
+The predicate `RuntimeError.isAcceptable` marks the last three as acceptable.
+Type soundness rules out all non-acceptable errors.
 
 ### Relational typing (`Typing/TypeChecking.lean`)
 
@@ -181,14 +200,17 @@ theorem type_soundness (f : FunDef) (lenv : LabelEnv)
     (htyped : typecheck_fun f lenv)
     (hfunEnv : ∀ fname fdef, lookup funEnv fname = some fdef
                              → FunTypeSafe fdef funEnv)
-    (ha : SoundnessAssumptions f lenv funEnv heap args) :
-    ∀ n loc, run n (initState f funEnv args heap) ≠ .error (.danglingRef loc)
+    (ha : SoundnessAssumptions f lenv funEnv heap args)
+    (e : RuntimeError) (hna : ¬e.isAcceptable) :
+    ∀ n, run n (initState f funEnv args heap) ≠ .error e
 ```
 
 In words: if a function is well-typed (`typecheck_fun`), every callee is
 safely typed (`FunTypeSafe`), and the runtime configuration satisfies the
-soundness assumptions, then execution never produces a dangling-reference
-error regardless of how many steps are taken.
+soundness assumptions, then execution never produces a non-acceptable error
+regardless of how many steps are taken. This rules out all 8 preventable
+error constructors. A backward-compatible corollary `type_soundness_no_danglingRef`
+specialises to `danglingRef`.
 
 ### Algorithmic type checker (`Typing/Algorithmic/`)
 
@@ -210,17 +232,23 @@ soundness theorem `check_fun_dec_sound` bridges to the relational system.
 theorem type_soundness_dec (f : FunDef) (lenvDec : LabelEnvDec)
     (funEnv : AssocMap Id FunDef) (fte : FunTypingEnv)
     (args : List Value) (heap : Heap)
-    (hdec : SoundnessAssumptions.checkDecidable f lenvDec funEnv fte heap args = true) :
-    ∀ n loc, run n (initState f funEnv args heap) ≠ .error (.danglingRef loc)
+    (hdec : SoundnessAssumptions.checkDecidable f lenvDec funEnv fte heap args = true)
+    (e : RuntimeError) (hna : ¬e.isAcceptable) :
+    ∀ n, run n (initState f funEnv args heap) ≠ .error e
 ```
 
 The single boolean `checkDecidable` combines:
 1. `check_fun_dec` — algorithmic type checking of the function
-2. `checkFunEnv` — all callees are well-typed (11 checks per function)
+2. `checkFunEnv` — all callees are well-typed (12 checks per function,
+   including label-environment-to-blocks consistency)
 3. Argument/heap/parameter well-formedness (decidable by construction)
 
 Because `checkDecidable` returns `Bool`, the proof obligation `(by rfl)`
 reduces entirely at the Lean kernel level — no proof term is needed.
+
+A backward-compatible corollary `type_soundness_dec_no_danglingRef`
+specialises to `danglingRef`, matching the original signature used in
+runtime tests.
 
 ### Tests and practical meaning (`Tests/Runtime/AllTests.lean`)
 
@@ -228,7 +256,7 @@ Each test section in `AllTests.lean` follows the same pattern:
 
 1. **Define a heap** with allocated values
 2. **`#guard` execution halts**: `(run N (initState f funEnv args heap)).isHalted`
-3. **Prove no dangling refs**: `type_soundness_dec f lenvDec funEnv fte args heap (by rfl)`
+3. **Prove no preventable errors**: `type_soundness_dec_no_danglingRef f lenvDec funEnv fte args heap (by rfl)`
 
 For example:
 
@@ -240,16 +268,18 @@ For example:
 theorem ext_writes_join_t_true_no_danglingRef :
     ∀ n loc, run n (initState t empty args twoStructsHeap.1)
              ≠ .error (.danglingRef loc) :=
-  type_soundness_dec t t_lenvDec empty empty args twoStructsHeap.1 (by rfl)
+  type_soundness_dec_no_danglingRef t t_lenvDec empty empty args twoStructsHeap.1 (by rfl)
 ```
 
 The `#guard` confirms the program actually runs and terminates (the soundness
-theorem only rules out one class of errors — it does not guarantee
-termination). The `type_soundness_dec` certificate then proves that *for any
-fuel bound*, the program never encounters a dangling reference. Together,
-these demonstrate that the soundness statement is practically meaningful: it
-applies to concrete programs with concrete heaps and produces a machine-checked
-safety guarantee.
+theorem does not guarantee termination). The `type_soundness_dec_no_danglingRef`
+certificate uses the backward-compatible corollary to prove that *for any
+fuel bound*, the program never encounters a dangling reference. The general
+`type_soundness_dec` theorem actually rules out all 8 non-acceptable error
+types — the `danglingRef`-specific corollary is used in tests for
+readability. Together, these demonstrate that the soundness statement is
+practically meaningful: it applies to concrete programs with concrete heaps
+and produces a machine-checked safety guarantee.
 
 The test suite covers programs with borrowing, mutable references, field
 access, function calls, control-flow joins, loops, packing/unpacking records,
@@ -336,21 +366,29 @@ adapted for a small-step interpreter with explicit fuel:
 
 ```
 type_soundness
-  └── safe_run_no_danglingRef          (fuel induction)
+  └── safe_run_no_unacceptable_error   (fuel induction)
       └── safe_step                    (one-step safety preservation)
           ├── preservation             (WellTypedState preserved by step)
-          └── no_danglingRef_progress  (well-typed state ≠ danglingRef error)
+          └── step_error_is_acceptable (errors from well-typed state are acceptable)
 ```
 
 **`SafeExecState`** defines safety: running states have a `WellTypedState`
-and `StackSafe` witness; halted states are safe; `danglingRef` errors are
-contradictory; other errors are safe (they correspond to operations the type
-system permits to fail, such as `outOfFuel`).
+and `StackSafe` witness; halted states are safe; error states must satisfy
+`e.isAcceptable` (only `divisionByZero`, `outOfFuel`, `aborted`). Any
+non-acceptable error contradicts safety.
 
-**Progress** (`Progress.lean`) shows that `danglingRef` errors arise only
-from `readRef` and `writeRef`, and that both succeed when the reference's
-abstract location is mapped to a valid heap location — which `WellTypedState`
-guarantees via `rmap_live`.
+**Progress** (`Progress.lean`) proves `step_error_is_acceptable`: if a
+well-typed state steps to an error, that error is acceptable. This covers
+all 8 preventable error types:
+- `danglingRef`: contradicted by `rmap_live` (references map to valid heap locations)
+- `uninitializedVar`: contradicted by `var_consistent` (valid variables have values)
+- `uninitializedSite`: contradicted by `site_consistent` (typed sites have values)
+- `unknownLabel`: contradicted by `lenv_labels_in_blocks` (label env entries have blocks)
+- `unknownFunction`: contradicted by `funEnv_typed` and `FunTypeSafe`
+- `arityMismatch`: contradicted by `types_conform` length chains
+- `typeMismatch`: contradicted by type-directed value matching (e.g., bool-typed
+  values are `.bool`, ref-typed values are `.ref`, record-typed values are `.record`)
+- `invalidFieldAccess`: not produced by the current step function
 
 **Preservation** (`Preservation.lean`) is the heart of the proof: for each
 typing rule, when the interpreter takes a step, the resulting machine state
@@ -502,7 +540,7 @@ must show that the caller's `WellTypedState` can be reconstructed from
 
 ### Key preservation invariants (`WellTypedState`)
 
-The `WellTypedState` structure (23 fields) ties the abstract type world to
+The `WellTypedState` structure (25 fields) ties the abstract type world to
 the concrete machine state. The most important invariants are:
 
 **Value–type correspondence:**
@@ -553,6 +591,13 @@ the concrete machine state. The most important invariants are:
 - `funEnv_typed`: every function in the function environment satisfies
   `FunTypeSafe`, ensuring that calls can construct callee `WellTypedState`
   witnesses.
+- `lenv_labels_in_blocks`: every label in the label environment has a
+  corresponding block in the current frame. This ensures `jump`/`branch`
+  targets are always resolvable (rules out `unknownLabel`).
+- `has_return_info`: non-top-level frames always have return info. This
+  ensures the `ret` handler can always find the caller's return
+  configuration (rules out `typeMismatch "no return info"`).
+
 
 These invariants are established once by `initState_safe` and then maintained
 inductively by each preservation case. The interplay between reference

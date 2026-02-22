@@ -468,6 +468,8 @@ def FunTypeSafe (fdef : FunDef) (runtimeFunEnv : AssocMap Id FunDef) : Prop :=
               fdef'.returnType = sig.returnType) ∧
     -- Every block has a lenv entry
     (∀ b, b ∈ fdef.blocks → ∃ envL, lookup lenv b.label = some envL) ∧
+    -- Every lenv entry has a block (reverse of above)
+    (∀ L envL, lookup lenv L = some envL → ∃ b, b ∈ fdef.blocks ∧ b.label = L) ∧
     -- All lenv entries share the same funEnv
     (∀ L envL L' envL',
       lookup lenv L = some envL → lookup lenv L' = some envL' →
@@ -637,6 +639,13 @@ structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
   -- 23. All tracked refs are either root or mapped by rmap
   refs_tracked_mapped : ∀ r, r ∈ env.pathEnv.refs → r = .root ∨ rmap.map r ≠ none
 
+  -- 24. Every lenv entry has a corresponding block in the current frame
+  lenv_labels_in_blocks : ∀ L envL, lookup lenv L = some envL →
+    ∃ block, block ∈ m.frame.blocks ∧ block.label = L
+
+  -- 25. Non-top-level frames have return info
+  has_return_info : m.stack ≠ [] → m.frame.returnInfo.isSome
+
 /-- Return values are well-typed: each value matches its corresponding site type.
     For ref types, also requires heap readability (needed for rmap_live and rmap_has_type). -/
 def ReturnValsWellTyped : List Value → List Site → SiteEnv → Heap → Prop
@@ -677,6 +686,11 @@ def StackSafe : List Frame → Option ReturnInfo → Heap → List ParamType →
         lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) →
         lookup envL.varEnv y = some (.validVar, .ref bt' r bk', ms') → False) ∧
       (∀ L envL, lookup callerLenv L = some envL → envL.funEnv = callerEnv.funEnv) ∧
+      -- Every lenv entry has a block (for unknownLabel progress after ret)
+      (∀ L envL, lookup callerLenv L = some envL →
+        ∃ block, block ∈ callerFrame.blocks ∧ block.label = L) ∧
+      -- Caller frame has return info if it's not on top (rest ≠ [])
+      (rest ≠ [] → callerFrame.returnInfo.isSome) ∧
       (∀ fname fdef, lookup callerFrame.funEnv fname = some fdef →
         FunTypeSafe fdef callerFrame.funEnv) ∧
       (∀ x bt r bk ms, lookup callerEnv.varEnv x = some (.validVar, .ref bt r bk, ms) →

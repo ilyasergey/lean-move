@@ -171,8 +171,16 @@ inductive RuntimeError where
   | invalidFieldAccess : Field → RuntimeError
   | divisionByZero     : RuntimeError
   | outOfFuel          : RuntimeError
+  | aborted            : RuntimeError
   | arityMismatch      : String → RuntimeError
 deriving Repr
+
+/-- An error is "acceptable" if the type system does not prevent it. -/
+@[simp] def RuntimeError.isAcceptable : RuntimeError → Prop
+  | .divisionByZero => True
+  | .outOfFuel => True
+  | .aborted => True
+  | _ => False
 
 /-- Running machine state -/
 structure Machine where
@@ -246,6 +254,12 @@ def evalBinop : Binop → Nat → Nat → Option Value
     -- Bitwise NAND on naturals (treating 0 as false, nonzero as true)
     some (.bool (!(a != 0 && b != 0)))
 
+/-- Evaluate a binary operation on booleans -/
+def evalBinopBool : Binop → Bool → Bool → Option Value
+  | .eq, a, b => some (.bool (a == b))
+  | .nand, a, b => some (.bool (!(a && b)))
+  | _, _, _ => none
+
 -- ============================================================
 -- Helper: Allocate arguments for function call
 -- ============================================================
@@ -307,7 +321,7 @@ def step (state : ExecState) : ExecState :=
     | .skip =>
       match m.stack with
       | [] => .halted []
-      | _ => .error (.typeMismatch "skip in non-top-level frame")
+      | _ => .error .aborted
 
     -- --------------------------------------------------------
     -- Terminal: ret sites
@@ -376,7 +390,7 @@ def step (state : ExecState) : ExecState :=
     -- --------------------------------------------------------
     -- Terminal: abort
     -- --------------------------------------------------------
-    | .abort _ => .error (.typeMismatch "abort")
+    | .abort _ => .error .aborted
 
     -- --------------------------------------------------------
     -- Non-terminal: letBind s expr cont
@@ -542,7 +556,19 @@ def step (state : ExecState) : ExecState :=
               stack := m.stack
               heap := m.heap
             }
-        | some _, some _ => .error (.typeMismatch "binop on non-integers")
+        | some (.bool ba), some (.bool bb) =>
+          match evalBinopBool op ba bb with
+          | some v =>
+            .running {
+              frame := { f with
+                siteStore := AssocMap.insert f.siteStore s v
+                stmt := cont
+              }
+              stack := m.stack
+              heap := m.heap
+            }
+          | none => .error (.typeMismatch "invalid bool binop")
+        | some _, some _ => .error (.typeMismatch "binop type mismatch")
         | _, _ => .error (.uninitializedSite (.site 0))
 
     -- --------------------------------------------------------
