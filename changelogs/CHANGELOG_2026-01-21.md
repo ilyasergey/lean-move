@@ -34,13 +34,13 @@ This change introduces several improvements:
 - Rule now properly matches `Expr.borrowMutField a bt f` with `bt : BasicMoveType`
 
 **Example Files Updated** (all use new `.trecord entries` syntax instead of string IDs):
-- `LeanMove/Examples/expressivity/accepted/extension_after_call.lean`
-- `LeanMove/Examples/expressivity/accepted/extension_writes_after_join.lean`
-- `LeanMove/Examples/expressivity/accepted/multible_mutable_return_values.lean`
-- `LeanMove/Examples/expressivity/accepted/mutable_borrows_are_not_unique.lean`
-- `LeanMove/Examples/expressivity/accepted/subtree_writes_release.lean`
-- `LeanMove/Examples/expressivity/rejected/mutable_borrows_not_unique_calls_invalid.lean`
-- `LeanMove/Examples/expressivity/rejected/simple_dangling.lean`
+- `LeanMove/Tests/expressivity/accepted/extension_after_call.lean`
+- `LeanMove/Tests/expressivity/accepted/extension_writes_after_join.lean`
+- `LeanMove/Tests/expressivity/accepted/multible_mutable_return_values.lean`
+- `LeanMove/Tests/expressivity/accepted/mutable_borrows_are_not_unique.lean`
+- `LeanMove/Tests/expressivity/accepted/subtree_writes_release.lean`
+- `LeanMove/Tests/expressivity/rejected/mutable_borrows_not_unique_calls_invalid.lean`
+- `LeanMove/Tests/expressivity/rejected/simple_dangling.lean`
 
 **Migration Example**:
 ```lean
@@ -66,7 +66,7 @@ Expr.borrowMutField s0 (.trecord point_entries) field_x
 
 ### MVIR Documentation in Rejected Examples
 
-All files in `LeanMove/Examples/expressivity/rejected/` now include:
+All files in `LeanMove/Tests/expressivity/rejected/` now include:
 - Full original MVIR source code as documentation comments
 - Verified translations matching MVIR semantics exactly
 - Proper use of integer literal expressions
@@ -91,7 +91,7 @@ Files updated:
 
 ### Module Reorganization
 
-**LeanMove/Lang/Macros.lean** (moved from LeanMove/Examples/Macros.lean):
+**LeanMove/Lang/Macros.lean** (moved from LeanMove/Tests/Macros.lean):
 - Updated macros for new Terminator type (`jump`, `branch`, `ret`, `abort`)
 - All example files updated to import from new location
 
@@ -106,14 +106,14 @@ Files updated:
 
 ### Proof Completions
 
-**LeanMove/Examples/initial/accepted/**:
+**LeanMove/Tests/initial/accepted/**:
 - `borrow_in_loop_fixed_ok.lean`: Complete proof with no `sorry`
 - `deref_borrow_field_ok.lean`: Complete proof with no `sorry`
 
 ## New Files
 
 ### Accepted Examples (pass type checking)
-Located in `LeanMove/Examples/expressivity/accepted/`:
+Located in `LeanMove/Tests/expressivity/accepted/`:
 
 1. **alias_write_after_join.lean** - Writing through aliased mutable references after control flow joins
 2. **alias_writes.lean** - Four modules showing aliased writes in different orders
@@ -125,7 +125,7 @@ Located in `LeanMove/Examples/expressivity/accepted/`:
 8. **subtree_writes_release.lean** - Writes safe due to lossy reference graph
 
 ### Rejected Examples (fail type checking)
-Located in `LeanMove/Examples/expressivity/rejected/`:
+Located in `LeanMove/Tests/expressivity/rejected/`:
 
 1. **simple_dangling.lean** - Various ways to create dangling references (WRITEREF_EXISTS_BORROW_ERROR)
 2. **imm_borrow_after_mut_call_invalid.lean** - Cannot write when immutable alias exists
@@ -134,7 +134,7 @@ Located in `LeanMove/Examples/expressivity/rejected/`:
 
 ## Changes to Existing Files
 
-### LeanMove/Lang/Macros.lean (moved from LeanMove/Examples/Macros.lean)
+### LeanMove/Lang/Macros.lean (moved from LeanMove/Tests/Macros.lean)
 Macros for more readable MoveLight code:
 - `jump "label"` - Unconditional jump (Terminator)
 - `branch cond "l1" "l2"` - Conditional branch (Terminator)

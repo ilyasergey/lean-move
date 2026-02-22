@@ -77,7 +77,7 @@ Extracted from MoveLight.lean, contains:
 - Removed type definitions (moved to DecidableEquality.lean)
 - Now imports DecidableEquality.lean
 
-### LeanMove/Examples/initial/accepted/*.lean
+### LeanMove/Tests/initial/accepted/*.lean
 - Updated proofs to use new `typecheck_expr.usage` signature with `check_usage`
 - Proofs now use `rfl` to discharge `check_usage` obligations
 

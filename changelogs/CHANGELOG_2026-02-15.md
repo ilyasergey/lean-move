@@ -58,6 +58,6 @@
 - `LeanMove/Typing/TypeChecking.lean` — strengthened pack and assign rules
 - `LeanMove/Typing/Algorithmic/AlgorithmicTypingSoundness.lean` — foldlM_pack_complete
 - `LeanMove/Typing/Algorithmic/TypeCheckingAlgorithmic.lean` — updated for new rule hypotheses
-- `LeanMove/Examples/Typechecking/litmus/accepted/deref_borrow_field_ok.lean` — simplified, refid fix
-- `LeanMove/Examples/Typechecking/litmus/accepted/borrow_in_loop_fixed_ok.lean` — simplified
-- `LeanMove/Examples/Runtime/AllTests.lean` — type soundness tests
+- `LeanMove/Tests/Typechecking/litmus/accepted/deref_borrow_field_ok.lean` — simplified, refid fix
+- `LeanMove/Tests/Typechecking/litmus/accepted/borrow_in_loop_fixed_ok.lean` — simplified
+- `LeanMove/Tests/Runtime/AllTests.lean` — type soundness tests

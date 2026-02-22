@@ -73,16 +73,16 @@ Replaced structural equality with lookup-based equivalence for VarEnv and SiteEn
 ### LeanMove/Checker/Algorithmic/AlgorithmicTypingSoundness.lean
 - Updated `equiv_refl`, `equiv_bool_implies_equiv`, `equiv_implies_equiv_bool`, `subsumes_bool_implies_subsumes` to use `LookupEquiv` bridge lemmas
 
-### LeanMove/Examples/expressivity/accepted/extension_writes_after_join.lean
+### LeanMove/Tests/expressivity/accepted/extension_writes_after_join.lean
 - Added algorithmic type checking environments and label environment for all 4 blocks
 - Proved `t_check : check_fun t t_lenv = true := by rfl` (all blocks pass including l2)
 - Proved `t_welltyped` via `check_fun_sound` (no sorry)
 - Proved `t_lenv_wf` and supporting freshness lemmas
 
-### LeanMove/Examples/initial/accepted/deref_borrow_field_ok.lean
+### LeanMove/Tests/initial/accepted/deref_borrow_field_ok.lean
 - Updated 3 `TypeEnv.equiv` proofs: replaced `rfl` with `LookupEquiv.refl _` for siteEnv/varEnv
 
-### LeanMove/Examples/initial/accepted/borrow_in_loop_fixed_ok.lean
+### LeanMove/Tests/initial/accepted/borrow_in_loop_fixed_ok.lean
 - Updated `TypeEnv.equiv` and `TypeEnv.subsumes` proofs: replaced `rfl` with `LookupEquiv.refl _`
 
 ## Technical Notes

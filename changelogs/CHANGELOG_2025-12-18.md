@@ -99,7 +99,7 @@ Updated macros to be consistent with the current relation signatures:
 Uses subscript characters (ᵤ, ₑ, ₛ, ᶠ) to distinguish different judgment forms.
 
 ### 11. Translate deref_borrow_field_ok example to MoveLight AST
-**File:** `LeanMove/Examples/deref_borrow_field_ok.lean`
+**File:** `LeanMove/Tests/deref_borrow_field_ok.lean`
 
 Translated the Move IR example program to MoveLight AST:
 - Defined `M_T_basic` and `M_T` for the struct type `M.T = { f: u64 }`
@@ -109,7 +109,7 @@ Translated the Move IR example program to MoveLight AST:
 - All functions use A-normal form with explicit sites for temporaries
 
 ### 12. Add type checking verification section with M_new theorem
-**File:** `LeanMove/Examples/deref_borrow_field_ok.lean`
+**File:** `LeanMove/Tests/deref_borrow_field_ok.lean`
 
 Added infrastructure for proving functions are well-typed:
 - `M_new_initEnv`: initial TypeEnv with parameter `g` as valid mutable int
@@ -117,7 +117,7 @@ Added infrastructure for proving functions are well-typed:
 - `M_new_welltyped`: theorem stating M_new type checks (proof in progress with sorry placeholders)
 
 ### 13. Translate borrow_in_loop example to MoveLight AST
-**File:** `LeanMove/Examples/borrow_in_loop.lean`
+**File:** `LeanMove/Tests/borrow_in_loop.lean`
 
 Translated a loop example with borrowing:
 - Function `foo` with locals `x: u64` and `r: &u64`

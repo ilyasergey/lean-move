@@ -44,7 +44,7 @@
   - **Valid case**: Follows the borrowMut WellFormed preservation pattern — uses `update_with_epsilon_wellformed`, `update_with_extension_wellformed`, `garbage_collect_wellformed`, `SiteEnv.insert_refs_not_root`, `SiteEnv.delete_refs_not_root`, then applies the induction hypothesis
   - **Invalid case**: Uses `MoveType.eq_of_beq`, `VarEnv.lookup_type_is_fresh`, `VarEnv.update_refs_are_fresh`, `SiteEnv.delete_refs_not_root` for WellFormed preservation, then applies the relational `var_assign_invalid` rule
 
-### LeanMove/Examples/expressivity/accepted/alias_writes.lean
+### LeanMove/Tests/expressivity/accepted/alias_writes.lean
 
 **Fixed local type declarations and proved algorithmic type checking:**
 
@@ -58,14 +58,14 @@
 
 **Root cause:** The `assign` rule for invalid variables requires exact type equality (`τ == τ'`) between the local's declared type (from `varEnv`) and the site's type (from `siteEnv`). The algorithmic checker generates fresh refs via `nextFreshRef` (producing `.refid N`), so local declarations must use matching `.refid N` values, not `.varRef`.
 
-### LeanMove/Examples/expressivity/accepted/alias_writes.lean (welltyped proofs)
+### LeanMove/Tests/expressivity/accepted/alias_writes.lean (welltyped proofs)
 
 - Added `import LeanMove.Checker.AlgorithmicTypingSoundness`
 - Changed algorithmic check theorems from `by decide` to `by rfl` (faster)
 - Proved all four `_welltyped` theorems using `check_fun_sound` with `VarEnv.insert_refs_are_fresh` chains
 - Pattern: `simp only [... List.filter, List.lookup] at hlookup; split at hlookup; injection; exact TypeEnv.init_wellformed _ _ fresh_proof`
 
-### LeanMove/Examples/expressivity/accepted/extension_after_call.lean
+### LeanMove/Tests/expressivity/accepted/extension_after_call.lean
 
 **Fixed local types to match `nextFreshRef` output and proved welltyped theorems:**
 
@@ -76,7 +76,7 @@
   - `fn_write`: var_tl = `.refid 1`, var_x = `.refid 2`, var_y = `.refid 2` (recycled after `garbage_collect` in `writeRef`), returnType = `.refid 1`
 - Added `#eval` checks, algorithmic check theorems (`by rfl`), and welltyped theorems via `check_fun_sound`
 
-### LeanMove/Examples/expressivity/accepted/alias_write_after_join.lean
+### LeanMove/Tests/expressivity/accepted/alias_write_after_join.lean
 
 **Proved welltyped theorem for multi-block function with custom PathEnv:**
 

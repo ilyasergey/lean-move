@@ -57,7 +57,7 @@ LeanMove/
 │
 ├── Structures/                    AssocMap, Regex, ListUtils, PathMap
 │
-└── Examples/
+└── Tests/
     ├── Typechecking/
     │   ├── litmus/                Basic accepted / rejected examples
     │   └── expressivity/          Transpiled Move bytecode verifier tests
@@ -195,7 +195,7 @@ The single boolean `checkDecidable` combines:
 Because `checkDecidable` returns `Bool`, the proof obligation `(by rfl)`
 reduces entirely at the Lean kernel level — no proof term is needed.
 
-### Tests and practical meaning (`Examples/Runtime/AllTests.lean`)
+### Tests and practical meaning (`Tests/Runtime/AllTests.lean`)
 
 Each test section in `AllTests.lean` follows the same pattern:
 

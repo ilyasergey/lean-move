@@ -31,8 +31,8 @@ lake build litmus       # basic litmus tests only
 lake build expressivity # expressivity tests only
 ```
 
-- `LeanMove/Examples/Typechecking/litmus/` — basic accepted / rejected examples
-- `LeanMove/Examples/Typechecking/expressivity/` — transpiled from the
+- `LeanMove/Tests/Typechecking/litmus/` — basic accepted / rejected examples
+- `LeanMove/Tests/Typechecking/expressivity/` — transpiled from the
   [Move bytecode verifier tests](https://github.com/tnowacki/sui/tree/example-tests/external-crates/move/crates/bytecode-verifier-transactional-tests/tests/reference_safety/expressivity)
 
 ### Build runtime tests only

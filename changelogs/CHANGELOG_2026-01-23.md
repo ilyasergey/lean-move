@@ -19,7 +19,7 @@ Added macros for pack, borrowField, and call statements; proved M_t_welltyped th
 - Added `call(results, "fname", args)` macro for function calls
 - Updated documentation notes section (moved pack/borrowField/call from "Direct notation" to macro list)
 
-### LeanMove/Examples/initial/accepted/deref_borrow_field_ok.lean
+### LeanMove/Tests/initial/accepted/deref_borrow_field_ok.lean
 - Added `M_t_welltyped` theorem with full proof (let_bind_move → let_bind_borrowField → let_bind_readRef → var_assign_invalid → ret)
 - Added `M_t_initEnv` and `M_t_lenv` definitions for the M.t function
 - Added `module_funEnv` shared function environment definition

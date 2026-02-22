@@ -53,7 +53,7 @@ Added several lemmas to support reasoning about `delete_ref_node`:
 - `delete_ref_node_paths_between_remaining`: Key lemma for remaining refs
 
 ### 3. Documented `borrow_in_loop.lean`
-**File:** `LeanMove/Examples/borrow_in_loop.lean`
+**File:** `LeanMove/Tests/borrow_in_loop.lean`
 
 Added extensive documentation explaining:
 - Why the program cannot type-check (borrow-checking violation)
@@ -61,7 +61,7 @@ Added extensive documentation explaining:
 - What would make the program type-check (alternatives)
 
 ### 4. Created `borrow_in_loop_fixed.lean`
-**File:** `LeanMove/Examples/borrow_in_loop_fixed.lean` (new file)
+**File:** `LeanMove/Tests/borrow_in_loop_fixed.lean` (new file)
 
 Created a fixed version of the program that:
 - Takes `x` as a parameter (starts valid)

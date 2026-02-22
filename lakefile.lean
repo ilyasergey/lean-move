@@ -17,8 +17,8 @@ require mathlib from
 -- Build with: lake build
 @[default_target]
 lean_lib «all» where
-  roots := #[`LeanMove, `LeanMove.Examples.Runtime.AllTests,
-             `LeanMove.Examples.Parsing.AllParseTests]
+  roots := #[`LeanMove, `LeanMove.Tests.Runtime.AllTests,
+             `LeanMove.Tests.Parsing.AllParseTests]
 
 -- Core library only (no examples or tests)
 -- Build with: lake build core
@@ -28,7 +28,7 @@ lean_lib «core» where
 -- Build target for litmus examples
 -- Build with: lake build litmus
 lean_lib «litmus» where
-  srcDir := "LeanMove/Examples/Typechecking/litmus"
+  srcDir := "LeanMove/Tests/Typechecking/litmus"
   roots := #[`accepted.borrow_in_loop_fixed_ok, `accepted.deref_borrow_field_ok,
              `accepted.call_rule_ok, `accepted.return_param_ref_ok,
              `rejected.borrow_in_loop, `rejected.return_local_borrow,
@@ -37,7 +37,7 @@ lean_lib «litmus» where
 -- Build target for expressivity examples
 -- Build with: lake build expressivity
 lean_lib «expressivity» where
-  srcDir := "LeanMove/Examples/Typechecking/expressivity"
+  srcDir := "LeanMove/Tests/Typechecking/expressivity"
   roots := #[`accepted.alias_write_after_join, `accepted.alias_writes,
              `accepted.extension_after_call, `accepted.extension_writes_after_join,
              `accepted.imm_borrow_after_mut, `accepted.multible_mutable_return_values,
@@ -49,7 +49,7 @@ lean_lib «expressivity» where
 -- Build all examples
 -- Build with: lake build examples
 lean_lib «examples» where
-  srcDir := "LeanMove/Examples/Typechecking"
+  srcDir := "LeanMove/Tests/Typechecking"
   roots := #[`litmus.accepted.borrow_in_loop_fixed_ok, `litmus.accepted.deref_borrow_field_ok,
              `litmus.accepted.call_rule_ok, `litmus.accepted.return_param_ref_ok,
              `litmus.rejected.borrow_in_loop, `litmus.rejected.return_local_borrow,
@@ -66,12 +66,12 @@ lean_lib «examples» where
 -- Build target for runtime tests (small-step interpreter)
 -- Build with: lake build runtime
 lean_lib «runtime» where
-  srcDir := "LeanMove/Examples/Runtime"
+  srcDir := "LeanMove/Tests/Runtime"
   roots := #[`AllTests]
 
 -- Build target for parsing tests (MVIR parser)
 -- Build with: lake build parsing
 lean_lib «parsing» where
-  srcDir := "LeanMove/Examples/Parsing"
+  srcDir := "LeanMove/Tests/Parsing"
   roots := #[`AllParseTests]
 

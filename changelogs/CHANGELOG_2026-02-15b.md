@@ -83,5 +83,5 @@ All proofs are `by rfl` — fully computed by the kernel.
 - `LeanMove/Typing/Soundness/InitState.lean` — SoundnessAssumptions, checkDecidable, initState_safe
 - `LeanMove/Typing/TypeSoundness.lean` — updated destructuring for 11 conjuncts
 - 6 example files — lenvDec pathEnv updates, `extension_writes_after_join` refid changes
-- `LeanMove/Examples/Runtime/AllTests.lean` — 10 new type soundness theorems
+- `LeanMove/Tests/Runtime/AllTests.lean` — 10 new type soundness theorems
 - `lakefile.lean` — `all` build target

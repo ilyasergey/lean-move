@@ -17,7 +17,7 @@ Executable small-step interpreter for MoveLight programs.
 ### LeanMove/Semantics.lean (new)
 Aggregator: `import LeanMove.Semantics.Smallstep`
 
-### LeanMove/Examples/Runtime/AllTests.lean (new)
+### LeanMove/Tests/Runtime/AllTests.lean (new)
 Runtime tests for all example programs using `#guard` (accepted) and `#eval` (rejected).
 
 **Accepted programs (21 `#guard` tests):** All 10 accepted programs execute correctly:
@@ -36,7 +36,7 @@ violations (dangling refs, conflicting borrows) are purely static; the interpret
 
 ## New: Runtime safety litmus tests
 
-### LeanMove/Examples/Typechecking/litmus/rejected/ (5 new files)
+### LeanMove/Tests/Typechecking/litmus/rejected/ (5 new files)
 Programs that are rejected by the type checker AND fail at runtime with specific errors.
 Each test asserts the exact `RuntimeError` variant via `#guard match`.
 
@@ -50,7 +50,7 @@ Each test asserts the exact `RuntimeError` variant via `#guard match`.
 
 ## New: Genuine dangling pointer example
 
-### LeanMove/Examples/Typechecking/litmus/rejected/dangling_ref.lean (new)
+### LeanMove/Tests/Typechecking/litmus/rejected/dangling_ref.lean (new)
 A program that creates a genuine dangling pointer at runtime — unlike the `simple_dangling`
 examples where overwrites preserve field structure, this one replaces `S{f:42}` with `T{g:0}`
 (different fields), so the field reference `f_ref` with path `[field "f"]` becomes invalid.
@@ -59,9 +59,9 @@ examples where overwrites preserve field structure, this one replaces `S{f:42}` 
 - **Runtime produces `danglingRef` error**: `readPath` on `{g:0}` can't find field `"f"`
 - Runtime test in AllTests.lean asserts specifically `danglingRef` (not just any error)
 
-## Rename: `initial` → `litmus` in Examples/Typechecking
+## Rename: `initial` → `litmus` in Tests/Typechecking
 
-Renamed `LeanMove/Examples/Typechecking/initial/` to `LeanMove/Examples/Typechecking/litmus/`.
+Renamed `LeanMove/Tests/Typechecking/initial/` to `LeanMove/Tests/Typechecking/litmus/`.
 Updated lakefile build targets (`initial` → `litmus`), AllTests.lean imports, and changelog references.
 
 ## Change: Use `#guard` for failing type-checking tests
