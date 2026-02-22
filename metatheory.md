@@ -243,11 +243,19 @@ dynamically.
 To decouple test environments from the checker's internal numbering, we
 provide two mechanisms:
 
-1. **`freshenBlockEnv f env`** (`DecidableTypeEnv.lean`): replaces all
+1. **`freshenBlockEnv f env`** (`DecidableTypeEnv.lean`): replaces template
    `.refid N` values in a `TypeEnvDec` with fresh refids that don't collide
-   with the function's parameter/local declarations. Test authors write
-   environments with arbitrary template refids (e.g., 1–5); `freshenBlockEnv`
-   shifts them to a safe range.
+   with the function's parameter/local declarations. It uses
+   `collectFreshenableRefIds`, which only collects refids from *valid*
+   (initialized) variable entries, siteEnv, and pathEnv — skipping invalid
+   or uninitialized variable entries whose refids come from the FunDef
+   signature and must not be altered. This makes `freshenBlockEnv` safe to
+   apply uniformly to *all* block entries: for environments derived directly
+   from the function signature (entry blocks, branch targets with only
+   parameter refs), no valid-var refids are found and the function is a
+   no-op; for join-point templates with hand-crafted valid vars, it shifts
+   their template refids to a safe range. Multi-block tests use the idiom
+   `let f := freshenBlockEnv parsed_t` and apply `f` to every block entry.
 
 2. **`extendRefSubst`** (`AlgorithmicTypeChecking.lean`): during subsumption
    checking, after the initial substitution σ is computed from valid

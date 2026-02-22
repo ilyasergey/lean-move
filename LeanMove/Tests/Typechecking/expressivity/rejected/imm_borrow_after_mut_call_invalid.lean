@@ -20,6 +20,7 @@ import LeanMove.Typing.TypeChecking
 import LeanMove.Typing.Algorithmic.AlgorithmicTypeChecking
 import LeanMove.Typing.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
+import LeanMove.Lang.MoveIR.PrettyPrint
 import LeanMove.Tests.Parsing.TestUtils
 
 /-!
@@ -207,6 +208,9 @@ private def immBorrowAfterMutCallMvir :=
 private def parsedFuns := (parseAndTranslate immBorrowAfterMutCallMvir).toOption.get!
 
 def parsed_invalid := (findFunInModule parsedFuns "invalid" "t").get!
+
+-- Uncomment to pretty-print the parsed FunDef:
+-- #eval IO.println (ppFunDef "t" parsed_invalid)
 
 /-!
 ## Why this is rejected

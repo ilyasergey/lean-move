@@ -18,6 +18,7 @@
 import LeanMove.Lang.MoveLight
 import LeanMove.Typing.Algorithmic.DecidableTypeEnv
 import LeanMove.Lang.Macros
+import LeanMove.Lang.MoveIR.PrettyPrint
 import LeanMove.Tests.Parsing.TestUtils
 
 /-!
@@ -180,6 +181,9 @@ private def parsedFuns := (parseAndTranslate extensionWritesAfterJoinMvir).toOpt
 
 def parsed_t := (findFun parsedFuns "t").get!
 
+-- Uncomment to pretty-print the parsed FunDef:
+-- #eval IO.println (ppFunDef "t" parsed_t)
+
 -- -----------------------------------------------------
 -- -           Decidable Type Checking                --
 -- -----------------------------------------------------
@@ -210,14 +214,25 @@ private def t_l3_env_template : TypeEnvDec :=
     pathEnv := t_l3_pathEnvDec, funEnv := AssocMap.empty }
 
 -- Label environment (decidable)
+--
+-- `freshenBlockEnv` is applied uniformly to all block entries. It is a no-op for
+-- environments derived from the function signature (l0, l1, l2), where all
+-- refid-bearing vars are still uninitialized. It only freshens template placeholder
+-- refids in hand-crafted join-point environments (l3), shifting them above
+-- `maxFunDefRefId` so the subsumption σ-matching works.
+--
+-- l0: Entry block — initial TypeEnv from params and locals.
+-- l1, l2: Branch targets — cond consumed, a/b/x/y/f unchanged, param refs only.
+-- l3: Join point — template refids 1, 2 for valid vars x, y get freshened.
 def t_lenvDec : LabelEnvDec :=
+  let f := freshenBlockEnv parsed_t
   insert (insert (insert (insert AssocMap.empty
-    "l0" (mkInitEnvDec parsed_t))
-    "l1" { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
-           pathEnv := init_fun_pathEnvDec parsed_t.params, funEnv := AssocMap.empty })
-    "l2" { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
-           pathEnv := init_fun_pathEnvDec parsed_t.params, funEnv := AssocMap.empty })
-    "l3" (freshenBlockEnv parsed_t t_l3_env_template)
+    "l0" (f (mkInitEnvDec parsed_t)))
+    "l1" (f { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
+              pathEnv := init_fun_pathEnvDec parsed_t.params, funEnv := AssocMap.empty }))
+    "l2" (f { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
+              pathEnv := init_fun_pathEnvDec parsed_t.params, funEnv := AssocMap.empty }))
+    "l3" (f t_l3_env_template)
 
 -- Theorem: t is well-typed (algorithmic, decidable)
 theorem t_check : check_fun_dec parsed_t t_lenvDec = true := by native_decide

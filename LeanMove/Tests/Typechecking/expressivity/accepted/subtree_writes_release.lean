@@ -18,6 +18,7 @@
 import LeanMove.Lang.MoveLight
 import LeanMove.Typing.Algorithmic.DecidableTypeEnv
 import LeanMove.Lang.Macros
+import LeanMove.Lang.MoveIR.PrettyPrint
 import LeanMove.Tests.Parsing.TestUtils
 
 /-!
@@ -212,6 +213,9 @@ private def parsedFuns := (parseAndTranslate subtreeWritesReleaseMvir).toOption.
 
 def parsed_t := (findFun parsedFuns "t").get!
 
+-- Uncomment to pretty-print the parsed FunDef:
+-- #eval IO.println (ppFunDef "t" parsed_t)
+
 -- -----------------------------------------------------
 -- -           Algorithmic Type Checking Tests        --
 -- -----------------------------------------------------
@@ -313,17 +317,18 @@ private def t_l3_env_template : TypeEnvDec :=
     pathEnv := t_l3_pathEnvDec, funEnv := AssocMap.empty }
 
 -- Decidable label environment
+-- freshenBlockEnv is applied uniformly; it is a no-op for l0/l1/l2 (no valid-var refids).
 def t_lenvDec : LabelEnvDec :=
+  let f := freshenBlockEnv parsed_t
   insert (insert (insert (insert AssocMap.empty
-    "l0" (mkInitEnvDec parsed_t))
-    "l1" { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
-           pathEnv := init_fun_pathEnvDec parsed_t.params, funEnv := AssocMap.empty })
-    "l2" { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
-           pathEnv := init_fun_pathEnvDec parsed_t.params, funEnv := AssocMap.empty })
-    "l3" (freshenBlockEnv parsed_t t_l3_env_template)
+    "l0" (f (mkInitEnvDec parsed_t)))
+    "l1" (f { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
+              pathEnv := init_fun_pathEnvDec parsed_t.params, funEnv := AssocMap.empty }))
+    "l2" (f { siteEnv := AssocMap.empty, varEnv := t_branch_varEnv,
+              pathEnv := init_fun_pathEnvDec parsed_t.params, funEnv := AssocMap.empty }))
+    "l3" (f t_l3_env_template)
 
 -- Theorem: t is well-typed (algorithmic, decidable)
-set_option maxRecDepth 16384 in
 theorem t_check : check_fun_dec parsed_t t_lenvDec = true := by native_decide
 
 -- Main theorem: t is well-typed (relational)

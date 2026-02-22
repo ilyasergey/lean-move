@@ -19,6 +19,7 @@ import LeanMove.Lang.MoveLight
 import LeanMove.Typing.TypeChecking
 import LeanMove.Typing.Algorithmic.DecidableTypeEnv
 import LeanMove.Lang.Macros
+import LeanMove.Lang.MoveIR.PrettyPrint
 import LeanMove.Tests.Parsing.TestUtils
 
 /-!
@@ -242,6 +243,12 @@ def parsed_borrow_local_and_copy_ref :=
 
 def parsed_borrow_local_and_copy_ref_reverse :=
   (findFunInModule parsedFuns "borrow_local_and_copy_ref_reverse" "t").get!
+
+-- Uncomment to pretty-print the parsed FunDefs:
+-- #eval IO.println (ppFunDef "borrow_local_twice" parsed_borrow_local_twice)
+-- #eval IO.println (ppFunDef "borrow_local_twice_reverse" parsed_borrow_local_twice_reverse)
+-- #eval IO.println (ppFunDef "borrow_local_and_copy_ref" parsed_borrow_local_and_copy_ref)
+-- #eval IO.println (ppFunDef "borrow_local_and_copy_ref_reverse" parsed_borrow_local_and_copy_ref_reverse)
 
 -- -----------------------------------------------------
 -- -           Algorithmic Type Checking Tests        --

@@ -20,6 +20,7 @@ import LeanMove.Typing.TypeChecking
 import LeanMove.Typing.Algorithmic.AlgorithmicTypeChecking
 import LeanMove.Typing.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
+import LeanMove.Lang.MoveIR.PrettyPrint
 import LeanMove.Tests.Parsing.TestUtils
 
 /-!
@@ -244,6 +245,10 @@ private def parsedFuns := (parseAndTranslate mutableBorrowsNotUniqueCallsMvir).t
 def parsed_borrow_f := (findFunInModule parsedFuns "call_and_write_invalid" "borrow_f").get!
 
 def parsed_call_and_write_invalid := (findFunInModule parsedFuns "call_and_write_invalid" "write").get!
+
+-- Uncomment to pretty-print the parsed FunDefs:
+-- #eval IO.println (ppFunDef "borrow_f" parsed_borrow_f)
+-- #eval IO.println (ppFunDef "t" parsed_call_and_write_invalid)
 
 /-!
 ## Why this is rejected

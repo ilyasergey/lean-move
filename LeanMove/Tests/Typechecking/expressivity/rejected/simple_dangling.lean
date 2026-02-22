@@ -20,6 +20,7 @@ import LeanMove.Typing.TypeChecking
 import LeanMove.Typing.Algorithmic.AlgorithmicTypeChecking
 import LeanMove.Typing.Algorithmic.AlgorithmicTypingSoundness
 import LeanMove.Lang.Macros
+import LeanMove.Lang.MoveIR.PrettyPrint
 import LeanMove.Tests.Parsing.TestUtils
 
 /-!
@@ -361,6 +362,12 @@ def parsed_simple_call_t := (findFunInModule parsedFuns "simple_call" "t").get!
 
 -- Module: field_call (needs field_call_funEnv)
 def parsed_field_call_t := (findFunInModule parsedFuns "field_call" "t").get!
+
+-- Uncomment to pretty-print the parsed FunDefs:
+-- #eval IO.println (ppFunDef "t" parsed_field_t)
+-- #eval IO.println (ppFunDef "t" parsed_nested_field_t)
+-- #eval IO.println (ppFunDef "t" parsed_simple_call_t)
+-- #eval IO.println (ppFunDef "t" parsed_field_call_t)
 
 /-!
 ## Why these are rejected

@@ -19,6 +19,7 @@ import LeanMove.Lang.MoveLight
 import LeanMove.Typing.TypeChecking
 import LeanMove.Typing.Algorithmic.DecidableTypeEnv
 import LeanMove.Lang.Macros
+import LeanMove.Lang.MoveIR.PrettyPrint
 import LeanMove.Tests.Parsing.TestUtils
 
 /-!
@@ -133,6 +134,10 @@ def parsed_direct :=
 
 def parsed_copy_and_freeze :=
   (findFunInModule parsedFuns "copy_and_freeze" "t").get!
+
+-- Uncomment to pretty-print the parsed FunDefs:
+-- #eval IO.println (ppFunDef "direct" parsed_direct)
+-- #eval IO.println (ppFunDef "copy_and_freeze" parsed_copy_and_freeze)
 
 -- -----------------------------------------------------
 -- -           Algorithmic Type Checking Tests        --

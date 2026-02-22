@@ -174,17 +174,42 @@ def applySubstEnvDec (σ : List (Aref × Aref)) (env : TypeEnvDec) : TypeEnvDec 
     pathEnv := applySubstPathEnvDec σ env.pathEnv
     funEnv := env.funEnv }
 
-/-- Replace all `.refid N` in a TypeEnvDec with fresh refids that don't collide
-    with the function signature. The substitution is consistent: same input refid
-    always maps to the same fresh refid.
+/-- Collect refids that need freshening: only from valid (initialized) var entries
+    and pathEnv. Invalid/uninitialized vars carry refids from the FunDef signature
+    that must NOT be freshened. This ensures `freshenBlockEnv` is a no-op for
+    environments derived directly from the function signature (e.g., entry blocks
+    and branch targets that only use param refs). -/
+private def collectFreshenableRefIds (env : TypeEnvDec) : List Nat :=
+  let fromValidVars := env.varEnv.entries.filterMap fun (_, (valid, τ, _)) =>
+    match valid with
+    | .validVar => match getTypeRef τ with
+      | some (.refid n) => some n
+      | _ => none
+    | _ => none
+  let fromSiteEnv := (collectSiteEnvRefs env.siteEnv).filterMap fun r =>
+    match r with | .refid n => some n | _ => none
+  let fromPathEnv := collectPathEnvDecRefIds env.pathEnv
+  (fromValidVars ++ fromSiteEnv ++ fromPathEnv).eraseDups
+
+/-- Replace template `.refid N` values in a TypeEnvDec with fresh refids that
+    don't collide with the function signature. Only freshens refids appearing
+    in valid (initialized) var entries and pathEnv — invalid/uninitialized vars'
+    refids come from the FunDef signature and are left unchanged.
+
+    This means `freshenBlockEnv` can be applied uniformly to any label env entry:
+    it is a no-op for environments derived from the function signature (where all
+    refid-bearing vars are still uninitialized), and only freshens template
+    placeholders in hand-crafted join-point environments.
 
     The subsumption check's `computeRefSubst` will map these fresh refids
     to the checker's actual assigned refids via σ. -/
 def freshenBlockEnv (f : FunDef) (env : TypeEnvDec) : TypeEnvDec :=
-  let maxId := maxFunDefRefId f
-  let templateRefIds := collectEnvDecRefIds env
-  let σ := templateRefIds.zipIdx.map fun (n, i) => (Aref.refid n, Aref.refid (maxId + 1 + i))
-  applySubstEnvDec σ env
+  let templateRefIds := collectFreshenableRefIds env
+  if templateRefIds.isEmpty then env
+  else
+    let maxId := maxFunDefRefId f
+    let σ := templateRefIds.zipIdx.map fun (n, i) => (Aref.refid n, Aref.refid (maxId + 1 + i))
+    applySubstEnvDec σ env
 
 /- ---------------------------------------------------- -/
 /-       Boolean WF Checks                              -/

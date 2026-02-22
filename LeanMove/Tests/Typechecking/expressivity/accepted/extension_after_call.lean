@@ -19,6 +19,7 @@ import LeanMove.Lang.MoveLight
 import LeanMove.Typing.TypeChecking
 import LeanMove.Typing.Algorithmic.DecidableTypeEnv
 import LeanMove.Lang.Macros
+import LeanMove.Lang.MoveIR.PrettyPrint
 import LeanMove.Tests.Parsing.TestUtils
 
 /-!
@@ -158,6 +159,10 @@ def parsed_fn_borrow :=
 
 def parsed_fn_write :=
   (findFun parsedFuns "write").get!
+
+-- Uncomment to pretty-print the parsed FunDefs:
+-- #eval IO.println (ppFunDef "borrow" parsed_fn_borrow)
+-- #eval IO.println (ppFunDef "write" parsed_fn_write)
 
 -- -----------------------------------------------------
 -- -           Algorithmic Type Checking Tests        --
