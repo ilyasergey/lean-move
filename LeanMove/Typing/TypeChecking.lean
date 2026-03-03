@@ -104,6 +104,11 @@ def addFieldSites (fentries : AssocMap Field BasicMoveType) (se : AssocMap Site 
     | some bt => insert acc fa.2 (.basic bt)
     | none => acc) se fields
 
+-- Helper for vecUnpack: adds basic T sites for each element
+def addVecSites (T : BasicMoveType) (se : AssocMap Site MoveType) : List Site → AssocMap Site MoveType
+  | [] => se
+  | s :: rest => addVecSites T (insert se s (.basic T)) rest
+
 /-- Check that all refs in the list are fresh in the environment. -/
 def all_refs_fresh_in_env (env : TypeEnv) (refs : List Aref) : Prop :=
   ∀ r ∈ refs, freshRefInEnv r env
@@ -576,6 +581,106 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
         {env with siteEnv := addFieldSites fentries (delete env.siteEnv b) fields}
         cont retTypes →
       typecheck_stmt lenv env (.unpack fields b cont) retTypes
+
+  -- ============================================================
+  -- Vector operations
+  -- ============================================================
+
+  -- let b = vec_pack<T>(elems); cont
+  | let_bind_vecPack : ∀ (lenv : LabelEnv) (env : TypeEnv) (b : Site) (T : BasicMoveType)
+      (elems : List Site) cont retTypes,
+      notIn env.siteEnv b →
+      (∀ a, a ∈ elems → AssocMap.lookup env.siteEnv a = some (.basic T)) →
+      List.Nodup elems →
+      typecheck_stmt lenv
+        {env with siteEnv := insert (deleteAll env.siteEnv elems) b (.basic (.tvec T))}
+        cont retTypes →
+      typecheck_stmt lenv env (.letBind b (.vecPack T elems) cont) retTypes
+
+  -- vec_unpack<T>(results, src); cont
+  | vecUnpack_rule : ∀ (lenv : LabelEnv) (env : TypeEnv) (T : BasicMoveType)
+      (results : List Site) (src : Site) cont retTypes,
+      AssocMap.lookup env.siteEnv src = some (.basic (.tvec T)) →
+      (∀ a, a ∈ results → notIn env.siteEnv a) →
+      List.Nodup results →
+      typecheck_stmt lenv
+        {env with siteEnv := addVecSites T (delete env.siteEnv src) results}
+        cont retTypes →
+      typecheck_stmt lenv env (.vecUnpack T results src cont) retTypes
+
+  -- let a = vec_len(src); cont
+  | let_bind_vecLen : ∀ (lenv : LabelEnv) (env : TypeEnv) (a src : Site)
+      (T : BasicMoveType) (r : Aref) isBor cont retTypes,
+      AssocMap.lookup env.siteEnv src = some (.ref (.tvec T) r isBor) →
+      notIn env.siteEnv a →
+      typecheck_stmt lenv
+        {env with siteEnv := insert (delete env.siteEnv src) a (.basic .u64)
+                  pathEnv := delete_ref_node env.pathEnv r}
+        cont retTypes →
+      typecheck_stmt lenv env (.letBind a (.vecLen src) cont) retTypes
+
+  -- let a = vec_imm_borrow(src, idx); cont
+  | let_bind_vecImmBorrow : ∀ (lenv : LabelEnv) (env : TypeEnv)
+      (a src idx : Site) (T : BasicMoveType) (s rf : Aref) isBor cont retTypes,
+      AssocMap.lookup env.siteEnv src = some (.ref (.tvec T) s isBor) →
+      AssocMap.lookup env.siteEnv idx = some (.basic .u64) →
+      notIn env.siteEnv a →
+      freshRefInEnv rf env →
+      typecheck_stmt lenv
+        {env with siteEnv := insert (delete (delete env.siteEnv src) idx) a (.ref T rf .siteBorrowImm)
+                  pathEnv := update_with_extension rf s [.vecElem] env.pathEnv}
+        cont retTypes →
+      typecheck_stmt lenv env (.letBind a (.vecImmBorrow src idx) cont) retTypes
+
+  -- let a = vec_mut_borrow(src, idx); cont
+  | let_bind_vecMutBorrow : ∀ (lenv : LabelEnv) (env : TypeEnv)
+      (a src idx : Site) (T : BasicMoveType) (s rf : Aref) cont retTypes,
+      AssocMap.lookup env.siteEnv src = some (.ref (.tvec T) s .siteBorrowMut) →
+      AssocMap.lookup env.siteEnv idx = some (.basic .u64) →
+      notIn env.siteEnv a →
+      freshRefInEnv rf env →
+      typecheck_stmt lenv
+        {env with siteEnv := insert (delete (delete env.siteEnv src) idx) a (.ref T rf .siteBorrowMut)
+                  pathEnv := update_with_extension rf s [.vecElem] env.pathEnv}
+        cont retTypes →
+      typecheck_stmt lenv env (.letBind a (.vecMutBorrow src idx) cont) retTypes
+
+  -- let a = vec_pop_back(src); cont
+  | let_bind_vecPopBack : ∀ (lenv : LabelEnv) (env : TypeEnv)
+      (a src : Site) (T : BasicMoveType) (r : Aref) cont retTypes,
+      AssocMap.lookup env.siteEnv src = some (.ref (.tvec T) r .siteBorrowMut) →
+      check_outbound env.pathEnv r (λ re ↦ only_matches_empty (simplify re)) →
+      notIn env.siteEnv a →
+      typecheck_stmt lenv
+        {env with siteEnv := insert (delete env.siteEnv src) a (.basic T)
+                  pathEnv := garbage_collect env.pathEnv r}
+        cont retTypes →
+      typecheck_stmt lenv env (.letBind a (.vecPopBack src) cont) retTypes
+
+  -- vec_push_back(ref, val); cont
+  | vecPushBack_rule : ∀ (lenv : LabelEnv) (env : TypeEnv)
+      (refSite val : Site) (T : BasicMoveType) (r : Aref) cont retTypes,
+      AssocMap.lookup env.siteEnv refSite = some (.ref (.tvec T) r .siteBorrowMut) →
+      AssocMap.lookup env.siteEnv val = some (.basic T) →
+      check_outbound env.pathEnv r (λ re ↦ only_matches_empty (simplify re)) →
+      typecheck_stmt lenv
+        {env with siteEnv := delete (delete env.siteEnv val) refSite
+                  pathEnv := garbage_collect env.pathEnv r}
+        cont retTypes →
+      typecheck_stmt lenv env (.vecPushBack refSite val cont) retTypes
+
+  -- vec_swap(ref, idx1, idx2); cont
+  | vecSwap_rule : ∀ (lenv : LabelEnv) (env : TypeEnv)
+      (refSite idx1 idx2 : Site) (T : BasicMoveType) (r : Aref) cont retTypes,
+      AssocMap.lookup env.siteEnv refSite = some (.ref (.tvec T) r .siteBorrowMut) →
+      AssocMap.lookup env.siteEnv idx1 = some (.basic .u64) →
+      AssocMap.lookup env.siteEnv idx2 = some (.basic .u64) →
+      check_outbound env.pathEnv r (λ re ↦ only_matches_empty (simplify re)) →
+      typecheck_stmt lenv
+        {env with siteEnv := delete (delete (delete env.siteEnv idx2) idx1) refSite
+                  pathEnv := garbage_collect env.pathEnv r}
+        cont retTypes →
+      typecheck_stmt lenv env (.vecSwap refSite idx1 idx2 cont) retTypes
 
 
 /- ---------------------------------------------------- -/

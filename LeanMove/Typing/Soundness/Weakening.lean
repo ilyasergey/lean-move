@@ -6359,5 +6359,14 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
     exact weaken_unpack lenv _ env _ _ _ _ _ hlook_b hfresh hinj_f hexist
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
+  -- Vector operations (Phase 12)
+  | let_bind_vecPack _ _ _ _ _ _ _ _ _ _ ih => sorry
+  | vecUnpack_rule _ _ _ _ _ _ _ _ _ ih => sorry
+  | let_bind_vecLen _ _ _ _ _ _ _ _ ih => sorry
+  | let_bind_vecImmBorrow _ _ _ _ _ _ _ _ _ _ ih => sorry
+  | let_bind_vecMutBorrow _ _ _ _ _ _ _ _ _ ih => sorry
+  | let_bind_vecPopBack _ _ _ _ _ _ _ _ ih => sorry
+  | vecPushBack_rule _ _ _ _ _ _ _ _ ih => sorry
+  | vecSwap_rule _ _ _ _ _ _ _ _ _ ih => sorry
 
 end LeanMove.Typing.TypeSoundness
