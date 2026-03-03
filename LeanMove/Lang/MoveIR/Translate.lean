@@ -84,7 +84,7 @@ partial def resolveBasicType (structs : List ResolvedStruct) : MvirType → Basi
     match structs.find? (fun s => s.name == shortName) with
     | some rs => rs.basicType
     | none => .u64 -- fallback for unknown types
-  | .vector _ => .u64 -- vector types not fully supported
+  | .vector inner => .tvec (resolveBasicType structs inner)
   | .ref _ inner => resolveBasicType structs inner
 
 /-- Resolve a MVIR type to MoveType -/
@@ -220,10 +220,69 @@ partial def flattenExpr (e : MvirExpr) : TransM FlatResult := do
       | _ => Binop.add -- fallback
     pure { bindings := lhsR.bindings ++ rhsR.bindings ++
            [(s, .binop binopKind lhsR.result rhsR.result)], result := s }
-  | .vecOp _ _ _ =>
-    -- Vector operations not fully supported; create a placeholder
-    let s ← freshSite
-    pure { bindings := [(s, .intLit 0)], result := s }
+  | .vecOp opName ty args =>
+    let elemTy := resolveBasicType structs ty
+    match opName with
+    | "vec_len" =>
+      -- vec_len<T>(ref) → Expr.vecLen ref
+      match args with
+      | [refArg] =>
+        let refR ← flattenExpr refArg
+        let s ← freshSite
+        pure { bindings := refR.bindings ++ [(s, .vecLen refR.result)], result := s }
+      | _ =>
+        let s ← freshSite
+        pure { bindings := [(s, .intLit 0)], result := s }
+    | "vec_imm_borrow" =>
+      -- vec_imm_borrow<T>(ref, idx) → Expr.vecImmBorrow ref idx
+      match args with
+      | [refArg, idxArg] =>
+        let refR ← flattenExpr refArg
+        let idxR ← flattenExpr idxArg
+        let s ← freshSite
+        pure { bindings := refR.bindings ++ idxR.bindings ++
+               [(s, .vecImmBorrow refR.result idxR.result)], result := s }
+      | _ =>
+        let s ← freshSite
+        pure { bindings := [(s, .intLit 0)], result := s }
+    | "vec_mut_borrow" =>
+      -- vec_mut_borrow<T>(ref, idx) → Expr.vecMutBorrow ref idx
+      match args with
+      | [refArg, idxArg] =>
+        let refR ← flattenExpr refArg
+        let idxR ← flattenExpr idxArg
+        let s ← freshSite
+        pure { bindings := refR.bindings ++ idxR.bindings ++
+               [(s, .vecMutBorrow refR.result idxR.result)], result := s }
+      | _ =>
+        let s ← freshSite
+        pure { bindings := [(s, .intLit 0)], result := s }
+    | "vec_pop_back" =>
+      -- vec_pop_back<T>(ref) → Expr.vecPopBack ref
+      match args with
+      | [refArg] =>
+        let refR ← flattenExpr refArg
+        let s ← freshSite
+        pure { bindings := refR.bindings ++ [(s, .vecPopBack refR.result)], result := s }
+      | _ =>
+        let s ← freshSite
+        pure { bindings := [(s, .intLit 0)], result := s }
+    | _ =>
+      -- vec_pack_0, vec_pack_N, vec_push_back, vec_swap, vec_unpack_N
+      if opName.startsWith "vec_pack" then
+        -- vec_pack_0<T>() or vec_pack_N<T>(e1,...,eN)
+        let mut allBindings : List (Site × Expr) := []
+        let mut argSites : List Site := []
+        for arg in args do
+          let ar ← flattenExpr arg
+          allBindings := allBindings ++ ar.bindings
+          argSites := argSites ++ [ar.result]
+        let s ← freshSite
+        pure { bindings := allBindings ++ [(s, .vecPack elemTy argSites)], result := s }
+      else
+        -- Fallback for unrecognized vec ops
+        let s ← freshSite
+        pure { bindings := [(s, .intLit 0)], result := s }
 
 /- ====================================================== -/
 /-       Statement Translation                             -/
@@ -295,6 +354,65 @@ where
         let assigns := buildAssigns vars resultSites contOrSkip
         let callStmt := Stmt.call resultSites funcName argSites assigns
         pure (wrapBindings allBindings callStmt)
+      | .vecOp opName ty args =>
+        let structs := (← get).structs
+        let elemTy := resolveBasicType structs ty
+        match opName with
+        | "vec_push_back" =>
+          -- vec_push_back<T>(ref, val) → Stmt.vecPushBack ref val cont
+          match args with
+          | [refArg, valArg] =>
+            let refR ← flattenExpr refArg
+            let valR ← flattenExpr valArg
+            let contOrSkip ← contM
+            pure (wrapBindings (refR.bindings ++ valR.bindings)
+              (.vecPushBack refR.result valR.result contOrSkip))
+          | _ =>
+            let contOrSkip ← contM
+            pure contOrSkip
+        | "vec_swap" =>
+          -- vec_swap<T>(ref, idx1, idx2) → Stmt.vecSwap ref idx1 idx2 cont
+          match args with
+          | [refArg, idx1Arg, idx2Arg] =>
+            let refR ← flattenExpr refArg
+            let idx1R ← flattenExpr idx1Arg
+            let idx2R ← flattenExpr idx2Arg
+            let contOrSkip ← contM
+            pure (wrapBindings (refR.bindings ++ idx1R.bindings ++ idx2R.bindings)
+              (.vecSwap refR.result idx1R.result idx2R.result contOrSkip))
+          | _ =>
+            let contOrSkip ← contM
+            pure contOrSkip
+        | _ =>
+          if opName.startsWith "vec_unpack" then
+            -- vec_unpack_N<T>(src) → Stmt.vecUnpack T resultSites src cont
+            match args with
+            | [srcArg] =>
+              let srcR ← flattenExpr srcArg
+              let mut resultSites : List Site := []
+              for _ in vars do
+                let s ← freshSite
+                resultSites := resultSites ++ [s]
+              let contOrSkip ← contM
+              let assigns := buildAssigns vars resultSites contOrSkip
+              pure (wrapBindings srcR.bindings
+                (.vecUnpack elemTy resultSites srcR.result assigns))
+            | _ =>
+              let contOrSkip ← contM
+              pure contOrSkip
+          else
+            -- Other vec ops in statement position: flatten as expression
+            let r ← flattenExpr expr
+            if vars == ["_"] then
+              let contOrSkip ← contM
+              pure (wrapBindings r.bindings contOrSkip)
+            else
+              match vars with
+              | [var] =>
+                let contOrSkip ← contM
+                let assignStmt := Stmt.assign ⟨var⟩ r.result contOrSkip
+                pure (wrapBindings r.bindings assignStmt)
+              | _ => pure .skip
       | _ =>
         -- Regular assignment: x = expr
         let r ← flattenExpr expr
