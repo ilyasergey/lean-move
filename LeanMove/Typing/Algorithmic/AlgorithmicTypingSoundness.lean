@@ -831,12 +831,12 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
       · simp at h
     · simp at h
 
-  -- Vector expressions: not yet implemented in the algorithmic checker (returns none)
-  | vecPack _ _ => simp [check_stmt] at h
-  | vecLen _ => simp [check_stmt] at h
-  | vecImmBorrow _ _ => simp [check_stmt] at h
-  | vecMutBorrow _ _ => simp [check_stmt] at h
-  | vecPopBack _ => simp [check_stmt] at h
+  -- Vector expressions (Phase 7)
+  | vecPack _ _ => sorry
+  | vecLen _ => sorry
+  | vecImmBorrow _ _ => sorry
+  | vecMutBorrow _ _ => sorry
+  | vecPopBack _ => sorry
 
 /- ---------------------------------------------------- -/
 /-       Substitution soundness helpers                  -/
@@ -1769,10 +1769,10 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
         · simp at h
     · simp at h
 
-  -- Vector statements: not yet implemented in the algorithmic checker (returns none)
-  | vecUnpack _ _ _ _ ih_cont => intro h; simp [check_stmt] at h
-  | vecPushBack _ _ _ ih_cont => intro h; simp [check_stmt] at h
-  | vecSwap _ _ _ _ ih_cont => intro h; simp [check_stmt] at h
+  -- Vector statements (Phase 7)
+  | vecUnpack _ _ _ _ ih_cont => sorry
+  | vecPushBack _ _ _ ih_cont => sorry
+  | vecSwap _ _ _ _ ih_cont => sorry
 
 /- ---------------------------------------------------- -/
 /-       Function type checking soundness                -/

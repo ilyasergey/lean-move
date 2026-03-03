@@ -543,11 +543,57 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
         | none => none
       else none
 
-    | .vecPack _ _ => none
-    | .vecLen _ => none
-    | .vecImmBorrow _ _ => none
-    | .vecMutBorrow _ _ => none
-    | .vecPopBack _ => none
+    | .vecPack T elems =>
+      if notIn env.siteEnv a &&
+         elems.eraseDups.length == elems.length &&
+         elems.all (fun s => match lookup env.siteEnv s with
+           | some (.basic T') => T.beq T'
+           | _ => false) then
+        let env' := {env with siteEnv := insert (deleteAll env.siteEnv elems) a (.basic (.tvec T))}
+        check_stmt lenv env' cont retTypes
+      else none
+
+    | .vecLen src =>
+      match lookup env.siteEnv src with
+      | some (.ref (.tvec _) r _) =>
+        if notIn env.siteEnv a then
+          let env' := {env with siteEnv := insert (delete env.siteEnv src) a (.basic .u64)
+                                pathEnv := delete_ref_node env.pathEnv r}
+          check_stmt lenv env' cont retTypes
+        else none
+      | _ => none
+
+    | .vecImmBorrow src idx =>
+      match lookup env.siteEnv src, lookup env.siteEnv idx with
+      | some (.ref (.tvec T) s _), some (.basic .u64) =>
+        if notIn env.siteEnv a then
+          let rf := nextFreshRefInEnv env
+          let env' := {env with siteEnv := insert (delete (delete env.siteEnv src) idx) a (.ref T rf .siteBorrowImm)
+                                pathEnv := update_with_extension rf s [.vecElem] env.pathEnv}
+          check_stmt lenv env' cont retTypes
+        else none
+      | _, _ => none
+
+    | .vecMutBorrow src idx =>
+      match lookup env.siteEnv src, lookup env.siteEnv idx with
+      | some (.ref (.tvec T) s .siteBorrowMut), some (.basic .u64) =>
+        if notIn env.siteEnv a then
+          let rf := nextFreshRefInEnv env
+          let env' := {env with siteEnv := insert (delete (delete env.siteEnv src) idx) a (.ref T rf .siteBorrowMut)
+                                pathEnv := update_with_extension rf s [.vecElem] env.pathEnv}
+          check_stmt lenv env' cont retTypes
+        else none
+      | _, _ => none
+
+    | .vecPopBack src =>
+      match lookup env.siteEnv src with
+      | some (.ref (.tvec T) r .siteBorrowMut) =>
+        if notIn env.siteEnv a && check_outbound_bool env.pathEnv r then
+          let env' := {env with siteEnv := insert (delete env.siteEnv src) a (.basic T)
+                                pathEnv := garbage_collect env.pathEnv r}
+          check_stmt lenv env' cont retTypes
+        else none
+      | _ => none
 
   | .writeRef a b cont =>
     match lookup env.siteEnv a, lookup env.siteEnv b with
@@ -623,9 +669,36 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
       else none
     | _ => none
 
-  | .vecUnpack _ _ _ _ => none
-  | .vecPushBack _ _ _ => none
-  | .vecSwap _ _ _ _ => none
+  | .vecUnpack T results src cont =>
+    match lookup env.siteEnv src with
+    | some (.basic (.tvec T')) =>
+      if T.beq T' &&
+         results.eraseDups.length == results.length &&
+         results.all (fun s => notIn env.siteEnv s) then
+        let env' := {env with siteEnv := addVecSites T (delete env.siteEnv src) results}
+        check_stmt lenv env' cont retTypes
+      else none
+    | _ => none
+
+  | .vecPushBack refSite val cont =>
+    match lookup env.siteEnv refSite, lookup env.siteEnv val with
+    | some (.ref (.tvec T) r .siteBorrowMut), some (.basic T') =>
+      if T.beq T' && check_outbound_bool env.pathEnv r then
+        let env' := {env with siteEnv := delete (delete env.siteEnv val) refSite
+                              pathEnv := garbage_collect env.pathEnv r}
+        check_stmt lenv env' cont retTypes
+      else none
+    | _, _ => none
+
+  | .vecSwap refSite idx1 idx2 cont =>
+    match lookup env.siteEnv refSite, lookup env.siteEnv idx1, lookup env.siteEnv idx2 with
+    | some (.ref (.tvec _) r .siteBorrowMut), some (.basic .u64), some (.basic .u64) =>
+      if check_outbound_bool env.pathEnv r then
+        let env' := {env with siteEnv := delete (delete (delete env.siteEnv idx2) idx1) refSite
+                              pathEnv := garbage_collect env.pathEnv r}
+        check_stmt lenv env' cont retTypes
+      else none
+    | _, _, _ => none
 
 /-- Check a single block -/
 def check_block (lenv : LabelEnv) (block : Block) (expectedEnv : TypeEnv) (retTypes : List ParamType) : Bool :=
