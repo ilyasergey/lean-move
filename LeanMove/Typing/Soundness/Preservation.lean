@@ -5798,12 +5798,12 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     | freeze src => exact preservation_freeze m m' env lenv retTypes rmap hwt hss s src cont hstmt hstep
     | pack name fieldSites => exact preservation_pack m m' env lenv retTypes rmap hwt hss s name fieldSites cont hstmt hstep
     | binop op a b => exact preservation_binop m m' env lenv retTypes rmap hwt hss s op a b cont hstmt hstep
-    -- Vector Expr operations (Phase 11 placeholder)
-    | vecPack _ _ => exfalso; simp only [step, hstmt] at hstep; simp at hstep
-    | vecLen _ => exfalso; simp only [step, hstmt] at hstep; simp at hstep
-    | vecImmBorrow _ _ => exfalso; simp only [step, hstmt] at hstep; simp at hstep
-    | vecMutBorrow _ _ => exfalso; simp only [step, hstmt] at hstep; simp at hstep
-    | vecPopBack _ => exfalso; simp only [step, hstmt] at hstep; simp at hstep
+    -- Vector Expr operations (Phase 11)
+    | vecPack _ _ => sorry
+    | vecLen _ => sorry
+    | vecImmBorrow _ _ => sorry
+    | vecMutBorrow _ _ => sorry
+    | vecPopBack _ => sorry
   | release site cont => exact preservation_release m m' env lenv retTypes rmap hwt hss site cont hstmt hstep
   | assign x site cont =>
     rcases inv_assign (by rw [← hstmt]; exact hwt.stmt_typed) with
@@ -5819,9 +5819,9 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
   | ret sites => exact preservation_ret m m' env lenv retTypes rmap hwt hss sites hstmt hstep
   | call results fname argSites cont => exact preservation_call m m' env lenv retTypes rmap hwt hss results fname argSites cont hstmt hstep
   -- Vector Stmt operations (Phase 11 placeholder)
-  | vecUnpack _ _ _ _ => exfalso; simp only [step, hstmt] at hstep; simp at hstep
-  | vecPushBack _ _ _ => exfalso; simp only [step, hstmt] at hstep; simp at hstep
-  | vecSwap _ _ _ _ => exfalso; simp only [step, hstmt] at hstep; simp at hstep
+  | vecUnpack _ _ _ _ => sorry
+  | vecPushBack _ _ _ => sorry
+  | vecSwap _ _ _ _ => sorry
 
 
 

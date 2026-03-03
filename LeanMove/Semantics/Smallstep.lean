@@ -579,12 +579,80 @@ def step (state : ExecState) : ExecState :=
         | some _, some _ => .error (.typeMismatch "binop type mismatch")
         | _, _ => .error (.uninitializedSite (.site 0))
 
-      -- Vector operations (Phase 5 placeholder)
-      | .vecPack _ _ => .error (.typeMismatch "TODO: vec op not implemented")
-      | .vecLen _ => .error (.typeMismatch "TODO: vec op not implemented")
-      | .vecImmBorrow _ _ => .error (.typeMismatch "TODO: vec op not implemented")
-      | .vecMutBorrow _ _ => .error (.typeMismatch "TODO: vec op not implemented")
-      | .vecPopBack _ => .error (.typeMismatch "TODO: vec op not implemented")
+      -- Vector operations
+      | .vecPack T elems =>
+        let vals := elems.filterMap (readSite m)
+        if vals.length == elems.length then
+          .running {
+            frame := { f with
+              siteStore := AssocMap.insert f.siteStore s (.vec T vals)
+              stmt := cont }
+            stack := m.stack
+            heap := m.heap }
+        else .error (.uninitializedSite (.site 0))
+
+      | .vecLen src =>
+        match readSite m src with
+        | some (.ref loc path) =>
+          match m.heap.readRef loc path with
+          | some (.vec _ elems) =>
+            .running {
+              frame := { f with
+                siteStore := AssocMap.insert f.siteStore s (.int elems.length)
+                stmt := cont }
+              stack := m.stack
+              heap := m.heap }
+          | some _ => .error (.typeMismatch "vecLen on non-vector")
+          | none => .error (.danglingRef loc)
+        | some _ => .error (.typeMismatch "vecLen on non-ref")
+        | none => .error (.uninitializedSite src)
+
+      | .vecImmBorrow src idx =>
+        match readSite m src, readSite m idx with
+        | some (.ref loc path), some (.int _) =>
+          -- Element borrow returns same ref as vector ref (abstract)
+          .running {
+            frame := { f with
+              siteStore := AssocMap.insert f.siteStore s (.ref loc path)
+              stmt := cont }
+            stack := m.stack
+            heap := m.heap }
+        | some (.ref _ _), _ => .error (.typeMismatch "vecImmBorrow: idx not int")
+        | _, _ => .error (.typeMismatch "vecImmBorrow: src not ref")
+
+      | .vecMutBorrow src idx =>
+        match readSite m src, readSite m idx with
+        | some (.ref loc path), some (.int _) =>
+          .running {
+            frame := { f with
+              siteStore := AssocMap.insert f.siteStore s (.ref loc path)
+              stmt := cont }
+            stack := m.stack
+            heap := m.heap }
+        | some (.ref _ _), _ => .error (.typeMismatch "vecMutBorrow: idx not int")
+        | _, _ => .error (.typeMismatch "vecMutBorrow: src not ref")
+
+      | .vecPopBack src =>
+        match readSite m src with
+        | some (.ref loc path) =>
+          match m.heap.readRef loc path with
+          | some (.vec et elems) =>
+            match elems.dropLast, elems.getLast? with
+            | remaining, some lastVal =>
+              match m.heap.writeRef loc path (.vec et remaining) with
+              | some heap' =>
+                .running {
+                  frame := { f with
+                    siteStore := AssocMap.insert f.siteStore s lastVal
+                    stmt := cont }
+                  stack := m.stack
+                  heap := heap' }
+              | none => .error (.danglingRef loc)
+            | _, none => .error .vectorError  -- empty vector
+          | some _ => .error (.typeMismatch "vecPopBack on non-vector")
+          | none => .error (.danglingRef loc)
+        | some _ => .error (.typeMismatch "vecPopBack on non-ref")
+        | none => .error (.uninitializedSite src)
 
     -- --------------------------------------------------------
     -- Non-terminal: unpack fieldSites src cont
@@ -691,9 +759,59 @@ def step (state : ExecState) : ExecState :=
     -- --------------------------------------------------------
     -- Vector statement operations (Phase 5 placeholder)
     -- --------------------------------------------------------
-    | .vecUnpack _ _ _ _ => .error (.typeMismatch "TODO: vec op not implemented")
-    | .vecPushBack _ _ _ => .error (.typeMismatch "TODO: vec op not implemented")
-    | .vecSwap _ _ _ _ => .error (.typeMismatch "TODO: vec op not implemented")
+    | .vecUnpack _T results src cont =>
+      match readSite m src with
+      | some (.vec _ elems) =>
+        if elems.length == results.length then
+          let newSiteStore := (results.zip elems).foldl
+            (fun ss (site, val) => AssocMap.insert ss site val) f.siteStore
+          .running {
+            frame := { f with siteStore := newSiteStore, stmt := cont }
+            stack := m.stack
+            heap := m.heap }
+        else .error .vectorError  -- length mismatch
+      | some _ => .error (.typeMismatch "vecUnpack on non-vector")
+      | none => .error (.uninitializedSite src)
+
+    | .vecPushBack refSite valSite cont =>
+      match readSite m refSite, readSite m valSite with
+      | some (.ref loc path), some newVal =>
+        match m.heap.readRef loc path with
+        | some (.vec et elems) =>
+          match m.heap.writeRef loc path (.vec et (elems ++ [newVal])) with
+          | some heap' =>
+            .running {
+              frame := { f with stmt := cont, siteStore := f.siteStore }
+              stack := m.stack
+              heap := heap' }
+          | none => .error (.danglingRef loc)
+        | some _ => .error (.typeMismatch "vecPushBack on non-vector")
+        | none => .error (.danglingRef loc)
+      | some (.ref _ _), none => .error (.uninitializedSite valSite)
+      | _, _ => .error (.typeMismatch "vecPushBack: ref not a ref")
+
+    | .vecSwap refSite idx1Site idx2Site cont =>
+      match readSite m refSite, readSite m idx1Site, readSite m idx2Site with
+      | some (.ref loc path), some (.int i), some (.int j) =>
+        match m.heap.readRef loc path with
+        | some (.vec et elems) =>
+          if h1 : i < elems.length then
+            if h2 : j < elems.length then
+              let vi := elems[i]
+              let vj := elems[j]
+              let elems' := (elems.set i vj).set j vi
+              match m.heap.writeRef loc path (.vec et elems') with
+              | some heap' =>
+                .running {
+                  frame := { f with stmt := cont, siteStore := f.siteStore }
+                  stack := m.stack
+                  heap := heap' }
+              | none => .error (.danglingRef loc)
+            else .error .vectorError
+          else .error .vectorError
+        | some _ => .error (.typeMismatch "vecSwap on non-vector")
+        | none => .error (.danglingRef loc)
+      | _, _, _ => .error (.typeMismatch "vecSwap: invalid args")
 
 -- ============================================================
 -- Driver Function
