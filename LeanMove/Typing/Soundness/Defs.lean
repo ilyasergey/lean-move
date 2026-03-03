@@ -55,12 +55,21 @@ inductive HasType : Value → BasicMoveType → Prop where
       (∀ f, fields.lookup f ≠ none → lookup fentries f ≠ none) →
       (∀ f bt v, lookup fentries f = some bt → fields.lookup f = some v → HasType v bt) →
       HasType (.record fields) (.trecord fentries)
+  | vec : ∀ (elems : List Value) (elemTy : BasicMoveType),
+      (∀ v, v ∈ elems → HasType v elemTy) →
+      HasType (.vec elems) (.tvec elemTy)
 
 /-- If a value has record type, it must be a record. -/
 theorem HasType.record_fields {v : Value} {fentries : AssocMap Field BasicMoveType} :
     HasType v (.trecord fentries) → ∃ fields, v = .record fields := by
   intro h; cases h with
   | record fields _ _ _ _ => exact ⟨fields, rfl⟩
+
+/-- If a value has vector type, it must be a vector. -/
+theorem HasType.vec_elems {v : Value} {elemTy : BasicMoveType} :
+    HasType v (.tvec elemTy) → ∃ elems, v = .vec elems := by
+  intro h; cases h with
+  | vec elems _ _ => exact ⟨elems, rfl⟩
 
 /-- readPath at a typed field succeeds and the sub-value has the field type. -/
 theorem HasType.readPath_field {fields : List (Field × Value)}
@@ -1137,7 +1146,7 @@ theorem HasType_typeAtPath (v : Value) (bt : BasicMoveType) (path : List Field) 
     | bool b => cases hht with | bool => simp [typeAtPath] at htap
     | unit => cases hht with | unit => simp [typeAtPath] at htap
     | ref l p => cases hht
-    | vec _ => cases hht
+    | vec _ => cases hht with | vec => simp [typeAtPath] at htap
 
 /-- writePath preserves HasType using typeAtPath to determine the leaf type.
     This avoids the universal quantification over bt_sub in the compat condition. -/
@@ -1246,7 +1255,7 @@ theorem readPath_ne_none_implies_typeAtPath
     | bool b => cases hht with | bool => simp [readPath] at hread
     | unit => cases hht with | unit => simp [readPath] at hread
     | ref l p => cases hht
-    | vec _ => cases hht
+    | vec _ => cases hht with | vec => simp [readPath] at hread
 
 /-- If two values both have HasType bt, and readPath succeeds on the first,
     then readPath also succeeds on the second (at the same path).
@@ -1300,6 +1309,12 @@ theorem HasType_transfer {v1 v2 : Value} {bt1 bt2 : BasicMoveType}
             | some v1_f =>
               -- By IH on v1_f: HasType v1_f bt2_f → HasType v bt2_f → HasType v bt
               exact ih f bt v1_f he1_f hf_v1f (htyped2 f bt2_f v1_f he2_f hf_v1f) hv_bt2f
+  | vec elems elemTy htyped_elems ih =>
+    -- TODO (Phase 11): For non-empty vectors, the IH gives us a bridge element.
+    -- For empty vectors, HasType (.vec []) (.tvec T) holds for any T, so
+    -- HasType_transfer may not hold without additional constraints.
+    -- In practice, rmap_has_type ensures refs to the same location share the same type.
+    sorry
 
 /-- writePath preserves HasType when the condition at the leaf is satisfied
     according to typeAtPath. When typeAtPath returns none (the path goes through
