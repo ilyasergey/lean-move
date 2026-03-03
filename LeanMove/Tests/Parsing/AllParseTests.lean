@@ -16,6 +16,14 @@ import LeanMove.Tests.Parsing.Test_imm_borrow_after_mut_fields
 import LeanMove.Tests.Parsing.Test_mutable_borrows_are_not_unique_calls
 import LeanMove.Tests.Parsing.Test_simple_dangling
 import LeanMove.Tests.Parsing.Test_PrettyPrint
+import LeanMove.Tests.Parsing.Test_vec_basic_ops
+import LeanMove.Tests.Parsing.Test_vec_borrow_sequential
+import LeanMove.Tests.Parsing.Test_vec_double_borrow
+import LeanMove.Tests.Parsing.Test_vec_mixed_borrow
+import LeanMove.Tests.Parsing.Test_vec_move_after_borrow
+import LeanMove.Tests.Parsing.Test_vec_pop_after_borrow
+import LeanMove.Tests.Parsing.Test_vec_dangling_borrow
+import LeanMove.Tests.Parsing.Test_vec_mut_then_imm_borrow
 
 /-! ## All Parse Tests
 
