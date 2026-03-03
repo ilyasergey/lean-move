@@ -57,7 +57,7 @@ inductive HasType : Value → BasicMoveType → Prop where
       HasType (.record fields) (.trecord fentries)
   | vec : ∀ (elems : List Value) (elemTy : BasicMoveType),
       (∀ v, v ∈ elems → HasType v elemTy) →
-      HasType (.vec elems) (.tvec elemTy)
+      HasType (.vec elemTy elems) (.tvec elemTy)
 
 /-- If a value has record type, it must be a record. -/
 theorem HasType.record_fields {v : Value} {fentries : AssocMap Field BasicMoveType} :
@@ -67,7 +67,7 @@ theorem HasType.record_fields {v : Value} {fentries : AssocMap Field BasicMoveTy
 
 /-- If a value has vector type, it must be a vector. -/
 theorem HasType.vec_elems {v : Value} {elemTy : BasicMoveType} :
-    HasType v (.tvec elemTy) → ∃ elems, v = .vec elems := by
+    HasType v (.tvec elemTy) → ∃ elems, v = .vec elemTy elems := by
   intro h; cases h with
   | vec elems _ _ => exact ⟨elems, rfl⟩
 
@@ -152,7 +152,7 @@ theorem RefMap.extendWithReturns_preserves (rmap : RefMap) (siteEnv : SiteEnv)
           | bool _ => exact ih rmap vs h hne_ss
           | unit => exact ih rmap vs h hne_ss
           | «record» _ => exact ih rmap vs h hne_ss
-          | vec _ => exact ih rmap vs h hne_ss
+          | vec _ _ => exact ih rmap vs h hne_ss
 
 /-- extendWithReturns preserves none for refs not among the output refs -/
 theorem RefMap.extendWithReturns_preserves_none (rmap : RefMap) (siteEnv : SiteEnv)
@@ -187,7 +187,7 @@ theorem RefMap.extendWithReturns_preserves_none (rmap : RefMap) (siteEnv : SiteE
           | bool _ => exact ih rmap vs h hne_ss
           | unit => exact ih rmap vs h hne_ss
           | «record» _ => exact ih rmap vs h hne_ss
-          | vec _ => exact ih rmap vs h hne_ss
+          | vec _ _ => exact ih rmap vs h hne_ss
 
 /-- If extendWithReturns maps r to (loc, path), then either:
     (1) the original rmap already mapped r to (loc, path), or
@@ -244,7 +244,7 @@ theorem RefMap.extendWithReturns_values (rmap : RefMap) (siteEnv : SiteEnv)
             intro h; rcases ih rmap vs h with hold | hnew
             · exact Or.inl hold
             · exact Or.inr (List.mem_cons_of_mem _ hnew)
-          | vec _ =>
+          | vec _ _ =>
             intro h; rcases ih rmap vs h with hold | hnew
             · exact Or.inl hold
             · exact Or.inr (List.mem_cons_of_mem _ hnew)
@@ -270,7 +270,7 @@ theorem readPath_append (v : Value) (p1 p2 : List Field) :
     | bool b => simp [readPath, Option.bind]
     | unit => simp [readPath, Option.bind]
     | ref loc path => simp [readPath, Option.bind]
-    | vec _ => simp [readPath, Option.bind]
+    | vec _ _ => simp [readPath, Option.bind]
 
 /-- If readPath succeeds on a longer path, it succeeds on any prefix -/
 theorem readPath_prefix_succeeds (v : Value) (p1 p2 : List Field) (w : Value) :
@@ -309,7 +309,7 @@ theorem readPath_some_implies_writePath_some (v : Value) (path : List Field)
     | bool b => simp [readPath] at hread
     | unit => simp [readPath] at hread
     | ref l p => simp [readPath] at hread
-    | vec _ => simp [readPath] at hread
+    | vec _ _ => simp [readPath] at hread
 
 /-- If readRef succeeds on a heap, writeRef also succeeds with any new value.
     Follows from readPath_some_implies_writePath_some since both operations
@@ -889,7 +889,7 @@ theorem readPath_after_writePath_same (v : Value) (path : List Field) (w v' : Va
     | bool b => simp [writePath] at hwrite
     | unit => simp [writePath] at hwrite
     | ref l p => simp [writePath] at hwrite
-    | vec _ => simp [writePath] at hwrite
+    | vec _ _ => simp [writePath] at hwrite
 
 /-- If the first fields differ, writePath at one field preserves readPath at the other. -/
 theorem writePath_preserves_readPath_ne_first
@@ -915,7 +915,7 @@ theorem writePath_preserves_readPath_ne_first
   | bool b => simp [writePath] at hwrite
   | unit => simp [writePath] at hwrite
   | ref l p => simp [writePath] at hwrite
-  | vec _ => simp [writePath] at hwrite
+  | vec _ _ => simp [writePath] at hwrite
 
 /-- writePath preserves HasType when the new value has all types the old value had at path.
     This is the key lemma for writeRef preservation: writing a type-preserving value
@@ -981,7 +981,7 @@ theorem writePath_preserves_HasType
     | bool b => simp [writePath] at hwrite
     | unit => simp [writePath] at hwrite
     | ref l p => simp [writePath] at hwrite
-    | vec _ => simp [writePath] at hwrite
+    | vec _ _ => simp [writePath] at hwrite
 
 /-- writeRef at (loc, path) with value v: after the write, readRef at (loc, path) returns v -/
 theorem heap_writeRef_same_path (h : Heap) (loc : Loc) (path : List Field)
@@ -1075,7 +1075,7 @@ theorem writePath_preserves_readPath_ne_none
     | bool b => simp [writePath] at hwrite
     | unit => simp [writePath] at hwrite
     | ref l p => simp [writePath] at hwrite
-    | vec _ => simp [writePath] at hwrite
+    | vec _ _ => simp [writePath] at hwrite
 
 /-- After heap.writeRef, readRef at the same location with any path still succeeds,
     provided readPath on the written value w succeeds for any extension. -/
@@ -1146,7 +1146,7 @@ theorem HasType_typeAtPath (v : Value) (bt : BasicMoveType) (path : List Field) 
     | bool b => cases hht with | bool => simp [typeAtPath] at htap
     | unit => cases hht with | unit => simp [typeAtPath] at htap
     | ref l p => cases hht
-    | vec _ => cases hht with | vec => simp [typeAtPath] at htap
+    | vec _ _ => cases hht with | vec => simp [typeAtPath] at htap
 
 /-- writePath preserves HasType using typeAtPath to determine the leaf type.
     This avoids the universal quantification over bt_sub in the compat condition. -/
@@ -1214,7 +1214,7 @@ theorem writePath_preserves_HasType_typed
     | bool b => simp [writePath] at hwrite
     | unit => simp [writePath] at hwrite
     | ref l p => simp [writePath] at hwrite
-    | vec _ => simp [writePath] at hwrite
+    | vec _ _ => simp [writePath] at hwrite
 
 -- ============================================================
 -- Part 10: Additional HasType lemmas for writeRef preservation
@@ -1255,7 +1255,7 @@ theorem readPath_ne_none_implies_typeAtPath
     | bool b => cases hht with | bool => simp [readPath] at hread
     | unit => cases hht with | unit => simp [readPath] at hread
     | ref l p => cases hht
-    | vec _ => cases hht with | vec => simp [readPath] at hread
+    | vec _ _ => cases hht with | vec => simp [readPath] at hread
 
 /-- If two values both have HasType bt, and readPath succeeds on the first,
     then readPath also succeeds on the second (at the same path).
@@ -1310,11 +1310,9 @@ theorem HasType_transfer {v1 v2 : Value} {bt1 bt2 : BasicMoveType}
               -- By IH on v1_f: HasType v1_f bt2_f → HasType v bt2_f → HasType v bt
               exact ih f bt v1_f he1_f hf_v1f (htyped2 f bt2_f v1_f he2_f hf_v1f) hv_bt2f
   | vec elems elemTy htyped_elems ih =>
-    -- TODO (Phase 11): For non-empty vectors, the IH gives us a bridge element.
-    -- For empty vectors, HasType (.vec []) (.tvec T) holds for any T, so
-    -- HasType_transfer may not hold without additional constraints.
-    -- In practice, rmap_has_type ensures refs to the same location share the same type.
-    sorry
+    -- Value.vec carries elemTy, so cases on h2 forces bt2 = .tvec elemTy = bt1
+    cases h2 with
+    | vec _ _ _ => exact h3
 
 /-- writePath preserves HasType when the condition at the leaf is satisfied
     according to typeAtPath. When typeAtPath returns none (the path goes through
@@ -1380,7 +1378,7 @@ theorem writePath_preserves_HasType_general
     | bool b => simp [writePath] at hwrite
     | unit => simp [writePath] at hwrite
     | ref l p => simp [writePath] at hwrite
-    | vec _ => simp [writePath] at hwrite
+    | vec _ _ => simp [writePath] at hwrite
 
 /-- writeRef preserves HasType for heap values at the same location,
     given the typeAtPath condition at the write path. -/
@@ -1474,6 +1472,6 @@ theorem writePath_preserves_readPath_HasType
     | bool b => simp [writePath] at hwp
     | unit => simp [writePath] at hwp
     | ref l p => simp [writePath] at hwp
-    | vec _ => simp [writePath] at hwp
+    | vec _ _ => simp [writePath] at hwp
 
 end LeanMove.Typing.TypeSoundness

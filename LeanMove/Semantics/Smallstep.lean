@@ -45,7 +45,7 @@ inductive Value where
   | unit : Value
   | record : List (Field × Value) → Value
   | ref : Loc → List Field → Value    -- heap location + field access path
-  | vec : List Value → Value           -- vector of values
+  | vec : BasicMoveType → List Value → Value  -- vector with element type and values
 deriving Repr, Inhabited
 
 /-- Boolean equality for Values -/
@@ -55,7 +55,7 @@ def Value.beq : Value → Value → Bool
   | .unit, .unit => true
   | .record fs1, .record fs2 => beqFields fs1 fs2
   | .ref l1 p1, .ref l2 p2 => l1 == l2 && p1 == p2
-  | .vec vs1, .vec vs2 => beqValues vs1 vs2
+  | .vec t1 vs1, .vec t2 vs2 => t1.beq t2 && beqValues vs1 vs2
   | _, _ => false
 where
   beqFields : List (Field × Value) → List (Field × Value) → Bool
