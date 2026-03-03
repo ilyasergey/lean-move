@@ -609,26 +609,39 @@ def step (state : ExecState) : ExecState :=
 
       | .vecImmBorrow src idx =>
         match readSite m src, readSite m idx with
-        | some (.ref loc path), some (.int _) =>
-          -- Element borrow returns same ref as vector ref (abstract)
-          .running {
-            frame := { f with
-              siteStore := AssocMap.insert f.siteStore s (.ref loc path)
-              stmt := cont }
-            stack := m.stack
-            heap := m.heap }
+        | some (.ref loc path), some (.int i) =>
+          match m.heap.readRef loc path with
+          | some (.vec _ elems) =>
+            if h : i < elems.length then
+              let elem := elems[i]
+              let (heap', elemLoc) := m.heap.alloc elem
+              .running {
+                frame := { f with
+                  siteStore := AssocMap.insert f.siteStore s (.ref elemLoc [])
+                  stmt := cont }
+                stack := m.stack
+                heap := heap' }
+            else .error .vectorError
+          | _ => .error (.typeMismatch "vecImmBorrow: not a vector")
         | some (.ref _ _), _ => .error (.typeMismatch "vecImmBorrow: idx not int")
         | _, _ => .error (.typeMismatch "vecImmBorrow: src not ref")
 
       | .vecMutBorrow src idx =>
         match readSite m src, readSite m idx with
-        | some (.ref loc path), some (.int _) =>
-          .running {
-            frame := { f with
-              siteStore := AssocMap.insert f.siteStore s (.ref loc path)
-              stmt := cont }
-            stack := m.stack
-            heap := m.heap }
+        | some (.ref loc path), some (.int i) =>
+          match m.heap.readRef loc path with
+          | some (.vec _ elems) =>
+            if h : i < elems.length then
+              let elem := elems[i]
+              let (heap', elemLoc) := m.heap.alloc elem
+              .running {
+                frame := { f with
+                  siteStore := AssocMap.insert f.siteStore s (.ref elemLoc [])
+                  stmt := cont }
+                stack := m.stack
+                heap := heap' }
+            else .error .vectorError
+          | _ => .error (.typeMismatch "vecMutBorrow: not a vector")
         | some (.ref _ _), _ => .error (.typeMismatch "vecMutBorrow: idx not int")
         | _, _ => .error (.typeMismatch "vecMutBorrow: src not ref")
 

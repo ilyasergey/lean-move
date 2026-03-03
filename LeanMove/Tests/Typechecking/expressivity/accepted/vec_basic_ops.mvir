@@ -1,0 +1,50 @@
+// Basic vector operations: pack, len, push_back, pop_back
+
+//# publish
+module 0x10.vec_pack_empty {
+    t(): vector<u64> {
+    label b0:
+        return vec_pack_0<u64>();
+    }
+}
+
+//# publish
+module 0x11.vec_pack_elems {
+    t(): vector<u64> {
+        let a: u64;
+        let b: u64;
+    label b0:
+        a = 0;
+        b = 1;
+        return vec_pack_2<u64>(copy(a), copy(b));
+    }
+}
+
+//# publish
+module 0x12.vec_len {
+    t(v: &vector<u64>): u64 {
+    label b0:
+        return vec_len<u64>(move(v));
+    }
+}
+
+//# publish
+module 0x13.vec_push {
+    t(v: &mut vector<u64>) {
+        let val: u64;
+    label b0:
+        val = 42;
+        _ = vec_push_back<u64>(move(v), move(val));
+        return;
+    }
+}
+
+//# publish
+module 0x14.vec_pop {
+    t(v: &mut vector<u64>): u64 {
+        let val: u64;
+    label b0:
+        val = vec_pop_back<u64>(move(v));
+        return move(val);
+    }
+}

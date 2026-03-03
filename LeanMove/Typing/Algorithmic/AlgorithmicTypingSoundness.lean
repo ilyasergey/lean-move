@@ -831,12 +831,185 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
       · simp at h
     · simp at h
 
-  -- Vector expressions (Phase 7)
-  | vecPack _ _ => sorry
-  | vecLen _ => sorry
-  | vecImmBorrow _ _ => sorry
-  | vecMutBorrow _ _ => sorry
-  | vecPopBack _ => sorry
+  -- Vector pack
+  | vecPack T elems =>
+    simp only [check_stmt] at h
+    split at h
+    · rename_i hcond
+      simp only [Bool.and_eq_true] at hcond
+      obtain ⟨⟨hfresh, hnodup_bool⟩, hall⟩ := hcond
+      apply typecheck_stmt.let_bind_vecPack
+      · exact hfresh
+      · intro s hs
+        simp only [List.all_eq_true] at hall
+        have hs' := hall s hs
+        cases hlookup_s : lookup env.siteEnv s with
+        | none => simp [hlookup_s] at hs'
+        | some τ =>
+          cases τ with
+          | ref _ _ _ => simp [hlookup_s] at hs'
+          | basic bt =>
+            simp only [hlookup_s] at hs'
+            have hteq := BasicMoveType.eq_of_beq T bt hs'
+            rw [hteq]
+      · exact List.nodup_of_length_eraseDups elems (beq_iff_eq.mp hnodup_bool).symm
+      · have hwf' := TypeEnv.deleteAll_insert_wf env elems a (.basic (.tvec T)) hwf trivial
+        exact ih_cont _ hwf' h
+    · simp at h
+
+  -- Vector length
+  | vecLen src =>
+    simp only [check_stmt] at h
+    cases hlookup : lookup env.siteEnv src with
+    | none => simp [hlookup] at h
+    | some τ =>
+      cases τ with
+      | basic _ => simp [hlookup] at h
+      | ref bt r isBor =>
+        cases bt with
+        | tvec T =>
+          simp only [hlookup] at h
+          split at h
+          · rename_i hfresh
+            apply typecheck_stmt.let_bind_vecLen (T := T) (r := r) (isBor := isBor)
+            · exact hlookup
+            · exact hfresh
+            · have hr_not_root : r ≠ Aref.root := hwf.siteEnv_wf src (.ref (.tvec T) r isBor) hlookup
+              have hpe' := delete_ref_node_wellformed env.pathEnv r hwf.pathEnv_wf hr_not_root
+              have hwf' := TypeEnv.delete_insert_pathEnv_wf env src a (.basic .u64) _ hwf hpe' trivial
+              exact ih_cont _ hwf' h
+          · simp at h
+        | _ => simp [hlookup] at h
+
+  -- Vector immutable borrow
+  | vecImmBorrow src idx =>
+    simp only [check_stmt] at h
+    cases hlookup_src : lookup env.siteEnv src with
+    | none => simp [hlookup_src] at h
+    | some τ_src =>
+      cases hlookup_idx : lookup env.siteEnv idx with
+      | none => simp [hlookup_src, hlookup_idx] at h
+      | some τ_idx =>
+        cases τ_src with
+        | basic _ => simp [hlookup_src, hlookup_idx] at h
+        | ref bt s isBor =>
+          cases τ_idx with
+          | ref _ _ _ => simp [hlookup_src, hlookup_idx] at h
+          | basic bt_idx =>
+            cases bt with
+            | tvec T =>
+              cases bt_idx with
+              | u64 =>
+                simp only [hlookup_src, hlookup_idx] at h
+                split at h
+                · rename_i hfresh
+                  let rf := nextFreshRefInEnv env
+                  apply typecheck_stmt.let_bind_vecImmBorrow (T := T) (s := s) (rf := rf) (isBor := isBor)
+                  · exact hlookup_src
+                  · exact hlookup_idx
+                  · exact hfresh
+                  · exact nextFreshRefInEnv_fresh_prop env
+                  · have hrf_not_root : rf ≠ Aref.root := nextFreshRefInEnv_not_root env
+                    have hpe' := update_with_extension_wellformed rf s [.vecElem] env.pathEnv hwf.pathEnv_wf hrf_not_root
+                    have hτ : match (MoveType.ref T rf .siteBorrowImm) with | .ref _ r _ => r ≠ Aref.root | .basic _ => True :=
+                      nextFreshRefInEnv_not_root env
+                    have hsenv_del1 := SiteEnv.delete_refs_not_root env.siteEnv src hwf.siteEnv_wf
+                    have hsenv_del2 := SiteEnv.delete_refs_not_root _ idx hsenv_del1
+                    have hsenv_ins := SiteEnv.insert_refs_not_root _ a (.ref T rf .siteBorrowImm) hsenv_del2 hτ
+                    have hwf' : TypeEnv.WellFormed
+                      {env with siteEnv := insert (delete (delete env.siteEnv src) idx) a (.ref T rf .siteBorrowImm)
+                                pathEnv := update_with_extension rf s [.vecElem] env.pathEnv} :=
+                      ⟨hpe', hsenv_ins, hwf.varEnv_wf⟩
+                    exact ih_cont _ hwf' h
+                · simp at h
+              | _ => simp [hlookup_src, hlookup_idx] at h
+            | _ => simp [hlookup_src, hlookup_idx] at h
+
+  -- Vector mutable borrow
+  | vecMutBorrow src idx =>
+    simp only [check_stmt] at h
+    cases hlookup_src : lookup env.siteEnv src with
+    | none => simp [hlookup_src] at h
+    | some τ_src =>
+      cases hlookup_idx : lookup env.siteEnv idx with
+      | none => simp [hlookup_src, hlookup_idx] at h
+      | some τ_idx =>
+        cases τ_src with
+        | basic _ => simp [hlookup_src, hlookup_idx] at h
+        | ref bt s isBor =>
+          cases isBor with
+          | siteBorrowImm => simp [hlookup_src, hlookup_idx] at h
+          | siteBorrowMut =>
+            cases τ_idx with
+            | ref _ _ _ => simp [hlookup_src, hlookup_idx] at h
+            | basic bt_idx =>
+              cases bt with
+              | tvec T =>
+                cases bt_idx with
+                | u64 =>
+                  simp only [hlookup_src, hlookup_idx] at h
+                  split at h
+                  · rename_i hfresh
+                    let rf := nextFreshRefInEnv env
+                    apply typecheck_stmt.let_bind_vecMutBorrow (T := T) (s := s) (rf := rf)
+                    · exact hlookup_src
+                    · exact hlookup_idx
+                    · exact hfresh
+                    · exact nextFreshRefInEnv_fresh_prop env
+                    · have hrf_not_root : rf ≠ Aref.root := nextFreshRefInEnv_not_root env
+                      have hpe' := update_with_extension_wellformed rf s [.vecElem] env.pathEnv hwf.pathEnv_wf hrf_not_root
+                      have hτ : match (MoveType.ref T rf .siteBorrowMut) with | .ref _ r _ => r ≠ Aref.root | .basic _ => True :=
+                        nextFreshRefInEnv_not_root env
+                      have hsenv_del1 := SiteEnv.delete_refs_not_root env.siteEnv src hwf.siteEnv_wf
+                      have hsenv_del2 := SiteEnv.delete_refs_not_root _ idx hsenv_del1
+                      have hsenv_ins := SiteEnv.insert_refs_not_root _ a (.ref T rf .siteBorrowMut) hsenv_del2 hτ
+                      have hwf' : TypeEnv.WellFormed
+                        {env with siteEnv := insert (delete (delete env.siteEnv src) idx) a (.ref T rf .siteBorrowMut)
+                                  pathEnv := update_with_extension rf s [.vecElem] env.pathEnv} :=
+                        ⟨hpe', hsenv_ins, hwf.varEnv_wf⟩
+                      exact ih_cont _ hwf' h
+                  · simp at h
+                | _ => simp [hlookup_src, hlookup_idx] at h
+              | _ => simp [hlookup_src, hlookup_idx] at h
+
+  -- Vector pop back
+  | vecPopBack src =>
+    simp only [check_stmt] at h
+    cases hlookup : lookup env.siteEnv src with
+    | none => simp [hlookup] at h
+    | some τ =>
+      cases τ with
+      | basic _ => simp [hlookup] at h
+      | ref bt r isBor =>
+        cases isBor with
+        | siteBorrowImm => simp [hlookup] at h
+        | siteBorrowMut =>
+          cases bt with
+          | tvec T =>
+            simp only [hlookup] at h
+            split at h
+            · rename_i hcond
+              simp only [Bool.and_eq_true] at hcond
+              obtain ⟨hfresh, hcob⟩ := hcond
+              have hout : check_outbound env.pathEnv r (fun re => only_matches_empty (simplify re)) := by
+                intro s' hs'
+                simp only [check_outbound_bool, List.all_eq_true] at hcob
+                exact hcob s' hs'
+              have hr_not_root : r ≠ Aref.root := hwf.siteEnv_wf src (.ref (.tvec T) r .siteBorrowMut) hlookup
+              have hpe' := garbage_collect_wellformed env.pathEnv r hwf.pathEnv_wf hr_not_root
+              have hsenv_del := SiteEnv.delete_refs_not_root env.siteEnv src hwf.siteEnv_wf
+              have hsenv_ins := SiteEnv.insert_refs_not_root _ a (.basic T) hsenv_del trivial
+              have hwf' : TypeEnv.WellFormed
+                {env with siteEnv := insert (delete env.siteEnv src) a (.basic T)
+                          pathEnv := garbage_collect env.pathEnv r} :=
+                ⟨hpe', hsenv_ins, hwf.varEnv_wf⟩
+              apply typecheck_stmt.let_bind_vecPopBack (T := T) (r := r)
+              · exact hlookup
+              · exact hout
+              · exact hfresh
+              · exact ih_cont _ hwf' h
+            · simp at h
+          | _ => simp [hlookup] at h
 
 /- ---------------------------------------------------- -/
 /-       Substitution soundness helpers                  -/
@@ -1769,10 +1942,137 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
         · simp at h
     · simp at h
 
-  -- Vector statements (Phase 7)
-  | vecUnpack _ _ _ _ ih_cont => sorry
-  | vecPushBack _ _ _ ih_cont => sorry
-  | vecSwap _ _ _ _ ih_cont => sorry
+  -- Vector unpack
+  | vecUnpack T results src cont ih_cont =>
+    intro h
+    simp only [check_stmt] at h
+    cases hlookup : lookup env.siteEnv src with
+    | none => simp [hlookup] at h
+    | some τ =>
+      cases τ with
+      | basic bt =>
+        cases bt with
+        | tvec T' =>
+          simp only [hlookup] at h
+          split at h
+          · rename_i hcond
+            simp only [Bool.and_eq_true] at hcond
+            obtain ⟨⟨hbeq, hnodup_bool⟩, hall⟩ := hcond
+            have hteq := BasicMoveType.eq_of_beq T T' hbeq
+            subst hteq
+            apply typecheck_stmt.vecUnpack_rule lenv env T results src cont retTypes hlookup
+            · intro s hs
+              simp only [List.all_eq_true] at hall
+              exact hall s hs
+            · exact List.nodup_of_length_eraseDups results (beq_iff_eq.mp hnodup_bool).symm
+            · let env' := {env with siteEnv := addVecSites T (delete env.siteEnv src) results}
+              have hsenv' : SiteEnv.RefsNotRoot env'.siteEnv :=
+                addVecSites_refs_not_root T _ results
+                  (SiteEnv.delete_refs_not_root env.siteEnv src hwf.siteEnv_wf)
+              have hwf' : TypeEnv.WellFormed env' := ⟨hwf.pathEnv_wf, hsenv', hwf.varEnv_wf⟩
+              exact ih_cont env' hwf' h
+          · simp at h
+        | _ => simp [hlookup] at h
+      | ref _ _ _ => simp [hlookup] at h
+
+  -- Vector push back
+  | vecPushBack refSite val cont ih_cont =>
+    intro h
+    simp only [check_stmt] at h
+    cases hlookup_ref : lookup env.siteEnv refSite with
+    | none => simp [hlookup_ref] at h
+    | some τ_ref =>
+      cases hlookup_val : lookup env.siteEnv val with
+      | none => simp [hlookup_ref, hlookup_val] at h
+      | some τ_val =>
+        cases τ_ref with
+        | basic _ => simp [hlookup_ref, hlookup_val] at h
+        | ref bt r isBor =>
+          cases isBor with
+          | siteBorrowImm => simp [hlookup_ref, hlookup_val] at h
+          | siteBorrowMut =>
+            cases τ_val with
+            | ref _ _ _ => simp [hlookup_ref, hlookup_val] at h
+            | basic bt_val =>
+              cases bt with
+              | tvec T =>
+                simp only [hlookup_ref, hlookup_val] at h
+                split at h
+                · rename_i hcond
+                  simp only [Bool.and_eq_true] at hcond
+                  obtain ⟨hbeq, hcob⟩ := hcond
+                  have hteq := BasicMoveType.eq_of_beq T bt_val hbeq
+                  subst hteq
+                  have hout : check_outbound env.pathEnv r (fun re => only_matches_empty (simplify re)) := by
+                    intro s' hs'
+                    simp only [check_outbound_bool, List.all_eq_true] at hcob
+                    exact hcob s' hs'
+                  have hr_not_root : r ≠ Aref.root := hwf.siteEnv_wf refSite (.ref (.tvec T) r .siteBorrowMut) hlookup_ref
+                  have hpe' := garbage_collect_wellformed env.pathEnv r hwf.pathEnv_wf hr_not_root
+                  have hsenv_del1 := SiteEnv.delete_refs_not_root env.siteEnv val hwf.siteEnv_wf
+                  have hsenv_del2 := SiteEnv.delete_refs_not_root _ refSite hsenv_del1
+                  let env' := {env with siteEnv := delete (delete env.siteEnv val) refSite
+                                        pathEnv := garbage_collect env.pathEnv r}
+                  have hwf' : TypeEnv.WellFormed env' := ⟨hpe', hsenv_del2, hwf.varEnv_wf⟩
+                  apply typecheck_stmt.vecPushBack_rule lenv env refSite val T r cont retTypes
+                    hlookup_ref hlookup_val hout
+                  exact ih_cont env' hwf' h
+                · simp at h
+              | _ => simp [hlookup_ref, hlookup_val] at h
+
+  -- Vector swap
+  | vecSwap refSite idx1 idx2 cont ih_cont =>
+    intro h
+    simp only [check_stmt] at h
+    cases hlookup_ref : lookup env.siteEnv refSite with
+    | none => simp [hlookup_ref] at h
+    | some τ_ref =>
+      cases hlookup_idx1 : lookup env.siteEnv idx1 with
+      | none => simp [hlookup_ref, hlookup_idx1] at h
+      | some τ_idx1 =>
+        cases hlookup_idx2 : lookup env.siteEnv idx2 with
+        | none => simp [hlookup_ref, hlookup_idx1, hlookup_idx2] at h
+        | some τ_idx2 =>
+          cases τ_ref with
+          | basic _ => simp [hlookup_ref, hlookup_idx1, hlookup_idx2] at h
+          | ref bt r isBor =>
+            cases isBor with
+            | siteBorrowImm => simp [hlookup_ref, hlookup_idx1, hlookup_idx2] at h
+            | siteBorrowMut =>
+              cases τ_idx1 with
+              | ref _ _ _ => simp [hlookup_ref, hlookup_idx1, hlookup_idx2] at h
+              | basic bt_idx1 =>
+                cases τ_idx2 with
+                | ref _ _ _ => simp [hlookup_ref, hlookup_idx1, hlookup_idx2] at h
+                | basic bt_idx2 =>
+                  cases bt with
+                  | tvec T =>
+                    cases bt_idx1 with
+                    | u64 =>
+                      cases bt_idx2 with
+                      | u64 =>
+                        simp only [hlookup_ref, hlookup_idx1, hlookup_idx2] at h
+                        split at h
+                        · rename_i hcob
+                          have hout : check_outbound env.pathEnv r (fun re => only_matches_empty (simplify re)) := by
+                            intro s' hs'
+                            simp only [check_outbound_bool, List.all_eq_true] at hcob
+                            exact hcob s' hs'
+                          have hr_not_root : r ≠ Aref.root := hwf.siteEnv_wf refSite (.ref (.tvec T) r .siteBorrowMut) hlookup_ref
+                          have hpe' := garbage_collect_wellformed env.pathEnv r hwf.pathEnv_wf hr_not_root
+                          have hsenv_del1 := SiteEnv.delete_refs_not_root env.siteEnv idx2 hwf.siteEnv_wf
+                          have hsenv_del2 := SiteEnv.delete_refs_not_root _ idx1 hsenv_del1
+                          have hsenv_del3 := SiteEnv.delete_refs_not_root _ refSite hsenv_del2
+                          let env' := {env with siteEnv := delete (delete (delete env.siteEnv idx2) idx1) refSite
+                                                pathEnv := garbage_collect env.pathEnv r}
+                          have hwf' : TypeEnv.WellFormed env' := ⟨hpe', hsenv_del3, hwf.varEnv_wf⟩
+                          apply typecheck_stmt.vecSwap_rule lenv env refSite idx1 idx2 T r cont retTypes
+                            hlookup_ref hlookup_idx1 hlookup_idx2 hout
+                          exact ih_cont env' hwf' h
+                        · simp at h
+                      | _ => simp [hlookup_ref, hlookup_idx1, hlookup_idx2] at h
+                    | _ => simp [hlookup_ref, hlookup_idx1, hlookup_idx2] at h
+                  | _ => simp [hlookup_ref, hlookup_idx1, hlookup_idx2] at h
 
 /- ---------------------------------------------------- -/
 /-       Function type checking soundness                -/

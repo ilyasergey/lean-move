@@ -508,6 +508,17 @@ lemma addFieldSites_refs_not_root (fentries : AssocMap Field BasicMoveType)
     | none => exact hwf
     | some bt => exact SiteEnv.insert_refs_not_root se hd.2 (.basic bt) hwf trivial
 
+/-- addVecSites preserves RefsNotRoot because it only inserts basic types -/
+lemma addVecSites_refs_not_root (T : BasicMoveType)
+    (se : SiteEnv) (results : List Site)
+    (hwf : SiteEnv.RefsNotRoot se) :
+    SiteEnv.RefsNotRoot (addVecSites T se results) := by
+  induction results generalizing se with
+  | nil => exact hwf
+  | cons hd tl ih =>
+    simp only [addVecSites]
+    exact ih _ (SiteEnv.insert_refs_not_root se hd (.basic T) hwf trivial)
+
 /- ---------------------------------------------------- -/
 /-       VarEnv.RefsNotRoot invariant                    -/
 /- ---------------------------------------------------- -/

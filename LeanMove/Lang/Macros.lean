@@ -102,6 +102,40 @@ macro "unpack" "(" fields:term "," src:term ")" : term =>
 macro "call" "(" results:term "," fnName:term "," args:term ")" : term =>
   `((fun cont => Stmt.call $results $fnName $args cont : StmtBuilder))
 
+-- Vector operations
+
+-- Let binding with vec_pack: letsite a ← vecPack(T, elems) (produces StmtBuilder)
+macro "letsite" a:term " ← " "vecPack" "(" t:term "," elems:term ")" : term =>
+  `((fun cont => Stmt.letBind $a (Expr.vecPack $t $elems) cont : StmtBuilder))
+
+-- Let binding with vec_len: letsite a ← vecLen(src) (produces StmtBuilder)
+macro "letsite" a:term " ← " "vecLen" "(" src:term ")" : term =>
+  `((fun cont => Stmt.letBind $a (Expr.vecLen $src) cont : StmtBuilder))
+
+-- Let binding with vec_imm_borrow: letsite a ← vecImmBorrow(src, idx) (produces StmtBuilder)
+macro "letsite" a:term " ← " "vecImmBorrow" "(" src:term "," idx:term ")" : term =>
+  `((fun cont => Stmt.letBind $a (Expr.vecImmBorrow $src $idx) cont : StmtBuilder))
+
+-- Let binding with vec_mut_borrow: letsite a ← vecMutBorrow(src, idx) (produces StmtBuilder)
+macro "letsite" a:term " ← " "vecMutBorrow" "(" src:term "," idx:term ")" : term =>
+  `((fun cont => Stmt.letBind $a (Expr.vecMutBorrow $src $idx) cont : StmtBuilder))
+
+-- Let binding with vec_pop_back: letsite a ← vecPopBack(src) (produces StmtBuilder)
+macro "letsite" a:term " ← " "vecPopBack" "(" src:term ")" : term =>
+  `((fun cont => Stmt.letBind $a (Expr.vecPopBack $src) cont : StmtBuilder))
+
+-- Vec unpack builder: vecUnpack(T, results, src) (produces StmtBuilder)
+macro "vecUnpack" "(" t:term "," results:term "," src:term ")" : term =>
+  `((fun cont => Stmt.vecUnpack $t $results $src cont : StmtBuilder))
+
+-- Vec push_back builder: vecPushBack(ref, val) (produces StmtBuilder)
+macro "vecPushBack" "(" ref:term "," val:term ")" : term =>
+  `((fun cont => Stmt.vecPushBack $ref $val cont : StmtBuilder))
+
+-- Vec swap builder: vecSwap(ref, idx1, idx2) (produces StmtBuilder)
+macro "vecSwap" "(" ref:term "," idx1:term "," idx2:term ")" : term =>
+  `((fun cont => Stmt.vecSwap $ref $idx1 $idx2 cont : StmtBuilder))
+
 -- Terminal statements (no continuation needed)
 
 -- Jump: jump "label" (terminal Stmt)

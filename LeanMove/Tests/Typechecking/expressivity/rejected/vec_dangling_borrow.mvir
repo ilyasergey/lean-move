@@ -1,0 +1,44 @@
+// Vector borrow safety: mutation while element borrow is live is rejected.
+// Adapted from tnowacki/sui bytecode-verifier-transactional-tests:
+// - vector_ops_pop_after_borrow.mvir
+// - vector_ops_double_borrow.mvir
+
+// Push while element borrow is live (VEC_UPDATE_EXISTS_MUTABLE_BORROW_ERROR)
+//# publish
+module 0x20.vec_push_while_borrow {
+    t(v: &mut vector<u64>) {
+        let r: &u64;
+        let val: u64;
+    label b0:
+        r = vec_imm_borrow<u64>(copy(v), 0);
+        val = 42;
+        _ = vec_push_back<u64>(copy(v), move(val));
+        return;
+    }
+}
+
+// Pop while element borrow is live (VEC_UPDATE_EXISTS_MUTABLE_BORROW_ERROR)
+//# publish
+module 0x21.vec_pop_while_borrow {
+    t(v: &mut vector<u64>) {
+        let r: &u64;
+        let val: u64;
+    label b0:
+        r = vec_imm_borrow<u64>(copy(v), 0);
+        val = vec_pop_back<u64>(copy(v));
+        return;
+    }
+}
+
+// Write through vector ref while element borrow is live (already in simple_dangling.mvir)
+// Included here for completeness
+//# publish
+module 0x22.vec_write_while_borrow {
+    t(v: &mut vector<u64>) {
+        let r: &mut u64;
+    label b0:
+        r = vec_mut_borrow<u64>(copy(v), 0);
+        *copy(v) = vec_pack_0<u64>();
+        return;
+    }
+}

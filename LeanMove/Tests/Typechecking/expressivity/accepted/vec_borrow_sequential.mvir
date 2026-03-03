@@ -1,0 +1,36 @@
+// Sequential vector element borrows: borrow, use, release, then borrow again
+// Adapted from tnowacki/sui bytecode-verifier-transactional-tests
+
+//# publish
+module 0x15.vec_imm_borrow_read {
+    t(v: &vector<u64>): u64 {
+        let r: &u64;
+    label b0:
+        r = vec_imm_borrow<u64>(copy(v), 0);
+        return *move(r);
+    }
+}
+
+//# publish
+module 0x16.vec_multi_imm_borrow {
+    t(v: &vector<u64>): u64 {
+        let r1: &u64;
+        let r2: &u64;
+    label b0:
+        r1 = vec_imm_borrow<u64>(copy(v), 0);
+        r2 = vec_imm_borrow<u64>(move(v), 1);
+        _ = *move(r1);
+        return *move(r2);
+    }
+}
+
+//# publish
+module 0x17.vec_mut_borrow_write {
+    t(v: &mut vector<u64>) {
+        let r: &mut u64;
+    label b0:
+        r = vec_mut_borrow<u64>(copy(v), 0);
+        *move(r) = 99;
+        return;
+    }
+}

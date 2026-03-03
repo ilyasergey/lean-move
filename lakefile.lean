@@ -42,9 +42,11 @@ lean_lib «expressivity» where
              `accepted.extension_after_call, `accepted.extension_writes_after_join,
              `accepted.imm_borrow_after_mut, `accepted.multible_mutable_return_values,
              `accepted.mutable_borrows_are_not_unique, `accepted.subtree_writes_release,
+             `accepted.vec_basic_ops, `accepted.vec_borrow_sequential,
              `rejected.simple_dangling, `rejected.imm_borrow_after_mut_call_invalid,
              `rejected.imm_borrow_after_mut_fields_invalid,
-             `rejected.mutable_borrows_are_not_unique_calls_invalid]
+             `rejected.mutable_borrows_are_not_unique_calls_invalid,
+             `rejected.vec_dangling_borrow]
 
 -- Build all examples
 -- Build with: lake build examples
@@ -59,9 +61,11 @@ lean_lib «examples» where
              `expressivity.accepted.extension_after_call, `expressivity.accepted.extension_writes_after_join,
              `expressivity.accepted.imm_borrow_after_mut, `expressivity.accepted.multible_mutable_return_values,
              `expressivity.accepted.mutable_borrows_are_not_unique, `expressivity.accepted.subtree_writes_release,
+             `expressivity.accepted.vec_basic_ops, `expressivity.accepted.vec_borrow_sequential,
              `expressivity.rejected.simple_dangling, `expressivity.rejected.imm_borrow_after_mut_call_invalid,
              `expressivity.rejected.imm_borrow_after_mut_fields_invalid,
-             `expressivity.rejected.mutable_borrows_are_not_unique_calls_invalid]
+             `expressivity.rejected.mutable_borrows_are_not_unique_calls_invalid,
+             `expressivity.rejected.vec_dangling_borrow]
 
 -- Build target for runtime tests (small-step interpreter)
 -- Build with: lake build runtime

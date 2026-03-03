@@ -47,6 +47,9 @@ import LeanMove.Tests.Typechecking.expressivity.rejected.simple_dangling
 import LeanMove.Tests.Typechecking.expressivity.rejected.imm_borrow_after_mut_call_invalid
 import LeanMove.Tests.Typechecking.expressivity.rejected.imm_borrow_after_mut_fields_invalid
 import LeanMove.Tests.Typechecking.expressivity.rejected.mutable_borrows_are_not_unique_calls_invalid
+import LeanMove.Tests.Typechecking.expressivity.accepted.vec_basic_ops
+import LeanMove.Tests.Typechecking.expressivity.accepted.vec_borrow_sequential
+import LeanMove.Tests.Typechecking.expressivity.rejected.vec_dangling_borrow
 
 /-!
 # Runtime Tests for MoveLight Interpreter
@@ -583,5 +586,109 @@ open LeanMove.Tests.BorrowFieldNonRef
 #guard match run 200 (initState foo AssocMap.empty []) with
   | .error (.typeMismatch _) => true
   | _ => false
+
+end
+
+-- ============================================================
+-- V1. vec_pack_empty — pack empty vector, return it
+-- ============================================================
+section
+open LeanMove.Tests.Expressivity.VecBasicOps
+
+#eval run 200 (initState parsed_vec_pack_empty AssocMap.empty [])
+
+#guard (run 200 (initState parsed_vec_pack_empty AssocMap.empty [])).getHaltedValues ==
+  some [.vec .u64 []]
+
+end
+
+-- ============================================================
+-- V2. vec_pack_elems — pack elements into vector, return it
+-- ============================================================
+section
+open LeanMove.Tests.Expressivity.VecBasicOps
+
+#eval run 200 (initState parsed_vec_pack_elems AssocMap.empty [])
+
+#guard (run 200 (initState parsed_vec_pack_elems AssocMap.empty [])).getHaltedValues ==
+  some [.vec .u64 [.int 0, .int 1]]
+
+end
+
+-- ============================================================
+-- V3. vec_len — get vector length
+-- ============================================================
+section
+open LeanMove.Tests.Expressivity.VecBasicOps
+
+private def vecLenHeap : Heap × Loc :=
+  Heap.empty.alloc (.vec .u64 [.int 10, .int 20, .int 30])
+
+#eval run 200 (initState parsed_vec_len AssocMap.empty [.ref vecLenHeap.2 []] vecLenHeap.1)
+
+#guard (run 200 (initState parsed_vec_len AssocMap.empty [.ref vecLenHeap.2 []] vecLenHeap.1)).getHaltedValues ==
+  some [.int 3]
+
+end
+
+-- ============================================================
+-- V4. vec_push — push element to vector
+-- ============================================================
+section
+open LeanMove.Tests.Expressivity.VecBasicOps
+
+private def vecPushHeap : Heap × Loc :=
+  Heap.empty.alloc (.vec .u64 [.int 10])
+
+#eval run 200 (initState parsed_vec_push AssocMap.empty [.ref vecPushHeap.2 []] vecPushHeap.1)
+
+#guard (run 200 (initState parsed_vec_push AssocMap.empty [.ref vecPushHeap.2 []] vecPushHeap.1)).isHalted
+
+end
+
+-- ============================================================
+-- V5. vec_pop — pop element from vector
+-- ============================================================
+section
+open LeanMove.Tests.Expressivity.VecBasicOps
+
+private def vecPopHeap : Heap × Loc :=
+  Heap.empty.alloc (.vec .u64 [.int 10, .int 20, .int 30])
+
+#eval run 200 (initState parsed_vec_pop AssocMap.empty [.ref vecPopHeap.2 []] vecPopHeap.1)
+
+#guard (run 200 (initState parsed_vec_pop AssocMap.empty [.ref vecPopHeap.2 []] vecPopHeap.1)).getHaltedValues ==
+  some [.int 30]
+
+end
+
+-- ============================================================
+-- V6. vec_imm_borrow_read — immutable element borrow, read
+-- ============================================================
+section
+open LeanMove.Tests.Expressivity.VecBorrowSequential
+
+private def vecBorrowHeap : Heap × Loc :=
+  Heap.empty.alloc (.vec .u64 [.int 42, .int 99])
+
+#eval run 200 (initState parsed_vec_imm_borrow_read AssocMap.empty [.ref vecBorrowHeap.2 []] vecBorrowHeap.1)
+
+#guard (run 200 (initState parsed_vec_imm_borrow_read AssocMap.empty [.ref vecBorrowHeap.2 []] vecBorrowHeap.1)).getHaltedValues ==
+  some [.int 42]
+
+end
+
+-- ============================================================
+-- V7. vec_mut_borrow_write — mutable element borrow, write 99
+-- ============================================================
+section
+open LeanMove.Tests.Expressivity.VecBorrowSequential
+
+private def vecMutBorrowHeap : Heap × Loc :=
+  Heap.empty.alloc (.vec .u64 [.int 0, .int 0])
+
+#eval run 200 (initState parsed_vec_mut_borrow_write AssocMap.empty [.ref vecMutBorrowHeap.2 []] vecMutBorrowHeap.1)
+
+#guard (run 200 (initState parsed_vec_mut_borrow_write AssocMap.empty [.ref vecMutBorrowHeap.2 []] vecMutBorrowHeap.1)).isHalted
 
 end
