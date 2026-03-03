@@ -79,6 +79,12 @@ theorem step_danglingRef_source (m : Machine) (loc : Loc) :
     exfalso; simp only [step, hs] at hstep
     revert hstep; split <;> try split <;> try split <;> try split <;> try split
     all_goals (intro h; simp at h)
+  | vecUnpack _ _ _ _ =>
+    exfalso; simp only [step, hs] at hstep; simp at hstep
+  | vecPushBack _ _ _ =>
+    exfalso; simp only [step, hs] at hstep; simp at hstep
+  | vecSwap _ _ _ _ =>
+    exfalso; simp only [step, hs] at hstep; simp at hstep
   | writeRef dst val cont =>
     simp only [step, hs] at hstep
     right
@@ -105,6 +111,7 @@ theorem step_danglingRef_source (m : Machine) (loc : Loc) :
       | bool b => exfalso; simp [h1] at hstep
       | unit => exfalso; simp [h1] at hstep
       | record fields => exfalso; simp [h1] at hstep
+      | vec _ => exfalso; simp [h1] at hstep
   | letBind s expr cont =>
     cases expr with
     | intLit n =>
@@ -143,6 +150,7 @@ theorem step_danglingRef_source (m : Machine) (loc : Loc) :
         | bool b => exfalso; simp [h1] at hstep
         | unit => exfalso; simp [h1] at hstep
         | record fields => exfalso; simp [h1] at hstep
+        | vec _ => exfalso; simp [h1] at hstep
     | freeze src =>
       exfalso; simp only [step, hs] at hstep
       revert hstep; split <;> (intro h; simp at h)
@@ -153,6 +161,11 @@ theorem step_danglingRef_source (m : Machine) (loc : Loc) :
       exfalso; simp only [step, hs] at hstep
       revert hstep; split <;> try split <;> try split
       all_goals (intro h; simp at h)
+    | vecPack _ _ => exfalso; simp only [step, hs] at hstep; simp at hstep
+    | vecLen _ => exfalso; simp only [step, hs] at hstep; simp at hstep
+    | vecImmBorrow _ _ => exfalso; simp only [step, hs] at hstep; simp at hstep
+    | vecMutBorrow _ _ => exfalso; simp only [step, hs] at hstep; simp at hstep
+    | vecPopBack _ => exfalso; simp only [step, hs] at hstep; simp at hstep
 
 /-- A readRef that is well-typed always succeeds (heap access exists).
     Uses site_consistent to get the concrete reference, siteEnv_refs_tracked
@@ -722,6 +735,13 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
         cases hstep
 
   -- ========================================
+  -- vecUnpack / vecPushBack / vecSwap: placeholder (Phase 10)
+  -- ========================================
+  | vecUnpack _ _ _ _ => sorry
+  | vecPushBack _ _ _ => sorry
+  | vecSwap _ _ _ _ => sorry
+
+  -- ========================================
   -- letBind s expr cont: case analysis on expr
   -- ========================================
   | letBind s expr cont =>
@@ -866,6 +886,7 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
             cases htb
             cases op <;> simp [binop_type] at hbinop
           | trecord _ => cases op <;> simp [binop_type] at hbinop
+          | tvec _ => cases op <;> simp [binop_type] at hbinop
         | tbool =>
           have ⟨ba, hba⟩ := HasType_tbool_is_bool hta
           subst hba
@@ -888,6 +909,7 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
             have ⟨flds, hf⟩ := HasType_trecord_is_record htb
             subst hf
             cases op <;> simp [binop_type] at hbinop
+          | tvec _ => cases op <;> simp [binop_type] at hbinop
         | tunit =>
           cases hta
           cases op <;> (cases bt2 <;> simp [binop_type] at hbinop)
@@ -895,5 +917,14 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
           have ⟨flds, hf⟩ := HasType_trecord_is_record hta
           subst hf
           cases op <;> (cases bt2 <;> simp [binop_type] at hbinop)
+        | tvec _ =>
+          cases op <;> (cases bt2 <;> simp [binop_type] at hbinop)
+
+    -- ---- vecPack / vecLen / vecImmBorrow / vecMutBorrow / vecPopBack: placeholder (Phase 10) ----
+    | vecPack _ _ => sorry
+    | vecLen _ => sorry
+    | vecImmBorrow _ _ => sorry
+    | vecMutBorrow _ _ => sorry
+    | vecPopBack _ => sorry
 
 end LeanMove.Typing.TypeSoundness

@@ -131,6 +131,7 @@ theorem VarEnvLookupCompatible.refl (m : VarEnv) : VarEnvLookupCompatible m m :=
 inductive PathElement where
   | field : Field → PathElement
   | root_to_var : Var → PathElement
+  | vecElem : PathElement
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 abbrev Path := List PathElement

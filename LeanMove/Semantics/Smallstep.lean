@@ -45,6 +45,7 @@ inductive Value where
   | unit : Value
   | record : List (Field × Value) → Value
   | ref : Loc → List Field → Value    -- heap location + field access path
+  | vec : List Value → Value           -- vector of values
 deriving Repr, Inhabited
 
 /-- Boolean equality for Values -/
@@ -54,12 +55,17 @@ def Value.beq : Value → Value → Bool
   | .unit, .unit => true
   | .record fs1, .record fs2 => beqFields fs1 fs2
   | .ref l1 p1, .ref l2 p2 => l1 == l2 && p1 == p2
+  | .vec vs1, .vec vs2 => beqValues vs1 vs2
   | _, _ => false
 where
   beqFields : List (Field × Value) → List (Field × Value) → Bool
     | [], [] => true
     | (f1, v1) :: rest1, (f2, v2) :: rest2 =>
       f1 == f2 && v1.beq v2 && beqFields rest1 rest2
+    | _, _ => false
+  beqValues : List Value → List Value → Bool
+    | [], [] => true
+    | v1 :: rest1, v2 :: rest2 => v1.beq v2 && beqValues rest1 rest2
     | _, _ => false
 
 instance : BEq Value := ⟨Value.beq⟩
@@ -173,6 +179,7 @@ inductive RuntimeError where
   | outOfFuel          : RuntimeError
   | aborted            : RuntimeError
   | arityMismatch      : String → RuntimeError
+  | vectorError        : RuntimeError
 deriving Repr
 
 /-- An error is "acceptable" if the type system does not prevent it. -/
@@ -180,6 +187,7 @@ deriving Repr
   | .divisionByZero => True
   | .outOfFuel => True
   | .aborted => True
+  | .vectorError => True
   | _ => False
 
 /-- Running machine state -/
@@ -571,6 +579,13 @@ def step (state : ExecState) : ExecState :=
         | some _, some _ => .error (.typeMismatch "binop type mismatch")
         | _, _ => .error (.uninitializedSite (.site 0))
 
+      -- Vector operations (Phase 5 placeholder)
+      | .vecPack _ _ => .error (.typeMismatch "TODO: vec op not implemented")
+      | .vecLen _ => .error (.typeMismatch "TODO: vec op not implemented")
+      | .vecImmBorrow _ _ => .error (.typeMismatch "TODO: vec op not implemented")
+      | .vecMutBorrow _ _ => .error (.typeMismatch "TODO: vec op not implemented")
+      | .vecPopBack _ => .error (.typeMismatch "TODO: vec op not implemented")
+
     -- --------------------------------------------------------
     -- Non-terminal: unpack fieldSites src cont
     -- --------------------------------------------------------
@@ -672,6 +687,13 @@ def step (state : ExecState) : ExecState :=
                 stack := callerFrame :: m.stack
                 heap := heap'
               }
+
+    -- --------------------------------------------------------
+    -- Vector statement operations (Phase 5 placeholder)
+    -- --------------------------------------------------------
+    | .vecUnpack _ _ _ _ => .error (.typeMismatch "TODO: vec op not implemented")
+    | .vecPushBack _ _ _ => .error (.typeMismatch "TODO: vec op not implemented")
+    | .vecSwap _ _ _ _ => .error (.typeMismatch "TODO: vec op not implemented")
 
 -- ============================================================
 -- Driver Function

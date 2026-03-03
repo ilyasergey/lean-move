@@ -156,6 +156,16 @@ where
 @[simp] theorem hasType_bool_ref_tbool (l p) : hasType_bool (.ref l p) .tbool = false := rfl
 @[simp] theorem hasType_bool_ref_tunit (l p) : hasType_bool (.ref l p) .tunit = false := rfl
 @[simp] theorem hasType_bool_ref_trecord (l p m) : hasType_bool (.ref l p) (.trecord m) = false := rfl
+@[simp] theorem hasType_bool_ref_tvec (l p t) : hasType_bool (.ref l p) (.tvec t) = false := rfl
+@[simp] theorem hasType_bool_int_tvec (n t) : hasType_bool (.int n) (.tvec t) = false := rfl
+@[simp] theorem hasType_bool_bool_tvec (b t) : hasType_bool (.bool b) (.tvec t) = false := rfl
+@[simp] theorem hasType_bool_unit_tvec (t) : hasType_bool .unit (.tvec t) = false := rfl
+@[simp] theorem hasType_bool_record_tvec (f t) : hasType_bool (.record f) (.tvec t) = false := rfl
+@[simp] theorem hasType_bool_vec_u64 (vs) : hasType_bool (.vec vs) .u64 = false := rfl
+@[simp] theorem hasType_bool_vec_tbool (vs) : hasType_bool (.vec vs) .tbool = false := rfl
+@[simp] theorem hasType_bool_vec_tunit (vs) : hasType_bool (.vec vs) .tunit = false := rfl
+@[simp] theorem hasType_bool_vec_trecord (vs m) : hasType_bool (.vec vs) (.trecord m) = false := rfl
+@[simp] theorem hasType_bool_vec_tvec (vs t) : hasType_bool (.vec vs) (.tvec t) = false := rfl
 
 /-- If fields.all checks that every value-field key exists in the type entries,
     then List.lookup on the value succeeding implies List.lookup on the type succeeds. -/
@@ -217,6 +227,16 @@ mutual
     | .ref _ _, .tbool, h => by simp at h
     | .ref _ _, .tunit, h => by simp at h
     | .ref _ _, .trecord _, h => by simp at h
+    | .ref _ _, .tvec _, h => by simp at h
+    | .int _, .tvec _, h => by simp at h
+    | .bool _, .tvec _, h => by simp at h
+    | .unit, .tvec _, h => by simp at h
+    | .record _, .tvec _, h => by simp at h
+    | .vec _, .u64, h => by simp at h
+    | .vec _, .tbool, h => by simp at h
+    | .vec _, .tunit, h => by simp at h
+    | .vec _, .trecord _, h => by simp at h
+    | .vec _, .tvec _, h => by simp at h
   termination_by v bt _ => sizeOf v + sizeOf bt
   decreasing_by all_goals (simp_wf; rcases fentries with ⟨e⟩; simp [AssocMap.mk.sizeOf_spec]; omega)
 
@@ -866,6 +886,7 @@ theorem initState_safe (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunD
           | bool _ => simp
           | unit => simp
           | record _ => simp
+          | vec _ => simp
           | ref loc' path' =>
             intro hfm
             simp only [Option.some.injEq, Prod.mk.injEq] at hfm

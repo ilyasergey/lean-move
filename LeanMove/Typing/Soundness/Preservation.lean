@@ -1506,6 +1506,7 @@ private theorem fieldPathOf_append (l₁ l₂ : List PathElement) :
     cases hd with
     | field f => simp [fieldPathOf, ih]
     | root_to_var y => simp [fieldPathOf, ih]
+    | vecElem => simp [fieldPathOf, ih]
 
 /-- Unified preservation for borrowField/borrowMutField.
     Both have identical runtime semantics (extend ref with field) and identical
@@ -2295,6 +2296,7 @@ private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : Labe
       | unit => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
       | record _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
       | ref _ _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
+      | vec _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
     | bool ba =>
       cases hvb_eq : vb with
       | bool bb =>
@@ -2314,9 +2316,11 @@ private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : Labe
       | unit => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
       | record _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
       | ref _ _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
+      | vec _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
     | unit => simp only [hva_eq] at hstep; nomatch hstep
     | record _ => simp only [hva_eq] at hstep; nomatch hstep
     | ref _ _ => simp only [hva_eq] at hstep; nomatch hstep
+    | vec _ => simp only [hva_eq] at hstep; nomatch hstep
   subst hm'_eq
   refine ⟨{env with siteEnv := insert (delete (delete env.siteEnv sA) sB) s (.basic bt3)},
           lenv, retTypes, rmap, ?_, hss⟩
@@ -5064,6 +5068,7 @@ private theorem preservation_call (m m' : Machine) (env : TypeEnv) (lenv : Label
             | bool _ => simp
             | unit => simp
             | record _ => simp
+            | vec _ => simp
             | ref loc' path' =>
               intro hfm
               simp only [Option.some.injEq, Prod.mk.injEq] at hfm
@@ -5793,6 +5798,12 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     | freeze src => exact preservation_freeze m m' env lenv retTypes rmap hwt hss s src cont hstmt hstep
     | pack name fieldSites => exact preservation_pack m m' env lenv retTypes rmap hwt hss s name fieldSites cont hstmt hstep
     | binop op a b => exact preservation_binop m m' env lenv retTypes rmap hwt hss s op a b cont hstmt hstep
+    -- Vector Expr operations (Phase 11 placeholder)
+    | vecPack _ _ => exfalso; simp only [step, hstmt] at hstep; simp at hstep
+    | vecLen _ => exfalso; simp only [step, hstmt] at hstep; simp at hstep
+    | vecImmBorrow _ _ => exfalso; simp only [step, hstmt] at hstep; simp at hstep
+    | vecMutBorrow _ _ => exfalso; simp only [step, hstmt] at hstep; simp at hstep
+    | vecPopBack _ => exfalso; simp only [step, hstmt] at hstep; simp at hstep
   | release site cont => exact preservation_release m m' env lenv retTypes rmap hwt hss site cont hstmt hstep
   | assign x site cont =>
     rcases inv_assign (by rw [← hstmt]; exact hwt.stmt_typed) with
@@ -5807,6 +5818,10 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
   | branch c l1 l2 => exact preservation_branch m m' env lenv retTypes rmap hwt hss c l1 l2 hstmt hstep
   | ret sites => exact preservation_ret m m' env lenv retTypes rmap hwt hss sites hstmt hstep
   | call results fname argSites cont => exact preservation_call m m' env lenv retTypes rmap hwt hss results fname argSites cont hstmt hstep
+  -- Vector Stmt operations (Phase 11 placeholder)
+  | vecUnpack _ _ _ _ => exfalso; simp only [step, hstmt] at hstep; simp at hstep
+  | vecPushBack _ _ _ => exfalso; simp only [step, hstmt] at hstep; simp at hstep
+  | vecSwap _ _ _ _ => exfalso; simp only [step, hstmt] at hstep; simp at hstep
 
 
 

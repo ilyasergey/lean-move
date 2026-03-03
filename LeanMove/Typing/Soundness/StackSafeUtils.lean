@@ -793,6 +793,7 @@ theorem extendWithReturns_new_mapping_type
           | bool b => subst hv; exact Value.noConfusion hveq
           | unit => subst hv; exact Value.noConfusion hveq
           | «record» fs => subst hv; exact Value.noConfusion hveq
+          | vec _ => subst hv; exact Value.noConfusion hveq
 
 /-- Monotonicity: if rmap already maps r, extendWithReturns still maps r. -/
 theorem RefMap.extendWithReturns_ne_none (rmap : RefMap) (siteEnv : SiteEnv)
@@ -823,6 +824,7 @@ theorem RefMap.extendWithReturns_ne_none (rmap : RefMap) (siteEnv : SiteEnv)
           | bool _ => exact ih rmap vs h
           | unit => exact ih rmap vs h
           | «record» _ => exact ih rmap vs h
+          | vec _ => exact ih rmap vs h
 
 /-- If a result site has a ref type mapping abstract ref r, and ReturnValsWellTyped holds,
     then extendWithReturns maps r (r is non-none in the result). -/
@@ -860,6 +862,7 @@ theorem RefMap.extendWithReturns_maps_result_ref
           | bool _ => simp at hveq
           | unit => simp at hveq
           | «record» _ => simp at hveq
+          | vec _ => simp at hveq
         · -- s ∈ ss: recurse with IH
           cases τ' with
           | basic _ =>
@@ -873,6 +876,7 @@ theorem RefMap.extendWithReturns_maps_result_ref
             | bool _ => simp at hveq'
             | unit => simp at hveq'
             | «record» _ => simp at hveq'
+            | vec _ => simp at hveq'
 
 /-- Result sites get the correct values after bindReturnValues + extendWithReturns.
     For each result site s with type τ in siteEnv, produces a value in newSiteStore
@@ -923,6 +927,7 @@ theorem returnVals_site_consistent
             | bool _ => simp at hveq'
             | unit => simp at hveq'
             | «record» _ => simp at hveq'
+            | vec _ => simp at hveq'
       · -- s ∉ ss, so s = s'
         have hseq : s = s' := by
           rcases List.mem_cons.mp hs with h | h
@@ -969,6 +974,7 @@ theorem returnVals_site_consistent
             | bool _ => simp at hveq
             | unit => simp at hveq
             | «record» _ => simp at hveq
+            | vec _ => simp at hveq
 
 -- ============================================================
 -- Part 5: StackSafe preservation through allocArgs
@@ -1354,6 +1360,7 @@ lemma paramRefKeys_sublist (params : List (Var × MoveType)) (args : List Value)
         | bool _ => exact List.Sublist.cons _ (ih as')
         | unit => exact List.Sublist.cons _ (ih as')
         | record _ => exact List.Sublist.cons _ (ih as')
+        | vec _ => exact List.Sublist.cons _ (ih as')
 
 /-- allocArgs stores the exact argument value for each param/arg pair. -/
 lemma allocArgs_param_stores_arg (heap : Heap) (params : List (Var × MoveType))

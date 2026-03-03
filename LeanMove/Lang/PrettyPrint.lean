@@ -54,6 +54,7 @@ mutual
     | .tbool => ".tbool"
     | .tunit => ".tunit"
     | .trecord m => s!".trecord {ppFieldMap m}"
+    | .tvec inner => s!"vector<{ppBasicMoveType inner}>"
 
   partial def ppFieldMap (m : AssocMap Field BasicMoveType) : String :=
     ppFieldEntries m.entries
@@ -83,6 +84,10 @@ def ppBinop : Binop → String
   | .lt => "<"
   | .nand => "nand"
 
+def ppSiteList (sites : List Site) : String :=
+  let ss := sites.map ppSite
+  "[" ++ ", ".intercalate ss ++ "]"
+
 def ppExprMacro : Expr → String
   | .usage (.copy v) => s!"copy {ppVar v}"
   | .usage (.move v) => s!"move {ppVar v}"
@@ -99,10 +104,11 @@ def ppExprMacro : Expr → String
     let fs := fields.map fun (f, s) => s!"({ppField f}, {ppSite s})"
     "pack(\"" ++ id ++ "\", [" ++ ", ".intercalate fs ++ "])"
   | .freeze s => s!"freeze {ppSite s}"
-
-def ppSiteList (sites : List Site) : String :=
-  let ss := sites.map ppSite
-  "[" ++ ", ".intercalate ss ++ "]"
+  | .vecPack bt elems => s!"vec_pack<{ppBasicMoveType bt}>({ppSiteList elems})"
+  | .vecLen src => s!"vec_len({ppSite src})"
+  | .vecImmBorrow src idx => s!"vec_imm_borrow({ppSite src}, {ppSite idx})"
+  | .vecMutBorrow src idx => s!"vec_mut_borrow({ppSite src}, {ppSite idx})"
+  | .vecPopBack src => s!"vec_pop_back({ppSite src})"
 
 private def mkIndent (n : Nat) : String := "".pushn ' ' n
 
@@ -129,6 +135,14 @@ partial def ppStmt (indent : Nat := 8) : Stmt → String
     mkIndent indent ++
       s!"(call({ppSiteList results}, \"{fname}\", {ppSiteList args})) ;;\n"
       ++ ppStmt indent cont
+  | .vecUnpack bt results src cont =>
+    mkIndent indent ++
+      s!"(vec_unpack<{ppBasicMoveType bt}>({ppSiteList results}, {ppSite src})) ;;\n"
+      ++ ppStmt indent cont
+  | .vecPushBack ref val cont =>
+    mkIndent indent ++ s!"(vec_push_back({ppSite ref}, {ppSite val})) ;;\n" ++ ppStmt indent cont
+  | .vecSwap ref idx1 idx2 cont =>
+    mkIndent indent ++ s!"(vec_swap({ppSite ref}, {ppSite idx1}, {ppSite idx2})) ;;\n" ++ ppStmt indent cont
 
 def ppBlock (b : Block) : String :=
   let header := s!"    \{ label := \"{b.label}\"\n      body :=\n"

@@ -68,6 +68,7 @@ mutual
     | .tbool => ".tbool"
     | .tunit => ".tunit"
     | .trecord m => s!".trecord {ppAssocMap m}"
+    | .tvec t => s!"(.tvec {ppBasicMoveType t})"
 
   partial def ppAssocMap (m : AssocMap Field BasicMoveType) : String :=
     ppAssocMapEntries m.entries
@@ -134,6 +135,11 @@ def ppExpr : Expr → String
   | .readRef s => s!"*{ppSite s}"
   | .pack id fields => s!"pack(\"{id}\", {ppFieldSitePairs fields})"
   | .freeze s => s!"freeze {ppSite s}"
+  | .vecPack t elems => s!"vecPack({ppBasicMoveType t}, {ppSiteList elems})"
+  | .vecLen s => s!"vecLen({ppSite s})"
+  | .vecImmBorrow s idx => s!"vecImmBorrow({ppSite s}, {ppSite idx})"
+  | .vecMutBorrow s idx => s!"vecMutBorrow({ppSite s}, {ppSite idx})"
+  | .vecPopBack s => s!"vecPopBack({ppSite s})"
 
 /-- Pretty-print a statement using macro syntax.
     Returns a list of lines (each indented appropriately). -/
@@ -162,6 +168,15 @@ partial def ppStmt (indent : String) : Stmt → String
   -- Non-terminal: unpack
   | .unpack fields src cont =>
     s!"{indent}(unpack({ppFieldSitePairs fields}, {ppSite src})) ;;\n{ppStmt indent cont}"
+  -- Non-terminal: vecUnpack
+  | .vecUnpack t results src cont =>
+    s!"{indent}(vecUnpack({ppBasicMoveType t}, {ppSiteList results}, {ppSite src})) ;;\n{ppStmt indent cont}"
+  -- Non-terminal: vecPushBack
+  | .vecPushBack ref val cont =>
+    s!"{indent}(vecPushBack({ppSite ref}, {ppSite val})) ;;\n{ppStmt indent cont}"
+  -- Non-terminal: vecSwap
+  | .vecSwap ref idx1 idx2 cont =>
+    s!"{indent}(vecSwap({ppSite ref}, {ppSite idx1}, {ppSite idx2})) ;;\n{ppStmt indent cont}"
 
 /- ====================================================== -/
 /-       FunDef Pretty-Printer                            -/

@@ -543,6 +543,12 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
         | none => none
       else none
 
+    | .vecPack _ _ => none
+    | .vecLen _ => none
+    | .vecImmBorrow _ _ => none
+    | .vecMutBorrow _ _ => none
+    | .vecPopBack _ => none
+
   | .writeRef a b cont =>
     match lookup env.siteEnv a, lookup env.siteEnv b with
     | some (.ref τ r .siteBorrowMut), some (.basic τ') =>
@@ -616,6 +622,10 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
         check_stmt lenv env' cont retTypes
       else none
     | _ => none
+
+  | .vecUnpack _ _ _ _ => none
+  | .vecPushBack _ _ _ => none
+  | .vecSwap _ _ _ _ => none
 
 /-- Check a single block -/
 def check_block (lenv : LabelEnv) (block : Block) (expectedEnv : TypeEnv) (retTypes : List ParamType) : Bool :=

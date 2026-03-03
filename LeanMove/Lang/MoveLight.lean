@@ -50,6 +50,7 @@ inductive BasicMoveType where
   | tbool
   | tunit
   | trecord : AssocMap Field BasicMoveType → BasicMoveType
+  | tvec : BasicMoveType → BasicMoveType
 
 /- ---------------------------------------------------- -/
 /-       BasicMoveType Equality                          -/
@@ -62,6 +63,7 @@ mutual
     | .tbool, .tbool => true
     | .tunit, .tunit => true
     | .trecord m1, .trecord m2 => BasicMoveType.beqEntries m1.entries m2.entries
+    | .tvec t1, .tvec t2 => t1.beq t2
     | _, _ => false
 
   def BasicMoveType.beqEntries : List (Field × BasicMoveType) → List (Field × BasicMoveType) → Bool
@@ -95,6 +97,16 @@ instance : BEq BasicMoveType := ⟨BasicMoveType.beq⟩
 @[simp] theorem BasicMoveType.beq_trecord_u64 (m) : BasicMoveType.beq (.trecord m) .u64 = false := rfl
 @[simp] theorem BasicMoveType.beq_trecord_tbool (m) : BasicMoveType.beq (.trecord m) .tbool = false := rfl
 @[simp] theorem BasicMoveType.beq_trecord_tunit (m) : BasicMoveType.beq (.trecord m) .tunit = false := rfl
+@[simp] theorem BasicMoveType.beq_trecord_tvec (m t) : BasicMoveType.beq (.trecord m) (.tvec t) = false := rfl
+@[simp] theorem BasicMoveType.beq_tvec (t1 t2 : BasicMoveType) :
+    BasicMoveType.beq (.tvec t1) (.tvec t2) = t1.beq t2 := rfl
+@[simp] theorem BasicMoveType.beq_tvec_u64 (t) : BasicMoveType.beq (.tvec t) .u64 = false := rfl
+@[simp] theorem BasicMoveType.beq_tvec_tbool (t) : BasicMoveType.beq (.tvec t) .tbool = false := rfl
+@[simp] theorem BasicMoveType.beq_tvec_tunit (t) : BasicMoveType.beq (.tvec t) .tunit = false := rfl
+@[simp] theorem BasicMoveType.beq_tvec_trecord (t m) : BasicMoveType.beq (.tvec t) (.trecord m) = false := rfl
+@[simp] theorem BasicMoveType.beq_u64_tvec (t) : BasicMoveType.beq .u64 (.tvec t) = false := rfl
+@[simp] theorem BasicMoveType.beq_tbool_tvec (t) : BasicMoveType.beq .tbool (.tvec t) = false := rfl
+@[simp] theorem BasicMoveType.beq_tunit_tvec (t) : BasicMoveType.beq .tunit (.tvec t) = false := rfl
 
 -- Manual simp lemmas for BasicMoveType.beqEntries
 @[simp] theorem BasicMoveType.beqEntries_nil : BasicMoveType.beqEntries [] [] = true := rfl
@@ -118,6 +130,7 @@ mutual
     | .tbool => rfl
     | .tunit => rfl
     | .trecord m => BasicMoveType.beqEntries_refl m.entries
+    | .tvec t => by simp only [BasicMoveType.beq_tvec]; exact BasicMoveType.beq_refl t
 end
 
 mutual
@@ -143,10 +156,14 @@ mutual
       cases m1; cases m2
       simp only at heq
       rw [heq]
-    | .u64, .tbool, h | .u64, .tunit, h | .u64, .trecord _, h => by simp at h
-    | .tbool, .u64, h | .tbool, .tunit, h | .tbool, .trecord _, h => by simp at h
-    | .tunit, .u64, h | .tunit, .tbool, h | .tunit, .trecord _, h => by simp at h
-    | .trecord _, .u64, h | .trecord _, .tbool, h | .trecord _, .tunit, h => by simp at h
+    | .tvec t1, .tvec t2, h => by
+      simp only [BasicMoveType.beq_tvec] at h
+      rw [BasicMoveType.eq_of_beq t1 t2 h]
+    | .u64, .tbool, h | .u64, .tunit, h | .u64, .trecord _, h | .u64, .tvec _, h => by simp at h
+    | .tbool, .u64, h | .tbool, .tunit, h | .tbool, .trecord _, h | .tbool, .tvec _, h => by simp at h
+    | .tunit, .u64, h | .tunit, .tbool, h | .tunit, .trecord _, h | .tunit, .tvec _, h => by simp at h
+    | .trecord _, .u64, h | .trecord _, .tbool, h | .trecord _, .tunit, h | .trecord _, .tvec _, h => by simp at h
+    | .tvec _, .u64, h | .tvec _, .tbool, h | .tvec _, .tunit, h | .tvec _, .trecord _, h => by simp at h
 end
 
 theorem BasicMoveType.beq_of_eq (t1 t2 : BasicMoveType) : t1 = t2 → t1.beq t2 = true := by
@@ -320,6 +337,12 @@ inductive Expr where
   | readRef : Site → Expr  -- *a
   | pack : Id → List (Field × Site) → Expr  -- T { f: a1, ..., f: an }
   | freeze : Site → Expr
+  -- Vector operations (expressions that produce a value)
+  | vecPack : BasicMoveType → List Site → Expr           -- vec_pack<T>(e1,...,eN)
+  | vecLen : Site → Expr                                  -- vec_len<T>(ref)
+  | vecImmBorrow : Site → Site → Expr                     -- vec_imm_borrow<T>(ref, idx)
+  | vecMutBorrow : Site → Site → Expr                     -- vec_mut_borrow<T>(ref, idx)
+  | vecPopBack : Site → Expr                              -- vec_pop_back<T>(ref)
 deriving Repr, Inhabited, Hashable
 
 -- Statements in a-normal form with continuation-passing style
@@ -339,6 +362,10 @@ inductive Stmt where
   | assign : Var → Site → Stmt → Stmt              -- x = a; cont
   | writeRef : Site → Site → Stmt → Stmt           -- *a = b; cont
   | release : Site → Stmt → Stmt                   -- release(a); cont
+  -- Vector operations (statements with no return value)
+  | vecUnpack : BasicMoveType → List Site → Site → Stmt → Stmt  -- vec_unpack<T>(results, src); cont
+  | vecPushBack : Site → Site → Stmt → Stmt                     -- vec_push_back(ref, val); cont
+  | vecSwap : Site → Site → Site → Stmt → Stmt                  -- vec_swap(ref, idx1, idx2); cont
 deriving Repr, Inhabited
 
 -- Local variable declaration
