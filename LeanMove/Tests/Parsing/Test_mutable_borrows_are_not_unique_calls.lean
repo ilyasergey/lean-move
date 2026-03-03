@@ -79,7 +79,7 @@ private def hw_call_and_write_invalid : FunDef := {
       body :=
         -- call = Self.borrow_f(copy(s))
         (letsite s0 ← copy var_s) ;;
-        (call([s1], "borrow_f", [s0])) ;;
+        (call([s1], "call_and_write_invalid.borrow_f", [s0])) ;;
         (var_call ::= s1) ;;
         -- f = &mut copy(s).S::f
         (letsite s2 ← copy var_s) ;;

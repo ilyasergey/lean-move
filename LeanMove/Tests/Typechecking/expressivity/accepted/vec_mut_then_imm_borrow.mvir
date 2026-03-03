@@ -1,0 +1,23 @@
+// Mut borrow then imm borrow on different vector elements (accepted)
+// Adapted from tnowacki/sui bytecode-verifier-transactional-tests
+// This is the second module from vector_ops_double_borrow.mvir
+
+//# run
+module 0x42.m {
+
+entry foo() {
+    let v: vector<u64>;
+    let e_mut1: &mut u64;
+    let e_imm2: &u64;
+label b0:
+    v = vec_pack_0<u64>();
+    vec_push_back<u64>(&mut v, 0);
+    vec_push_back<u64>(&mut v, 1);
+
+    e_mut1 = vec_mut_borrow<u64>(&mut v, 0);
+    e_imm2 = vec_imm_borrow<u64>(&v, 1);
+
+    return;
+}
+
+}

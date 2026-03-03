@@ -124,9 +124,11 @@ mutual
 partial def alphaBasicType (l r : BasicMoveType) : AlphaM Bool :=
   match l, r with
   | .u64, .u64 => pure true
+  | .u8, .u8 => pure true
   | .tbool, .tbool => pure true
   | .tunit, .tunit => pure true
   | .trecord m1, .trecord m2 => alphaEntries m1.entries m2.entries
+  | .tvec t1, .tvec t2 => alphaBasicType t1 t2
   | _, _ => pure false
 
 /-- Check alpha-equivalence of field entries -/
@@ -176,6 +178,17 @@ partial def alphaExpr (l r : Expr) : AlphaM Bool :=
     if id1 != id2 then return false
     alphaFieldSites fs1 fs2
   | .freeze s1, .freeze s2 => matchSite s1 s2
+  | .vecPack t1 es1, .vecPack t2 es2 => do
+    if !(← alphaBasicType t1 t2) then return false
+    alphaSiteList es1 es2
+  | .vecLen s1, .vecLen s2 => matchSite s1 s2
+  | .vecImmBorrow s1 i1, .vecImmBorrow s2 i2 => do
+    if !(← matchSite s1 s2) then return false
+    matchSite i1 i2
+  | .vecMutBorrow s1 i1, .vecMutBorrow s2 i2 => do
+    if !(← matchSite s1 s2) then return false
+    matchSite i1 i2
+  | .vecPopBack s1, .vecPopBack s2 => matchSite s1 s2
   | _, _ => pure false
 
 /-- Check alpha-equivalence of field-site pairs -/
@@ -276,6 +289,20 @@ partial def alphaStmt (l r : Stmt) : AlphaM Bool := do
     | .release s1 c1, .release s2 c2 => do
       if !(← matchSite s1 s2) then return false
       alphaStmt c1 c2
+    | .vecUnpack t1 rs1 s1 c1, .vecUnpack t2 rs2 s2 c2 => do
+      if !(← alphaBasicType t1 t2) then return false
+      if !(← alphaSiteList rs1 rs2) then return false
+      if !(← matchSite s1 s2) then return false
+      alphaStmt c1 c2
+    | .vecPushBack r1 v1 c1, .vecPushBack r2 v2 c2 => do
+      if !(← matchSite r1 r2) then return false
+      if !(← matchSite v1 v2) then return false
+      alphaStmt c1 c2
+    | .vecSwap r1 i1a i1b c1, .vecSwap r2 i2a i2b c2 => do
+      if !(← matchSite r1 r2) then return false
+      if !(← matchSite i1a i2a) then return false
+      if !(← matchSite i1b i2b) then return false
+      alphaStmt c1 c2
     | _, _ => pure false
 
 end
@@ -338,6 +365,12 @@ def findFun (results : List (String × String × FunDef)) (fname : String) : Opt
 def findFunInModule (results : List (String × String × FunDef)) (modName fname : String) :
     Option FunDef :=
   match results.find? (fun (m, n, _) => m == modName && n == fname) with
+  | some (_, _, fd) => some fd
+  | none => none
+
+/-- Find a function by index in parsed results -/
+def findFunAt (results : List (String × String × FunDef)) (idx : Nat) : Option FunDef :=
+  match results[idx]? with
   | some (_, _, fd) => some fd
   | none => none
 

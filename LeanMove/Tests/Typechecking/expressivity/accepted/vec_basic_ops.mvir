@@ -48,3 +48,27 @@ module 0x14.vec_pop {
         return move(val);
     }
 }
+
+//# publish
+module 0x18.vec_swap {
+    t(v: &mut vector<u64>) {
+        let i: u64;
+        let j: u64;
+    label b0:
+        i = 0;
+        j = 1;
+        _ = vec_swap<u64>(move(v), move(i), move(j));
+        return;
+    }
+}
+
+//# publish
+module 0x19.vec_unpack {
+    t(v: vector<u64>): u64 * u64 {
+        let a: u64;
+        let b: u64;
+    label b0:
+        a, b = vec_unpack_2<u64>(move(v));
+        return move(a), move(b);
+    }
+}

@@ -61,12 +61,20 @@ def parsed_vec_push :=
 def parsed_vec_pop :=
   (findFunInModule parsedFuns "vec_pop" "t").get!
 
+def parsed_vec_swap :=
+  (findFunInModule parsedFuns "vec_swap" "t").get!
+
+def parsed_vec_unpack :=
+  (findFunInModule parsedFuns "vec_unpack" "t").get!
+
 -- Algorithmic Type Checking (Decidable)
 def vec_pack_empty_lenvDec := mkLabelEnvDec parsed_vec_pack_empty
 def vec_pack_elems_lenvDec := mkLabelEnvDec parsed_vec_pack_elems
 def vec_len_lenvDec := mkLabelEnvDec parsed_vec_len
 def vec_push_lenvDec := mkLabelEnvDec parsed_vec_push
 def vec_pop_lenvDec := mkLabelEnvDec parsed_vec_pop
+def vec_swap_lenvDec := mkLabelEnvDec parsed_vec_swap
+def vec_unpack_lenvDec := mkLabelEnvDec parsed_vec_unpack
 
 theorem vec_pack_empty_check :
   check_fun_dec parsed_vec_pack_empty vec_pack_empty_lenvDec = true := by native_decide
@@ -83,6 +91,12 @@ theorem vec_push_check :
 theorem vec_pop_check :
   check_fun_dec parsed_vec_pop vec_pop_lenvDec = true := by native_decide
 
+theorem vec_swap_check :
+  check_fun_dec parsed_vec_swap vec_swap_lenvDec = true := by native_decide
+
+theorem vec_unpack_check :
+  check_fun_dec parsed_vec_unpack vec_unpack_lenvDec = true := by native_decide
+
 -- Relational Type Checking (via Algorithmic Soundness)
 theorem vec_pack_empty_welltyped : ∃ lenv, typecheck_fun parsed_vec_pack_empty lenv :=
   ⟨_, check_fun_dec_sound _ _ vec_pack_empty_check⟩
@@ -98,5 +112,11 @@ theorem vec_push_welltyped : ∃ lenv, typecheck_fun parsed_vec_push lenv :=
 
 theorem vec_pop_welltyped : ∃ lenv, typecheck_fun parsed_vec_pop lenv :=
   ⟨_, check_fun_dec_sound _ _ vec_pop_check⟩
+
+theorem vec_swap_welltyped : ∃ lenv, typecheck_fun parsed_vec_swap lenv :=
+  ⟨_, check_fun_dec_sound _ _ vec_swap_check⟩
+
+theorem vec_unpack_welltyped : ∃ lenv, typecheck_fun parsed_vec_unpack lenv :=
+  ⟨_, check_fun_dec_sound _ _ vec_unpack_check⟩
 
 end LeanMove.Tests.Expressivity.VecBasicOps

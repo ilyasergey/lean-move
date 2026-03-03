@@ -625,6 +625,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
       AssocMap.lookup env.siteEnv src = some (.ref (.tvec T) s isBor) →
       AssocMap.lookup env.siteEnv idx = some (.basic .u64) →
       notIn env.siteEnv a →
+      (isBor = .siteBorrowMut → check_outbound env.pathEnv s (λ re ↦ only_matches_empty (simplify re))) →
       freshRefInEnv rf env →
       typecheck_stmt lenv
         {env with siteEnv := insert (delete (delete env.siteEnv src) idx) a (.ref T rf .siteBorrowImm)
@@ -638,6 +639,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
       AssocMap.lookup env.siteEnv src = some (.ref (.tvec T) s .siteBorrowMut) →
       AssocMap.lookup env.siteEnv idx = some (.basic .u64) →
       notIn env.siteEnv a →
+      check_outbound env.pathEnv s (λ re ↦ only_matches_empty (simplify re)) →
       freshRefInEnv rf env →
       typecheck_stmt lenv
         {env with siteEnv := insert (delete (delete env.siteEnv src) idx) a (.ref T rf .siteBorrowMut)

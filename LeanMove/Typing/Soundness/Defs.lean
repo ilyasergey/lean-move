@@ -48,6 +48,7 @@ open Regex
     Split into two hypotheses to avoid nested inductive issues with ∃. -/
 inductive HasType : Value → BasicMoveType → Prop where
   | int : ∀ n, HasType (.int n) .u64
+  | int_u8 : ∀ n, HasType (.int n) .u8
   | bool : ∀ b, HasType (.bool b) .tbool
   | unit : HasType .unit .tunit
   | record : ∀ fields fentries,
@@ -1142,7 +1143,9 @@ theorem HasType_typeAtPath (v : Value) (bt : BasicMoveType) (path : List Field) 
             have hht_f := htyped f bt_f fieldVal hfe hfl
             obtain ⟨u, hread, hht_u⟩ := ih fieldVal bt_f bt_leaf hht_f htap
             exact ⟨u, by simp [readPath, hfl, hread], hht_u⟩
-    | int n => cases hht with | int => simp [typeAtPath] at htap
+    | int n => cases hht with
+      | int => simp [typeAtPath] at htap
+      | int_u8 => simp [typeAtPath] at htap
     | bool b => cases hht with | bool => simp [typeAtPath] at htap
     | unit => cases hht with | unit => simp [typeAtPath] at htap
     | ref l p => cases hht
@@ -1251,7 +1254,9 @@ theorem readPath_ne_none_implies_typeAtPath
             have hht_f := htyped f bt_f fieldVal hfe hfl
             obtain ⟨bt', htap⟩ := ih fieldVal bt_f hht_f hread
             exact ⟨bt', by simp [typeAtPath, hfe, htap]⟩
-    | int n => cases hht with | int => simp [readPath] at hread
+    | int n => cases hht with
+      | int => simp [readPath] at hread
+      | int_u8 => simp [readPath] at hread
     | bool b => cases hht with | bool => simp [readPath] at hread
     | unit => cases hht with | unit => simp [readPath] at hread
     | ref l p => cases hht
@@ -1276,7 +1281,12 @@ theorem HasType_transfer_readPath_ne_none
 theorem HasType_transfer {v1 v2 : Value} {bt1 bt2 : BasicMoveType}
     (h1 : HasType v1 bt1) (h2 : HasType v1 bt2) (h3 : HasType v2 bt2) : HasType v2 bt1 := by
   induction h1 generalizing v2 bt2 with
-  | int => cases h2 with | int => exact h3
+  | int => cases h2 with
+    | int => exact h3
+    | int_u8 => cases h3 with | int_u8 => exact HasType.int _
+  | int_u8 => cases h2 with
+    | int => cases h3 with | int => exact HasType.int_u8 _
+    | int_u8 => exact h3
   | bool => cases h2 with | bool => exact h3
   | unit => cases h2 with | unit => exact h3
   | record fields e1 hdom1 hdom_rev1 htyped1 ih =>

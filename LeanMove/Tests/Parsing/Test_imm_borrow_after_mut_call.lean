@@ -70,11 +70,11 @@ private def hw_invalid : FunDef := {
         (var_r ::= s1) ;;
         -- mut1 = Self.id_mut(copy(r))
         (letsite s2 ← copy var_r) ;;
-        (call([s3], "id_mut", [s2])) ;;
+        (call([s3], "invalid.id_mut", [s2])) ;;
         (var_mut1 ::= s3) ;;
         -- imm1 = Self.id(&a)
         (letsite s4 ← &var_a) ;;
-        (call([s5], "id", [s4])) ;;
+        (call([s5], "invalid.id", [s4])) ;;
         (var_imm1 ::= s5) ;;
         -- *copy(mut1) = 0 -- ERROR
         (letsite s6 ← copy var_mut1) ;;

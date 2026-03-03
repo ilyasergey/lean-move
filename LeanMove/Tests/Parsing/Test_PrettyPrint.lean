@@ -148,7 +148,7 @@ def ppTestOutput : String :=
 
 -- Macro syntax: call
 #guard hasSubstr ppTestOutput "call("
-#guard hasSubstr ppTestOutput "\"borrow_f\""
+#guard hasSubstr ppTestOutput "\"Simple.borrow_f\""
 
 -- Macro syntax: assign
 #guard hasSubstr ppTestOutput "::="

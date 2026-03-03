@@ -99,7 +99,7 @@ def borrow_lenvDec := mkLabelEnvDec parsed_borrow
 
 -- Function environment for write (contains borrow's signature)
 def write_funEnv : FunEnv :=
-  AssocMap.insert AssocMap.empty "borrow" borrow_sig
+  AssocMap.insert AssocMap.empty "Tester.borrow" borrow_sig
 
 def write_lenvDec := mkLabelEnvDec parsed_write write_funEnv
 

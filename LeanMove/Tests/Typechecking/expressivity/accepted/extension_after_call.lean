@@ -99,7 +99,7 @@ def parsed_fn_write :=
 -- Initial environments (decidable)
 def fn_borrow_lenvDec := mkLabelEnvDec parsed_fn_borrow
 
-def borrow_funEnv : FunEnv := AssocMap.insert AssocMap.empty "borrow" borrow_sig
+def borrow_funEnv : FunEnv := AssocMap.insert AssocMap.empty "Tester.borrow" borrow_sig
 
 def fn_write_lenvDec := mkLabelEnvDec parsed_fn_write borrow_funEnv
 

@@ -49,6 +49,7 @@ import LeanMove.Tests.Typechecking.expressivity.rejected.imm_borrow_after_mut_fi
 import LeanMove.Tests.Typechecking.expressivity.rejected.mutable_borrows_are_not_unique_calls_invalid
 import LeanMove.Tests.Typechecking.expressivity.accepted.vec_basic_ops
 import LeanMove.Tests.Typechecking.expressivity.accepted.vec_borrow_sequential
+import LeanMove.Tests.Typechecking.expressivity.accepted.vec_mut_then_imm_borrow
 import LeanMove.Tests.Typechecking.expressivity.rejected.vec_dangling_borrow
 
 /-!
@@ -223,13 +224,13 @@ private def boxHeap : Heap × Loc :=
     (⟨"tl"⟩, .record [(⟨"x"⟩, .int 1), (⟨"y"⟩, .int 2)]),
     (⟨"br"⟩, .record [(⟨"x"⟩, .int 3), (⟨"y"⟩, .int 4)])])
 
--- Runtime funEnv: fn_write calls "borrow", so we need it at runtime
+-- Runtime funEnv: fn_write calls "Tester.borrow", so we need it at runtime
 private def borrowFunEnvRT : AssocMap Id FunDef :=
-  AssocMap.insert AssocMap.empty "borrow" parsed_fn_borrow
+  AssocMap.insert AssocMap.empty "Tester.borrow" parsed_fn_borrow
 
--- FunTypingEnv: maps "borrow" to its label env for type checking
+-- FunTypingEnv: maps "Tester.borrow" to its label env for type checking
 private def borrowFte : FunTypingEnv :=
-  AssocMap.insert AssocMap.empty "borrow" fn_borrow_lenvDec
+  AssocMap.insert AssocMap.empty "Tester.borrow" fn_borrow_lenvDec
 
 #guard (run 100 (initState parsed_fn_borrow AssocMap.empty [.ref boxHeap.2 []] boxHeap.1)).isHalted
 #guard (run 200 (initState parsed_fn_write borrowFunEnvRT [.ref boxHeap.2 []] boxHeap.1)).isHalted
@@ -302,13 +303,13 @@ open LeanMove.Tests.Expressivity.MultipleMutableReturnValues
 private def pointHeap : Heap × Loc :=
   Heap.empty.alloc (.record [(⟨"x"⟩, .int 10), (⟨"y"⟩, .int 20)])
 
--- Runtime function environment: write calls borrow at runtime
+-- Runtime function environment: write calls Tester.borrow at runtime
 private def rtFunEnv : AssocMap Id FunDef :=
-  AssocMap.insert AssocMap.empty "borrow" parsed_borrow
+  AssocMap.insert AssocMap.empty "Tester.borrow" parsed_borrow
 
--- Typing function environment: maps "borrow" to its label env for soundness
+-- Typing function environment: maps "Tester.borrow" to its label env for soundness
 private def rtFte : FunTypingEnv :=
-  AssocMap.insert AssocMap.empty "borrow" borrow_lenvDec
+  AssocMap.insert AssocMap.empty "Tester.borrow" borrow_lenvDec
 
 #guard (run 200 (initState parsed_borrow AssocMap.empty [.ref pointHeap.2 []] pointHeap.1)).isHalted
 #guard (run 200 (initState parsed_write rtFunEnv [.ref pointHeap.2 []] pointHeap.1)).isHalted

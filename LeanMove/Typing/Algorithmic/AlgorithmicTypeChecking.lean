@@ -565,8 +565,15 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
 
     | .vecImmBorrow src idx =>
       match lookup env.siteEnv src, lookup env.siteEnv idx with
-      | some (.ref (.tvec T) s _), some (.basic .u64) =>
+      | some (.ref (.tvec T) s .siteBorrowImm), some (.basic .u64) =>
         if notIn env.siteEnv a then
+          let rf := nextFreshRefInEnv env
+          let env' := {env with siteEnv := insert (delete (delete env.siteEnv src) idx) a (.ref T rf .siteBorrowImm)
+                                pathEnv := update_with_extension rf s [.vecElem] env.pathEnv}
+          check_stmt lenv env' cont retTypes
+        else none
+      | some (.ref (.tvec T) s .siteBorrowMut), some (.basic .u64) =>
+        if notIn env.siteEnv a && check_outbound_bool env.pathEnv s then
           let rf := nextFreshRefInEnv env
           let env' := {env with siteEnv := insert (delete (delete env.siteEnv src) idx) a (.ref T rf .siteBorrowImm)
                                 pathEnv := update_with_extension rf s [.vecElem] env.pathEnv}
@@ -577,7 +584,7 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
     | .vecMutBorrow src idx =>
       match lookup env.siteEnv src, lookup env.siteEnv idx with
       | some (.ref (.tvec T) s .siteBorrowMut), some (.basic .u64) =>
-        if notIn env.siteEnv a then
+        if notIn env.siteEnv a && check_outbound_bool env.pathEnv s then
           let rf := nextFreshRefInEnv env
           let env' := {env with siteEnv := insert (delete (delete env.siteEnv src) idx) a (.ref T rf .siteBorrowMut)
                                 pathEnv := update_with_extension rf s [.vecElem] env.pathEnv}

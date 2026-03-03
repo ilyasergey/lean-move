@@ -51,6 +51,7 @@ def ppBorrowingKind : BorrowingKind → String
 mutual
   partial def ppBasicMoveType : BasicMoveType → String
     | .u64 => ".u64"
+    | .u8 => ".u8"
     | .tbool => ".tbool"
     | .tunit => ".tunit"
     | .trecord m => s!".trecord {ppFieldMap m}"

@@ -116,7 +116,7 @@ private def hw_write : FunDef := {
       body :=
         -- p = Self.borrow(copy(b))
         (letsite ws0 ← copy var_b) ;;
-        (call([ws1], "borrow", [ws0])) ;;
+        (call([ws1], "Tester.borrow", [ws0])) ;;
         (var_p ::= ws1) ;;
         -- x = &mut copy(p).Point::x
         (letsite ws2 ← copy var_p) ;;

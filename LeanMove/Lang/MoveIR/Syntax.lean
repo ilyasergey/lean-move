@@ -26,6 +26,7 @@ namespace LeanMove.Lang.MoveIR
 /-- MVIR types as they appear in source text -/
 inductive MvirType where
   | u64
+  | u8
   | bool
   | unit
   | vector : MvirType → MvirType

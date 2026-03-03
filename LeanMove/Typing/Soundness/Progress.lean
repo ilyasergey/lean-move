@@ -875,6 +875,7 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
             | some v =>
               rw [hev] at hstep
               cases hstep
+          | u8 => cases op <;> simp [binop_type] at hbinop
           | tbool =>
             have ⟨nb, hnb⟩ := HasType_tbool_is_bool htb
             subst hnb
@@ -884,6 +885,8 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
             cases op <;> simp [binop_type] at hbinop
           | trecord _ => cases op <;> simp [binop_type] at hbinop
           | tvec _ => cases op <;> simp [binop_type] at hbinop
+        | u8 =>
+          cases op <;> (cases bt2 <;> simp [binop_type] at hbinop)
         | tbool =>
           have ⟨ba, hba⟩ := HasType_tbool_is_bool hta
           subst hba
@@ -899,6 +902,7 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
             have ⟨nb, hnb⟩ := HasType_u64_is_int htb
             subst hnb
             cases op <;> simp [binop_type] at hbinop
+          | u8 => cases op <;> simp [binop_type] at hbinop
           | tunit =>
             cases htb
             cases op <;> simp [binop_type] at hbinop

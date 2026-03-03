@@ -139,7 +139,7 @@ private def hw_simple_call_t : FunDef := {
         (var_m ::= scs1) ;;
         -- i = Self.f(copy(m))
         (letsite scs2 ← copy var_m) ;;
-        (call([scs3], "f", [scs2])) ;;
+        (call([scs3], "simple_call.f", [scs2])) ;;
         (var_i ::= scs3) ;;
         -- *copy(m) = 0
         (letsite scs4 ← copy var_m) ;;
@@ -169,7 +169,7 @@ private def hw_field_call_t : FunDef := {
       body :=
         -- f = Self.f(copy(s))
         (letsite fcs0 ← copy var_s) ;;
-        (call([fcs1], "f", [fcs0])) ;;
+        (call([fcs1], "field_call.f", [fcs0])) ;;
         (var_f ::= fcs1) ;;
         -- *copy(s) = S { f: 0 }
         (letsite fcs2 ← copy var_s) ;;

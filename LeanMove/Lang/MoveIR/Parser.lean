@@ -145,6 +145,7 @@ where
     let name ← ident
     match name with
     | "u64" => pure .u64
+    | "u8" => pure .u8
     | "bool" => pure .bool
     | "vector" =>
       symbol '<'
@@ -371,24 +372,58 @@ partial def parseStmt : Parser MvirStmt := do
       symbol ';'
       pure (.assign ["_"] rhs)
     | other =>
-      -- Check if it's an unpack: StructName { f: v, ... } = expr;
-      let isBrace ← (attempt (do let c ← peek!; pure (c == '{'))) <|> pure false
-      if isBrace then
-        symbol '{'
-        let fields ← commaSep parseUnpackField
-        symbol '}'
-        symbol '='
-        let rhs ← parseExpr
-        symbol ';'
-        pure (.unpack other fields rhs)
+      -- Bare Self.method(args); call as statement (no assignment)
+      if other == "Self" then
+        let isDot ← (attempt (do let c ← peek!; pure (c == '.'))) <|> pure false
+        if isDot then
+          symbol '.'
+          let funcName ← ident
+          symbol '('
+          let args ← commaSep parseExpr
+          symbol ')'
+          symbol ';'
+          pure (.assign ["_"] (.call funcName args))
+        else
+          fail "expected '.' after 'Self'"
+      -- Bare vec_op<T>(args); as statement (no assignment)
+      else if other.startsWith "vec_" then
+        let isAngle ← (attempt (do let c ← peek!; pure (c == '<'))) <|> pure false
+        if isAngle then
+          symbol '<'
+          let ty ← parseType
+          symbol '>'
+          symbol '('
+          let args ← commaSep parseExpr
+          symbol ')'
+          symbol ';'
+          pure (.assign ["_"] (.vecOp other ty args))
+        else
+          -- Fall through to assignment parsing
+          let moreVars ← parseMoreVars
+          let allVars := other :: moreVars
+          symbol '='
+          let rhs ← parseExpr
+          symbol ';'
+          pure (.assign allVars rhs)
       else
-        -- Regular assignment or multi-assignment: x = e; or x, y = e;
-        let moreVars ← parseMoreVars
-        let allVars := other :: moreVars
-        symbol '='
-        let rhs ← parseExpr
-        symbol ';'
-        pure (.assign allVars rhs)
+        -- Check if it's an unpack: StructName { f: v, ... } = expr;
+        let isBrace ← (attempt (do let c ← peek!; pure (c == '{'))) <|> pure false
+        if isBrace then
+          symbol '{'
+          let fields ← commaSep parseUnpackField
+          symbol '}'
+          symbol '='
+          let rhs ← parseExpr
+          symbol ';'
+          pure (.unpack other fields rhs)
+        else
+          -- Regular assignment or multi-assignment: x = e; or x, y = e;
+          let moreVars ← parseMoreVars
+          let allVars := other :: moreVars
+          symbol '='
+          let rhs ← parseExpr
+          symbol ';'
+          pure (.assign allVars rhs)
 
 /- ====================================================== -/
 /-       Block Parser                                      -/
@@ -470,8 +505,11 @@ def parseReturnTypes : Parser (List MvirType) := do
   else
     pure []
 
-/-- Parse a function definition: `name(params): retTypes { locals; blocks }` -/
+/-- Parse a function definition: `[public] [entry] name(params): retTypes { locals; blocks }` -/
 def parseFunDef : Parser MvirFunDef := do
+  -- Skip optional function modifiers (public, entry)
+  let _ ← (attempt (keyword "public")) <|> pure ()
+  let _ ← (attempt (keyword "entry")) <|> pure ()
   let name ← ident
   symbol '('
   let params ← commaSep parseParam

@@ -18,7 +18,8 @@ require mathlib from
 @[default_target]
 lean_lib «all» where
   roots := #[`LeanMove, `LeanMove.Tests.Runtime.AllTests,
-             `LeanMove.Tests.Parsing.AllParseTests]
+             `LeanMove.Tests.Parsing.AllParseTests,
+             `LeanMove.Tests.Typechecking.AllTypecheckingTests]
 
 -- Core library only (no examples or tests)
 -- Build with: lake build core
@@ -43,10 +44,13 @@ lean_lib «expressivity» where
              `accepted.imm_borrow_after_mut, `accepted.multible_mutable_return_values,
              `accepted.mutable_borrows_are_not_unique, `accepted.subtree_writes_release,
              `accepted.vec_basic_ops, `accepted.vec_borrow_sequential,
+             `accepted.vec_mut_then_imm_borrow,
              `rejected.simple_dangling, `rejected.imm_borrow_after_mut_call_invalid,
              `rejected.imm_borrow_after_mut_fields_invalid,
              `rejected.mutable_borrows_are_not_unique_calls_invalid,
-             `rejected.vec_dangling_borrow]
+             `rejected.vec_dangling_borrow,
+             `rejected.vec_double_borrow, `rejected.vec_mixed_borrow,
+             `rejected.vec_move_after_borrow, `rejected.vec_pop_after_borrow]
 
 -- Build all examples
 -- Build with: lake build examples
@@ -62,10 +66,13 @@ lean_lib «examples» where
              `expressivity.accepted.imm_borrow_after_mut, `expressivity.accepted.multible_mutable_return_values,
              `expressivity.accepted.mutable_borrows_are_not_unique, `expressivity.accepted.subtree_writes_release,
              `expressivity.accepted.vec_basic_ops, `expressivity.accepted.vec_borrow_sequential,
+             `expressivity.accepted.vec_mut_then_imm_borrow,
              `expressivity.rejected.simple_dangling, `expressivity.rejected.imm_borrow_after_mut_call_invalid,
              `expressivity.rejected.imm_borrow_after_mut_fields_invalid,
              `expressivity.rejected.mutable_borrows_are_not_unique_calls_invalid,
-             `expressivity.rejected.vec_dangling_borrow]
+             `expressivity.rejected.vec_dangling_borrow,
+             `expressivity.rejected.vec_double_borrow, `expressivity.rejected.vec_mixed_borrow,
+             `expressivity.rejected.vec_move_after_borrow, `expressivity.rejected.vec_pop_after_borrow]
 
 -- Build target for runtime tests (small-step interpreter)
 -- Build with: lake build runtime

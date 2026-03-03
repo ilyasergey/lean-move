@@ -53,6 +53,7 @@ structure TransState where
   nextSiteId : Nat := 0
   nextRefId : Nat := 1  -- start from 1; 0 is sometimes special
   structs : List ResolvedStruct := []
+  moduleName : String := ""
 deriving Repr, Inhabited
 
 abbrev TransM := StateM TransState
@@ -76,6 +77,7 @@ def freshRefId : TransM Aref := do
 /-- Resolve a MVIR type to BasicMoveType using the struct definitions in scope -/
 partial def resolveBasicType (structs : List ResolvedStruct) : MvirType → BasicMoveType
   | .u64 => .u64
+  | .u8 => .u8
   | .bool => .tbool
   | .unit => .tunit
   | .struct name =>
@@ -352,7 +354,9 @@ where
         let contOrSkip ← contM
         -- Build the call statement, then assign each result to a variable
         let assigns := buildAssigns vars resultSites contOrSkip
-        let callStmt := Stmt.call resultSites funcName argSites assigns
+        -- Qualify function name with module name
+        let qualName := s!"{(← get).moduleName}.{funcName}"
+        let callStmt := Stmt.call resultSites qualName argSites assigns
         pure (wrapBindings allBindings callStmt)
       | .vecOp opName ty args =>
         let structs := (← get).structs
@@ -499,7 +503,7 @@ def translateFunDef (mfun : MvirFunDef) : TransM FunDef := do
 def translateModule (mod : MvirModule) : TransM (List (String × FunDef)) := do
   -- Resolve struct definitions first
   let resolvedStructs := resolveStructDefs mod.name mod.structs
-  modify fun s => { s with structs := resolvedStructs }
+  modify fun s => { s with structs := resolvedStructs, moduleName := mod.name }
   -- Translate each function
   let mut result : List (String × FunDef) := []
   for mfun in mod.functions do

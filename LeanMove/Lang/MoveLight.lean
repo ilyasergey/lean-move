@@ -47,6 +47,7 @@ deriving Repr, DecidableEq, Inhabited, Hashable
 
 inductive BasicMoveType where
   | u64   -- Unsigned 64-bit integer
+  | u8    -- Unsigned 8-bit integer
   | tbool
   | tunit
   | trecord : AssocMap Field BasicMoveType → BasicMoveType
@@ -60,6 +61,7 @@ inductive BasicMoveType where
 mutual
   def BasicMoveType.beq : BasicMoveType → BasicMoveType → Bool
     | .u64, .u64 => true
+    | .u8, .u8 => true
     | .tbool, .tbool => true
     | .tunit, .tunit => true
     | .trecord m1, .trecord m2 => BasicMoveType.beqEntries m1.entries m2.entries
@@ -81,32 +83,43 @@ instance : BEq BasicMoveType := ⟨BasicMoveType.beq⟩
 -- Manual simp lemmas for BasicMoveType.beq (equational theorem generation
 -- fails for mutual definitions over nested inductives in Lean 4.27)
 @[simp] theorem BasicMoveType.beq_u64_u64 : BasicMoveType.beq .u64 .u64 = true := rfl
+@[simp] theorem BasicMoveType.beq_u8_u8 : BasicMoveType.beq .u8 .u8 = true := rfl
 @[simp] theorem BasicMoveType.beq_tbool_tbool : BasicMoveType.beq .tbool .tbool = true := rfl
 @[simp] theorem BasicMoveType.beq_tunit_tunit : BasicMoveType.beq .tunit .tunit = true := rfl
 @[simp] theorem BasicMoveType.beq_trecord (m1 m2 : AssocMap Field BasicMoveType) :
     BasicMoveType.beq (.trecord m1) (.trecord m2) = BasicMoveType.beqEntries m1.entries m2.entries := rfl
+@[simp] theorem BasicMoveType.beq_u64_u8 : BasicMoveType.beq .u64 .u8 = false := rfl
 @[simp] theorem BasicMoveType.beq_u64_tbool : BasicMoveType.beq .u64 .tbool = false := rfl
 @[simp] theorem BasicMoveType.beq_u64_tunit : BasicMoveType.beq .u64 .tunit = false := rfl
 @[simp] theorem BasicMoveType.beq_u64_trecord (m) : BasicMoveType.beq .u64 (.trecord m) = false := rfl
+@[simp] theorem BasicMoveType.beq_u64_tvec (t) : BasicMoveType.beq .u64 (.tvec t) = false := rfl
+@[simp] theorem BasicMoveType.beq_u8_u64 : BasicMoveType.beq .u8 .u64 = false := rfl
+@[simp] theorem BasicMoveType.beq_u8_tbool : BasicMoveType.beq .u8 .tbool = false := rfl
+@[simp] theorem BasicMoveType.beq_u8_tunit : BasicMoveType.beq .u8 .tunit = false := rfl
+@[simp] theorem BasicMoveType.beq_u8_trecord (m) : BasicMoveType.beq .u8 (.trecord m) = false := rfl
+@[simp] theorem BasicMoveType.beq_u8_tvec (t) : BasicMoveType.beq .u8 (.tvec t) = false := rfl
 @[simp] theorem BasicMoveType.beq_tbool_u64 : BasicMoveType.beq .tbool .u64 = false := rfl
+@[simp] theorem BasicMoveType.beq_tbool_u8 : BasicMoveType.beq .tbool .u8 = false := rfl
 @[simp] theorem BasicMoveType.beq_tbool_tunit : BasicMoveType.beq .tbool .tunit = false := rfl
 @[simp] theorem BasicMoveType.beq_tbool_trecord (m) : BasicMoveType.beq .tbool (.trecord m) = false := rfl
+@[simp] theorem BasicMoveType.beq_tbool_tvec (t) : BasicMoveType.beq .tbool (.tvec t) = false := rfl
 @[simp] theorem BasicMoveType.beq_tunit_u64 : BasicMoveType.beq .tunit .u64 = false := rfl
+@[simp] theorem BasicMoveType.beq_tunit_u8 : BasicMoveType.beq .tunit .u8 = false := rfl
 @[simp] theorem BasicMoveType.beq_tunit_tbool : BasicMoveType.beq .tunit .tbool = false := rfl
 @[simp] theorem BasicMoveType.beq_tunit_trecord (m) : BasicMoveType.beq .tunit (.trecord m) = false := rfl
+@[simp] theorem BasicMoveType.beq_tunit_tvec (t) : BasicMoveType.beq .tunit (.tvec t) = false := rfl
 @[simp] theorem BasicMoveType.beq_trecord_u64 (m) : BasicMoveType.beq (.trecord m) .u64 = false := rfl
+@[simp] theorem BasicMoveType.beq_trecord_u8 (m) : BasicMoveType.beq (.trecord m) .u8 = false := rfl
 @[simp] theorem BasicMoveType.beq_trecord_tbool (m) : BasicMoveType.beq (.trecord m) .tbool = false := rfl
 @[simp] theorem BasicMoveType.beq_trecord_tunit (m) : BasicMoveType.beq (.trecord m) .tunit = false := rfl
 @[simp] theorem BasicMoveType.beq_trecord_tvec (m t) : BasicMoveType.beq (.trecord m) (.tvec t) = false := rfl
 @[simp] theorem BasicMoveType.beq_tvec (t1 t2 : BasicMoveType) :
     BasicMoveType.beq (.tvec t1) (.tvec t2) = t1.beq t2 := rfl
 @[simp] theorem BasicMoveType.beq_tvec_u64 (t) : BasicMoveType.beq (.tvec t) .u64 = false := rfl
+@[simp] theorem BasicMoveType.beq_tvec_u8 (t) : BasicMoveType.beq (.tvec t) .u8 = false := rfl
 @[simp] theorem BasicMoveType.beq_tvec_tbool (t) : BasicMoveType.beq (.tvec t) .tbool = false := rfl
 @[simp] theorem BasicMoveType.beq_tvec_tunit (t) : BasicMoveType.beq (.tvec t) .tunit = false := rfl
 @[simp] theorem BasicMoveType.beq_tvec_trecord (t m) : BasicMoveType.beq (.tvec t) (.trecord m) = false := rfl
-@[simp] theorem BasicMoveType.beq_u64_tvec (t) : BasicMoveType.beq .u64 (.tvec t) = false := rfl
-@[simp] theorem BasicMoveType.beq_tbool_tvec (t) : BasicMoveType.beq .tbool (.tvec t) = false := rfl
-@[simp] theorem BasicMoveType.beq_tunit_tvec (t) : BasicMoveType.beq .tunit (.tvec t) = false := rfl
 
 -- Manual simp lemmas for BasicMoveType.beqEntries
 @[simp] theorem BasicMoveType.beqEntries_nil : BasicMoveType.beqEntries [] [] = true := rfl
@@ -127,6 +140,7 @@ mutual
 
   theorem BasicMoveType.beq_refl : ∀ (t : BasicMoveType), t.beq t = true
     | .u64 => rfl
+    | .u8 => rfl
     | .tbool => rfl
     | .tunit => rfl
     | .trecord m => BasicMoveType.beqEntries_refl m.entries
@@ -148,6 +162,7 @@ mutual
 
   theorem BasicMoveType.eq_of_beq : ∀ (t1 t2 : BasicMoveType), t1.beq t2 = true → t1 = t2
     | .u64, .u64, _ => rfl
+    | .u8, .u8, _ => rfl
     | .tbool, .tbool, _ => rfl
     | .tunit, .tunit, _ => rfl
     | .trecord m1, .trecord m2, h => by
@@ -159,11 +174,12 @@ mutual
     | .tvec t1, .tvec t2, h => by
       simp only [BasicMoveType.beq_tvec] at h
       rw [BasicMoveType.eq_of_beq t1 t2 h]
-    | .u64, .tbool, h | .u64, .tunit, h | .u64, .trecord _, h | .u64, .tvec _, h => by simp at h
-    | .tbool, .u64, h | .tbool, .tunit, h | .tbool, .trecord _, h | .tbool, .tvec _, h => by simp at h
-    | .tunit, .u64, h | .tunit, .tbool, h | .tunit, .trecord _, h | .tunit, .tvec _, h => by simp at h
-    | .trecord _, .u64, h | .trecord _, .tbool, h | .trecord _, .tunit, h | .trecord _, .tvec _, h => by simp at h
-    | .tvec _, .u64, h | .tvec _, .tbool, h | .tvec _, .tunit, h | .tvec _, .trecord _, h => by simp at h
+    | .u64, .u8, h | .u64, .tbool, h | .u64, .tunit, h | .u64, .trecord _, h | .u64, .tvec _, h => by simp at h
+    | .u8, .u64, h | .u8, .tbool, h | .u8, .tunit, h | .u8, .trecord _, h | .u8, .tvec _, h => by simp at h
+    | .tbool, .u64, h | .tbool, .u8, h | .tbool, .tunit, h | .tbool, .trecord _, h | .tbool, .tvec _, h => by simp at h
+    | .tunit, .u64, h | .tunit, .u8, h | .tunit, .tbool, h | .tunit, .trecord _, h | .tunit, .tvec _, h => by simp at h
+    | .trecord _, .u64, h | .trecord _, .u8, h | .trecord _, .tbool, h | .trecord _, .tunit, h | .trecord _, .tvec _, h => by simp at h
+    | .tvec _, .u64, h | .tvec _, .u8, h | .tvec _, .tbool, h | .tvec _, .tunit, h | .tvec _, .trecord _, h => by simp at h
 end
 
 theorem BasicMoveType.beq_of_eq (t1 t2 : BasicMoveType) : t1 = t2 → t1.beq t2 = true := by

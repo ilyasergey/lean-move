@@ -143,7 +143,7 @@ def borrow_f_sig : FunSig :=
 
 -- Function environment containing borrow_f
 def call_funEnv : FunEnv :=
-  AssocMap.insert AssocMap.empty "borrow_f" borrow_f_sig
+  AssocMap.insert AssocMap.empty "call_and_write_invalid.borrow_f" borrow_f_sig
 
 -- -----------------------------------------------------
 -- -           Parsed MVIR Definitions                 --
