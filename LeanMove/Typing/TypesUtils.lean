@@ -845,6 +845,18 @@ lemma TypeEnv.delete_insert_pathEnv_wf (env : TypeEnv) (sdel sins : Site) (τ : 
     exact SiteEnv.insert_refs_not_root (delete env.siteEnv sdel) sins τ hdel hτ
   · exact hwf.varEnv_wf
 
+/-- Combined: delete+delete+insert site with pathEnv change preserves WellFormed -/
+lemma TypeEnv.delete_delete_insert_pathEnv_wf (env : TypeEnv) (s1 s2 sins : Site) (τ : MoveType) (pe' : PathEnv)
+    (hwf : TypeEnv.WellFormed env) (hpe : PathEnv.WellFormed pe')
+    (hτ : match τ with | .ref _ r _ => r ≠ Aref.root | .basic _ => True) :
+    TypeEnv.WellFormed {env with siteEnv := insert (delete (delete env.siteEnv s1) s2) sins τ, pathEnv := pe'} := by
+  constructor
+  · exact hpe
+  · have hdel1 := SiteEnv.delete_refs_not_root env.siteEnv s1 hwf.siteEnv_wf
+    have hdel2 := SiteEnv.delete_refs_not_root (delete env.siteEnv s1) s2 hdel1
+    exact SiteEnv.insert_refs_not_root _ sins τ hdel2 hτ
+  · exact hwf.varEnv_wf
+
 /-- Combined: delete+delete+insert site preserves WellFormed -/
 lemma TypeEnv.delete_delete_insert_wf (env : TypeEnv) (s1 s2 sins : Site) (τ : MoveType)
     (hwf : TypeEnv.WellFormed env)

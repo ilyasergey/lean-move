@@ -124,6 +124,12 @@ theorem wellTypedState_heap_alloc
     refs_tracked_mapped := hwt.refs_tracked_mapped
     lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
     has_return_info := hwt.has_return_info
+    varStore_locs_bound := by
+      intro y loc_y hvar
+      have hlt := hwt.varStore_locs_bound y loc_y hvar
+      show loc_y < (heap.alloc v).1.nextLoc
+      simp only [Heap.alloc]
+      exact Nat.lt_trans hlt (Nat.lt_succ_of_le (Nat.le_refl _))
   }
 
 /-- StackSafe is preserved under heap.alloc -/
@@ -145,10 +151,10 @@ theorem stackSafe_heap_alloc (stack : List Frame) (ri : Option ReturnInfo)
       obtain ⟨hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
         hlenv_vu, hlenv_fe, hlenv_lib, hhas_ri, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
         hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hrtm, hvar_con, hsite_con, hrmap_live, hrmap_paths_f,
-        hhlb, hrmap_ht, hfe_sig, htc⟩ := hfields.2
+        hhlb, hvlb, hrmap_ht, hfe_sig, htc⟩ := hfields.2
       refine ⟨cE, cL, cR, cM, ⟨henv_wf, hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
         hlenv_vu, hlenv_fe, hlenv_lib, hhas_ri, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
-        hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hrtm, ?_, ?_, ?_, ?_, ?_, ?_, ?_, htc⟩, ?_⟩
+        hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hrtm, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, htc⟩, ?_⟩
       · -- var_consistent
         intro x isv τ ms hvar
         have hold := hvar_con x isv τ ms hvar
@@ -173,6 +179,10 @@ theorem stackSafe_heap_alloc (stack : List Frame) (ri : Option ReturnInfo)
           (hrmap_paths_f r1 r2 hr1 hr2 p hp) hrmap_live hlb
       · -- heap_loc_bound
         exact heap_loc_bound_after_alloc heap v hlb
+      · -- varStore_locs_bound
+        intro y loc_y hvar
+        have hlt := hvlb y loc_y hvar
+        exact Nat.lt_trans hlt (by simp [Heap.alloc])
       · -- rmap_has_type
         intro r bt loc path hrmap hcond
         obtain ⟨val, hread, hht⟩ := hrmap_ht r bt loc path hrmap hcond
@@ -350,6 +360,12 @@ theorem wellTypedState_heap_writeRef
         refs_tracked_mapped := hwt.refs_tracked_mapped
         lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
         has_return_info := hwt.has_return_info
+        varStore_locs_bound := by
+          intro y loc_y hvar
+          have hlt := hwt.varStore_locs_bound y loc_y hvar
+          -- writeRef preserves nextLoc: heap'.nextLoc = heap.nextLoc
+          -- heap' = heap.write loc newRoot, and Heap.write doesn't change nextLoc
+          simp only [← hwr, Heap.write]; exact hlt
       }
 
 /-- StackSafe is preserved under heap.writeRef -/
@@ -376,7 +392,7 @@ theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
       obtain ⟨hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
         hlenv_vu, hlenv_fe, hlenv_lib, hhas_ri, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
         hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hrtm, hvar_con, hsite_con, hrmap_live, hrmap_paths_f,
-        hhlb, hrmap_ht, hfe_sig, htc⟩ := hfields.2
+        hhlb, hvlb, hrmap_ht, hfe_sig, htc⟩ := hfields.2
       -- Extract base value and writePath facts for field maintenance
       have hv_leaf_read' := hv_leaf_read
       have hwr' := hwr
@@ -397,7 +413,7 @@ theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
             rw [← hwr']; simp [Heap.write, Heap.read, lookup_insert_same]
           refine ⟨cE, cL, cR, cM, ⟨henv_wf, hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
             hlenv_vu, hlenv_fe, hlenv_lib, hhas_ri, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
-            hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hrtm, ?_, ?_, ?_, ?_, ?_, ?_, ?_, htc⟩, ?_⟩
+            hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hrtm, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, htc⟩, ?_⟩
           · -- var_consistent
             intro x isv τ_x ms hvar
             have hvc := hvar_con x isv τ_x ms hvar
@@ -489,6 +505,10 @@ theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
                   exact hne
           · -- heap_loc_bound
             exact heap_loc_bound_after_writeRef heap loc wpath vval heap' hhlb hwr
+          · -- varStore_locs_bound
+            intro y loc_y hvar
+            have hlt := hvlb y loc_y hvar
+            rw [writeRef_preserves_nextLoc heap loc wpath vval heap' hwr]; exact hlt
           · -- rmap_has_type
             intro r' bt loc' path' hrmap' hcond
             obtain ⟨v_old, hread_old, hht_old⟩ := hrmap_ht r' bt loc' path' hrmap' hcond
@@ -1183,6 +1203,10 @@ lemma heap_alloc_nextLoc (h : Heap) (v : Value) :
     (h.alloc v).1.nextLoc = h.nextLoc + 1 := by
   simp [Heap.alloc]
 
+lemma lt_heap_alloc_nextLoc (h : Heap) (v : Value) (n : ℕ) (hlt : n < h.nextLoc) :
+    n < (h.alloc v).1.nextLoc :=
+  Nat.lt_trans hlt (by simp [Heap.alloc])
+
 lemma heap_alloc_read_same (h : Heap) (v : Value) :
     (h.alloc v).1.read h.nextLoc = some v := by
   simp [Heap.alloc, Heap.read, lookup_insert_same]
@@ -1272,6 +1296,77 @@ lemma allocArgs_heap_loc_bound' (heap : Heap) (params : List (Var × MoveType))
         rw [halloc.1.symm]
         exact ih (heap.alloc a).1 as' h' vs' hrec
           (heap_alloc_preserves_bound heap a hlb)
+
+/-- allocArgs only grows the heap: nextLoc is non-decreasing. -/
+lemma allocArgs_nextLoc_le (heap : Heap) (params : List (Var × MoveType))
+    (args : List Value) (heap_out : Heap) (vs : VarStore) :
+    allocArgs heap params args = some (heap_out, vs) →
+    heap.nextLoc ≤ heap_out.nextLoc := by
+  induction params generalizing heap args heap_out vs with
+  | nil =>
+    intro halloc
+    cases args with
+    | nil =>
+      simp only [allocArgs, Option.some.injEq, Prod.mk.injEq] at halloc
+      rw [halloc.1.symm]; exact Nat.le_refl _
+    | cons => simp [allocArgs] at halloc
+  | cons p ps ih =>
+    intro halloc
+    obtain ⟨y, τ_y⟩ := p
+    cases args with
+    | nil => simp [allocArgs] at halloc
+    | cons a as' =>
+      simp only [allocArgs, Bind.bind, Option.bind] at halloc
+      cases hrec : allocArgs (heap.alloc a).1 ps as' with
+      | none => rw [hrec] at halloc; simp at halloc
+      | some pair =>
+        obtain ⟨h', vs'⟩ := pair
+        rw [hrec] at halloc; dsimp at halloc
+        simp only [Option.some.injEq, Prod.mk.injEq] at halloc
+        rw [halloc.1.symm]
+        have h1 : heap.nextLoc ≤ (heap.alloc a).1.nextLoc := by simp [Heap.alloc]
+        have h2 := ih (heap.alloc a).1 as' h' vs' hrec
+        exact Nat.le_trans h1 h2
+
+/-- All locations stored in paramVarStore by allocArgs are within heap bounds. -/
+lemma allocArgs_varStore_locs_bound (heap : Heap) (params : List (Var × MoveType))
+    (args : List Value) (heap_out : Heap) (vs : VarStore) :
+    allocArgs heap params args = some (heap_out, vs) →
+    ∀ y loc, lookup vs y = some (some loc) → loc < heap_out.nextLoc := by
+  induction params generalizing heap args heap_out vs with
+  | nil =>
+    intro halloc y loc hlookup
+    cases args with
+    | nil =>
+      simp [allocArgs] at halloc
+      rw [show vs = empty from halloc.2.symm] at hlookup
+      simp only [lookup, AssocMap.empty, List.lookup] at hlookup
+      cases hlookup
+    | cons => simp [allocArgs] at halloc
+  | cons p ps ih =>
+    intro halloc y loc hlookup
+    obtain ⟨x, τ_x⟩ := p
+    cases args with
+    | nil => simp [allocArgs] at halloc
+    | cons a as' =>
+      simp only [allocArgs, Bind.bind, Option.bind] at halloc
+      cases hrec : allocArgs (heap.alloc a).1 ps as' with
+      | none => rw [hrec] at halloc; simp at halloc
+      | some pair =>
+        obtain ⟨h', vs'⟩ := pair
+        rw [hrec] at halloc; dsimp at halloc
+        simp only [Option.some.injEq, Prod.mk.injEq] at halloc
+        obtain ⟨rfl, rfl⟩ := halloc
+        by_cases heq : y = x
+        · subst heq; rw [lookup_insert_same] at hlookup
+          simp only [Option.some.injEq] at hlookup; rw [← hlookup]
+          -- loc = (heap.alloc a).2 = heap.nextLoc
+          have : (heap.alloc a).2 = heap.nextLoc := by simp [Heap.alloc]
+          rw [this]
+          have h1 : heap.nextLoc < (heap.alloc a).1.nextLoc := by simp [Heap.alloc]
+          exact Nat.lt_of_lt_of_le h1 (allocArgs_nextLoc_le _ _ _ _ _ hrec)
+        · rw [lookup_insert_ne _ x y _ heq] at hlookup
+          exact ih _ _ _ _ hrec y loc hlookup
 
 /-- allocArgs succeeds only when params.length = args.length -/
 lemma allocArgs_length_eq (heap : Heap) (params : List (Var × MoveType))

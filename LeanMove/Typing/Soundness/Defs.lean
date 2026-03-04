@@ -665,6 +665,9 @@ structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
   -- 25. Non-top-level frames have return info
   has_return_info : m.stack ≠ [] → m.frame.returnInfo.isSome
 
+  -- 26. All varStore locations are within heap bounds
+  varStore_locs_bound : ∀ y loc, lookup m.frame.varStore y = some (some loc) → loc < m.heap.nextLoc
+
 /-- Return values are well-typed: each value matches its corresponding site type.
     For ref types, also requires heap readability (needed for rmap_live and rmap_has_type). -/
 def ReturnValsWellTyped : List Value → List Site → SiteEnv → Heap → Prop
@@ -765,6 +768,8 @@ def StackSafe : List Frame → Option ReturnInfo → Heap → List ParamType →
         ∀ p, interpret_regex (callerEnv.pathEnv.paths (r1, r2)) p →
         PathReflectedInHeap callerRmap heap r1 r2 p) ∧
       (∀ loc, heap.read loc ≠ none → loc < heap.nextLoc) ∧
+      -- varStore_locs_bound for caller
+      (∀ y loc, lookup callerFrame.varStore y = some (some loc) → loc < heap.nextLoc) ∧
       -- rmap_has_type: for refs used in varEnv OR non-result siteEnv
       (∀ r bt loc path, callerRmap.map r = some (loc, path) →
         ((∃ x bk ms, lookup callerEnv.varEnv x = some (.validVar, .ref bt r bk, ms)) ∨
@@ -1024,6 +1029,20 @@ theorem heap_loc_bound_after_writeRef (h : Heap) (loc : Loc) (path : List Field)
       · subst heq; exact hlb loc (by rw [hbase]; simp)
       · rw [lookup_insert_ne h.store loc loc' newVal (Ne.symm heq)] at hne
         exact hlb loc' hne
+
+/-- heap.writeRef preserves nextLoc -/
+theorem writeRef_preserves_nextLoc (h : Heap) (loc : Loc) (path : List Field)
+    (v : Value) (h' : Heap)
+    (hwrite : h.writeRef loc path v = some h') :
+    h'.nextLoc = h.nextLoc := by
+  simp only [Heap.writeRef, bind, Option.bind] at hwrite
+  cases hbase : h.read loc with
+  | none => simp [hbase] at hwrite
+  | some oldVal =>
+    simp [hbase] at hwrite
+    cases hwp : writePath oldVal path v with
+    | none => simp [hwp] at hwrite
+    | some newVal => simp [hwp] at hwrite; rw [← hwrite]; rfl
 
 -- ============================================================
 -- Part 8: writePath preserves readPath structure

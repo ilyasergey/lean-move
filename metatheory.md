@@ -14,12 +14,13 @@ core calculus of the Move intermediate representation — and proved it
 - The type checker is **executable**: it runs as a boolean function inside
   Lean and can verify programs by kernel reduction (`by rfl`).
 - The soundness theorem guarantees that well-typed programs **never produce
-  non-acceptable errors** at runtime. The type system rules out **8 of 11**
+  non-acceptable errors** at runtime. The type system rules out **8 of 12**
   runtime error constructors — including dangling references,
   uninitialized variables, type mismatches, unknown labels/functions,
-  arity mismatches, and invalid field accesses. Only 3 *acceptable*
+  arity mismatches, and invalid field accesses. Only 4 *acceptable*
   errors remain: `divisionByZero` (runtime arithmetic), `outOfFuel`
-  (bounded interpreter), and `aborted` (well-typed `abort` statement).
+  (bounded interpreter), `aborted` (well-typed `abort` statement), and
+  `vectorError` (out-of-bounds access, empty pop, length mismatch).
 - We demonstrate this end-to-end on programs drawn from the **Move bytecode
   verifier's own test suite**: each program is type-checked, executed on a
   concrete heap, and certified free of all preventable errors — all within
@@ -35,9 +36,6 @@ The formalisation does **not** cover:
 - **Abilities beyond copy/drop.** Move's `store` and `key` abilities
   are parsed but not enforced. Resource linearity (must-use semantics)
   is not modelled.
-- **Vectors and built-in container types.** `vec_mut_borrow`, `vec_pack_0`,
-  etc. are recognised by the parser but produce unsupported-operation
-  placeholders during translation.
 - **Global storage operations.** `move_to`, `move_from`, `borrow_global`,
   `exists` are not modelled.
 - **Multi-signer and script functions.** The formalisation focuses on
@@ -49,8 +47,8 @@ The formalisation does **not** cover:
 These restrictions keep the core calculus small enough for complete
 machine-checked soundness proofs while still capturing the essence of
 Move's reference-safety discipline — aliased mutable borrows, field
-borrows, freeze, release, cross-function borrow propagation, and
-control-flow joins.
+borrows, freeze, release, cross-function borrow propagation,
+control-flow joins, and vector operations (see Part III).
 
 ---
 
@@ -100,14 +98,16 @@ LeanMove/
 MoveLight programs are sequences of *blocks*, each containing a *statement*
 that ends with a terminal (`skip`, `jump`, `branch`, `ret`, `abort`).
 Non-terminal statements have the form `letBind site expr cont`, `writeRef`,
-`assign`, `release`, `unpack`, or `call`, where `cont` is the continuation
-statement within the same block.
+`assign`, `release`, `unpack`, `call`, `vecUnpack`, `vecPushBack`, or
+`vecSwap`, where `cont` is the continuation statement within the same block.
 
-Types are either *basic* (`u64`, `bool`, `unit`, records) or *references*
-`ref τ r bk`, carrying a basic content type `τ`, an abstract reference `r :
-Aref`, and a borrowing kind `bk` (immutable or mutable). Abstract references
-(`Aref`) are either `.root` (the local variable root), `.refid n` (a
-placeholder used during type checking), or `.paramRef v` (tied to parameter `v`).
+Types are either *basic* (`u64`, `bool`, `unit`, records, vectors) or
+*references* `ref τ r bk`, carrying a basic content type `τ`, an abstract
+reference `r : Aref`, and a borrowing kind `bk` (immutable or mutable).
+Vector types have the form `tvec T` where `T` is the element type (itself a
+`BasicMoveType`). Abstract references (`Aref`) are either `.root` (the local
+variable root), `.refid n` (a placeholder used during type checking), or
+`.paramRef v` (tied to parameter `v`).
 
 ### Operational semantics (`Semantics/Smallstep.lean`)
 
@@ -137,8 +137,9 @@ system) and **acceptable** (not preventable):
 | `divisionByZero` | No | Runtime arithmetic |
 | `outOfFuel` | No | Bounded interpreter limitation |
 | `aborted` | No | Well-typed `abort` statement or `skip` in callee |
+| `vectorError` | No | Index out of bounds, empty pop, length mismatch |
 
-The predicate `RuntimeError.isAcceptable` marks the last three as acceptable.
+The predicate `RuntimeError.isAcceptable` marks the last four as acceptable.
 Type soundness rules out all non-acceptable errors.
 
 ### Relational typing (`Typing/TypeChecking.lean`)
@@ -374,12 +375,13 @@ type_soundness
 
 **`SafeExecState`** defines safety: running states have a `WellTypedState`
 and `StackSafe` witness; halted states are safe; error states must satisfy
-`e.isAcceptable` (only `divisionByZero`, `outOfFuel`, `aborted`). Any
+`e.isAcceptable` (only `divisionByZero`, `outOfFuel`, `aborted`,
+`vectorError`). Any
 non-acceptable error contradicts safety.
 
 **Progress** (`Progress.lean`) proves `step_error_is_acceptable`: if a
 well-typed state steps to an error, that error is acceptable. This covers
-all 8 preventable error types:
+all 8 preventable error types (including all vector operations):
 - `danglingRef`: contradicted by `rmap_live` (references map to valid heap locations)
 - `uninitializedVar`: contradicted by `var_consistent` (valid variables have values)
 - `uninitializedSite`: contradicted by `site_consistent` (typed sites have values)
@@ -393,8 +395,9 @@ all 8 preventable error types:
 **Preservation** (`Preservation.lean`) is the heart of the proof: for each
 typing rule, when the interpreter takes a step, the resulting machine state
 admits a new `WellTypedState` (and `StackSafe` is maintained). The file
-contains one case proof per typing rule (~25 cases), plus inversion lemmas
-that extract hypotheses from each `typecheck_stmt` constructor.
+contains one case proof per typing rule (~33 cases, including 8 for vector
+operations), plus inversion lemmas that extract hypotheses from each
+`typecheck_stmt` constructor.
 
 ### Regex-based path tracking (`Structures/Regex.lean`, `Types.lean`)
 
@@ -406,8 +409,9 @@ map from pairs of references to **regular expressions** over path elements:
 pathEnv.paths : (Aref × Aref) → Regex PathElement
 ```
 
-A path element is either `.field f` (a record field access) or
-`.root_to_var x` (a link from the local root to variable `x`). The regex
+A path element is `.field f` (a record field access), `.root_to_var x` (a
+link from the local root to variable `x`), or `.vecElem` (a vector element
+access, used by the vector extension). The regex
 `pathEnv.paths (u, v)` describes *all* concrete field paths by which `v` is
 reachable from `u` in the current borrow structure. The regex language
 (`Structures/Regex.lean`) supports the standard constructors — `empty`, `ε`
@@ -437,10 +441,10 @@ via one of several operations:
 
 | Operation | Used by | Effect on `pathEnv` |
 |---|---|---|
-| `update_with_extension z s p` | `borrowField`, `borrowMut`, `borrowImm` | Add ref `z`; paths to `z` extend through `p`, paths from `z` are derivatives by `p` |
+| `update_with_extension z s p` | `borrowField`, `borrowMut`, `borrowImm`, `vecImmBorrow`, `vecMutBorrow` | Add ref `z`; paths to `z` extend through `p`, paths from `z` are derivatives by `p` |
 | `update_with_epsilon z s` | `copy` (ref type) | Shorthand for `update_with_extension z s []` — `z` is an alias of `s` with identity paths |
-| `delete_ref_node r` | `readRef`, `release` | Remove `r` from tracked refs; clear all its edges |
-| `garbage_collect r` | `writeRef`, `assign` (valid) | Same as `delete_ref_node` — remove `r` after a write consumes it |
+| `delete_ref_node r` | `readRef`, `release` | Remove `r` from tracked refs; clear all its edges (also used as garbage collection by other rules) |
+| `delete_ref_node r` (as gc) | `writeRef`, `assign` (valid), `vecLen`, `vecPopBack`, `vecPushBack`, `vecSwap` | Remove `r` from tracked refs after the reference is consumed |
 | `consume_ref_transfer r r'` | `freeze` | Remove `r`, transfer incoming edges to `r'` (union of old `r'` and `r` edges) |
 | `extend_with_star t s` | `call` (path connection) | Add `t →[·★] s` and `s →[·★] t` paths — the callee may have created arbitrary relationships |
 
@@ -540,7 +544,7 @@ must show that the caller's `WellTypedState` can be reconstructed from
 
 ### Key preservation invariants (`WellTypedState`)
 
-The `WellTypedState` structure (25 fields) ties the abstract type world to
+The `WellTypedState` structure (29 fields) ties the abstract type world to
 the concrete machine state. The most important invariants are:
 
 **Value–type correspondence:**
@@ -607,6 +611,265 @@ faithfully reflects the concrete heap's reference structure at every step.
 
 ---
 
+## Part III — Vector Extension
+
+MoveLight includes a **vector extension** that models Move's built-in
+`vector<T>` type and its 8 bytecode operations. Vectors interact with the
+borrow checker: elements can be borrowed immutably or mutably through a
+vector reference, and mutations (push, pop, swap) require exclusive access.
+The extension is fully integrated into the type system and the soundness
+proof — all 8 vector operations have preservation, progress, and weakening
+cases with no `sorry` placeholders.
+
+### Syntax
+
+Vector types use the `BasicMoveType` constructor `tvec T`, where `T` is the
+element type. At runtime, vector values have the form `Value.vec T elems`,
+where `elems : List Value`.
+
+**Expressions** (used in `letBind s expr cont`):
+
+| Constructor | Parameters | Result type |
+|---|---|---|
+| `vecPack T elems` | element sites of type `T` | `.basic (.tvec T)` |
+| `vecLen src` | vector reference site | `.basic .u64` |
+| `vecImmBorrow src idx` | vector ref + `u64` index | `.ref T rf .siteBorrowImm` |
+| `vecMutBorrow src idx` | mutable vector ref + `u64` index | `.ref T rf .siteBorrowMut` |
+| `vecPopBack src` | mutable vector reference | `.basic T` |
+
+**Statements** (standalone, with continuation):
+
+| Constructor | Parameters | Effect |
+|---|---|---|
+| `vecUnpack T results src cont` | vector value site → result sites | distribute elements |
+| `vecPushBack ref val cont` | mutable vector ref + value | append element |
+| `vecSwap ref idx1 idx2 cont` | mutable vector ref + two `u64` indices | swap elements |
+
+### Typing rules
+
+All vector typing rules follow the core MoveLight discipline: sites are
+consumed after use, fresh abstract references are allocated for borrows, and
+`check_outbound` ensures exclusive access for mutations.
+
+**`let_bind_vecPack`** — Pack values into a vector:
+```
+siteEnv(e_i) = .basic T    for each element site e_i
+notIn(siteEnv, s)           List.Nodup(elems)
+siteEnv' = deleteAll(siteEnv, elems) + {s ↦ .basic (.tvec T)}
+────────────────────────────────────────────────────────────────
+typecheck_stmt lenv env (letBind s (vecPack T elems) cont) retTypes
+```
+No path environment changes — vectors are values, not references.
+
+**`vecUnpack_rule`** — Distribute vector elements to sites:
+```
+siteEnv(src) = .basic (.tvec T)
+notIn(siteEnv, r_i)    for each result site r_i
+List.Nodup(results)
+siteEnv' = addVecSites T (delete siteEnv src) results
+────────────────────────────────────────────────────────────────
+typecheck_stmt lenv env (vecUnpack T results src cont) retTypes
+```
+`addVecSites T se [r₁, ..., rₙ]` inserts `{r_i ↦ .basic T}` for each
+result site. No path environment changes.
+
+**`let_bind_vecLen`** — Read vector length through a reference:
+```
+siteEnv(src) = .ref (.tvec T) r isBor
+siteEnv' = delete(siteEnv, src) + {s ↦ .basic .u64}
+pathEnv' = delete_ref_node(pathEnv, r)
+────────────────────────────────────────────────────────────────
+typecheck_stmt lenv env (letBind s (vecLen src) cont) retTypes
+```
+The vector reference `r` is consumed (`delete_ref_node`) after the length is read.
+
+**`let_bind_vecImmBorrow`** — Borrow an element immutably:
+```
+siteEnv(src) = .ref (.tvec T) s_ref isBor
+siteEnv(idx) = .basic .u64
+freshRefInEnv(rf, env)
+[if isBor = .siteBorrowMut: check_outbound(pathEnv, s_ref)]
+siteEnv' = delete(delete(siteEnv, src), idx) + {s ↦ .ref T rf .siteBorrowImm}
+pathEnv' = update_with_extension(rf, s_ref, [.vecElem], pathEnv)
+────────────────────────────────────────────────────────────────
+typecheck_stmt lenv env (letBind s (vecImmBorrow src idx) cont) retTypes
+```
+A fresh abstract reference `rf` is allocated for the borrowed element. The
+path `s_ref →[vecElem] rf` records that `rf` is reachable from the vector
+reference through a vector element access. This uses the same
+`update_with_extension` mechanism as `borrowField`, but with `.vecElem`
+instead of `.field f`.
+
+**`let_bind_vecMutBorrow`** — Borrow an element mutably:
+```
+siteEnv(src) = .ref (.tvec T) s_ref .siteBorrowMut
+siteEnv(idx) = .basic .u64
+freshRefInEnv(rf, env)
+check_outbound(pathEnv, s_ref)
+siteEnv' = delete(delete(siteEnv, src), idx) + {s ↦ .ref T rf .siteBorrowMut}
+pathEnv' = update_with_extension(rf, s_ref, [.vecElem], pathEnv)
+────────────────────────────────────────────────────────────────
+typecheck_stmt lenv env (letBind s (vecMutBorrow src idx) cont) retTypes
+```
+Requires a *mutable* vector reference. The `check_outbound` condition
+ensures the vector is not aliased — the same exclusivity requirement as
+`writeRef` and `borrowMutField`.
+
+**`let_bind_vecPopBack`** — Remove and return the last element:
+```
+siteEnv(src) = .ref (.tvec T) r .siteBorrowMut
+check_outbound(pathEnv, r)
+siteEnv' = delete(siteEnv, src) + {s ↦ .basic T}
+pathEnv' = delete_ref_node(pathEnv, r)
+────────────────────────────────────────────────────────────────
+typecheck_stmt lenv env (letBind s (vecPopBack src) cont) retTypes
+```
+Mutates the vector through the heap, so requires exclusive access.
+The reference is consumed after the operation.
+
+**`vecPushBack_rule`** — Append an element:
+```
+siteEnv(refSite) = .ref (.tvec T) r .siteBorrowMut
+siteEnv(valSite) = .basic T
+check_outbound(pathEnv, r)
+siteEnv' = delete(delete(siteEnv, valSite), refSite)
+pathEnv' = delete_ref_node(pathEnv, r)
+────────────────────────────────────────────────────────────────
+typecheck_stmt lenv env (vecPushBack refSite valSite cont) retTypes
+```
+Both the reference and value sites are consumed. The vector reference is
+garbage-collected because the mutation completes.
+
+**`vecSwap_rule`** — Swap two elements:
+```
+siteEnv(refSite) = .ref (.tvec T) r .siteBorrowMut
+siteEnv(idx1) = .basic .u64
+siteEnv(idx2) = .basic .u64
+check_outbound(pathEnv, r)
+siteEnv' = delete(delete(delete(siteEnv, idx2), idx1), refSite)
+pathEnv' = delete_ref_node(pathEnv, r)
+────────────────────────────────────────────────────────────────
+typecheck_stmt lenv env (vecSwap refSite idx1 idx2 cont) retTypes
+```
+Consumes all three sites; the reference is garbage-collected.
+
+### Operational semantics
+
+At runtime, vector operations interact with both the site store and the heap:
+
+| Operation | Reads | Writes | Error conditions |
+|---|---|---|---|
+| `vecPack` | element sites | site store (new vector value) | uninitialized element |
+| `vecUnpack` | src site | site store (element values) | length mismatch |
+| `vecLen` | heap (vector via ref) | site store (length as `u64`) | dangling ref, type mismatch |
+| `vecImmBorrow` | heap (vector via ref) | heap (alloc element), site store (new ref) | dangling ref, index out of bounds |
+| `vecMutBorrow` | heap (vector via ref) | heap (alloc element), site store (new ref) | dangling ref, index out of bounds |
+| `vecPopBack` | heap (vector via ref) | heap (shortened vector), site store (last element) | dangling ref, empty vector |
+| `vecPushBack` | heap (vector via ref), val site | heap (extended vector) | dangling ref |
+| `vecSwap` | heap (vector via ref), two index sites | heap (swapped vector) | dangling ref, index out of bounds |
+
+**Heap allocation for borrows.** `vecImmBorrow` and `vecMutBorrow` *allocate*
+the borrowed element on the heap (`m.heap.alloc elem`), producing a fresh
+location. The result site receives a reference to this new location. This
+matches Move's semantics where borrowing a vector element creates a pointer
+to a heap-allocated copy of that element.
+
+**The `vectorError` runtime error.** Index out-of-bounds, popping from an
+empty vector, and length mismatches during unpack all produce `vectorError`.
+This error is *acceptable* — the type system does not track vector lengths
+statically, so these errors cannot be prevented by typing alone.
+
+### Value typing
+
+The `HasType` relation includes a vector case:
+```
+HasType.vec : ∀ (elems : List Value) (elemTy : BasicMoveType),
+    (∀ v, v ∈ elems → HasType v elemTy) →
+    HasType (.vec elemTy elems) (.tvec elemTy)
+```
+
+A vector value has type `tvec T` if every element has type `T`.
+
+### Path environment: the `.vecElem` path element
+
+The `PathElement` type is extended with `.vecElem`:
+```
+inductive PathElement where
+  | field : Field → PathElement
+  | root_to_var : Var → PathElement
+  | vecElem : PathElement
+```
+
+When `vecImmBorrow` or `vecMutBorrow` creates a new element reference `rf`
+from a vector reference `s_ref`, the path graph is updated via
+`update_with_extension rf s_ref [.vecElem]`. This records:
+- **Paths to `rf`**: `G'(u, rf) = G(u, s_ref) · ⌜vecElem⌝` — reachable
+  by extending any path to the vector with `vecElem`.
+- **Paths from `rf`**: `G'(rf, v) = ∂[vecElem] G(s_ref, v)` — the
+  Brzozowski derivative of the vector's outgoing paths by `vecElem`.
+
+The `fieldPathOf` function maps `.vecElem` to the empty list (vector element
+access is not a structural field traversal in the heap), allowing the
+preservation proof to connect the abstract path graph to the concrete heap
+location produced by `heap.alloc`.
+
+### Soundness proof structure
+
+The vector extension adds 8 cases to each of the three main proof files:
+
+**Preservation** (`Preservation.lean`): 8 helper theorems, one per operation.
+Each reconstructs all 29 `WellTypedState` fields for the post-step machine.
+The borrow operations (`vecImmBorrow`, `vecMutBorrow`) are the most complex
+— they mirror `preservation_borrowField` / `preservation_borrowMutField`,
+using `update_with_extension` with `[.vecElem]` and proving freshness of the
+allocated heap location. The heap-modifying operations (`vecPopBack`,
+`vecPushBack`, `vecSwap`) follow the pattern of `preservation_writeRef`,
+showing that heap writes preserve `rmap_live`, `rmap_paths`, and
+`rmap_has_type`.
+
+**Progress** (`Progress.lean`): 8 cases in `step_error_is_acceptable` (each
+error from a well-typed vector operation is acceptable) and 8 cases in
+`step_danglingRef_source` (vector operations that access the heap can
+produce dangling-ref errors, but `WellTypedState` invariants — specifically
+`site_consistent`, `rmap_live`, and `rmap_has_type` — prevent them).
+
+**Weakening** (`Weakening.lean`): 8 cases in `typecheck_stmt_weaken`. Each
+shows that if a vector typing rule holds under a more restrictive
+environment `envL`, it also holds under a less restrictive `env` related by
+`TypeEnv.subsumes`. The `vecUnpack` case required new helper lemmas
+(`SiteEnvSubstEquiv_addVecSites`, `site_tracked_addVecSites`,
+`RefsUnique_addVecSites`) mirroring the existing `addFieldSites` lemmas for
+record unpacking.
+
+### Design decisions
+
+1. **`vectorError` is acceptable.** Unlike dangling references or type
+   mismatches, vector index bounds cannot be tracked statically in MoveLight's
+   type system (it has no dependent types or refinement types). The design
+   follows Move's own approach: the bytecode verifier does not prevent
+   out-of-bounds vector access.
+
+2. **Element borrows allocate on the heap.** `vecImmBorrow` and
+   `vecMutBorrow` allocate the borrowed element at a fresh heap location
+   rather than returning a pointer into the vector's storage. This
+   simplifies the preservation proof (the fresh location is guaranteed not to
+   alias any existing reference) and matches the Move VM's semantics.
+
+3. **`.vecElem` vs `.field f`.** Vector element access uses a dedicated
+   path element `.vecElem` rather than reusing `.field`. This avoids
+   conflating vector indexing (which is uniform — all elements have the same
+   type) with record field access (which is heterogeneous). In `fieldPathOf`,
+   `.vecElem` maps to `[]` (empty), reflecting that the heap allocation for
+   a borrowed element does not involve structural field traversal.
+
+4. **Same `update_with_extension` machinery.** The borrow operations reuse
+   the existing regex-based path tracking infrastructure. No new path
+   operations were needed — `update_with_extension rf s [.vecElem]` works
+   identically to `update_with_extension rf s [.field f]`, inheriting all
+   existing soundness lemmas for derivatives and path graph updates.
+
+---
+
 ## Appendix — Syntactic macros (`Lang/Macros.lean`)
 
 MoveLight's AST uses continuation-passing style (CPS): non-terminal
@@ -647,6 +910,14 @@ For example, `(letsite s ← move x) ;; ret [s]` expands to
 | `release s` | `Stmt.release s cont` | `_ = move(s)` (consume) |
 | `unpack(fields, src)` | `Stmt.unpack fields src cont` | `T { f: s } = src` |
 | `call(rets, fn, args)` | `Stmt.call rets fn args cont` | `rets = fn(args)` |
+| `letsite s ← vecPack(T, es)` | `Stmt.letBind s (Expr.vecPack T es) cont` | `s = vec_pack(es)` |
+| `letsite s ← vecLen(a)` | `Stmt.letBind s (Expr.vecLen a) cont` | `s = vec_len(a)` |
+| `letsite s ← vecImmBorrow(a, i)` | `Stmt.letBind s (Expr.vecImmBorrow a i) cont` | `s = vec_imm_borrow(a, i)` |
+| `letsite s ← vecMutBorrow(a, i)` | `Stmt.letBind s (Expr.vecMutBorrow a i) cont` | `s = vec_mut_borrow(a, i)` |
+| `letsite s ← vecPopBack(a)` | `Stmt.letBind s (Expr.vecPopBack a) cont` | `s = vec_pop_back(a)` |
+| `vecUnpack(T, rs, a)` | `Stmt.vecUnpack T rs a cont` | `rs = vec_unpack(a)` |
+| `vecPushBack(a, v)` | `Stmt.vecPushBack a v cont` | `vec_push_back(a, v)` |
+| `vecSwap(a, i, j)` | `Stmt.vecSwap a i j cont` | `vec_swap(a, i, j)` |
 | `jump l` | `Stmt.jump l` | `jump l` |
 | `branch c l1 l2` | `Stmt.branch c l1 l2` | `jump_if (c) l1` |
 | `ret sites` | `Stmt.ret sites` | `return sites` |

@@ -47,7 +47,12 @@ theorem step_danglingRef_source (m : Machine) (loc : Loc) :
     (∃ dst val cont, m.frame.stmt = .writeRef dst val cont ∧
       ∃ path v, readSite m dst = some (.ref loc path) ∧
                 readSite m val = some v ∧
-                m.heap.writeRef loc path v = none) := by
+                m.heap.writeRef loc path v = none) ∨
+    -- Vector operations that can produce danglingRef:
+    (∃ s src cont, m.frame.stmt = .letBind s (.vecLen src) cont) ∨
+    (∃ s src cont, m.frame.stmt = .letBind s (.vecPopBack src) cont) ∨
+    (∃ refSite val cont, m.frame.stmt = .vecPushBack refSite val cont) ∨
+    (∃ refSite i1 i2 cont, m.frame.stmt = .vecSwap refSite i1 i2 cont) := by
   intro hstep
   cases hs : m.frame.stmt with
   | skip =>
@@ -79,12 +84,19 @@ theorem step_danglingRef_source (m : Machine) (loc : Loc) :
     exfalso; simp only [step, hs] at hstep
     revert hstep; split <;> try split <;> try split <;> try split <;> try split
     all_goals (intro h; simp at h)
-  | vecUnpack _ _ _ _ => sorry  -- Phase 10
-  | vecPushBack _ _ _ => sorry  -- Phase 10
-  | vecSwap _ _ _ _ => sorry  -- Phase 10
+  | vecUnpack _ _ _ _ =>
+    exfalso; simp only [step, hs] at hstep
+    revert hstep; split <;> try split
+    all_goals (intro h; simp at h)
+  | vecPushBack refSite val cont =>
+    right; right; right; right; left
+    exact ⟨refSite, val, cont, rfl⟩
+  | vecSwap refSite i1 i2 cont =>
+    right; right; right; right; right
+    exact ⟨refSite, i1, i2, cont, rfl⟩
   | writeRef dst val cont =>
     simp only [step, hs] at hstep
-    right
+    right; left
     cases h1 : readSite m dst with
     | none => exfalso; simp [h1] at hstep
     | some v1 =>
@@ -158,11 +170,23 @@ theorem step_danglingRef_source (m : Machine) (loc : Loc) :
       exfalso; simp only [step, hs] at hstep
       revert hstep; split <;> try split <;> try split
       all_goals (intro h; simp at h)
-    | vecPack _ _ => sorry  -- Phase 10
-    | vecLen _ => sorry  -- Phase 10
-    | vecImmBorrow _ _ => sorry  -- Phase 10
-    | vecMutBorrow _ _ => sorry  -- Phase 10
-    | vecPopBack _ => sorry  -- Phase 10
+    | vecPack _ _ =>
+      exfalso; simp only [step, hs] at hstep
+      revert hstep; split <;> (intro h; simp at h)
+    | vecLen src =>
+      right; right; left
+      exact ⟨s, src, cont, rfl⟩
+    | vecImmBorrow _ _ =>
+      exfalso; simp only [step, hs] at hstep
+      revert hstep; split <;> try split <;> try split
+      all_goals (intro h; simp at h)
+    | vecMutBorrow _ _ =>
+      exfalso; simp only [step, hs] at hstep
+      revert hstep; split <;> try split <;> try split
+      all_goals (intro h; simp at h)
+    | vecPopBack src =>
+      right; right; right; left
+      exact ⟨s, src, cont, rfl⟩
 
 /-- A readRef that is well-typed always succeeds (heap access exists).
     Uses site_consistent to get the concrete reference, siteEnv_refs_tracked
@@ -232,22 +256,154 @@ theorem no_danglingRef_writeRef (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     rw [hwrite]
     exact Option.some_ne_none h'
 
+/-- A well-typed vecLen never produces a danglingRef error. -/
+private theorem no_danglingRef_vecLen (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retTypes : List ParamType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retTypes rmap)
+    (s src : Site) (cont : Stmt)
+    (hstmt : m.frame.stmt = .letBind s (.vecLen src) cont)
+    (loc : Loc) (hstep : step (.running m) = .error (.danglingRef loc)) : False := by
+  have hst := hwt.stmt_typed
+  rw [hstmt] at hst
+  cases hst with
+  | let_bind_vecLen _ _ _ T r isBor _ _ hsrc_type _ _ =>
+    have ⟨v, hv, hmatch⟩ := hwt.site_consistent src (.ref (.tvec T) r isBor) hsrc_type
+    obtain ⟨loc', path', hveq, hrmap⟩ := hmatch
+    have hheap := hwt.rmap_live r loc' path' hrmap
+    subst hveq
+    change lookup m.frame.siteStore src = some _ at hv
+    simp only [step, hstmt, readSite, hv] at hstep
+    cases hr : m.heap.readRef loc' path' with
+    | none => exact absurd hr hheap
+    | some val => revert hstep; split <;> simp_all
+
+/-- A well-typed vecPopBack never produces a danglingRef error. -/
+private theorem no_danglingRef_vecPopBack (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retTypes : List ParamType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retTypes rmap)
+    (s src : Site) (cont : Stmt)
+    (hstmt : m.frame.stmt = .letBind s (.vecPopBack src) cont)
+    (loc : Loc) (hstep : step (.running m) = .error (.danglingRef loc)) : False := by
+  have hst := hwt.stmt_typed
+  rw [hstmt] at hst
+  cases hst with
+  | let_bind_vecPopBack _ _ _ T r _ _ hsrc_type _ _ _ =>
+    have ⟨v, hv, hmatch⟩ := hwt.site_consistent src (.ref (.tvec T) r .siteBorrowMut) hsrc_type
+    obtain ⟨loc', path', hveq, hrmap⟩ := hmatch
+    have hheap_read := hwt.rmap_live r loc' path' hrmap
+    subst hveq
+    change lookup m.frame.siteStore src = some _ at hv
+    simp only [step, hstmt, readSite, hv] at hstep
+    cases hr : m.heap.readRef loc' path' with
+    | none => exact absurd hr hheap_read
+    | some hval =>
+      rw [hr] at hstep
+      cases hval with
+      | vec et elems =>
+        simp only [] at hstep
+        cases hgl : elems.getLast? with
+        | none => simp [hgl] at hstep
+        | some lastVal =>
+          have hne : m.heap.readRef loc' path' ≠ none := by rw [hr]; exact Option.some_ne_none _
+          have ⟨h', hwrite⟩ := readRef_ne_none_implies_writeRef_ne_none m.heap loc' path'
+            (.vec et elems.dropLast) hne
+          simp [hgl, hwrite] at hstep
+      | _ => simp at hstep
+
+/-- A well-typed vecPushBack never produces a danglingRef error. -/
+private theorem no_danglingRef_vecPushBack (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retTypes : List ParamType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retTypes rmap)
+    (refSite valSite : Site) (cont : Stmt)
+    (hstmt : m.frame.stmt = .vecPushBack refSite valSite cont)
+    (loc : Loc) (hstep : step (.running m) = .error (.danglingRef loc)) : False := by
+  have hst := hwt.stmt_typed
+  rw [hstmt] at hst
+  cases hst with
+  | vecPushBack_rule _ _ _ T r _ _ href_type hval_type _ _ =>
+    have ⟨vr, hvr, hmatchr⟩ := hwt.site_consistent refSite (.ref (.tvec T) r .siteBorrowMut) href_type
+    obtain ⟨loc', path', hveq, hrmap⟩ := hmatchr
+    have hheap_read := hwt.rmap_live r loc' path' hrmap
+    have ⟨vv, hvv, _⟩ := hwt.site_consistent valSite (.basic T) hval_type
+    subst hveq
+    change lookup m.frame.siteStore refSite = some _ at hvr
+    simp only [step, hstmt, readSite, hvr, hvv] at hstep
+    cases hr : m.heap.readRef loc' path' with
+    | none => exact absurd hr hheap_read
+    | some hval =>
+      rw [hr] at hstep
+      cases hval with
+      | vec et elems =>
+        simp only [] at hstep
+        have hne : m.heap.readRef loc' path' ≠ none := by rw [hr]; exact Option.some_ne_none _
+        have ⟨h', hwrite⟩ := readRef_ne_none_implies_writeRef_ne_none m.heap loc' path'
+          (.vec et (elems ++ [vv])) hne
+        rw [hwrite] at hstep; simp at hstep
+      | _ => simp at hstep
+
+/-- A well-typed vecSwap never produces a danglingRef error. -/
+private theorem no_danglingRef_vecSwap (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retTypes : List ParamType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retTypes rmap)
+    (refSite idx1Site idx2Site : Site) (cont : Stmt)
+    (hstmt : m.frame.stmt = .vecSwap refSite idx1Site idx2Site cont)
+    (loc : Loc) (hstep : step (.running m) = .error (.danglingRef loc)) : False := by
+  have hst := hwt.stmt_typed
+  rw [hstmt] at hst
+  cases hst with
+  | vecSwap_rule _ _ _ _ T r _ _ href_type hidx1 hidx2 _ _ =>
+    have ⟨vr, hvr, hmatchr⟩ := hwt.site_consistent refSite (.ref (.tvec T) r .siteBorrowMut) href_type
+    obtain ⟨loc', path', hveq, hrmap⟩ := hmatchr
+    have hheap_read := hwt.rmap_live r loc' path' hrmap
+    have ⟨vi1, hvi1, hm1⟩ := hwt.site_consistent idx1Site (.basic .u64) hidx1
+    have ⟨vi2, hvi2, hm2⟩ := hwt.site_consistent idx2Site (.basic .u64) hidx2
+    subst hveq
+    -- Extract concrete int forms: ValueMatchesType _ (.basic .u64) unfolds to HasType _ .u64
+    cases hm1 with | int n1 => _
+    cases hm2 with | int n2 => _
+    change lookup m.frame.siteStore refSite = some _ at hvr
+    simp only [step, hstmt, readSite, hvr, hvi1, hvi2] at hstep
+    -- Triple match is fully reduced; now case split on heap read
+    cases hr : m.heap.readRef loc' path' with
+    | none => exact absurd hr hheap_read
+    | some hval =>
+      rw [hr] at hstep
+      cases hval with
+      | vec et elems =>
+        simp only [] at hstep
+        revert hstep
+        split  -- bounds check i
+        · split  -- bounds check j
+          · -- both in bounds: writeRef succeeds
+            intro hstep
+            have hne : m.heap.readRef loc' path' ≠ none := by rw [hr]; exact Option.some_ne_none _
+            obtain ⟨h', hwrite⟩ := readRef_ne_none_implies_writeRef_ne_none m.heap loc' path' _ hne
+            rw [hwrite] at hstep; simp at hstep
+          · intro h; simp at h  -- vectorError
+        · intro h; simp at h  -- vectorError
+      | _ => simp at hstep
+
 /-- A well-typed running state never produces a danglingRef error.
-    This is the key progress lemma — it only needs the readRef and writeRef cases. -/
+    This is the key progress lemma. -/
 theorem no_danglingRef_progress (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap) :
     ∀ loc, step (.running m) ≠ .error (.danglingRef loc) := by
   intro loc habs
-  -- Extract which case of step produced the danglingRef
   have hcases := step_danglingRef_source m loc habs
-  cases hcases with
-  | inl hread =>
-    obtain ⟨s, src, cont, hstmt, path, hsrc, hheap⟩ := hread
+  rcases hcases with hread | hwrite | hvecLen | hvecPopBack | hvecPushBack | hvecSwap
+  · obtain ⟨s, src, cont, hstmt, path, hsrc, hheap⟩ := hread
     exact no_danglingRef_readRef m env lenv retTypes rmap hwt s src cont hstmt loc path hsrc hheap
-  | inr hwrite =>
-    obtain ⟨dst, val, cont, hstmt, path, v, hdst, hval, hheap⟩ := hwrite
+  · obtain ⟨dst, val, cont, hstmt, path, v, hdst, hval, hheap⟩ := hwrite
     exact no_danglingRef_writeRef m env lenv retTypes rmap hwt dst val cont hstmt loc path v hdst hval hheap
+  · obtain ⟨s, src, cont, hstmt⟩ := hvecLen
+    exact no_danglingRef_vecLen m env lenv retTypes rmap hwt s src cont hstmt loc habs
+  · obtain ⟨s, src, cont, hstmt⟩ := hvecPopBack
+    exact no_danglingRef_vecPopBack m env lenv retTypes rmap hwt s src cont hstmt loc habs
+  · obtain ⟨refSite, val, cont, hstmt⟩ := hvecPushBack
+    exact no_danglingRef_vecPushBack m env lenv retTypes rmap hwt refSite val cont hstmt loc habs
+  · obtain ⟨refSite, i1, i2, cont, hstmt⟩ := hvecSwap
+    exact no_danglingRef_vecSwap m env lenv retTypes rmap hwt refSite i1 i2 cont hstmt loc habs
 
 -- ============================================================
 -- Part 8: Helper lemmas for step_error_is_acceptable
@@ -512,7 +668,26 @@ private theorem collectSiteValues_some_of_typed {m : Machine} {env : TypeEnv}
   exact ⟨v, hv⟩
 
 -- ============================================================
--- Part 9: The main progress theorem
+-- Part 9: Helper for vecPack
+-- ============================================================
+
+/-- If every element in the list has a defined readSite, filterMap preserves length. -/
+private theorem filterMap_readSite_length (m : Machine) (l : List Site)
+    (hall : ∀ a, a ∈ l → readSite m a ≠ none) :
+    (l.filterMap (readSite m)).length = l.length := by
+  induction l with
+  | nil => simp
+  | cons hd tl ih =>
+    simp only [List.filterMap_cons]
+    cases hr : readSite m hd with
+    | none => exact absurd hr (hall hd (.head tl))
+    | some v =>
+      simp only [List.length_cons]
+      congr 1
+      exact ih (fun a ha => hall a (.tail hd ha))
+
+-- ============================================================
+-- Part 10: The main progress theorem
 -- ============================================================
 
 /-- A well-typed running state steps only to acceptable errors.
@@ -621,7 +796,7 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
           simp only [StackSafe] at hss
           obtain ⟨_, _, _, _, hbig, _⟩ := hss
           -- types_conform is the very last conjunct in hbig
-          have hconf_caller := hbig.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+          have hconf_caller := hbig.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
           have hlen_sites := types_conform_length hconf
           have hlen_vals := collectSiteValues_length m.frame.siteStore sites vals hvals
           have hlen_ri := types_conform_length hconf_caller
@@ -732,11 +907,90 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
         cases hstep
 
   -- ========================================
-  -- vecUnpack / vecPushBack / vecSwap: placeholder (Phase 10)
+  -- vecUnpack T results src cont
   -- ========================================
-  | vecUnpack _ _ _ _ => sorry
-  | vecPushBack _ _ _ => sorry
-  | vecSwap _ _ _ _ => sorry
+  | vecUnpack _T results src cont =>
+    have hst := hwt.stmt_typed
+    rw [hs] at hst
+    simp only [step, hs] at hstep
+    cases hst with
+    | vecUnpack_rule _ _ _ _ _ _ hsrc _ _ _ =>
+      have ⟨vv, hvv, hmatch⟩ := hwt.site_consistent src _ hsrc
+      have ⟨elems, hv_eq⟩ := HasType.vec_elems hmatch
+      subst hv_eq
+      change lookup m.frame.siteStore src = some _ at hvv
+      simp only [readSite, hvv] at hstep
+      -- hstep: if elems.length == results.length then running else vectorError
+      split at hstep
+      · cases hstep
+      · simp only [ExecState.error.injEq] at hstep; subst hstep; simp
+
+  -- ========================================
+  -- vecPushBack refSite valSite cont
+  -- ========================================
+  | vecPushBack refSite valSite cont =>
+    have hst := hwt.stmt_typed
+    rw [hs] at hst
+    simp only [step, hs] at hstep
+    cases hst with
+    | vecPushBack_rule _ _ _ T r _ _ href_type hval_type _ _ =>
+      have ⟨vr, hvr, hmatchr⟩ := hwt.site_consistent refSite (.ref (.tvec T) r .siteBorrowMut) href_type
+      obtain ⟨loc, path, hveq, hrmap⟩ := hmatchr
+      have ⟨vv, hvv, _⟩ := hwt.site_consistent valSite (.basic T) hval_type
+      subst hveq
+      change lookup m.frame.siteStore refSite = some _ at hvr
+      change lookup m.frame.siteStore valSite = some vv at hvv
+      simp only [readSite, hvr, hvv] at hstep
+      -- Use rmap_has_type to get typed heap value
+      have ⟨hval, hread, hht⟩ := hwt.rmap_has_type r (.tvec T) loc path hrmap
+        (Or.inr ⟨refSite, .siteBorrowMut, href_type⟩)
+      have ⟨elems, hval_eq⟩ := HasType.vec_elems hht
+      subst hval_eq
+      rw [hread] at hstep
+      simp only [] at hstep
+      -- writeRef succeeds (bridge lemma)
+      have hne : m.heap.readRef loc path ≠ none := by rw [hread]; exact Option.some_ne_none _
+      have ⟨h', hwrite⟩ := readRef_ne_none_implies_writeRef_ne_none m.heap loc path
+        (.vec T (elems ++ [vv])) hne
+      rw [hwrite] at hstep; cases hstep
+
+  -- ========================================
+  -- vecSwap refSite idx1Site idx2Site cont
+  -- ========================================
+  | vecSwap refSite idx1Site idx2Site cont =>
+    have hst := hwt.stmt_typed
+    rw [hs] at hst
+    simp only [step, hs] at hstep
+    cases hst with
+    | vecSwap_rule _ _ _ _ T r _ _ href_type hidx1 hidx2 _ _ =>
+      have ⟨vr, hvr, hmatchr⟩ := hwt.site_consistent refSite (.ref (.tvec T) r .siteBorrowMut) href_type
+      obtain ⟨loc, path, hveq, hrmap⟩ := hmatchr
+      have ⟨vi1, hvi1, hm1⟩ := hwt.site_consistent idx1Site (.basic .u64) hidx1
+      have ⟨vi2, hvi2, hm2⟩ := hwt.site_consistent idx2Site (.basic .u64) hidx2
+      subst hveq
+      have ⟨n1, hn1⟩ := HasType_u64_is_int hm1
+      have ⟨n2, hn2⟩ := HasType_u64_is_int hm2
+      subst hn1; subst hn2
+      change lookup m.frame.siteStore refSite = some _ at hvr
+      simp only [readSite, hvr, hvi1, hvi2] at hstep
+      -- Use rmap_has_type to get typed heap value
+      have ⟨hval, hread, hht⟩ := hwt.rmap_has_type r (.tvec T) loc path hrmap
+        (Or.inr ⟨refSite, .siteBorrowMut, href_type⟩)
+      have ⟨elems, hval_eq⟩ := HasType.vec_elems hht
+      subst hval_eq
+      rw [hread] at hstep
+      -- Bounds checks produce vectorError (acceptable)
+      simp only [] at hstep
+      revert hstep
+      split
+      · split
+        · -- Both in bounds: writeRef succeeds
+          intro hstep
+          have hne : m.heap.readRef loc path ≠ none := by rw [hread]; exact Option.some_ne_none _
+          obtain ⟨h', hwrite⟩ := readRef_ne_none_implies_writeRef_ne_none m.heap loc path _ hne
+          rw [hwrite] at hstep; cases hstep
+        · simp only [ExecState.error.injEq]; intro heq; subst heq; simp
+      · simp only [ExecState.error.injEq]; intro heq; subst heq; simp
 
   -- ========================================
   -- letBind s expr cont: case analysis on expr
@@ -921,11 +1175,104 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
         | tvec _ =>
           cases op <;> (cases bt2 <;> simp [binop_type] at hbinop)
 
-    -- ---- vecPack / vecLen / vecImmBorrow / vecMutBorrow / vecPopBack: placeholder (Phase 10) ----
-    | vecPack _ _ => sorry
-    | vecLen _ => sorry
-    | vecImmBorrow _ _ => sorry
-    | vecMutBorrow _ _ => sorry
-    | vecPopBack _ => sorry
+    -- ---- vecPack T elems ----
+    | vecPack T elems =>
+      simp only [step, hs] at hstep
+      cases hst with
+      | let_bind_vecPack _ _ _ _ _ _ _ hall _ _ =>
+        have hall_init : ∀ a, a ∈ elems → readSite m a ≠ none := by
+          intro a ha
+          have ⟨v, hv, _⟩ := hwt.site_consistent a (.basic T) (hall a ha)
+          unfold readSite; rw [hv]; exact Option.some_ne_none v
+        have hlen := filterMap_readSite_length m elems hall_init
+        simp [hlen] at hstep
+
+    -- ---- vecLen src ----
+    | vecLen src =>
+      simp only [step, hs] at hstep
+      cases hst with
+      | let_bind_vecLen _ _ _ T r isBor _ _ hsrc _ _ =>
+        have ⟨vv, hvv, hmatch⟩ := hwt.site_consistent src (.ref (.tvec T) r isBor) hsrc
+        obtain ⟨loc, path, hveq, hrmap⟩ := hmatch
+        subst hveq
+        change lookup m.frame.siteStore src = some _ at hvv
+        simp only [readSite, hvv] at hstep
+        have ⟨_, hread, hht⟩ := hwt.rmap_has_type r (.tvec T) loc path hrmap
+          (Or.inr ⟨src, isBor, hsrc⟩)
+        have ⟨elems, hval_eq⟩ := HasType.vec_elems hht
+        subst hval_eq
+        rw [hread] at hstep; simp only [] at hstep; cases hstep
+
+    -- ---- vecImmBorrow src idx ----
+    | vecImmBorrow src idx =>
+      simp only [step, hs] at hstep
+      cases hst with
+      | let_bind_vecImmBorrow _ _ _ _ T s_ref _ isBor _ _ hsrc hidx _ _ _ _ =>
+        have ⟨vs, hvs, hmatchs⟩ := hwt.site_consistent src (.ref (.tvec T) s_ref isBor) hsrc
+        obtain ⟨loc, path, hveq, hrmap⟩ := hmatchs
+        subst hveq
+        have ⟨vi, hvi, hmi⟩ := hwt.site_consistent idx (.basic .u64) hidx
+        have ⟨n, hn⟩ := HasType_u64_is_int hmi
+        subst hn
+        change lookup m.frame.siteStore src = some _ at hvs
+        simp only [readSite, hvs, hvi] at hstep
+        have ⟨_, hread, hht⟩ := hwt.rmap_has_type s_ref (.tvec T) loc path hrmap
+          (Or.inr ⟨src, isBor, hsrc⟩)
+        have ⟨elems, hval_eq⟩ := HasType.vec_elems hht
+        subst hval_eq
+        rw [hread] at hstep; simp only [] at hstep
+        -- if n < elems.length then running else vectorError
+        split at hstep
+        · cases hstep
+        · simp only [ExecState.error.injEq] at hstep; subst hstep; simp
+
+    -- ---- vecMutBorrow src idx ----
+    | vecMutBorrow src idx =>
+      simp only [step, hs] at hstep
+      cases hst with
+      | let_bind_vecMutBorrow _ _ _ _ T s_ref _ _ _ hsrc hidx _ _ _ _ =>
+        have ⟨vs, hvs, hmatchs⟩ := hwt.site_consistent src (.ref (.tvec T) s_ref .siteBorrowMut) hsrc
+        obtain ⟨loc, path, hveq, hrmap⟩ := hmatchs
+        subst hveq
+        have ⟨vi, hvi, hmi⟩ := hwt.site_consistent idx (.basic .u64) hidx
+        have ⟨n, hn⟩ := HasType_u64_is_int hmi
+        subst hn
+        change lookup m.frame.siteStore src = some _ at hvs
+        simp only [readSite, hvs, hvi] at hstep
+        have ⟨_, hread, hht⟩ := hwt.rmap_has_type s_ref (.tvec T) loc path hrmap
+          (Or.inr ⟨src, .siteBorrowMut, hsrc⟩)
+        have ⟨elems, hval_eq⟩ := HasType.vec_elems hht
+        subst hval_eq
+        rw [hread] at hstep; simp only [] at hstep
+        split at hstep
+        · cases hstep
+        · simp only [ExecState.error.injEq] at hstep; subst hstep; simp
+
+    -- ---- vecPopBack src ----
+    | vecPopBack src =>
+      simp only [step, hs] at hstep
+      cases hst with
+      | let_bind_vecPopBack _ _ _ T r _ _ hsrc _ _ _ =>
+        have ⟨vv, hvv, hmatch⟩ := hwt.site_consistent src (.ref (.tvec T) r .siteBorrowMut) hsrc
+        obtain ⟨loc, path, hveq, hrmap⟩ := hmatch
+        subst hveq
+        change lookup m.frame.siteStore src = some _ at hvv
+        simp only [readSite, hvv] at hstep
+        have ⟨_, hread, hht⟩ := hwt.rmap_has_type r (.tvec T) loc path hrmap
+          (Or.inr ⟨src, .siteBorrowMut, hsrc⟩)
+        have ⟨elems, hval_eq⟩ := HasType.vec_elems hht
+        subst hval_eq
+        rw [hread] at hstep; simp only [] at hstep
+        -- Match on getLast?
+        cases hgl : elems.getLast? with
+        | none =>
+          simp only [hgl] at hstep
+          simp only [ExecState.error.injEq] at hstep; subst hstep; simp
+        | some lastVal =>
+          simp only [hgl] at hstep
+          have hne : m.heap.readRef loc path ≠ none := by rw [hread]; exact Option.some_ne_none _
+          obtain ⟨h', hwrite⟩ := readRef_ne_none_implies_writeRef_ne_none m.heap loc path
+            (.vec T elems.dropLast) hne
+          rw [hwrite] at hstep; cases hstep
 
 end LeanMove.Typing.TypeSoundness

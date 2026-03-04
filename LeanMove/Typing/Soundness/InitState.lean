@@ -1149,6 +1149,14 @@ theorem initState_safe (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunD
                 rw [hrmap]; simp
           lenv_labels_in_blocks := ha.lenv_labels_in_blocks
           has_return_info := fun hne => absurd rfl hne
+          varStore_locs_bound := by
+            intro y loc_y hvar
+            by_cases hlocal : y ∈ f.locals.map (·.name)
+            · rw [addLocals_local_some_none paramVarStore f.locals y hlocal] at hvar
+              cases hvar
+            · rw [addLocals_preserves_lookup paramVarStore f.locals y hlocal] at hvar
+              exact allocArgs_varStore_locs_bound heap f.params args heap'
+                paramVarStore hallocArgs y loc_y hvar
         }
       · -- StackSafe [] none heap' = True
         simp only [StackSafe]
