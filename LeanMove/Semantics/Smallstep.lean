@@ -46,6 +46,7 @@ inductive Value where
   | record : List (Field × Value) → Value
   | ref : Loc → List Field → Value    -- heap location + field access path
   | vec : BasicMoveType → List Value → Value  -- vector with element type and values
+  | variant : Id → List (Field × Value) → Value  -- enum variant with tag and fields
 deriving Repr, Inhabited
 
 /-- Boolean equality for Values -/
@@ -56,6 +57,7 @@ def Value.beq : Value → Value → Bool
   | .record fs1, .record fs2 => beqFields fs1 fs2
   | .ref l1 p1, .ref l2 p2 => l1 == l2 && p1 == p2
   | .vec t1 vs1, .vec t2 vs2 => t1.beq t2 && beqValues vs1 vs2
+  | .variant v1 fs1, .variant v2 fs2 => v1 == v2 && beqFields fs1 fs2
   | _, _ => false
 where
   beqFields : List (Field × Value) → List (Field × Value) → Bool
@@ -110,6 +112,10 @@ def readPath : Value → List Field → Option Value
     match fields.lookup f with
     | some v' => readPath v' rest
     | none => none
+  | .variant _ fields, f :: rest =>
+    match fields.lookup f with
+    | some v' => readPath v' rest
+    | none => none
   | _, _ :: _ => none
 
 /-- Write a value at a field path through nested records -/
@@ -121,6 +127,14 @@ def writePath : Value → List Field → Value → Option Value
       match writePath oldFieldVal rest newVal with
       | some updatedFieldVal =>
         some (.record (fields.map fun (k, v) => if k == f then (k, updatedFieldVal) else (k, v)))
+      | none => none
+    | none => none
+  | .variant tag fields, f :: rest, newVal =>
+    match fields.lookup f with
+    | some oldFieldVal =>
+      match writePath oldFieldVal rest newVal with
+      | some updatedFieldVal =>
+        some (.variant tag (fields.map fun (k, v) => if k == f then (k, updatedFieldVal) else (k, v)))
       | none => none
     | none => none
   | _, _ :: _, _ => none
@@ -180,6 +194,7 @@ inductive RuntimeError where
   | aborted            : RuntimeError
   | arityMismatch      : String → RuntimeError
   | vectorError        : RuntimeError
+  | variantMismatch    : RuntimeError
 deriving Repr
 
 /-- An error is "acceptable" if the type system does not prevent it. -/
@@ -188,6 +203,7 @@ deriving Repr
   | .outOfFuel => True
   | .aborted => True
   | .vectorError => True
+  | .variantMismatch => True
   | _ => False
 
 /-- Running machine state -/
@@ -549,6 +565,20 @@ def step (state : ExecState) : ExecState :=
             heap := m.heap
           }
 
+      -- Pack enum variant
+      | .packVariant _enumName variantName fieldSites =>
+        match collectPackFields f.siteStore fieldSites with
+        | none => .error (.uninitializedSite (.site 0))
+        | some fieldVals =>
+          .running {
+            frame := { f with
+              siteStore := AssocMap.insert f.siteStore s (.variant variantName fieldVals)
+              stmt := cont
+            }
+            stack := m.stack
+            heap := m.heap
+          }
+
       -- Binary operation
       | .binop op a b =>
         match readSite m a, readSite m b with
@@ -825,6 +855,51 @@ def step (state : ExecState) : ExecState :=
         | some _ => .error (.typeMismatch "vecSwap on non-vector")
         | none => .error (.danglingRef loc)
       | _, _, _ => .error (.typeMismatch "vecSwap: invalid args")
+
+    -- --------------------------------------------------------
+    -- Non-terminal: unpackVariant variantName fieldSites src cont
+    -- --------------------------------------------------------
+    | .unpackVariant expectedVariant fieldSites src cont =>
+      match readSite m src with
+      | none => .error (.uninitializedSite src)
+      | some (.variant actualVariant recFields) =>
+        if actualVariant == expectedVariant then
+          let newSiteStore := fieldSites.foldl (fun ss (field, site) =>
+            match recFields.lookup field with
+            | some v => AssocMap.insert ss site v
+            | none => ss
+          ) f.siteStore
+          .running {
+            frame := { f with siteStore := newSiteStore, stmt := cont }
+            stack := m.stack
+            heap := m.heap
+          }
+        else .error .variantMismatch
+      | some _ => .error (.typeMismatch "unpackVariant on non-variant")
+
+    -- --------------------------------------------------------
+    -- Terminal: variantSwitch src cases
+    -- --------------------------------------------------------
+    | .variantSwitch src cases =>
+      match readSite m src with
+      | none => .error (.uninitializedSite src)
+      | some (.ref loc path) =>
+        match m.heap.readRef loc path with
+        | none => .error (.danglingRef loc)
+        | some (.variant variantName _) =>
+          match cases.lookup variantName with
+          | some label =>
+            match findBlock f.blocks label with
+            | some block =>
+              .running {
+                frame := { f with stmt := block.body }
+                stack := m.stack
+                heap := m.heap
+              }
+            | none => .error (.unknownLabel label)
+          | none => .error (.typeMismatch s!"variant {variantName} not in switch cases")
+        | some _ => .error (.typeMismatch "variantSwitch on non-variant ref")
+      | some _ => .error (.typeMismatch "variantSwitch: expected reference")
 
 -- ============================================================
 -- Driver Function

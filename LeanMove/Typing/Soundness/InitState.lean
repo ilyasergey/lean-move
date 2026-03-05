@@ -237,6 +237,20 @@ mutual
     | .vec _ _, .tunit, h => by simp at h
     | .vec _ _, .trecord _, h => by simp at h
     | .vec _ _, .tvec _, h => by simp at h
+    -- tenum type cases
+    | .int _, .tenum _ _, h => nomatch h
+    | .bool _, .tenum _ _, h => nomatch h
+    | .unit, .tenum _ _, h => nomatch h
+    | .record _, .tenum _ _, h => nomatch h
+    | .ref _ _, .tenum _ _, h => nomatch h
+    | .vec _ _, .tenum _ _, h => nomatch h
+    | .variant _ _, .tenum _ _, h => sorry
+    -- variant value cases
+    | .variant _ _, .u64, h => nomatch h
+    | .variant _ _, .tbool, h => nomatch h
+    | .variant _ _, .tunit, h => nomatch h
+    | .variant _ _, .trecord _, h => nomatch h
+    | .variant _ _, .tvec _, h => nomatch h
   termination_by v bt _ => sizeOf v + sizeOf bt
   decreasing_by all_goals (simp_wf; rcases fentries with ⟨e⟩; simp [AssocMap.mk.sizeOf_spec]; omega)
 
@@ -887,6 +901,7 @@ theorem initState_safe (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunD
           | unit => simp
           | record _ => simp
           | vec _ _ => simp
+          | variant _ _ => simp
           | ref loc' path' =>
             intro hfm
             simp only [Option.some.injEq, Prod.mk.injEq] at hfm

@@ -59,6 +59,21 @@ inductive HasType : Value → BasicMoveType → Prop where
   | vec : ∀ (elems : List Value) (elemTy : BasicMoveType),
       (∀ v, v ∈ elems → HasType v elemTy) →
       HasType (.vec elemTy elems) (.tvec elemTy)
+  | variant : ∀ (vname : Id) (fields : List (Field × Value))
+      (ename : Id) (variants : AssocMap Id (AssocMap Field BasicMoveType))
+      (fentries : AssocMap Field BasicMoveType),
+      lookup variants vname = some fentries →
+      (∀ f, lookup fentries f ≠ none → fields.lookup f ≠ none) →
+      (∀ f, fields.lookup f ≠ none → lookup fentries f ≠ none) →
+      (∀ f bt v, lookup fentries f = some bt → fields.lookup f = some v → HasType v bt) →
+      HasType (.variant vname fields) (.tenum ename variants)
+
+/-- If a value has enum type, it must be a variant. -/
+theorem HasType.variant_fields {v : Value}
+    {ename : Id} {variants : AssocMap Id (AssocMap Field BasicMoveType)} :
+    HasType v (.tenum ename variants) → ∃ vname fields, v = .variant vname fields := by
+  intro h; cases h with
+  | variant vname fields _ _ _ _ _ _ _ => exact ⟨vname, fields, rfl⟩
 
 /-- If a value has record type, it must be a record. -/
 theorem HasType.record_fields {v : Value} {fentries : AssocMap Field BasicMoveType} :
@@ -154,6 +169,7 @@ theorem RefMap.extendWithReturns_preserves (rmap : RefMap) (siteEnv : SiteEnv)
           | unit => exact ih rmap vs h hne_ss
           | «record» _ => exact ih rmap vs h hne_ss
           | vec _ _ => exact ih rmap vs h hne_ss
+          | variant _ _ => exact ih rmap vs h hne_ss
 
 /-- extendWithReturns preserves none for refs not among the output refs -/
 theorem RefMap.extendWithReturns_preserves_none (rmap : RefMap) (siteEnv : SiteEnv)
@@ -189,6 +205,7 @@ theorem RefMap.extendWithReturns_preserves_none (rmap : RefMap) (siteEnv : SiteE
           | unit => exact ih rmap vs h hne_ss
           | «record» _ => exact ih rmap vs h hne_ss
           | vec _ _ => exact ih rmap vs h hne_ss
+          | variant _ _ => exact ih rmap vs h hne_ss
 
 /-- If extendWithReturns maps r to (loc, path), then either:
     (1) the original rmap already mapped r to (loc, path), or
@@ -249,6 +266,10 @@ theorem RefMap.extendWithReturns_values (rmap : RefMap) (siteEnv : SiteEnv)
             intro h; rcases ih rmap vs h with hold | hnew
             · exact Or.inl hold
             · exact Or.inr (List.mem_cons_of_mem _ hnew)
+          | variant _ _ =>
+            intro h; rcases ih rmap vs h with hold | hnew
+            · exact Or.inl hold
+            · exact Or.inr (List.mem_cons_of_mem _ hnew)
 
 -- ============================================================
 -- Part 3: readPath / writePath structural lemmas
@@ -272,6 +293,11 @@ theorem readPath_append (v : Value) (p1 p2 : List Field) :
     | unit => simp [readPath, Option.bind]
     | ref loc path => simp [readPath, Option.bind]
     | vec _ _ => simp [readPath, Option.bind]
+    | variant _ fields =>
+      simp only [List.cons_append, readPath]
+      cases h : fields.lookup f with
+      | none => simp [Option.bind]
+      | some v' => exact ih v'
 
 /-- If readPath succeeds on a longer path, it succeeds on any prefix -/
 theorem readPath_prefix_succeeds (v : Value) (p1 p2 : List Field) (w : Value) :
@@ -311,6 +337,15 @@ theorem readPath_some_implies_writePath_some (v : Value) (path : List Field)
     | unit => simp [readPath] at hread
     | ref l p => simp [readPath] at hread
     | vec _ _ => simp [readPath] at hread
+    | variant tag fields =>
+      simp only [readPath] at hread
+      cases hf : fields.lookup f with
+      | none => simp [hf] at hread
+      | some oldFieldVal =>
+        simp [hf] at hread
+        obtain ⟨v', hv'⟩ := ih oldFieldVal hread
+        exact ⟨.variant tag (fields.map fun (k, fv) => if k == f then (k, v') else (k, fv)),
+               by simp [writePath, hf, hv']⟩
 
 /-- If readRef succeeds on a heap, writeRef also succeeds with any new value.
     Follows from readPath_some_implies_writePath_some since both operations
@@ -438,6 +473,7 @@ def fieldPathOf : List PathElement → List Field
   | (.field f) :: rest => f :: fieldPathOf rest
   | (.root_to_var _) :: rest => fieldPathOf rest
   | .vecElem :: rest => fieldPathOf rest
+  | (.variantField _ f) :: rest => f :: fieldPathOf rest
 
 /-- A path in PathEnv is reflected in the heap via RefMap.
     If there's a path from r1 to r2 in PathEnv, then the concrete locations
@@ -896,6 +932,7 @@ theorem readPath_after_writePath_same (v : Value) (path : List Field) (w v' : Va
     | unit => simp [writePath] at hwrite
     | ref l p => simp [writePath] at hwrite
     | vec _ _ => simp [writePath] at hwrite
+    | variant _ _ => sorry -- TODO: variant writePath readPath
 
 /-- If the first fields differ, writePath at one field preserves readPath at the other. -/
 theorem writePath_preserves_readPath_ne_first
@@ -922,6 +959,7 @@ theorem writePath_preserves_readPath_ne_first
   | unit => simp [writePath] at hwrite
   | ref l p => simp [writePath] at hwrite
   | vec _ _ => simp [writePath] at hwrite
+  | variant _ _ => sorry -- TODO: variant writePath readPath
 
 /-- writePath preserves HasType when the new value has all types the old value had at path.
     This is the key lemma for writeRef preservation: writing a type-preserving value
@@ -988,6 +1026,7 @@ theorem writePath_preserves_HasType
     | unit => simp [writePath] at hwrite
     | ref l p => simp [writePath] at hwrite
     | vec _ _ => simp [writePath] at hwrite
+    | variant _ _ => sorry -- TODO: variant writePath+HasType
 
 /-- writeRef at (loc, path) with value v: after the write, readRef at (loc, path) returns v -/
 theorem heap_writeRef_same_path (h : Heap) (loc : Loc) (path : List Field)
@@ -1096,6 +1135,7 @@ theorem writePath_preserves_readPath_ne_none
     | unit => simp [writePath] at hwrite
     | ref l p => simp [writePath] at hwrite
     | vec _ _ => simp [writePath] at hwrite
+    | variant _ _ => sorry -- TODO: variant writePath readPath
 
 /-- After heap.writeRef, readRef at the same location with any path still succeeds,
     provided readPath on the written value w succeeds for any extension. -/
@@ -1169,6 +1209,7 @@ theorem HasType_typeAtPath (v : Value) (bt : BasicMoveType) (path : List Field) 
     | unit => cases hht with | unit => simp [typeAtPath] at htap
     | ref l p => cases hht
     | vec _ _ => cases hht with | vec => simp [typeAtPath] at htap
+    | variant _ _ => sorry -- TODO: variant HasType+typeAtPath
 
 /-- writePath preserves HasType using typeAtPath to determine the leaf type.
     This avoids the universal quantification over bt_sub in the compat condition. -/
@@ -1237,6 +1278,7 @@ theorem writePath_preserves_HasType_typed
     | unit => simp [writePath] at hwrite
     | ref l p => simp [writePath] at hwrite
     | vec _ _ => simp [writePath] at hwrite
+    | variant _ _ => sorry -- TODO: variant writePath+HasType
 
 -- ============================================================
 -- Part 10: Additional HasType lemmas for writeRef preservation
@@ -1280,6 +1322,7 @@ theorem readPath_ne_none_implies_typeAtPath
     | unit => cases hht with | unit => simp [readPath] at hread
     | ref l p => cases hht
     | vec _ _ => cases hht with | vec => simp [readPath] at hread
+    | variant _ _ => sorry -- TODO: variant readPath+typeAtPath
 
 /-- If two values both have HasType bt, and readPath succeeds on the first,
     then readPath also succeeds on the second (at the same path).
@@ -1342,6 +1385,7 @@ theorem HasType_transfer {v1 v2 : Value} {bt1 bt2 : BasicMoveType}
     -- Value.vec carries elemTy, so cases on h2 forces bt2 = .tvec elemTy = bt1
     cases h2 with
     | vec _ _ _ => exact h3
+  | variant _ _ _ _ _ _ _ _ _ _ => sorry -- TODO: variant HasType_transfer
 
 /-- writePath preserves HasType when the condition at the leaf is satisfied
     according to typeAtPath. When typeAtPath returns none (the path goes through
@@ -1408,6 +1452,7 @@ theorem writePath_preserves_HasType_general
     | unit => simp [writePath] at hwrite
     | ref l p => simp [writePath] at hwrite
     | vec _ _ => simp [writePath] at hwrite
+    | variant _ _ => sorry -- TODO: variant writePath+HasType
 
 /-- writeRef preserves HasType for heap values at the same location,
     given the typeAtPath condition at the write path. -/
@@ -1502,5 +1547,6 @@ theorem writePath_preserves_readPath_HasType
     | unit => simp [writePath] at hwp
     | ref l p => simp [writePath] at hwp
     | vec _ _ => simp [writePath] at hwp
+    | variant _ _ => sorry -- TODO: variant writePath+HasType
 
 end LeanMove.Typing.TypeSoundness

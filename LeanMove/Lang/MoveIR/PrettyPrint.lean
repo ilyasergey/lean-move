@@ -70,6 +70,18 @@ mutual
     | .tunit => ".tunit"
     | .trecord m => s!".trecord {ppAssocMap m}"
     | .tvec t => s!"(.tvec {ppBasicMoveType t})"
+    | .tenum name variants => s!"(.tenum \"{name}\" {ppVariantMap variants})"
+
+  partial def ppVariantMap (m : AssocMap Id (AssocMap Field BasicMoveType)) : String :=
+    ppVariantEntries m.entries
+
+  partial def ppVariantEntries : List (Id × AssocMap Field BasicMoveType) → String
+    | [] => "AssocMap.empty"
+    | [(v, fm)] => s!"(AssocMap.insert AssocMap.empty \"{v}\" {ppAssocMap fm})"
+    | entries =>
+      entries.foldl (fun acc (v, fm) =>
+        s!"(AssocMap.insert {acc} \"{v}\" {ppAssocMap fm})"
+      ) "AssocMap.empty"
 
   partial def ppAssocMap (m : AssocMap Field BasicMoveType) : String :=
     ppAssocMapEntries m.entries
@@ -141,6 +153,8 @@ def ppExpr : Expr → String
   | .vecImmBorrow s idx => s!"vecImmBorrow({ppSite s}, {ppSite idx})"
   | .vecMutBorrow s idx => s!"vecMutBorrow({ppSite s}, {ppSite idx})"
   | .vecPopBack s => s!"vecPopBack({ppSite s})"
+  | .packVariant ename vname fields =>
+    s!"packVariant(\"{ename}\", \"{vname}\", {ppFieldSitePairs fields})"
 
 /-- Pretty-print a statement using macro syntax.
     Returns a list of lines (each indented appropriately). -/
@@ -178,6 +192,13 @@ partial def ppStmt (indent : String) : Stmt → String
   -- Non-terminal: vecSwap
   | .vecSwap ref idx1 idx2 cont =>
     s!"{indent}(vecSwap({ppSite ref}, {ppSite idx1}, {ppSite idx2})) ;;\n{ppStmt indent cont}"
+  -- Non-terminal: unpackVariant
+  | .unpackVariant vname fields src cont =>
+    s!"{indent}(unpackVariant(\"{vname}\", {ppFieldSitePairs fields}, {ppSite src})) ;;\n{ppStmt indent cont}"
+  -- Terminal: variantSwitch
+  | .variantSwitch src cases =>
+    let cs := cases.map fun (v, l) => s!"(\"{v}\", \"{l}\")"
+    s!"{indent}variantSwitch {ppSite src} [{", ".intercalate cs}]"
 
 /- ====================================================== -/
 /-       FunDef Pretty-Printer                            -/

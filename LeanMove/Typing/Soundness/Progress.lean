@@ -52,7 +52,9 @@ theorem step_danglingRef_source (m : Machine) (loc : Loc) :
     (∃ s src cont, m.frame.stmt = .letBind s (.vecLen src) cont) ∨
     (∃ s src cont, m.frame.stmt = .letBind s (.vecPopBack src) cont) ∨
     (∃ refSite val cont, m.frame.stmt = .vecPushBack refSite val cont) ∨
-    (∃ refSite i1 i2 cont, m.frame.stmt = .vecSwap refSite i1 i2 cont) := by
+    (∃ refSite i1 i2 cont, m.frame.stmt = .vecSwap refSite i1 i2 cont) ∨
+    -- Enum operations that can produce danglingRef:
+    (∃ src cases, m.frame.stmt = .variantSwitch src cases) := by
   intro hstep
   cases hs : m.frame.stmt with
   | skip =>
@@ -84,6 +86,13 @@ theorem step_danglingRef_source (m : Machine) (loc : Loc) :
     exfalso; simp only [step, hs] at hstep
     revert hstep; split <;> try split <;> try split <;> try split <;> try split
     all_goals (intro h; simp at h)
+  | unpackVariant _ _ _ _ =>
+    exfalso; simp only [step, hs] at hstep
+    revert hstep; split <;> try split <;> try split
+    all_goals (intro h; simp at h)
+  | variantSwitch src cases =>
+    right; right; right; right; right; right
+    exact ⟨src, cases, rfl⟩
   | vecUnpack _ _ _ _ =>
     exfalso; simp only [step, hs] at hstep
     revert hstep; split <;> try split
@@ -92,7 +101,7 @@ theorem step_danglingRef_source (m : Machine) (loc : Loc) :
     right; right; right; right; left
     exact ⟨refSite, val, cont, rfl⟩
   | vecSwap refSite i1 i2 cont =>
-    right; right; right; right; right
+    right; right; right; right; right; left
     exact ⟨refSite, i1, i2, cont, rfl⟩
   | writeRef dst val cont =>
     simp only [step, hs] at hstep
@@ -121,6 +130,7 @@ theorem step_danglingRef_source (m : Machine) (loc : Loc) :
       | unit => exfalso; simp [h1] at hstep
       | record fields => exfalso; simp [h1] at hstep
       | vec _ => exfalso; simp [h1] at hstep
+      | variant _ _ => exfalso; simp [h1] at hstep
   | letBind s expr cont =>
     cases expr with
     | intLit n =>
@@ -160,10 +170,14 @@ theorem step_danglingRef_source (m : Machine) (loc : Loc) :
         | unit => exfalso; simp [h1] at hstep
         | record fields => exfalso; simp [h1] at hstep
         | vec _ => exfalso; simp [h1] at hstep
+        | variant _ _ => exfalso; simp [h1] at hstep
     | freeze src =>
       exfalso; simp only [step, hs] at hstep
       revert hstep; split <;> (intro h; simp at h)
     | pack name fields =>
+      exfalso; simp only [step, hs] at hstep
+      revert hstep; split <;> (intro h; simp at h)
+    | packVariant _ _ _ =>
       exfalso; simp only [step, hs] at hstep
       revert hstep; split <;> (intro h; simp at h)
     | binop op a b =>
@@ -383,6 +397,30 @@ private theorem no_danglingRef_vecSwap (m : Machine) (env : TypeEnv) (lenv : Lab
         · intro h; simp at h  -- vectorError
       | _ => simp at hstep
 
+private theorem lookup_ne_none_of_mem [BEq α] [LawfulBEq α] {a : α} {b : β}
+    {l : List (α × β)} (h : (a, b) ∈ l) : List.lookup a l ≠ none := by
+  induction l with
+  | nil => nomatch h
+  | cons p tl ih =>
+    simp only [List.lookup]
+    rcases List.mem_cons.mp h with rfl | htl
+    · simp
+    · split
+      · exact Option.some_ne_none _
+      · exact ih htl
+
+private theorem lookup_mem_assoc [BEq α] [LawfulBEq α] {a : α} {b : β}
+    {l : List (α × β)} (h : List.lookup a l = some b) : (a, b) ∈ l := by
+  induction l with
+  | nil => simp at h
+  | cons p tl ih =>
+    simp only [List.lookup] at h
+    split at h
+    · cases h
+      have : a = p.fst := by simpa using ‹(a == p.fst) = true›
+      rw [this]; exact .head tl
+    · exact List.mem_cons_of_mem _ (ih h)
+
 /-- A well-typed running state never produces a danglingRef error.
     This is the key progress lemma. -/
 theorem no_danglingRef_progress (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -391,7 +429,7 @@ theorem no_danglingRef_progress (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     ∀ loc, step (.running m) ≠ .error (.danglingRef loc) := by
   intro loc habs
   have hcases := step_danglingRef_source m loc habs
-  rcases hcases with hread | hwrite | hvecLen | hvecPopBack | hvecPushBack | hvecSwap
+  rcases hcases with hread | hwrite | hvecLen | hvecPopBack | hvecPushBack | hvecSwap | hVariantSwitch
   · obtain ⟨s, src, cont, hstmt, path, hsrc, hheap⟩ := hread
     exact no_danglingRef_readRef m env lenv retTypes rmap hwt s src cont hstmt loc path hsrc hheap
   · obtain ⟨dst, val, cont, hstmt, path, v, hdst, hval, hheap⟩ := hwrite
@@ -404,6 +442,32 @@ theorem no_danglingRef_progress (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     exact no_danglingRef_vecPushBack m env lenv retTypes rmap hwt refSite val cont hstmt loc habs
   · obtain ⟨refSite, i1, i2, cont, hstmt⟩ := hvecSwap
     exact no_danglingRef_vecSwap m env lenv retTypes rmap hwt refSite i1 i2 cont hstmt loc habs
+  · -- variantSwitch: uses ref → readRef → no danglingRef via rmap_live
+    obtain ⟨src, cases, hstmt⟩ := hVariantSwitch
+    have hst := hwt.stmt_typed
+    rw [hstmt] at hst
+    cases hst with
+    | variantSwitch_rule _ _ _ ename variants r bk _ hsrc_type _ _ =>
+      have ⟨vv, hvv, hmatch⟩ := hwt.site_consistent src (.ref (.tenum ename variants) r bk) hsrc_type
+      obtain ⟨loc', path', hveq, hrmap⟩ := hmatch
+      subst hveq
+      have hheap := hwt.rmap_live r loc' path' hrmap
+      change lookup m.frame.siteStore src = some _ at hvv
+      simp only [step, hstmt, readSite, hvv] at habs
+      cases hr : m.heap.readRef loc' path' with
+      | none => exact absurd hr hheap
+      | some val =>
+        rw [hr] at habs
+        revert habs
+        cases val with
+        | variant _ _ =>
+          simp only []
+          split
+          · split
+            · intro h; simp at h
+            · intro h; simp at h
+          · intro h; simp at h
+        | _ => intro h; simp at h
 
 -- ============================================================
 -- Part 8: Helper lemmas for step_error_is_acceptable
@@ -926,6 +990,83 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
       · simp only [ExecState.error.injEq] at hstep; subst hstep; simp
 
   -- ========================================
+  -- unpackVariant variantName fields src cont
+  -- ========================================
+  | unpackVariant variantName fields src cont =>
+    have hst := hwt.stmt_typed
+    rw [hs] at hst
+    simp only [step, hs] at hstep
+    cases hst with
+    | unpackVariant_rule _ _ _ _ ename variants fentries _ _ hsrc_type _ _ _ _ hcont =>
+      have ⟨vv, hvv, hmatch⟩ := hwt.site_consistent src (.basic (.tenum ename variants)) hsrc_type
+      have hht := ValueMatchesType_basic_is_hasType hmatch
+      -- v must be a variant value
+      cases hht with
+      | variant vname fields_v _ _ _ hlookup_v _ _ _ =>
+        change lookup m.frame.siteStore src = some _ at hvv
+        simp only [readSite, hvv] at hstep
+        -- variant mismatch produces variantMismatch (acceptable)
+        -- non-match produces running (no error)
+        revert hstep
+        split
+        · intro hstep; cases hstep  -- running
+        · -- variantMismatch is acceptable
+          simp only [ExecState.error.injEq]
+          intro heq; subst heq; simp
+
+  -- ========================================
+  -- variantSwitch src cases
+  -- ========================================
+  | variantSwitch src cases =>
+    have hst := hwt.stmt_typed
+    rw [hs] at hst
+    simp only [step, hs] at hstep
+    cases hst with
+    | variantSwitch_rule _ _ _ ename variants r bk _ hsrc_type hcoverage hcases =>
+      have ⟨vv, hvv, hmatch⟩ := hwt.site_consistent src (.ref (.tenum ename variants) r bk) hsrc_type
+      obtain ⟨loc, path, hveq, hrmap⟩ := hmatch
+      subst hveq
+      change lookup m.frame.siteStore src = some _ at hvv
+      simp only [readSite, hvv] at hstep
+      have hheap := hwt.rmap_live r loc path hrmap
+      cases hr : m.heap.readRef loc path with
+      | none => exact absurd hr hheap
+      | some val =>
+        rw [hr] at hstep
+        -- rmap_has_type gives us the value and HasType
+        have ⟨hval, hread, hht⟩ := hwt.rmap_has_type r (.tenum ename variants) loc path hrmap
+          (Or.inr ⟨src, bk, hsrc_type⟩)
+        -- Connect: hread and hr both say readRef = some _, so hval = val
+        have hveq : hval = val := Option.some.inj (hread.symm.trans hr)
+        subst hveq
+        -- val is now hval; cases on HasType reduces the match
+        cases hht with
+        | variant vname vfields _ _ _ hlookup_v _ _ _ =>
+          simp only [] at hstep
+          -- cases.lookup vname:
+          cases hcl : List.lookup vname cases with
+          | none =>
+            -- Coverage guarantees this variant is in cases
+            exfalso
+            have hne : AssocMap.lookup variants vname ≠ none := by
+              rw [hlookup_v]; exact Option.some_ne_none _
+            obtain ⟨label', hmem'⟩ := hcoverage vname hne
+            exact lookup_ne_none_of_mem hmem' hcl
+          | some label =>
+            simp only [hcl] at hstep
+            -- findBlock:
+            cases hfb : findBlock m.frame.blocks label with
+            | none =>
+              simp only [hfb] at hstep
+              -- unknownLabel is not acceptable, but well-typed implies label exists
+              have ⟨envL, hlenv_lookup, _⟩ := hcases vname label (lookup_mem_assoc hcl)
+              have ⟨block, hmem, hlbl⟩ := hwt.lenv_labels_in_blocks label envL hlenv_lookup
+              have ⟨_, hfb'⟩ := findBlock_some_of_mem m.frame.blocks label block hmem hlbl
+              rw [hfb'] at hfb; exact absurd hfb (Option.some_ne_none _)
+            | some block =>
+              simp only [hfb] at hstep; cases hstep
+
+  -- ========================================
   -- vecPushBack refSite valSite cont
   -- ========================================
   | vecPushBack refSite valSite cont =>
@@ -1100,6 +1241,18 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
         obtain ⟨vals, hvals⟩ := hcpf
         rw [hvals] at hstep; cases hstep
 
+    | packVariant enumName variantName fieldSites =>
+      simp only [step, hs] at hstep
+      cases hst with
+      | let_bind_packVariant _ _ _ _ _ _ _ _ _ _ hvariant hfields_typed hcoverage _ hcont =>
+        have hcpf := collectPackFields_some m.frame.siteStore fieldSites (by
+          intro f s_site hmem
+          have ⟨bt, hbt, _⟩ := hfields_typed f s_site hmem
+          have ⟨v, hv, _⟩ := hwt.site_consistent s_site (.basic bt) hbt
+          exact ⟨v, hv⟩)
+        obtain ⟨vals, hvals⟩ := hcpf
+        rw [hvals] at hstep; cases hstep
+
     | binop op a b =>
       simp only [step, hs] at hstep
       cases hst
@@ -1139,6 +1292,7 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
             cases op <;> simp [binop_type] at hbinop
           | trecord _ => cases op <;> simp [binop_type] at hbinop
           | tvec _ => cases op <;> simp [binop_type] at hbinop
+          | tenum _ _ => cases op <;> simp [binop_type] at hbinop
         | u8 =>
           cases op <;> (cases bt2 <;> simp [binop_type] at hbinop)
         | tbool =>
@@ -1165,6 +1319,7 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
             subst hf
             cases op <;> simp [binop_type] at hbinop
           | tvec _ => cases op <;> simp [binop_type] at hbinop
+          | tenum _ _ => cases op <;> simp [binop_type] at hbinop
         | tunit =>
           cases hta
           cases op <;> (cases bt2 <;> simp [binop_type] at hbinop)
@@ -1173,6 +1328,8 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
           subst hf
           cases op <;> (cases bt2 <;> simp [binop_type] at hbinop)
         | tvec _ =>
+          cases op <;> (cases bt2 <;> simp [binop_type] at hbinop)
+        | tenum _ _ =>
           cases op <;> (cases bt2 <;> simp [binop_type] at hbinop)
 
     -- ---- vecPack T elems ----

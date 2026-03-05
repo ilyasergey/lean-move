@@ -56,6 +56,7 @@ mutual
     | .tunit => ".tunit"
     | .trecord m => s!".trecord {ppFieldMap m}"
     | .tvec inner => s!"vector<{ppBasicMoveType inner}>"
+    | .tenum name variants => s!"(.tenum \"{name}\" {ppVariantMap variants})"
 
   partial def ppFieldMap (m : AssocMap Field BasicMoveType) : String :=
     ppFieldEntries m.entries
@@ -64,6 +65,14 @@ mutual
     | [] => "AssocMap.empty"
     | [(f, bt)] => s!"(AssocMap.insert AssocMap.empty {ppField f} {ppBasicMoveType bt})"
     | (f, bt) :: rest => s!"(AssocMap.insert {ppFieldEntries rest} {ppField f} {ppBasicMoveType bt})"
+
+  partial def ppVariantMap (m : AssocMap Id (AssocMap Field BasicMoveType)) : String :=
+    ppVariantEntries m.entries
+
+  partial def ppVariantEntries : List (Id × AssocMap Field BasicMoveType) → String
+    | [] => "AssocMap.empty"
+    | [(v, fm)] => s!"(AssocMap.insert AssocMap.empty \"{v}\" {ppFieldMap fm})"
+    | (v, fm) :: rest => s!"(AssocMap.insert {ppVariantEntries rest} \"{v}\" {ppFieldMap fm})"
 end
 
 def ppMoveType : MoveType → String
@@ -110,6 +119,9 @@ def ppExprMacro : Expr → String
   | .vecImmBorrow src idx => s!"vec_imm_borrow({ppSite src}, {ppSite idx})"
   | .vecMutBorrow src idx => s!"vec_mut_borrow({ppSite src}, {ppSite idx})"
   | .vecPopBack src => s!"vec_pop_back({ppSite src})"
+  | .packVariant ename vname fields =>
+    let fs := fields.map fun (f, s) => s!"({ppField f}, {ppSite s})"
+    s!"packVariant(\"{ename}\", \"{vname}\", [{", ".intercalate fs}])"
 
 private def mkIndent (n : Nat) : String := "".pushn ' ' n
 
@@ -144,6 +156,13 @@ partial def ppStmt (indent : Nat := 8) : Stmt → String
     mkIndent indent ++ s!"(vec_push_back({ppSite ref}, {ppSite val})) ;;\n" ++ ppStmt indent cont
   | .vecSwap ref idx1 idx2 cont =>
     mkIndent indent ++ s!"(vec_swap({ppSite ref}, {ppSite idx1}, {ppSite idx2})) ;;\n" ++ ppStmt indent cont
+  | .unpackVariant vname fields src cont =>
+    let fs := fields.map fun (f, s) => s!"({ppField f}, {ppSite s})"
+    mkIndent indent ++ s!"(unpackVariant(\"{vname}\", [{", ".intercalate fs}], {ppSite src})) ;;\n"
+      ++ ppStmt indent cont
+  | .variantSwitch src cases =>
+    let cs := cases.map fun (v, l) => s!"(\"{v}\", \"{l}\")"
+    mkIndent indent ++ s!"variantSwitch {ppSite src} [{", ".intercalate cs}]"
 
 def ppBlock (b : Block) : String :=
   let header := s!"    \{ label := \"{b.label}\"\n      body :=\n"

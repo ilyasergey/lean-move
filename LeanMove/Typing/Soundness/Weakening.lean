@@ -7144,5 +7144,9 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
     exact weaken_vecSwap_rule lenv _ env _ _ _ _ _ _ _ hlook_ref hlook_idx1 hlook_idx2 houtbound
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
+  -- Enum cases
+  | let_bind_packVariant _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih => sorry -- TODO: weaken_packVariant
+  | unpackVariant_rule _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih => sorry -- TODO: weaken_unpackVariant
+  | variantSwitch_rule _ _ _ _ _ _ _ _ _ _ _ => sorry -- TODO: weaken_variantSwitch
 
 end LeanMove.Typing.TypeSoundness

@@ -1632,6 +1632,7 @@ private theorem fieldPathOf_append (l₁ l₂ : List PathElement) :
     | field f => simp [fieldPathOf, ih]
     | root_to_var y => simp [fieldPathOf, ih]
     | vecElem => simp [fieldPathOf, ih]
+    | variantField => simp [fieldPathOf, ih]
 
 /-- Unified preservation for borrowField/borrowMutField.
     Both have identical runtime semantics (extend ref with field) and identical
@@ -2424,6 +2425,7 @@ private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : Labe
       | record _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
       | ref _ _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
       | vec _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
+      | variant _ _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
     | bool ba =>
       cases hvb_eq : vb with
       | bool bb =>
@@ -2444,10 +2446,12 @@ private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : Labe
       | record _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
       | ref _ _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
       | vec _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
+      | variant _ _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
     | unit => simp only [hva_eq] at hstep; nomatch hstep
     | record _ => simp only [hva_eq] at hstep; nomatch hstep
     | ref _ _ => simp only [hva_eq] at hstep; nomatch hstep
     | vec _ => simp only [hva_eq] at hstep; nomatch hstep
+    | variant _ _ => simp only [hva_eq] at hstep; nomatch hstep
   subst hm'_eq
   refine ⟨{env with siteEnv := insert (delete (delete env.siteEnv sA) sB) s (.basic bt3)},
           lenv, retTypes, rmap, ?_, hss⟩
@@ -5224,6 +5228,7 @@ private theorem preservation_call (m m' : Machine) (env : TypeEnv) (lenv : Label
             | unit => simp
             | record _ => simp
             | vec _ => simp
+            | variant _ _ => simp
             | ref loc' path' =>
               intro hfm
               simp only [Option.some.injEq, Prod.mk.injEq] at hfm
@@ -8200,6 +8205,8 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     | vecImmBorrow src idx => exact preservation_vecImmBorrow m m' env lenv retTypes rmap hwt hss s src idx cont hstmt hstep
     | vecMutBorrow src idx => exact preservation_vecMutBorrow m m' env lenv retTypes rmap hwt hss s src idx cont hstmt hstep
     | vecPopBack src => exact preservation_vecPopBack m m' env lenv retTypes rmap hwt hss s src cont hstmt hstep
+    -- Enum Expr operations
+    | packVariant ename vname fieldSites => sorry
   | release site cont => exact preservation_release m m' env lenv retTypes rmap hwt hss site cont hstmt hstep
   | assign x site cont =>
     rcases inv_assign (by rw [← hstmt]; exact hwt.stmt_typed) with
@@ -8218,7 +8225,8 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
   | vecUnpack T results src cont => exact preservation_vecUnpack m m' env lenv retTypes rmap hwt hss T results src cont hstmt hstep
   | vecPushBack refSite val cont => exact preservation_vecPushBack m m' env lenv retTypes rmap hwt hss refSite val cont hstmt hstep
   | vecSwap refSite idx1 idx2 cont => exact preservation_vecSwap m m' env lenv retTypes rmap hwt hss refSite idx1 idx2 cont hstmt hstep
-
-
+  -- Enum Stmt operations
+  | unpackVariant vname fields src cont => sorry
+  | variantSwitch src cases => sorry
 
 end LeanMove.Typing.TypeSoundness

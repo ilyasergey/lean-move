@@ -129,6 +129,29 @@ partial def alphaBasicType (l r : BasicMoveType) : AlphaM Bool :=
   | .tunit, .tunit => pure true
   | .trecord m1, .trecord m2 => alphaEntries m1.entries m2.entries
   | .tvec t1, .tvec t2 => alphaBasicType t1 t2
+  | .tenum n1 vs1, .tenum n2 vs2 => do
+    if n1 != n2 then return false
+    alphaVariantMap vs1.entries vs2.entries
+  | _, _ => pure false
+
+/-- Check alpha-equivalence of variant switch cases (Id × Label pairs) -/
+partial def alphaVariantCases (l r : List (Id × String)) : AlphaM Bool :=
+  match l, r with
+  | [], [] => pure true
+  | (v1, lbl1) :: rest1, (v2, lbl2) :: rest2 => do
+    if v1 != v2 then return false
+    if !(← matchLabel lbl1 lbl2) then return false
+    alphaVariantCases rest1 rest2
+  | _, _ => pure false
+
+/-- Check alpha-equivalence of variant maps (for tenum) -/
+partial def alphaVariantMap (l r : List (Id × AssocMap Field BasicMoveType)) : AlphaM Bool :=
+  match l, r with
+  | [], [] => pure true
+  | (v1, fs1) :: rest1, (v2, fs2) :: rest2 => do
+    if v1 != v2 then return false
+    if !(← alphaEntries fs1.entries fs2.entries) then return false
+    alphaVariantMap rest1 rest2
   | _, _ => pure false
 
 /-- Check alpha-equivalence of field entries -/
@@ -189,6 +212,10 @@ partial def alphaExpr (l r : Expr) : AlphaM Bool :=
     if !(← matchSite s1 s2) then return false
     matchSite i1 i2
   | .vecPopBack s1, .vecPopBack s2 => matchSite s1 s2
+  | .packVariant e1 v1 fs1, .packVariant e2 v2 fs2 => do
+    if e1 != e2 then return false
+    if v1 != v2 then return false
+    alphaFieldSites fs1 fs2
   | _, _ => pure false
 
 /-- Check alpha-equivalence of field-site pairs -/
@@ -303,6 +330,14 @@ partial def alphaStmt (l r : Stmt) : AlphaM Bool := do
       if !(← matchSite i1a i2a) then return false
       if !(← matchSite i1b i2b) then return false
       alphaStmt c1 c2
+    | .unpackVariant v1 fs1 s1 c1, .unpackVariant v2 fs2 s2 c2 => do
+      if v1 != v2 then return false
+      if !(← alphaFieldSites fs1 fs2) then return false
+      if !(← matchSite s1 s2) then return false
+      alphaStmt c1 c2
+    | .variantSwitch s1 cs1, .variantSwitch s2 cs2 => do
+      if !(← matchSite s1 s2) then return false
+      alphaVariantCases cs1 cs2
     | _, _ => pure false
 
 end

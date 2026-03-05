@@ -132,6 +132,7 @@ inductive PathElement where
   | field : Field → PathElement
   | root_to_var : Var → PathElement
   | vecElem : PathElement
+  | variantField : Id → Field → PathElement  -- field f in variant v of an enum
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 abbrev Path := List PathElement

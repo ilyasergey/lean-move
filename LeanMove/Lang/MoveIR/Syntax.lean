@@ -46,6 +46,8 @@ inductive MvirExpr where
   | deref : MvirExpr → MvirExpr                               -- *e
   | binop : String → MvirExpr → MvirExpr → MvirExpr           -- e1 op e2
   | pack : String → List (String × MvirExpr) → MvirExpr       -- T { f: e, ... }
+  | packVariant : String → String → List (String × MvirExpr) → MvirExpr
+      -- enum_name × variant_name × [(field, expr)]            -- Enum.Variant { f: e, ... }
   | freeze : MvirExpr → MvirExpr                               -- freeze(e)
   | call : String → List MvirExpr → MvirExpr                   -- fname(args)
   | vecOp : String → MvirType → List MvirExpr → MvirExpr      -- op<T>(args)
@@ -59,8 +61,13 @@ inductive MvirStmt where
       -- struct_name × [(field, var)] × source
   | jump : String → MvirStmt                                   -- jump L;
   | jumpIf : MvirExpr → String → MvirStmt                     -- jump_if (e) L;
+  | jumpIfFalse : MvirExpr → String → MvirStmt                -- jump_if_false (e) L;
   | ret : List MvirExpr → MvirStmt                            -- return; or return e1, e2;
   | abort : MvirExpr → MvirStmt                               -- abort e;
+  | unpackVariant : (isMut : Option Bool) → String → String → List (String × String) → MvirExpr → MvirStmt
+      -- isMut (none=owned, some false=&, some true=&mut) × enum_name × variant_name × [(field, var)] × source
+  | variantSwitch : String → MvirExpr → List (String × String) → MvirStmt
+      -- enum_name × source_expr × [(variant_name, label)]
 deriving Repr, Inhabited
 
 /-- A labeled block with a sequence of statements -/
@@ -97,11 +104,19 @@ structure MvirStructDef where
   fields : List MvirStructField
 deriving Repr, Inhabited
 
-/-- A module containing struct and function definitions -/
+/-- An enum definition with abilities and variants -/
+structure MvirEnumDef where
+  name : String
+  abilities : List String
+  variants : List (String × List MvirStructField)  -- [(variant_name, fields)]
+deriving Repr, Inhabited
+
+/-- A module containing struct, enum, and function definitions -/
 structure MvirModule where
   address : String                   -- e.g., "0x2"
   name : String                      -- e.g., "field"
   structs : List MvirStructDef
+  enums : List MvirEnumDef
   functions : List MvirFunDef
 deriving Repr, Inhabited
 

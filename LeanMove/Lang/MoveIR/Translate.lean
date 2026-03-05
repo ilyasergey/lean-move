@@ -48,11 +48,22 @@ deriving Repr
 instance : Inhabited ResolvedStruct where
   default := { name := "", basicType := .u64, fieldMap := empty }
 
+/-- Resolved enum definition with its MoveLight type -/
+structure ResolvedEnum where
+  name : String
+  basicType : BasicMoveType
+  variants : AssocMap Id (AssocMap Field BasicMoveType)
+deriving Repr
+
+instance : Inhabited ResolvedEnum where
+  default := { name := "", basicType := .u64, variants := empty }
+
 /-- Translation state for ANF conversion -/
 structure TransState where
   nextSiteId : Nat := 0
   nextRefId : Nat := 1  -- start from 1; 0 is sometimes special
   structs : List ResolvedStruct := []
+  enums : List ResolvedEnum := []
   moduleName : String := ""
 deriving Repr, Inhabited
 
@@ -75,7 +86,8 @@ def freshRefId : TransM Aref := do
 /- ====================================================== -/
 
 /-- Resolve a MVIR type to BasicMoveType using the struct definitions in scope -/
-partial def resolveBasicType (structs : List ResolvedStruct) : MvirType → BasicMoveType
+partial def resolveBasicType (structs : List ResolvedStruct)
+    (enums : List ResolvedEnum) : MvirType → BasicMoveType
   | .u64 => .u64
   | .u8 => .u8
   | .bool => .tbool
@@ -85,27 +97,33 @@ partial def resolveBasicType (structs : List ResolvedStruct) : MvirType → Basi
     let shortName := if name.startsWith "Self." then name.drop 5 else name
     match structs.find? (fun s => s.name == shortName) with
     | some rs => rs.basicType
-    | none => .u64 -- fallback for unknown types
-  | .vector inner => .tvec (resolveBasicType structs inner)
-  | .ref _ inner => resolveBasicType structs inner
+    | none =>
+      -- Try enum lookup
+      match enums.find? (fun e => e.name == shortName) with
+      | some re => re.basicType
+      | none => .u64 -- fallback for unknown types
+  | .vector inner => .tvec (resolveBasicType structs enums inner)
+  | .ref _ inner => resolveBasicType structs enums inner
 
 /-- Resolve a MVIR type to MoveType -/
-def resolveType (structs : List ResolvedStruct) (aref : Aref) : MvirType → MoveType
-  | .ref true inner => .ref (resolveBasicType structs inner) aref .siteBorrowMut
-  | .ref false inner => .ref (resolveBasicType structs inner) aref .siteBorrowImm
-  | other => .basic (resolveBasicType structs other)
+def resolveType (structs : List ResolvedStruct) (enums : List ResolvedEnum)
+    (aref : Aref) : MvirType → MoveType
+  | .ref true inner => .ref (resolveBasicType structs enums inner) aref .siteBorrowMut
+  | .ref false inner => .ref (resolveBasicType structs enums inner) aref .siteBorrowImm
+  | other => .basic (resolveBasicType structs enums other)
 
 /-- Resolve a MVIR type to ParamType (for return types) -/
-def resolveParamType (structs : List ResolvedStruct) : MvirType → ParamType
-  | .ref true inner => ⟨resolveBasicType structs inner, some true⟩
-  | .ref false inner => ⟨resolveBasicType structs inner, some false⟩
-  | other => ⟨resolveBasicType structs other, none⟩
+def resolveParamType (structs : List ResolvedStruct) (enums : List ResolvedEnum) :
+    MvirType → ParamType
+  | .ref true inner => ⟨resolveBasicType structs enums inner, some true⟩
+  | .ref false inner => ⟨resolveBasicType structs enums inner, some false⟩
+  | other => ⟨resolveBasicType structs enums other, none⟩
 
 /-- Build a BasicMoveType.trecord from struct fields -/
-def buildRecordType (structs : List ResolvedStruct) (fields : List MvirStructField) :
-    BasicMoveType :=
+def buildRecordType (structs : List ResolvedStruct) (enums : List ResolvedEnum)
+    (fields : List MvirStructField) : BasicMoveType :=
   let fieldMap := fields.foldl (fun acc f =>
-    insert acc ⟨f.name⟩ (resolveBasicType structs f.type)) empty
+    insert acc ⟨f.name⟩ (resolveBasicType structs enums f.type)) empty
   .trecord fieldMap
 
 /-- Resolve struct definitions within a module.
@@ -116,9 +134,9 @@ partial def resolveStructDefs (_moduleName : String) (defs : List MvirStructDef)
     List ResolvedStruct :=
   let resolveOnce (current : List ResolvedStruct) : List ResolvedStruct :=
     defs.map fun sd =>
-      let bt := buildRecordType current sd.fields
+      let bt := buildRecordType current [] sd.fields
       let fieldMap := sd.fields.foldl (fun acc f =>
-        insert acc ⟨f.name⟩ (resolveBasicType current f.type)) empty
+        insert acc ⟨f.name⟩ (resolveBasicType current [] f.type)) empty
       { name := sd.name, basicType := bt, fieldMap }
   -- Start with placeholder stubs, then iterate n times to resolve all nesting levels
   let initial := defs.map fun sd =>
@@ -127,6 +145,16 @@ partial def resolveStructDefs (_moduleName : String) (defs : List MvirStructDef)
     | 0 => current
     | n + 1 => iterate (resolveOnce current) n
   iterate initial defs.length
+
+/-- Resolve enum definitions within a module. Called after struct resolution. -/
+partial def resolveEnumDefs (structs : List ResolvedStruct)
+    (defs : List MvirEnumDef) : List ResolvedEnum :=
+  defs.map fun ed =>
+    let variants := ed.variants.foldl (fun acc (vname, fields) =>
+      let fieldMap := fields.foldl (fun fm f =>
+        insert fm ⟨f.name⟩ (resolveBasicType structs [] f.type)) empty
+      insert acc vname fieldMap) empty
+    { name := ed.name, basicType := .tenum ed.name variants, variants }
 
 /- ====================================================== -/
 /-       Expression Flattening (ANF conversion)            -/
@@ -145,6 +173,7 @@ def wrapBindings (bindings : List (Site × Expr)) (cont : Stmt) : Stmt :=
 /-- Flatten a MVIR expression into ANF bindings -/
 partial def flattenExpr (e : MvirExpr) : TransM FlatResult := do
   let structs := (← get).structs
+  let enums := (← get).enums
   match e with
   | .copy var =>
     let s ← freshSite
@@ -223,7 +252,7 @@ partial def flattenExpr (e : MvirExpr) : TransM FlatResult := do
     pure { bindings := lhsR.bindings ++ rhsR.bindings ++
            [(s, .binop binopKind lhsR.result rhsR.result)], result := s }
   | .vecOp opName ty args =>
-    let elemTy := resolveBasicType structs ty
+    let elemTy := resolveBasicType structs enums ty
     match opName with
     | "vec_len" =>
       -- vec_len<T>(ref) → Expr.vecLen ref
@@ -285,6 +314,16 @@ partial def flattenExpr (e : MvirExpr) : TransM FlatResult := do
         -- Fallback for unrecognized vec ops
         let s ← freshSite
         pure { bindings := [(s, .intLit 0)], result := s }
+  | .packVariant enumName variantName fields =>
+    -- Flatten each field value, then packVariant
+    let mut allBindings : List (Site × Expr) := []
+    let mut fieldSites : List (Field × Site) := []
+    for (fname, fexpr) in fields do
+      let fr ← flattenExpr fexpr
+      allBindings := allBindings ++ fr.bindings
+      fieldSites := fieldSites ++ [(⟨fname⟩, fr.result)]
+    let s ← freshSite
+    pure { bindings := allBindings ++ [(s, .packVariant enumName variantName fieldSites)], result := s }
 
 /- ====================================================== -/
 /-       Statement Translation                             -/
@@ -321,6 +360,11 @@ where
       let condR ← flattenExpr cond
       let fallthroughLabel := nextBlockLabel.getD "error_no_fallthrough"
       pure (wrapBindings condR.bindings (.branch condR.result label fallthroughLabel))
+    | .jumpIfFalse cond label =>
+      -- jump_if_false: jump to label when condition is FALSE (swap branches)
+      let condR ← flattenExpr cond
+      let fallthroughLabel := nextBlockLabel.getD "error_no_fallthrough"
+      pure (wrapBindings condR.bindings (.branch condR.result fallthroughLabel label))
     | .ret exprs =>
       if exprs.isEmpty then
         pure (.ret [])
@@ -360,7 +404,8 @@ where
         pure (wrapBindings allBindings callStmt)
       | .vecOp opName ty args =>
         let structs := (← get).structs
-        let elemTy := resolveBasicType structs ty
+        let enums := (← get).enums
+        let elemTy := resolveBasicType structs enums ty
         match opName with
         | "vec_push_back" =>
           -- vec_push_back<T>(ref, val) → Stmt.vecPushBack ref val cont
@@ -452,6 +497,25 @@ where
       let assigns := buildAssigns varNames sites contOrSkip
       let unpackStmt := Stmt.unpack fieldSites sourceR.result assigns
       pure (wrapBindings sourceR.bindings unpackStmt)
+    | .unpackVariant _isMut _enumName variantName fields source =>
+      let sourceR ← flattenExpr source
+      -- Create sites for each unpacked field
+      let mut fieldSites : List (Field × Site) := []
+      for (fname, _varName) in fields do
+        let s ← freshSite
+        fieldSites := fieldSites ++ [(⟨fname⟩, s)]
+      -- Evaluate continuation AFTER flattening current expressions
+      let contOrSkip ← contM
+      -- Build assigns for each unpacked variable
+      let varNames := fields.map Prod.snd
+      let sites := fieldSites.map Prod.snd
+      let assigns := buildAssigns varNames sites contOrSkip
+      let unpackStmt := Stmt.unpackVariant variantName fieldSites sourceR.result assigns
+      pure (wrapBindings sourceR.bindings unpackStmt)
+    | .variantSwitch _enumName source cases =>
+      let sourceR ← flattenExpr source
+      let casePairs := cases.map fun (vname, label) => (vname, label)
+      pure (wrapBindings sourceR.bindings (.variantSwitch sourceR.result casePairs))
 
 /- ====================================================== -/
 /-       Function Translation                              -/
@@ -476,20 +540,21 @@ def translateBlocks (blocks : List MvirBlock) : TransM (List Block) := do
 /-- Translate a MVIR function definition to a MoveLight FunDef -/
 def translateFunDef (mfun : MvirFunDef) : TransM FunDef := do
   let structs := (← get).structs
+  let enums := (← get).enums
   -- Reset site counter for each function
   modify fun s => { s with nextSiteId := 0, nextRefId := 1 }
   -- Translate parameters: each gets .paramRef aref
   let params := mfun.params.map fun p =>
-    (⟨p.name⟩, resolveType structs (.paramRef ⟨p.name⟩) p.type)
+    (⟨p.name⟩, resolveType structs enums (.paramRef ⟨p.name⟩) p.type)
   -- Translate return types
-  let returnType := mfun.returnTypes.map (resolveParamType structs)
+  let returnType := mfun.returnTypes.map (resolveParamType structs enums)
   -- Translate locals: ref types get sequential .refid
   let mut locals : List LocalVar := []
   for loc in mfun.locals do
     let aref ← match loc.type with
       | .ref _ _ => freshRefId
       | _ => pure (.refid 0) -- won't be used for basic types
-    let ty := resolveType structs aref loc.type
+    let ty := resolveType structs enums aref loc.type
     locals := locals ++ [{ name := ⟨loc.name⟩, type := ty }]
   -- Translate blocks
   let blocks ← translateBlocks mfun.blocks
@@ -501,9 +566,10 @@ def translateFunDef (mfun : MvirFunDef) : TransM FunDef := do
 
 /-- Translate a MVIR module to a list of (function_name, FunDef) pairs -/
 def translateModule (mod : MvirModule) : TransM (List (String × FunDef)) := do
-  -- Resolve struct definitions first
+  -- Resolve struct definitions first, then enums (enums may reference structs)
   let resolvedStructs := resolveStructDefs mod.name mod.structs
-  modify fun s => { s with structs := resolvedStructs, moduleName := mod.name }
+  let resolvedEnums := resolveEnumDefs resolvedStructs mod.enums
+  modify fun s => { s with structs := resolvedStructs, enums := resolvedEnums, moduleName := mod.name }
   -- Translate each function
   let mut result : List (String × FunDef) := []
   for mfun in mod.functions do

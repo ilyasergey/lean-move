@@ -109,6 +109,27 @@ where
     else
       pure []
 
+/-- Parse zero or more comma-separated items, tolerating a trailing comma -/
+partial def commaSepTrailing (p : Parser α) : Parser (List α) := do
+  let first? ← (attempt (do let x ← p; pure (some x))) <|> pure none
+  match first? with
+  | none => pure []
+  | some first =>
+    let rest ← commaSepRestTrailing p
+    pure (first :: rest)
+where
+  commaSepRestTrailing (p : Parser α) : Parser (List α) := do
+    let hasComma ← (attempt (do symbol ','; pure true)) <|> pure false
+    if hasComma then
+      let next? ← (attempt (do let x ← p; pure (some x))) <|> pure none
+      match next? with
+      | some x =>
+        let rest ← commaSepRestTrailing p
+        pure (x :: rest)
+      | none => pure []  -- trailing comma
+    else
+      pure []
+
 /-- Parse items separated by `*` (for tuple return types like `&mut u64 * &mut u64`) -/
 partial def starSep1 (p : Parser α) : Parser (List α) := do
   let first ← p
@@ -219,16 +240,41 @@ partial def parsePrimaryExpr : Parser MvirExpr := do
         symbol ')'
         pure (.vecOp other ty args)
       else
-        -- Check if it's a struct pack: Name { ... }
-        let isBrace ← (attempt (do let c ← peek!; pure (c == '{'))) <|> pure false
-        if isBrace then
-          symbol '{'
-          let fields ← commaSep parsePackField
-          symbol '}'
-          pure (.pack other fields)
+        -- Check for Enum.Variant pattern: Name.Name<T>{...} or Name.Name{...}
+        let isDot ← (attempt (do
+          let c ← peek!
+          pure (c == '.'))) <|> pure false
+        if isDot then
+          -- Try variant pack: Enum.Variant<T>{...} or Enum.Variant{...}
+          let vp? ← (attempt (do
+            symbol '.'
+            let variantName ← ident
+            -- Skip optional type arguments <T>
+            let _ ← (attempt (do
+              symbol '<'
+              let _ ← parseType
+              symbol '>')) <|> pure ()
+            symbol '{'
+            let fields ← commaSep parsePackField
+            symbol '}'
+            pure (some (variantName, fields)))) <|> pure none
+          match vp? with
+          | some (variantName, fields) =>
+            pure (.packVariant other variantName fields)
+          | none =>
+            -- Fallback: bare identifier
+            pure (.copy other)
         else
-          -- Bare identifier (treat as implicit copy reference)
-          pure (.copy other)
+          -- Check if it's a struct pack: Name { ... }
+          let isBrace ← (attempt (do let c ← peek!; pure (c == '{'))) <|> pure false
+          if isBrace then
+            symbol '{'
+            let fields ← commaSep parsePackField
+            symbol '}'
+            pure (.pack other fields)
+          else
+            -- Bare identifier (treat as implicit copy reference)
+            pure (.copy other)
 
 /-- Parse a field in a struct pack: `fieldName: expr` -/
 partial def parsePackField : Parser (String × MvirExpr) := do
@@ -237,8 +283,8 @@ partial def parsePackField : Parser (String × MvirExpr) := do
   let value ← parseExpr
   pure (fieldName, value)
 
-/-- Parse a full expression (with prefix operators `&`, `&mut`, `*`) -/
-partial def parseExpr : Parser MvirExpr := do
+/-- Parse a unary expression (with prefix operators `&`, `&mut`, `*`) -/
+partial def parseUnaryExpr : Parser MvirExpr := do
   skipWsAndComments
   if ← isEof then fail "unexpected eof in expression"
   let c ← peek!
@@ -251,14 +297,40 @@ partial def parseExpr : Parser MvirExpr := do
   | '*' =>
     -- Deref expression
     symbol '*'
-    let inner ← parseExpr
+    let inner ← parseUnaryExpr
     pure (.deref inner)
   | _ =>
     if c.isDigit then
       let n ← natLit
+      -- Skip optional type suffix like u64, u8
+      let _ ← (attempt (keyword "u64")) <|> (attempt (keyword "u8")) <|> pure ()
       pure (.intLit n)
     else
       parsePrimaryExpr
+
+/-- Try to parse a binary operator. Returns the operator string if found. -/
+partial def parseBinOp : Parser (Option String) :=
+  (attempt (do keyword "=="; pure (some "=="))) <|>
+  (attempt (do keyword "!="; pure (some "!="))) <|>
+  (attempt (do keyword ">="; pure (some ">="))) <|>
+  (attempt (do keyword "<="; pure (some "<="))) <|>
+  (attempt (do keyword ">"; pure (some ">"))) <|>
+  (attempt (do keyword "<"; pure (some "<"))) <|>
+  (attempt (do keyword "+"; pure (some "+"))) <|>
+  (attempt (do keyword "-"; pure (some "-"))) <|>
+  (attempt (do keyword "/"; pure (some "/"))) <|>
+  (attempt (do keyword "%"; pure (some "%"))) <|>
+  pure none
+
+/-- Parse a full expression: unary expression optionally followed by a binary operator -/
+partial def parseExpr : Parser MvirExpr := do
+  let lhs ← parseUnaryExpr
+  let op? ← parseBinOp
+  match op? with
+  | some op =>
+    let rhs ← parseUnaryExpr
+    pure (.binop op lhs rhs)
+  | none => pure lhs
 
 /-- Parse the body of a borrow expression after `&` or `&mut`.
     Handles both local borrows (`&x`) and field borrows (`&copy(s).S::f`). -/
@@ -338,9 +410,36 @@ partial def parseStmt : Parser MvirStmt := do
     let value ← parseExpr
     symbol ';'
     pure (.writeRef target value)
+  | '&' =>
+    -- &mut Enum.Variant<T>{ f: var, ... } = expr;  (mutable borrow variant unpack)
+    -- &Enum.Variant<T>{ f: var, ... } = expr;  (immutable borrow variant unpack)
+    let isMut ← (attempt (do keyword "&mut"; pure true)) <|>
+                 (do symbol '&'; pure false)
+    let enumName ← ident
+    symbol '.'
+    let variantName ← ident
+    -- Skip optional type arguments <T>
+    let _ ← (attempt (do
+      symbol '<'
+      let _ ← parseType
+      symbol '>')) <|> pure ()
+    symbol '{'
+    let fields ← commaSep parseUnpackField
+    symbol '}'
+    symbol '='
+    let rhs ← parseExpr
+    symbol ';'
+    pure (.unpackVariant (some isMut) enumName variantName fields rhs)
   | _ =>
     let name ← attempt ident <|> fail "expected statement"
     match name with
+    | "jump_if_false" =>
+      symbol '('
+      let cond ← parseExpr
+      symbol ')'
+      let label ← ident
+      symbol ';'
+      pure (.jumpIfFalse cond label)
     | "jump_if" =>
       symbol '('
       let cond ← parseExpr
@@ -365,6 +464,20 @@ partial def parseStmt : Parser MvirStmt := do
       let e ← parseExpr
       symbol ';'
       pure (.abort e)
+    | "variant_switch" =>
+      let enumName ← ident
+      symbol '('
+      let src ← parseExpr
+      symbol ')'
+      symbol '{'
+      let cases ← commaSep (do
+        let vname ← ident
+        symbol ':'
+        let label ← ident
+        pure (vname, label))
+      symbol '}'
+      symbol ';'
+      pure (.variantSwitch enumName src cases)
     | "_" =>
       -- Discard assignment: _ = expr;
       symbol '='
@@ -406,6 +519,30 @@ partial def parseStmt : Parser MvirStmt := do
           symbol ';'
           pure (.assign allVars rhs)
       else
+        -- Check for Enum.Variant unpack: EnumName.VariantName<T>{ f: var, ... } = expr;
+        let isDot ← (attempt (do let c ← peek!; pure (c == '.'))) <|> pure false
+        if isDot then
+          let vu? ← (attempt (do
+            symbol '.'
+            let variantName ← ident
+            -- Skip optional type arguments <T>
+            let _ ← (attempt (do
+              symbol '<'
+              let _ ← parseType
+              symbol '>')) <|> pure ()
+            symbol '{'
+            let fields ← commaSep parseUnpackField
+            symbol '}'
+            symbol '='
+            let rhs ← parseExpr
+            symbol ';'
+            pure (some (variantName, fields, rhs)))) <|> pure none
+          match vu? with
+          | some (variantName, fields, rhs) =>
+            pure (.unpackVariant none other variantName fields rhs)
+          | none =>
+            fail s!"unexpected '.' after '{other}'"
+        else
         -- Check if it's an unpack: StructName { f: v, ... } = expr;
         let isBrace ← (attempt (do let c ← peek!; pure (c == '{'))) <|> pure false
         if isBrace then
@@ -521,11 +658,14 @@ def parseFunDef : Parser MvirFunDef := do
   symbol '}'
   pure { name, params, returnTypes, locals, blocks }
 
-/-- Parse struct abilities: `has copy, drop, store` -/
+/-- Parse struct/enum abilities: `has copy, drop, store` or `has` with no abilities -/
 def parseAbilities : Parser (List String) := do
   let hasKw ← (attempt (do keyword "has"; pure true)) <|> pure false
   if hasKw then
-    commaSep1 ident
+    -- Peek: if next char is '{', no abilities listed
+    let c ← peek!
+    if c == '{' then pure []
+    else commaSep1 ident
   else
     pure []
 
@@ -542,36 +682,65 @@ def parseStructDef : Parser MvirStructDef := do
   let name ← ident
   let abilities ← parseAbilities
   symbol '{'
-  let fields ← commaSep parseStructField
+  let fields ← commaSepTrailing parseStructField
   symbol '}'
   pure { name, abilities, fields }
+
+/-- Parse a variant definition: `VariantName { fields }` -/
+def parseVariantDef : Parser (String × List MvirStructField) := do
+  let vname ← ident
+  symbol '{'
+  let fields ← commaSepTrailing parseStructField
+  symbol '}'
+  pure (vname, fields)
+
+/-- Parse an enum definition: `enum E has ... { V1 { fields }, V2 { fields } }` -/
+def parseEnumDef : Parser MvirEnumDef := do
+  keyword "enum"
+  let name ← ident
+  -- Skip optional type parameters like <T>
+  let _ ← (attempt (do
+    symbol '<'
+    let _ ← ident  -- type parameter name
+    symbol '>')) <|> pure ()
+  let abilities ← parseAbilities
+  symbol '{'
+  let variants ← commaSepTrailing parseVariantDef
+  symbol '}'
+  pure { name, abilities, variants }
 
 /- ====================================================== -/
 /-       Module Parser                                     -/
 /- ====================================================== -/
 
-/-- Parse module members (interleaved struct definitions and function definitions).
-    Uses `attempt` to try struct first, then function. -/
+/-- Parse module members (interleaved struct, enum, and function definitions). -/
 partial def parseModuleMembers :
-    Parser (List MvirStructDef × List MvirFunDef) := do
+    Parser (List MvirStructDef × List MvirEnumDef × List MvirFunDef) := do
   skipWsAndComments
-  if ← isEof then return ([], [])
+  if ← isEof then return ([], [], [])
   let c ← peek!
-  if c == '}' then return ([], [])
+  if c == '}' then return ([], [], [])
   -- Try struct definition first
   let sd? ← (attempt (do let sd ← parseStructDef; pure (some sd))) <|> pure none
   match sd? with
   | some sd =>
-    let (structs, funs) ← parseModuleMembers
-    pure (sd :: structs, funs)
+    let (structs, enums, funs) ← parseModuleMembers
+    pure (sd :: structs, enums, funs)
   | none =>
-    -- Try function definition
-    let fd? ← (attempt (do let fd ← parseFunDef; pure (some fd))) <|> pure none
-    match fd? with
-    | some fd =>
-      let (structs, funs) ← parseModuleMembers
-      pure (structs, fd :: funs)
-    | none => pure ([], [])
+    -- Try enum definition
+    let ed? ← (attempt (do let ed ← parseEnumDef; pure (some ed))) <|> pure none
+    match ed? with
+    | some ed =>
+      let (structs, enums, funs) ← parseModuleMembers
+      pure (structs, ed :: enums, funs)
+    | none =>
+      -- Try function definition
+      let fd? ← (attempt (do let fd ← parseFunDef; pure (some fd))) <|> pure none
+      match fd? with
+      | some fd =>
+        let (structs, enums, funs) ← parseModuleMembers
+        pure (structs, enums, fd :: funs)
+      | none => pure ([], [], [])
 
 /-- Parse a module address: `0xN` -/
 def parseAddress : Parser String := do
@@ -588,9 +757,9 @@ def parseModule : Parser MvirModule := do
   symbol '.'
   let name ← ident
   symbol '{'
-  let (structs, functions) ← parseModuleMembers
+  let (structs, enums, functions) ← parseModuleMembers
   symbol '}'
-  pure { address := addr, name, structs, functions }
+  pure { address := addr, name, structs, enums, functions }
 
 /- ====================================================== -/
 /-       Top-Level File Parser                             -/

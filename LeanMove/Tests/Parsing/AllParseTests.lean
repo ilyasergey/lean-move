@@ -24,6 +24,8 @@ import LeanMove.Tests.Parsing.Test_vec_move_after_borrow
 import LeanMove.Tests.Parsing.Test_vec_pop_after_borrow
 import LeanMove.Tests.Parsing.Test_vec_dangling_borrow
 import LeanMove.Tests.Parsing.Test_vec_mut_then_imm_borrow
+import LeanMove.Tests.Parsing.Test_enum_match
+import LeanMove.Tests.Parsing.Test_enum_all_parse
 
 /-! ## All Parse Tests
 

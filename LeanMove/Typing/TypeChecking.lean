@@ -684,6 +684,60 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
         cont retTypes →
       typecheck_stmt lenv env (.vecSwap refSite idx1 idx2 cont) retTypes
 
+  -- ============================================================
+  -- Enum operations
+  -- ============================================================
+
+  -- let b = packVariant(enumName, variantName, fields); cont
+  | let_bind_packVariant : ∀ (lenv : LabelEnv) (env : TypeEnv) (b : Site) (enumName variantName : Id)
+      (fields : List (Field × Site))
+      (variants : AssocMap Id (AssocMap Field BasicMoveType))
+      (fentries : AssocMap Field BasicMoveType) cont retTypes,
+      notIn env.siteEnv b →
+      AssocMap.lookup variants variantName = some fentries →
+      (∀ f a, (f, a) ∈ fields →
+         ∃ (bt : BasicMoveType), lookup env.siteEnv a = some (.basic bt) ∧
+                                 lookup fentries f = some bt) →
+      (∀ f, lookup fentries f ≠ none → ∃ a, (f, a) ∈ fields) →
+      (∀ a₁ a₂, (∃ f₁ f₂, (f₁, a₁) ∈ fields ∧ (f₂, a₂) ∈ fields ∧ f₁ ≠ f₂) → a₁ ≠ a₂) →
+      typecheck_stmt lenv
+        {env with siteEnv := insert (deleteAll env.siteEnv (fields.map Prod.snd)) b
+                                    (.basic (.tenum enumName variants))}
+        cont retTypes →
+      typecheck_stmt lenv env (.letBind b (.packVariant enumName variantName fields) cont) retTypes
+
+  -- E.V { f1: a1, ..., fn: an } = b; cont  (owned variant unpack)
+  | unpackVariant_rule : ∀ (lenv : LabelEnv) (env : TypeEnv) (variantName : Id)
+      (fields : List (Field × Site)) (b : Site)
+      (ename : Id) (variants : AssocMap Id (AssocMap Field BasicMoveType))
+      (fentries : AssocMap Field BasicMoveType) cont retTypes,
+      AssocMap.lookup env.siteEnv b = some (.basic (.tenum ename variants)) →
+      AssocMap.lookup variants variantName = some fentries →
+      (∀ (f : Field) (a : Site), (f, a) ∈ fields → AssocMap.notIn env.siteEnv a) →
+      (∀ a₁ a₂, (∃ f₁ f₂, (f₁, a₁) ∈ fields ∧ (f₂, a₂) ∈ fields ∧ f₁ ≠ f₂) → a₁ ≠ a₂) →
+      (∀ (f : Field) (a : Site), (f, a) ∈ fields → ∃ bt, AssocMap.lookup fentries f = some bt) →
+      typecheck_stmt lenv
+        {env with siteEnv := addFieldSites fentries (delete env.siteEnv b) fields}
+        cont retTypes →
+      typecheck_stmt lenv env (.unpackVariant variantName fields b cont) retTypes
+
+  -- variant_switch src [(v1, l1), ...] (terminal)
+  -- Borrows the enum for tag dispatch, then releases the borrow
+  | variantSwitch_rule : ∀ (lenv : LabelEnv) (env : TypeEnv) (src : Site)
+      (cases : List (Id × Label))
+      (ename : Id) (variants : AssocMap Id (AssocMap Field BasicMoveType))
+      (r : Aref) (bk : BorrowingKind) (retTypes : List ParamType),
+      AssocMap.lookup env.siteEnv src = some (.ref (.tenum ename variants) r bk) →
+      -- All variants are covered
+      (∀ vname, AssocMap.lookup variants vname ≠ none → ∃ label, (vname, label) ∈ cases) →
+      -- Each case label exists in lenv and target env subsumes current env minus the borrow
+      (∀ vname label, (vname, label) ∈ cases →
+         ∃ envL, AssocMap.lookup lenv label = some envL ∧
+                 TypeEnv.subsumes envL
+                   {env with siteEnv := delete env.siteEnv src
+                             pathEnv := delete_ref_node env.pathEnv r}) →
+      typecheck_stmt lenv env (.variantSwitch src cases) retTypes
+
 
 /- ---------------------------------------------------- -/
 /-       Type checking relation for functions            -/

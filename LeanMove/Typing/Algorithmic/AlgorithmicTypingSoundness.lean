@@ -831,6 +831,9 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
       · simp at h
     · simp at h
 
+  -- Variant pack (sorry stub)
+  | packVariant _enumName _variantName _fields => sorry
+
   -- Vector pack
   | vecPack T elems =>
     simp only [check_stmt] at h
@@ -1910,6 +1913,8 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
         | _ => simp [hlookup] at h
       | ref _ _ _ => simp [hlookup] at h
 
+  | unpackVariant _fields _b _cont _ih_cont => intro _; sorry
+
   | writeRef a b cont ih_cont =>
     intro h
     simp only [check_stmt] at h
@@ -2127,6 +2132,8 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
                       | _ => simp [hlookup_ref, hlookup_idx1, hlookup_idx2] at h
                     | _ => simp [hlookup_ref, hlookup_idx1, hlookup_idx2] at h
                   | _ => simp [hlookup_ref, hlookup_idx1, hlookup_idx2] at h
+
+  | variantSwitch _a _branches => intro _; sorry
 
 /- ---------------------------------------------------- -/
 /-       Function type checking soundness                -/

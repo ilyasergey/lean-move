@@ -136,6 +136,16 @@ macro "vecPushBack" "(" ref:term "," val:term ")" : term =>
 macro "vecSwap" "(" ref:term "," idx1:term "," idx2:term ")" : term =>
   `((fun cont => Stmt.vecSwap $ref $idx1 $idx2 cont : StmtBuilder))
 
+-- Enum operations
+
+-- Let binding with packVariant: letsite a ← packVariant(ename, vname, fields) (produces StmtBuilder)
+macro "letsite" a:term " ← " "packVariant" "(" ename:term "," vname:term "," fields:term ")" : term =>
+  `((fun cont => Stmt.letBind $a (Expr.packVariant $ename $vname $fields) cont : StmtBuilder))
+
+-- Unpack variant builder: unpackVariant(vname, fields, src) (produces StmtBuilder)
+macro "unpackVariant" "(" vname:term "," fields:term "," src:term ")" : term =>
+  `((fun cont => Stmt.unpackVariant $vname $fields $src cont : StmtBuilder))
+
 -- Terminal statements (no continuation needed)
 
 -- Jump: jump "label" (terminal Stmt)
@@ -149,6 +159,9 @@ macro "ret" sites:term : term => `(Stmt.ret $sites)
 
 -- Abort: abort s (terminal Stmt)
 macro "abort" s:term : term => `(Stmt.abort $s)
+
+-- Variant switch: variantSwitch src cases (terminal Stmt)
+macro "variantSwitch" src:term cases:term : term => `(Stmt.variantSwitch $src $cases)
 
 /-!
 ## Notes on macros
