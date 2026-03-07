@@ -68,6 +68,7 @@ private def hw_direct : FunDef := {
         (*ds3 ::= ds4) ;;
         (letsite ds5 ← copy var_rimm) ;;
         (letsite ds6 ← *ds5) ;;
+        release ds6 ;;
         ret []
     }
   ]
@@ -108,6 +109,7 @@ private def hw_copy_and_freeze : FunDef := {
         (*cs4 ::= cs5) ;;
         (letsite cs6 ← copy var_rimm) ;;
         (letsite cs7 ← *cs6) ;;
+        release cs7 ;;
         ret []
     }
   ]

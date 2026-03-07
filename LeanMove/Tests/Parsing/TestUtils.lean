@@ -212,7 +212,7 @@ partial def alphaExpr (l r : Expr) : AlphaM Bool :=
     if !(← matchSite s1 s2) then return false
     matchSite i1 i2
   | .vecPopBack s1, .vecPopBack s2 => matchSite s1 s2
-  | .packVariant e1 v1 fs1, .packVariant e2 v2 fs2 => do
+  | .packVariant e1 v1 _ fs1, .packVariant e2 v2 _ fs2 => do
     if e1 != e2 then return false
     if v1 != v2 then return false
     alphaFieldSites fs1 fs2

@@ -119,7 +119,7 @@ def ppExprMacro : Expr → String
   | .vecImmBorrow src idx => s!"vec_imm_borrow({ppSite src}, {ppSite idx})"
   | .vecMutBorrow src idx => s!"vec_mut_borrow({ppSite src}, {ppSite idx})"
   | .vecPopBack src => s!"vec_pop_back({ppSite src})"
-  | .packVariant ename vname fields =>
+  | .packVariant ename vname _variants fields =>
     let fs := fields.map fun (f, s) => s!"({ppField f}, {ppSite s})"
     s!"packVariant(\"{ename}\", \"{vname}\", [{", ".intercalate fs}])"
 

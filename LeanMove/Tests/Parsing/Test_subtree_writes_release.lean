@@ -121,6 +121,7 @@ private def hw_t : FunDef := {
       body :=
         -- _ = move(x) [release]
         (letsite s11 ← move var_x) ;;
+        release s11 ;;
         -- *(&mut (&mut copy(root).Tree::l).Sub1::r) = Sub2 { l: 0, r: 0 }
         (letsite s12 ← copy var_root) ;;
         (letsite s13 ← borrowMutField(s12, .trecord tree_entries, field_l)) ;;

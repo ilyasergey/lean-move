@@ -411,10 +411,12 @@ def VarEnvSubstEquiv (σ : Aref → Aref) (ve1 ve2 : VarEnv) : Prop :=
       applySubstMoveType σ τ1 = τ2 ∧ ms1 = ms2
     | some (.invalidVar, τ1, ms1), some (.invalidVar, τ2, ms2) =>
       MoveType.baseCompatible τ1 τ2 ∧ ms1 = ms2
+    | some (.invalidVar, τ1, ms1), some (.validVar, τ2, ms2) =>
+      (∃ bt, τ1 = .basic bt ∧ τ2 = .basic bt) ∧ ms1 = ms2
     | none, none => True
     | _, _ => False
 
-/-- SiteEnv entries match after applying substitution σ to the first SiteEnv's types. -/
+/-- SiteEnv entries match after applying substitution σ to the first SiteEnv's types -/
 def SiteEnvSubstEquiv (σ : Aref → Aref) (se1 se2 : SiteEnv) : Prop :=
   ∀ k, match AssocMap.lookup se1 k, AssocMap.lookup se2 k with
     | some τ1, some τ2 => applySubstMoveType σ τ1 = τ2

@@ -34,7 +34,7 @@ private def vecMixedBorrowMvir :=
 private def var_m : Var := ⟨"m"⟩
 private def var_v : Var := ⟨"v"⟩
 private def var_i : Var := ⟨"i"⟩
-private def var__ : Var := ⟨"_"⟩
+private def var_uu : Var := ⟨"_"⟩
 private def s (n : Nat) : Site := .site n
 
 -- Function: foo(m: &mut u8) { return; }
@@ -76,10 +76,11 @@ private def hw_test : FunDef := {
         -- Self.foo(move(m)) → call with result site and assign to "_"
         (letsite (s 6) ← move var_m) ;;
         Stmt.call [(s 7)] "vector_ops_mixed_borrow.foo" [(s 6)]
-          (Stmt.assign var__ (s 7)
-        -- _ = *move(i) → discard
+          (Stmt.assign var_uu (s 7)
+        -- _ = *move(i) → discard + release
         ((letsite (s 8) ← move var_i) ;;
          (letsite (s 9) ← *(s 8)) ;;
+         release (s 9) ;;
          ret []))
     }
   ]

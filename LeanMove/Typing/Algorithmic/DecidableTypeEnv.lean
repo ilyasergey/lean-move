@@ -129,6 +129,35 @@ def mkLabelEnvDec (f : FunDef) (funEnv : FunEnv := AssocMap.empty) : LabelEnvDec
   | b :: _ => AssocMap.insert AssocMap.empty b.label (mkInitEnvDec f funEnv)
   | [] => AssocMap.empty
 
+/-- VarEnv where ALL variables (params + locals) are valid.
+    Used for label envs in multi-block functions where locals may have been
+    assigned before reaching a label. -/
+def all_valid_varEnv (f : FunDef) : VarEnv :=
+  let paramEnv := f.params.foldl (fun venv (x, τ) =>
+    AssocMap.insert venv x (.validVar, τ, .mutable)) AssocMap.empty
+  f.locals.foldl (fun venv loc =>
+    AssocMap.insert venv loc.name (.validVar, loc.type, .mutable)) paramEnv
+
+/-- Initial environment with all variables valid (for label env entries
+    in multi-block functions). -/
+def mkAllValidEnvDec (f : FunDef) (funEnv : FunEnv := AssocMap.empty) : TypeEnvDec :=
+  { siteEnv := AssocMap.empty
+    varEnv := all_valid_varEnv f
+    pathEnv := init_fun_pathEnvDec f.params
+    funEnv := funEnv }
+
+/-- Construct a LabelEnvDec for a multi-block function.
+    Maps the first block to the init env (locals invalid) and all other blocks
+    to the all-valid env (locals valid). -/
+def mkLabelEnvDecAll (f : FunDef) (funEnv : FunEnv := AssocMap.empty) : LabelEnvDec :=
+  match f.blocks with
+  | [] => AssocMap.empty
+  | entry :: rest =>
+    let lenv := AssocMap.insert AssocMap.empty entry.label (mkInitEnvDec f funEnv)
+    rest.foldl (fun acc block =>
+      AssocMap.insert acc block.label (mkAllValidEnvDec f funEnv)
+    ) lenv
+
 /-- Compute the maximum .refid value from a FunDef's params and locals.
     Returns 0 if no .refid arefs are present. -/
 def maxFunDefRefId (f : FunDef) : Nat :=

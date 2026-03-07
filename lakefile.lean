@@ -45,12 +45,20 @@ lean_lib «expressivity» where
              `accepted.mutable_borrows_are_not_unique, `accepted.subtree_writes_release,
              `accepted.vec_basic_ops, `accepted.vec_borrow_sequential,
              `accepted.vec_mut_then_imm_borrow,
+             `accepted.enum_two_mutable_unpacks, `accepted.enum_double_unpack,
+             `accepted.enum_valid_ref_unpack, `accepted.enum_variant_factor,
+             `accepted.enum_match,
+             `accepted.enum_borrow_field_mutable, `accepted.enum_valid_unpack_loop,
+             `accepted.enum_factor_invalid, `accepted.enum_imm_borrow_on_mut_invalid,
+             `accepted.enum_imm_borrow_on_mut_trivial_invalid,
              `rejected.simple_dangling, `rejected.imm_borrow_after_mut_call_invalid,
              `rejected.imm_borrow_after_mut_fields_invalid,
              `rejected.mutable_borrows_are_not_unique_calls_invalid,
              `rejected.vec_dangling_borrow,
              `rejected.vec_double_borrow, `rejected.vec_mixed_borrow,
-             `rejected.vec_move_after_borrow, `rejected.vec_pop_after_borrow]
+             `rejected.vec_move_after_borrow, `rejected.vec_pop_after_borrow,
+             `rejected.enum_invalid_ref_unpack,
+             `rejected.enum_invalid_ref_unpack_loop, `rejected.enum_borrow_owned]
 
 -- Build all examples
 -- Build with: lake build examples
@@ -67,12 +75,20 @@ lean_lib «examples» where
              `expressivity.accepted.mutable_borrows_are_not_unique, `expressivity.accepted.subtree_writes_release,
              `expressivity.accepted.vec_basic_ops, `expressivity.accepted.vec_borrow_sequential,
              `expressivity.accepted.vec_mut_then_imm_borrow,
+             `expressivity.accepted.enum_two_mutable_unpacks, `expressivity.accepted.enum_double_unpack,
+             `expressivity.accepted.enum_valid_ref_unpack, `expressivity.accepted.enum_variant_factor,
+             `expressivity.accepted.enum_match,
+             `expressivity.accepted.enum_borrow_field_mutable, `expressivity.accepted.enum_valid_unpack_loop,
+             `expressivity.accepted.enum_factor_invalid, `expressivity.accepted.enum_imm_borrow_on_mut_invalid,
+             `expressivity.accepted.enum_imm_borrow_on_mut_trivial_invalid,
              `expressivity.rejected.simple_dangling, `expressivity.rejected.imm_borrow_after_mut_call_invalid,
              `expressivity.rejected.imm_borrow_after_mut_fields_invalid,
              `expressivity.rejected.mutable_borrows_are_not_unique_calls_invalid,
              `expressivity.rejected.vec_dangling_borrow,
              `expressivity.rejected.vec_double_borrow, `expressivity.rejected.vec_mixed_borrow,
-             `expressivity.rejected.vec_move_after_borrow, `expressivity.rejected.vec_pop_after_borrow]
+             `expressivity.rejected.vec_move_after_borrow, `expressivity.rejected.vec_pop_after_borrow,
+             `expressivity.rejected.enum_invalid_ref_unpack,
+             `expressivity.rejected.enum_invalid_ref_unpack_loop, `expressivity.rejected.enum_borrow_owned]
 
 -- Build target for runtime tests (small-step interpreter)
 -- Build with: lake build runtime

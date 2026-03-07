@@ -244,13 +244,13 @@ mutual
     | .record _, .tenum _ _, h => nomatch h
     | .ref _ _, .tenum _ _, h => nomatch h
     | .vec _ _, .tenum _ _, h => nomatch h
-    | .variant _ _, .tenum _ _, h => sorry
+    | .variant _ _ _, .tenum _ _, h => nomatch h
     -- variant value cases
-    | .variant _ _, .u64, h => nomatch h
-    | .variant _ _, .tbool, h => nomatch h
-    | .variant _ _, .tunit, h => nomatch h
-    | .variant _ _, .trecord _, h => nomatch h
-    | .variant _ _, .tvec _, h => nomatch h
+    | .variant _ _ _, .u64, h => nomatch h
+    | .variant _ _ _, .tbool, h => nomatch h
+    | .variant _ _ _, .tunit, h => nomatch h
+    | .variant _ _ _, .trecord _, h => nomatch h
+    | .variant _ _ _, .tvec _, h => nomatch h
   termination_by v bt _ => sizeOf v + sizeOf bt
   decreasing_by all_goals (simp_wf; rcases fentries with ⟨e⟩; simp [AssocMap.mk.sizeOf_spec]; omega)
 
@@ -993,7 +993,7 @@ theorem initState_safe (f : FunDef) (lenv : LabelEnv) (funEnv : AssocMap Id FunD
             intro s τ hlookup_s
             rw [hsiteEnv_empty s] at hlookup_s; cases hlookup_s
           rmap_live := by
-            intro r loc path hrmap_eq
+            intro r loc path _hr_tracked hrmap_eq
             obtain ⟨x, bt, bk, hmem_zip⟩ := hrmap_mem r loc path hrmap_eq
             have hcompat := ha.args_compatible x (.ref bt r bk) (.ref loc path) hmem_zip
             obtain ⟨_, _, hveq, val, hreadref, _⟩ := hcompat

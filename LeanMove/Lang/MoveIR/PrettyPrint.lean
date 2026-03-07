@@ -153,7 +153,7 @@ def ppExpr : Expr → String
   | .vecImmBorrow s idx => s!"vecImmBorrow({ppSite s}, {ppSite idx})"
   | .vecMutBorrow s idx => s!"vecMutBorrow({ppSite s}, {ppSite idx})"
   | .vecPopBack s => s!"vecPopBack({ppSite s})"
-  | .packVariant ename vname fields =>
+  | .packVariant ename vname _variants fields =>
     s!"packVariant(\"{ename}\", \"{vname}\", {ppFieldSitePairs fields})"
 
 /-- Pretty-print a statement using macro syntax.

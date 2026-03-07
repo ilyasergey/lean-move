@@ -831,8 +831,42 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
       · simp at h
     · simp at h
 
-  -- Variant pack (sorry stub)
-  | packVariant _enumName _variantName _fields => sorry
+  -- Variant pack (stub)
+  | packVariant enumName variantName variants fields =>
+    simp only [check_stmt] at h
+    split at h
+    · rename_i hcond
+      simp only [Bool.and_eq_true] at hcond
+      obtain ⟨hfresh, hdistinct⟩ := hcond
+      -- Split on foldlM result
+      split at h
+      · rename_i fentries hfold
+        -- Split on variant lookup
+        split at h
+        · rename_i expectedFentries hlookup_var
+          -- Split on equality check
+          split at h
+          · rename_i heq_fentries
+            rw [beq_iff_eq] at heq_fentries; subst heq_fentries
+            apply typecheck_stmt.let_bind_packVariant (fentries := fentries)
+            · exact hfresh
+            · exact hlookup_var
+            · -- Each field has a basic type in siteEnv and its entry in fentries
+              intro f a' hmem
+              exact foldlM_pack_sound env.siteEnv fields AssocMap.empty fentries hfold
+                (check_fields_distinct_implies_fnames_nodup fields hdistinct) hmem
+            · -- Every fentries key comes from fields
+              intro f hne
+              exact foldlM_pack_complete env.siteEnv fields AssocMap.empty fentries hfold f hne
+                (by simp [AssocMap.lookup, AssocMap.empty])
+            · exact check_fields_distinct_implies_sites_distinct fields hdistinct
+            · have hwf' := TypeEnv.deleteAll_insert_wf env (fields.map Prod.snd) a
+                (.basic (.tenum enumName variants)) hwf trivial
+              exact ih_cont _ hwf' h
+          · simp at h
+        · simp at h
+      · simp at h
+    · simp at h
 
   -- Vector pack
   | vecPack T elems =>
@@ -1475,19 +1509,35 @@ private lemma varenv_subst_equiv_bool_sound (σ : List (Aref × Aref)) (ve1 ve2 
         AssocMap.lookup_some ve1 k (isv1, τ1, ms1) hk1
       have hcond := hall1 (k, (isv1, τ1, ms1)) hmem1
       simp only [hk2, Bool.and_eq_true] at hcond
-      obtain ⟨⟨hisv_eq, hms_eq⟩, htype_cond⟩ := hcond
-      have hisv : isv1 = isv2 := beq_iff_eq.mp hisv_eq
+      obtain ⟨hms_eq, htype_cond⟩ := hcond
       have hms : ms1 = ms2 := beq_iff_eq.mp hms_eq
-      subst hisv hms
+      subst hms
       cases isv1 with
       | validVar =>
-        simp only at htype_cond
-        have htype : applySubstMoveTypeList σ τ1 = τ2 := MoveType.eq_of_beq _ _ htype_cond
-        rw [applySubstMoveTypeList_eq] at htype
-        exact ⟨htype, rfl⟩
+        cases isv2 with
+        | validVar =>
+          simp only at htype_cond
+          have htype : applySubstMoveTypeList σ τ1 = τ2 := MoveType.eq_of_beq _ _ htype_cond
+          rw [applySubstMoveTypeList_eq] at htype
+          exact ⟨htype, rfl⟩
+        | invalidVar =>
+          simp at htype_cond
       | invalidVar =>
-        simp only at htype_cond
-        exact ⟨MoveType_base_compatible_bool_sound τ1 τ2 htype_cond, rfl⟩
+        cases isv2 with
+        | invalidVar =>
+          simp only at htype_cond
+          exact ⟨MoveType_base_compatible_bool_sound τ1 τ2 htype_cond, rfl⟩
+        | validVar =>
+          -- (invalidVar, validVar) case: restricted to basic types
+          cases τ1 with
+          | basic bt1 =>
+            cases τ2 with
+            | basic bt2 =>
+              simp only at htype_cond
+              have hbt := BasicMoveType.eq_of_beq bt1 bt2 htype_cond
+              exact ⟨⟨bt1, rfl, hbt ▸ rfl⟩, rfl⟩
+            | ref => simp at htype_cond
+          | ref => simp at htype_cond
 
 /-- Soundness of siteenv_subst_equiv_bool: if it returns true, SiteEnvSubstEquiv holds. -/
 private lemma siteenv_subst_equiv_bool_sound (σ : List (Aref × Aref)) (se1 se2 : SiteEnv) :
@@ -1495,35 +1545,31 @@ private lemma siteenv_subst_equiv_bool_sound (σ : List (Aref × Aref)) (se1 se2
     SiteEnvSubstEquiv (applySubstArefList σ) se1 se2 := by
   intro h
   simp only [siteenv_subst_equiv_bool, Bool.and_eq_true, List.all_eq_true] at h
-  obtain ⟨hall1, hall2⟩ := h
+  obtain ⟨hfwd, hbwd⟩ := h
+  unfold SiteEnvSubstEquiv
   intro k
   cases hk1 : AssocMap.lookup se1 k with
   | none =>
     cases hk2 : AssocMap.lookup se2 k with
     | none => simp
     | some τ2 =>
-      exfalso
       have hmem2 : (k, τ2) ∈ se2.entries := AssocMap.lookup_some se2 k τ2 hk2
-      have := hall2 (k, τ2) hmem2
-      simp only [Option.isSome] at this
-      rw [hk1] at this
-      simp at this
+      have habs := hbwd (k, τ2) hmem2
+      simp only [hk1, Option.isSome] at habs
+      exact absurd habs (by decide)
   | some τ1 =>
+    have hmem1 : (k, τ1) ∈ se1.entries := AssocMap.lookup_some se1 k τ1 hk1
+    have hcond := hfwd (k, τ1) hmem1
+    simp only at hcond
     cases hk2 : AssocMap.lookup se2 k with
     | none =>
-      exfalso
-      have hmem1 : (k, τ1) ∈ se1.entries := AssocMap.lookup_some se1 k τ1 hk1
-      have hcond := hall1 (k, τ1) hmem1
       simp only [hk2] at hcond
-      simp at hcond
+      exact absurd hcond (by decide)
     | some τ2 =>
-      simp only
-      have hmem1 : (k, τ1) ∈ se1.entries := AssocMap.lookup_some se1 k τ1 hk1
-      have hcond := hall1 (k, τ1) hmem1
       simp only [hk2] at hcond
-      have heq : applySubstMoveTypeList σ τ1 = τ2 := MoveType.eq_of_beq _ _ hcond
-      rw [applySubstMoveTypeList_eq] at heq
-      exact heq
+      simp
+      rw [applySubstMoveTypeList_eq] at hcond
+      exact MoveType.eq_of_beq _ _ hcond
 
 /-- Helper: two nodup lists of the same length where one is a subset of the other are permutations. -/
 private lemma perm_of_nodup_nodup_subset_length_eq [DecidableEq α] (l₁ l₂ : List α)
@@ -1690,6 +1736,45 @@ private lemma generateFreshRefs_not_paramRef (env : TypeEnv) (rets : List ParamT
   obtain ⟨_, _, rfl⟩ := hr
   exact Aref.noConfusion
 
+/-- The foldlM in the ref variant unpack case preserves TypeEnv.WellFormed.
+    Each step inserts a fresh ref site and extends pathEnv, both preserving WellFormed. -/
+private lemma ref_unpack_foldlM_wellformed
+    (fields : List (Field × Site))
+    (fentries : AssocMap Field BasicMoveType)
+    (r : Aref) (bk : BorrowingKind) (envInit env' : TypeEnv)
+    (hwf : TypeEnv.WellFormed envInit)
+    (hfold : fields.foldlM (fun env_acc (f, site) =>
+      match lookup fentries f with
+      | some bt =>
+        if notIn env_acc.siteEnv site then
+          let rf := nextFreshRefInEnv env_acc
+          some {env_acc with
+            siteEnv := insert env_acc.siteEnv site (.ref bt rf bk)
+            pathEnv := update_with_extension rf r [.field f] env_acc.pathEnv}
+        else none
+      | none => none
+    ) envInit = some env') :
+    TypeEnv.WellFormed env' := by
+  induction fields generalizing envInit with
+  | nil => simp [List.foldlM] at hfold; subst hfold; exact hwf
+  | cons hd tl ih =>
+    simp only [List.foldlM] at hfold
+    obtain ⟨f, site⟩ := hd
+    cases hlf : lookup fentries f with
+    | none => simp [hlf] at hfold
+    | some bt =>
+      simp only [hlf] at hfold
+      by_cases hnotin : notIn envInit.siteEnv site
+      · simp only [hnotin, ↓reduceIte] at hfold
+        apply ih _ _ hfold
+        exact ⟨
+          update_with_extension_wellformed _ r _ _ hwf.pathEnv_wf
+            (nextFreshRefInEnv_not_root envInit),
+          SiteEnv.insert_refs_not_root _ _ _ hwf.siteEnv_wf
+            (nextFreshRefInEnv_not_root envInit),
+          hwf.varEnv_wf⟩
+      · simp [hnotin] at hfold
+
 /-- Soundness: If the algorithmic check succeeds, the relational judgment holds.
     This requires the type environment to be well-formed (pathEnv and siteEnv invariants).
 -/
@@ -1775,7 +1860,13 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
     | none => simp [hlookup] at h
     | some τ =>
       cases τ with
-      | basic _ => simp [hlookup] at h
+      | basic bt =>
+        simp only [hlookup] at h
+        let env' : TypeEnv := {env with siteEnv := delete env.siteEnv a}
+        have hsenv' := SiteEnv.delete_refs_not_root env.siteEnv a hwf.siteEnv_wf
+        have hwf' : TypeEnv.WellFormed env' := ⟨hwf.pathEnv_wf, hsenv', hwf.varEnv_wf⟩
+        apply typecheck_stmt.release_basic lenv env a bt cont retTypes hlookup
+        exact ih_cont env' hwf' h
       | ref bt r isBor =>
         simp only [hlookup] at h
         -- h : (check_stmt lenv env' cont retTypes).isSome = true
@@ -1845,7 +1936,31 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
               · simp at h
             | ref _ _ _ => simp [hlookup_a] at h
         · simp at h
-      | (.validVar, .ref _ _ _, _) => simp at h
+      | (.validVar, .ref τ_old r_old bk_old, ms) =>
+        simp only at h
+        split at h
+        · rename_i hms
+          cases hlookup_a : lookup env.siteEnv a with
+          | none => simp [hlookup_a] at h
+          | some τ' =>
+            simp only [hlookup_a] at h
+            have hr_not_root : r_old ≠ Aref.root :=
+              VarEnv.lookup_type_refs_not_root env.varEnv x .validVar (.ref τ_old r_old bk_old) ms hwf.varEnv_wf hlookup
+            have hpe' := delete_ref_node_wellformed env.pathEnv r_old hwf.pathEnv_wf hr_not_root
+            have hsenv' := SiteEnv.delete_refs_not_root env.siteEnv a hwf.siteEnv_wf
+            have hτ'_notroot := hwf.siteEnv_wf a τ' hlookup_a
+            have hvarenv' := VarEnv.update_refs_not_root env.varEnv x (.validVar, τ', ms) hwf.varEnv_wf hτ'_notroot
+            let env' : TypeEnv := {env with
+              varEnv := update env.varEnv x (.validVar, τ', ms)
+              siteEnv := delete env.siteEnv a
+              pathEnv := delete_ref_node env.pathEnv r_old}
+            have hwf' : TypeEnv.WellFormed env' := ⟨hpe', hsenv', hvarenv'⟩
+            apply typecheck_stmt.var_assign_valid_ref lenv env x a τ_old r_old bk_old τ' ms
+            · simp only [beq_iff_eq] at hms; simp only [hms, LE.le, Mut.le]
+            · exact hlookup
+            · exact hlookup_a
+            · exact ih_cont env' hwf' h
+        · simp at h
       | (.invalidVar, τ, .mutable) =>
         simp only at h
         cases hlookup_a : lookup env.siteEnv a with
@@ -1913,7 +2028,130 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
         | _ => simp [hlookup] at h
       | ref _ _ _ => simp [hlookup] at h
 
-  | unpackVariant _fields _b _cont _ih_cont => intro _; sorry
+  | unpackVariant variantName fields b cont ih_cont =>
+    intro h
+    simp only [check_stmt] at h
+    cases hlookup : lookup env.siteEnv b with
+    | none => simp [hlookup] at h
+    | some τ =>
+      cases τ with
+      | basic bt =>
+        cases bt with
+        | tenum ename variants =>
+          simp only [hlookup] at h
+          -- Owned unpack case: look up variant
+          cases hlookup_var : lookup variants variantName with
+          | none => simp [hlookup_var] at h
+          | some fentries =>
+            simp only [hlookup_var] at h
+            split at h
+            · rename_i hcond
+              simp only [Bool.and_eq_true] at hcond
+              obtain ⟨⟨hfresh, hdistinct⟩, hexist⟩ := hcond
+              apply typecheck_stmt.unpackVariant_rule lenv env variantName fields b ename variants
+                fentries cont retTypes hlookup hlookup_var
+              · -- freshness
+                intro f a hfa
+                simp only [check_unpack_fields_fresh, List.all_eq_true] at hfresh
+                exact hfresh (f, a) hfa
+              · -- distinctness
+                exact check_fields_distinct_implies_sites_distinct fields hdistinct
+              · -- fields exist in fentries
+                intro f a hfa
+                simp only [check_unpack_fields_exist, List.all_eq_true] at hexist
+                have hexist' := hexist (f, a) hfa
+                cases hlookupf : lookup fentries f with
+                | none => simp [hlookupf] at hexist'
+                | some bt' => exact ⟨bt', rfl⟩
+              · -- recursive call
+                let env' := {env with siteEnv := addFieldSites fentries (delete env.siteEnv b) fields}
+                have hsenv' : SiteEnv.RefsNotRoot env'.siteEnv :=
+                  addFieldSites_refs_not_root fentries _ fields
+                    (SiteEnv.delete_refs_not_root env.siteEnv b hwf.siteEnv_wf)
+                have hwf' : TypeEnv.WellFormed env' := ⟨hwf.pathEnv_wf, hsenv', hwf.varEnv_wf⟩
+                exact ih_cont env' hwf' h
+            · simp at h
+        | _ => simp [hlookup] at h
+      | ref bt r bk =>
+        cases bt with
+        | tenum ename variants =>
+          simp only [hlookup] at h
+          -- Ref unpack case
+          cases hlookup_var : lookup variants variantName with
+          | none => simp [hlookup_var] at h
+          | some fentries =>
+            simp only [hlookup_var] at h
+            split at h
+            · rename_i hcond
+              simp only [Bool.and_eq_true] at hcond
+              obtain ⟨⟨hfresh, hdistinct⟩, hexist⟩ := hcond
+              -- The foldlM creates the ref env
+              split at h
+              · rename_i env' hfold
+                have hfresh_prop : ∀ f a, (f, a) ∈ fields → AssocMap.notIn env.siteEnv a := by
+                  intro f a hfa
+                  simp only [check_unpack_fields_fresh, List.all_eq_true] at hfresh
+                  exact hfresh (f, a) hfa
+                have hdist_prop := check_fields_distinct_implies_sites_distinct fields hdistinct
+                have hexist_prop : ∀ f a, (f, a) ∈ fields → ∃ bt, lookup fentries f = some bt := by
+                  intro f a hfa
+                  simp only [check_unpack_fields_exist, List.all_eq_true] at hexist
+                  have hexist' := hexist (f, a) hfa
+                  cases hlookupf : lookup fentries f with
+                  | none => simp [hlookupf] at hexist'
+                  | some bt' => exact ⟨bt', rfl⟩
+                -- Prove: env' = addRefFieldSites (foldlM succeeds = foldl)
+                have henv_eq : env' = addRefFieldSites r bk fentries fields {env with siteEnv := delete env.siteEnv b} := by
+                  -- foldlM = some env' implies env' = foldl result
+                  -- Because at each step, lookup fentries f succeeds (from hexist)
+                  -- and notIn env_acc.siteEnv site holds (from hfresh + distinct + accum)
+                  suffices h : ∀ (fs : List (Field × Site)) (envI envR : TypeEnv),
+                    fs.foldlM (fun env_acc (f, site) =>
+                      match lookup fentries f with
+                      | some bt =>
+                        if notIn env_acc.siteEnv site then
+                          some {env_acc with
+                            siteEnv := insert env_acc.siteEnv site (.ref bt (nextFreshRefInEnv env_acc) bk)
+                            pathEnv := update_with_extension (nextFreshRefInEnv env_acc) r [.field f] env_acc.pathEnv}
+                        else none
+                      | none => none) envI = some envR →
+                    envR = addRefFieldSites r bk fentries fs envI by
+                    exact h fields _ _ hfold
+                  intro fs
+                  induction fs with
+                  | nil =>
+                    intro envI envR hfm
+                    simp [List.foldlM] at hfm; subst hfm; rfl
+                  | cons hd tl ih =>
+                    intro envI envR hfm
+                    obtain ⟨f, site⟩ := hd
+                    simp only [List.foldlM, bind, Option.bind] at hfm
+                    cases hlf : lookup fentries f with
+                    | none => simp [hlf] at hfm
+                    | some bt =>
+                      simp only [hlf] at hfm
+                      by_cases hnotin : notIn envI.siteEnv site
+                      · simp only [hnotin, ↓reduceIte] at hfm
+                        have ih_result := ih _ _ hfm
+                        simp [addRefFieldSites, List.foldl, hlf]
+                        exact ih_result
+                      · simp [hnotin] at hfm
+                have hwf_init : TypeEnv.WellFormed {env with siteEnv := delete env.siteEnv b} :=
+                  ⟨hwf.pathEnv_wf,
+                   SiteEnv.delete_refs_not_root env.siteEnv b hwf.siteEnv_wf,
+                   hwf.varEnv_wf⟩
+                have hwf' := ref_unpack_foldlM_wellformed fields fentries r bk _ env' hwf_init hfold
+                have hcont_typed := ih_cont env' hwf' h
+                apply typecheck_stmt.unpackVariant_ref_rule
+                · exact hlookup
+                · exact hlookup_var
+                · exact hfresh_prop
+                · exact hdist_prop
+                · exact hexist_prop
+                · exact henv_eq ▸ hcont_typed
+              · simp at h
+            · simp at h
+        | _ => simp [hlookup] at h
 
   | writeRef a b cont ih_cont =>
     intro h
@@ -2133,7 +2371,48 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
                     | _ => simp [hlookup_ref, hlookup_idx1, hlookup_idx2] at h
                   | _ => simp [hlookup_ref, hlookup_idx1, hlookup_idx2] at h
 
-  | variantSwitch _a _branches => intro _; sorry
+  | variantSwitch src cases_list =>
+    intro h
+    simp only [check_stmt] at h
+    cases hlookup : lookup env.siteEnv src with
+    | none => simp [hlookup] at h
+    | some τ =>
+      cases τ with
+      | basic _ => simp [hlookup] at h
+      | ref bt r bk =>
+        cases bt with
+        | tenum ename variants =>
+          simp only [hlookup] at h
+          split at h
+          · rename_i hcond
+            simp only [Bool.and_eq_true] at hcond
+            obtain ⟨hcoverage, hcases⟩ := hcond
+            apply typecheck_stmt.variantSwitch_rule lenv env src cases_list ename variants r bk
+              retTypes hlookup
+            · -- Coverage: all variants are covered
+              intro vname hne
+              simp only [List.all_eq_true] at hcoverage
+              -- vname is a key in variants, so (vname, _) ∈ variants.entries
+              have hsome := Option.ne_none_iff_isSome.mp hne
+              obtain ⟨fentries, hfent⟩ := Option.isSome_iff_exists.mp hsome
+              have hmem_entries := lookup_some variants vname fentries hfent
+              have hcheck := hcoverage (vname, fentries) hmem_entries
+              simp only [List.any_eq_true, beq_iff_eq] at hcheck
+              obtain ⟨⟨vname', label⟩, hmem_cases, heq⟩ := hcheck
+              simp at heq; subst heq
+              exact ⟨label, hmem_cases⟩
+            · -- Each case has a valid envL with subsumption
+              intro vname label hmem
+              simp only [List.all_eq_true] at hcases
+              have hentry := hcases (vname, label) hmem
+              simp only at hentry
+              cases hlabel : lookup lenv label with
+              | none => simp [hlabel] at hentry
+              | some envL =>
+                simp only [hlabel] at hentry
+                exact ⟨envL, rfl, subsumes_bool_implies_subsumes envL _ hwf.varEnv_wf hentry⟩
+          · simp at h
+        | _ => simp [hlookup] at h
 
 /- ---------------------------------------------------- -/
 /-       Function type checking soundness                -/

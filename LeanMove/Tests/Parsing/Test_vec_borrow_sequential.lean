@@ -85,9 +85,10 @@ private def hw_multi_imm_borrow : FunDef := {
         (letsite (s 4) ← #1) ;;
         (letsite (s 5) ← vecImmBorrow((s 3), (s 4))) ;;
         (var_r2 ::= (s 5)) ;;
-        -- _ = *move(r1) → discard (no assign)
+        -- _ = *move(r1) → discard + release
         (letsite (s 6) ← move var_r1) ;;
         (letsite (s 7) ← *(s 6)) ;;
+        release (s 7) ;;
         -- return *move(r2)
         (letsite (s 8) ← move var_r2) ;;
         (letsite (s 9) ← *(s 8)) ;;

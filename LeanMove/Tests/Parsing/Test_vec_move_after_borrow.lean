@@ -60,6 +60,7 @@ private def hw_move_after_imm : FunDef := {
         (letsite (s 5) ← vecImmBorrow((s 3), (s 4))) ;;
         (var_e_imm ::= (s 5)) ;;
         (letsite (s 6) ← move var_v) ;;
+        release (s 6) ;;
         ret []
     }
   ]
@@ -91,6 +92,7 @@ private def hw_move_after_mut : FunDef := {
         (letsite (s 5) ← vecMutBorrow((s 3), (s 4))) ;;
         (var_e_mut ::= (s 5)) ;;
         (letsite (s 6) ← move var_v) ;;
+        release (s 6) ;;
         ret []
     }
   ]

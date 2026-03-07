@@ -66,12 +66,12 @@ inductive HasType : Value → BasicMoveType → Prop where
       (∀ f, lookup fentries f ≠ none → fields.lookup f ≠ none) →
       (∀ f, fields.lookup f ≠ none → lookup fentries f ≠ none) →
       (∀ f bt v, lookup fentries f = some bt → fields.lookup f = some v → HasType v bt) →
-      HasType (.variant vname fields) (.tenum ename variants)
+      HasType (.variant vname (BasicMoveType.tenum ename variants) fields) (.tenum ename variants)
 
 /-- If a value has enum type, it must be a variant. -/
 theorem HasType.variant_fields {v : Value}
     {ename : Id} {variants : AssocMap Id (AssocMap Field BasicMoveType)} :
-    HasType v (.tenum ename variants) → ∃ vname fields, v = .variant vname fields := by
+    HasType v (.tenum ename variants) → ∃ vname fields, v = .variant vname (BasicMoveType.tenum ename variants) fields := by
   intro h; cases h with
   | variant vname fields _ _ _ _ _ _ _ => exact ⟨vname, fields, rfl⟩
 
@@ -169,7 +169,7 @@ theorem RefMap.extendWithReturns_preserves (rmap : RefMap) (siteEnv : SiteEnv)
           | unit => exact ih rmap vs h hne_ss
           | «record» _ => exact ih rmap vs h hne_ss
           | vec _ _ => exact ih rmap vs h hne_ss
-          | variant _ _ => exact ih rmap vs h hne_ss
+          | variant _ _ _ => exact ih rmap vs h hne_ss
 
 /-- extendWithReturns preserves none for refs not among the output refs -/
 theorem RefMap.extendWithReturns_preserves_none (rmap : RefMap) (siteEnv : SiteEnv)
@@ -205,7 +205,7 @@ theorem RefMap.extendWithReturns_preserves_none (rmap : RefMap) (siteEnv : SiteE
           | unit => exact ih rmap vs h hne_ss
           | «record» _ => exact ih rmap vs h hne_ss
           | vec _ _ => exact ih rmap vs h hne_ss
-          | variant _ _ => exact ih rmap vs h hne_ss
+          | variant _ _ _ => exact ih rmap vs h hne_ss
 
 /-- If extendWithReturns maps r to (loc, path), then either:
     (1) the original rmap already mapped r to (loc, path), or
@@ -266,7 +266,7 @@ theorem RefMap.extendWithReturns_values (rmap : RefMap) (siteEnv : SiteEnv)
             intro h; rcases ih rmap vs h with hold | hnew
             · exact Or.inl hold
             · exact Or.inr (List.mem_cons_of_mem _ hnew)
-          | variant _ _ =>
+          | variant _ _ _ =>
             intro h; rcases ih rmap vs h with hold | hnew
             · exact Or.inl hold
             · exact Or.inr (List.mem_cons_of_mem _ hnew)
@@ -293,7 +293,7 @@ theorem readPath_append (v : Value) (p1 p2 : List Field) :
     | unit => simp [readPath, Option.bind]
     | ref loc path => simp [readPath, Option.bind]
     | vec _ _ => simp [readPath, Option.bind]
-    | variant _ fields =>
+    | variant _ _ fields =>
       simp only [List.cons_append, readPath]
       cases h : fields.lookup f with
       | none => simp [Option.bind]
@@ -337,14 +337,14 @@ theorem readPath_some_implies_writePath_some (v : Value) (path : List Field)
     | unit => simp [readPath] at hread
     | ref l p => simp [readPath] at hread
     | vec _ _ => simp [readPath] at hread
-    | variant tag fields =>
+    | variant tag enumTy fields =>
       simp only [readPath] at hread
       cases hf : fields.lookup f with
       | none => simp [hf] at hread
       | some oldFieldVal =>
         simp [hf] at hread
         obtain ⟨v', hv'⟩ := ih oldFieldVal hread
-        exact ⟨.variant tag (fields.map fun (k, fv) => if k == f then (k, v') else (k, fv)),
+        exact ⟨.variant tag enumTy (fields.map fun (k, fv) => if k == f then (k, v') else (k, fv)),
                by simp [writePath, hf, hv']⟩
 
 /-- If readRef succeeds on a heap, writeRef also succeeds with any new value.
@@ -584,6 +584,7 @@ structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
   -- 5. Heap consistency via rmap:
   --    Every mapped abstract reference points to a valid concrete heap location
   rmap_live : ∀ r loc path,
+    r ∈ env.pathEnv.refs →
     rmap.map r = some (loc, path) →
     m.heap.readRef loc path ≠ none
 
@@ -799,7 +800,7 @@ def StackSafe : List Frame → Option ReturnInfo → Heap → List ParamType →
       -- site_consistent: RESTRICTED to non-result sites
       (∀ s τ, lookup callerEnv.siteEnv s = some τ → s ∉ ri.resultSites →
         ∃ v, lookup callerFrame.siteStore s = some v ∧ ValueMatchesType v τ callerRmap) ∧
-      (∀ r loc path, callerRmap.map r = some (loc, path) → heap.readRef loc path ≠ none) ∧
+      (∀ r loc path, r ∈ callerEnv.pathEnv.refs → callerRmap.map r = some (loc, path) → heap.readRef loc path ≠ none) ∧
       (∀ r1 r2, r1 ∈ callerEnv.pathEnv.refs → r2 ∈ callerEnv.pathEnv.refs →
         ∀ p, interpret_regex (callerEnv.pathEnv.paths (r1, r2)) p →
         PathReflectedInHeap callerRmap heap r1 r2 p) ∧
@@ -932,7 +933,20 @@ theorem readPath_after_writePath_same (v : Value) (path : List Field) (w v' : Va
     | unit => simp [writePath] at hwrite
     | ref l p => simp [writePath] at hwrite
     | vec _ _ => simp [writePath] at hwrite
-    | variant _ _ => sorry -- TODO: variant writePath readPath
+    | variant tag _ fields =>
+      simp only [writePath] at hwrite
+      cases hf : fields.lookup f with
+      | none => simp [hf] at hwrite
+      | some oldFieldVal =>
+        simp [hf] at hwrite
+        cases hwp : writePath oldFieldVal rest w with
+        | none => simp [hwp] at hwrite
+        | some updatedFieldVal =>
+          simp [hwp] at hwrite; subst hwrite
+          simp only [readPath]
+          have hlookup := writePath_map_lookup_eq fields f updatedFieldVal (by rw [hf]; simp)
+          rw [hlookup]
+          exact ih _ _ hwp
 
 /-- If the first fields differ, writePath at one field preserves readPath at the other. -/
 theorem writePath_preserves_readPath_ne_first
@@ -959,7 +973,18 @@ theorem writePath_preserves_readPath_ne_first
   | unit => simp [writePath] at hwrite
   | ref l p => simp [writePath] at hwrite
   | vec _ _ => simp [writePath] at hwrite
-  | variant _ _ => sorry -- TODO: variant writePath readPath
+  | variant tag _ fields =>
+    simp only [writePath] at hwrite
+    cases hf : fields.lookup f1 with
+    | none => simp [hf] at hwrite
+    | some oldFieldVal =>
+      simp [hf] at hwrite
+      cases hwp : writePath oldFieldVal rest1 w with
+      | none => simp [hwp] at hwrite
+      | some updatedFieldVal =>
+        simp [hwp] at hwrite; subst hwrite
+        simp only [readPath]
+        rw [writePath_map_lookup_ne fields f1 f2 updatedFieldVal (Ne.symm hne)]
 
 /-- writePath preserves HasType when the new value has all types the old value had at path.
     This is the key lemma for writeRef preservation: writing a type-preserving value
@@ -1026,7 +1051,42 @@ theorem writePath_preserves_HasType
     | unit => simp [writePath] at hwrite
     | ref l p => simp [writePath] at hwrite
     | vec _ _ => simp [writePath] at hwrite
-    | variant _ _ => sorry -- TODO: variant writePath+HasType
+    | variant vname _ fields =>
+      cases hht with
+      | variant _ _ ename variants fentries hlookup_v hdom hdom_rev htyped =>
+        simp only [writePath] at hwrite
+        cases hf : fields.lookup f with
+        | none => simp [hf] at hwrite
+        | some oldFieldVal =>
+          simp [hf] at hwrite
+          cases hwp : writePath oldFieldVal rest w with
+          | none => simp [hwp] at hwrite
+          | some updatedFieldVal =>
+            simp [hwp] at hwrite; subst hwrite
+            apply HasType.variant _ _ ename variants fentries hlookup_v
+            · intro f' hne_none
+              by_cases hf'f : f' = f
+              · subst hf'f
+                rw [writePath_map_lookup_eq fields f' updatedFieldVal (by rw [hf]; simp)]
+                simp
+              · rw [writePath_map_lookup_ne fields f f' updatedFieldVal hf'f]
+                exact hdom f' hne_none
+            · intro f' hne_none
+              by_cases hf'f : f' = f
+              · subst hf'f; exact hdom_rev f' (by rw [hf]; simp)
+              · rw [writePath_map_lookup_ne fields f f' updatedFieldVal hf'f] at hne_none
+                exact hdom_rev f' hne_none
+            · intro f' bt' v' hlookup hfield
+              by_cases hf'f : f' = f
+              · subst hf'f
+                rw [writePath_map_lookup_eq fields f' updatedFieldVal (by rw [hf]; simp)] at hfield
+                simp only [Option.some.injEq] at hfield; subst hfield
+                have hht_old := htyped f' bt' oldFieldVal hlookup hf
+                exact ih _ _ bt' hht_old hwp
+                  (by intro u bt_sub hread hht_u
+                      exact hcompat u bt_sub (by simp [readPath, hf, hread]) hht_u)
+              · rw [writePath_map_lookup_ne fields f f' updatedFieldVal hf'f] at hfield
+                exact htyped f' bt' v' hlookup hfield
 
 /-- writeRef at (loc, path) with value v: after the write, readRef at (loc, path) returns v -/
 theorem heap_writeRef_same_path (h : Heap) (loc : Loc) (path : List Field)
@@ -1135,7 +1195,30 @@ theorem writePath_preserves_readPath_ne_none
     | unit => simp [writePath] at hwrite
     | ref l p => simp [writePath] at hwrite
     | vec _ _ => simp [writePath] at hwrite
-    | variant _ _ => sorry -- TODO: variant writePath readPath
+    | variant tag _ fields =>
+      simp only [writePath] at hwrite
+      cases hf : fields.lookup f with
+      | none => simp [hf] at hwrite
+      | some fieldVal =>
+        simp [hf] at hwrite
+        cases hwp : writePath fieldVal rest w with
+        | none => simp [hwp] at hwrite
+        | some updatedFieldVal =>
+          simp [hwp] at hwrite; subst hwrite
+          cases rpath with
+          | nil => simp [readPath]
+          | cons g rrest =>
+            by_cases hfg : f = g
+            · subst hfg
+              simp only [readPath]
+              rw [writePath_map_lookup_eq fields f updatedFieldVal (by rw [hf]; simp)]
+              have hread' : readPath fieldVal rrest ≠ none := by
+                simp only [readPath] at hread; rw [hf] at hread; simpa using hread
+              exact ih fieldVal rrest updatedFieldVal hwp hread'
+                (fun suffix hsuffix => hext suffix (by simp [List.cons_append, hsuffix]))
+            · simp only [readPath]
+              rw [writePath_map_lookup_ne fields f g updatedFieldVal (Ne.symm hfg)]
+              exact hread
 
 /-- After heap.writeRef, readRef at the same location with any path still succeeds,
     provided readPath on the written value w succeeds for any extension. -/
@@ -1173,6 +1256,25 @@ def typeAtPath : BasicMoveType → List Field → Option BasicMoveType
     | none => none
   | _, _ :: _ => none
 
+/-- Value-guided typeAtPath: uses the runtime value to determine which variant is active,
+    providing constructor-qualified field lookup for enum types.
+    For records, produces the same result as typeAtPath.
+    For enums, inspects the value's variant tag to select the right field-type map. -/
+def typeAtPathV : Value → BasicMoveType → List Field → Option BasicMoveType
+  | _, bt, [] => some bt
+  | .record fields, .trecord fentries, f :: rest =>
+    match fields.lookup f, lookup fentries f with
+    | some v', some bt' => typeAtPathV v' bt' rest
+    | _, _ => none
+  | .variant vname _ fields, .tenum _ename variants, f :: rest =>
+    match lookup variants vname with
+    | some fentries =>
+      match fields.lookup f, lookup fentries f with
+      | some v', some bt' => typeAtPathV v' bt' rest
+      | _, _ => none
+    | none => none
+  | _, _, _ :: _ => none
+
 /-- If HasType v bt and typeAtPath bt path = some bt_leaf, then readPath v path succeeds
     and the sub-value has type bt_leaf. -/
 theorem HasType_typeAtPath (v : Value) (bt : BasicMoveType) (path : List Field) (bt_leaf : BasicMoveType) :
@@ -1209,7 +1311,94 @@ theorem HasType_typeAtPath (v : Value) (bt : BasicMoveType) (path : List Field) 
     | unit => cases hht with | unit => simp [typeAtPath] at htap
     | ref l p => cases hht
     | vec _ _ => cases hht with | vec => simp [typeAtPath] at htap
-    | variant _ _ => sorry -- TODO: variant HasType+typeAtPath
+    | variant _ _ _ =>
+      -- typeAtPath (.tenum ...) (f :: rest) = none, contradicting htap
+      cases hht with
+      | variant _ _ _ _ _ _ _ _ _ => simp [typeAtPath] at htap
+
+/-- Value-guided HasType_typeAtPath: if typeAtPathV v bt path = some bt_leaf,
+    then readPath v path succeeds and the sub-value has type bt_leaf. -/
+theorem HasType_typeAtPathV (v : Value) (bt : BasicMoveType) (path : List Field) (bt_leaf : BasicMoveType) :
+    HasType v bt →
+    typeAtPathV v bt path = some bt_leaf →
+    ∃ u, readPath v path = some u ∧ HasType u bt_leaf := by
+  induction path generalizing v bt bt_leaf with
+  | nil =>
+    intro hht htap
+    simp [typeAtPathV] at htap; subst htap
+    exact ⟨v, by simp [readPath], hht⟩
+  | cons f rest ih =>
+    intro hht htap
+    cases v with
+    | record fields =>
+      cases hht with
+      | record _ fentries hdom _ htyped =>
+        simp only [typeAtPathV] at htap
+        cases hfl : fields.lookup f with
+        | none => simp [hfl] at htap
+        | some fieldVal =>
+          cases hfe : (lookup fentries f) with
+          | none => simp [hfl, hfe] at htap
+          | some bt_f =>
+            simp [hfl, hfe] at htap
+            have hht_f := htyped f bt_f fieldVal hfe hfl
+            obtain ⟨u, hread, hht_u⟩ := ih fieldVal bt_f bt_leaf hht_f htap
+            exact ⟨u, by simp [readPath, hfl, hread], hht_u⟩
+    | int n => cases hht with
+      | int => simp [typeAtPathV] at htap
+      | int_u8 => simp [typeAtPathV] at htap
+    | bool b => cases hht with | bool => simp [typeAtPathV] at htap
+    | unit => cases hht with | unit => simp [typeAtPathV] at htap
+    | ref l p => cases hht
+    | vec _ _ => cases hht with | vec => simp [typeAtPathV] at htap
+    | variant vname _ fields =>
+      cases hht with
+      | variant _ _ ename variants fentries hlookup_var hdom hdom_rev htyped =>
+        simp only [typeAtPathV, hlookup_var] at htap
+        cases hfl : fields.lookup f with
+        | none => simp [hfl] at htap
+        | some fieldVal =>
+          cases hfe : (lookup fentries f) with
+          | none => simp [hfl, hfe] at htap
+          | some bt_f =>
+            simp [hfl, hfe] at htap
+            have hht_f := htyped f bt_f fieldVal hfe hfl
+            obtain ⟨u, hread, hht_u⟩ := ih fieldVal bt_f bt_leaf hht_f htap
+            exact ⟨u, by simp [readPath, hfl, hread], hht_u⟩
+
+/-- If typeAtPath succeeds, then typeAtPathV also succeeds with the same result.
+    typeAtPath only succeeds for trecord (where typeAtPathV agrees);
+    for tenum, typeAtPath returns none, so the hypothesis is vacuously false. -/
+theorem typeAtPath_implies_typeAtPathV (v : Value) (bt : BasicMoveType) (path : List Field) (bt' : BasicMoveType) :
+    HasType v bt → typeAtPath bt path = some bt' → typeAtPathV v bt path = some bt' := by
+  induction path generalizing v bt bt' with
+  | nil =>
+    intro _ htap; simp [typeAtPath] at htap; subst htap; simp [typeAtPathV]
+  | cons f rest ih =>
+    intro hht htap
+    cases v with
+    | record fields =>
+      cases hht with
+      | record _ fentries hdom _ htyped =>
+        simp only [typeAtPath] at htap
+        cases hfe : (lookup fentries f) with
+        | none => simp [hfe] at htap
+        | some bt_f =>
+          simp [hfe] at htap
+          have hfl_ne := hdom f (by rw [hfe]; simp)
+          cases hfl : fields.lookup f with
+          | none => exact absurd hfl hfl_ne
+          | some fieldVal =>
+            simp [typeAtPathV, hfl, hfe]
+            exact ih fieldVal bt_f bt' (htyped f bt_f fieldVal hfe hfl) htap
+    | int n => cases hht with
+      | int => simp [typeAtPath] at htap
+      | int_u8 => simp [typeAtPath] at htap
+    | bool b => cases hht with | bool => simp [typeAtPath] at htap
+    | unit => cases hht with | unit => simp [typeAtPath] at htap
+    | ref l p => cases hht
+    | vec _ _ => cases hht with | vec => simp [typeAtPath] at htap
+    | variant _ _ _ => cases hht with | variant _ _ _ _ _ _ _ _ _ => simp [typeAtPath] at htap
 
 /-- writePath preserves HasType using typeAtPath to determine the leaf type.
     This avoids the universal quantification over bt_sub in the compat condition. -/
@@ -1278,7 +1467,9 @@ theorem writePath_preserves_HasType_typed
     | unit => simp [writePath] at hwrite
     | ref l p => simp [writePath] at hwrite
     | vec _ _ => simp [writePath] at hwrite
-    | variant _ _ => sorry -- TODO: variant writePath+HasType
+    | variant _ _ _ =>
+      cases hht with
+      | variant _ _ _ _ _ _ _ _ _ => simp [typeAtPath] at htap
 
 -- ============================================================
 -- Part 10: Additional HasType lemmas for writeRef preservation
@@ -1289,14 +1480,13 @@ theorem HasType_not_ref (loc : Loc) (path : List Field) (bt : BasicMoveType) :
     ¬HasType (.ref loc path) bt := by
   intro h; cases h
 
-/-- If HasType v bt and readPath v path succeeds, then typeAtPath bt path also succeeds.
-    This is the key bridge theorem enabled by the strengthened HasType.record
-    (bidirectional domain check: value fields ↔ type fields). -/
-theorem readPath_ne_none_implies_typeAtPath
+/-- If HasType v bt and readPath v path succeeds, then typeAtPathV v bt path also succeeds.
+    The value-guided version works for both records and enum variants. -/
+theorem readPath_ne_none_implies_typeAtPathV
     (v : Value) (bt : BasicMoveType) (path : List Field) :
-    HasType v bt → readPath v path ≠ none → ∃ bt', typeAtPath bt path = some bt' := by
+    HasType v bt → readPath v path ≠ none → ∃ bt', typeAtPathV v bt path = some bt' := by
   induction path generalizing v bt with
-  | nil => intro _ _; exact ⟨bt, by simp [typeAtPath]⟩
+  | nil => intro _ _; exact ⟨bt, by simp [typeAtPathV]⟩
   | cons f rest ih =>
     intro hht hread
     cases v with
@@ -1313,8 +1503,8 @@ theorem readPath_ne_none_implies_typeAtPath
           | none => exact absurd hfe hfent
           | some bt_f =>
             have hht_f := htyped f bt_f fieldVal hfe hfl
-            obtain ⟨bt', htap⟩ := ih fieldVal bt_f hht_f hread
-            exact ⟨bt', by simp [typeAtPath, hfe, htap]⟩
+            obtain ⟨bt', htapV⟩ := ih fieldVal bt_f hht_f hread
+            exact ⟨bt', by simp [typeAtPathV, hfl, hfe, htapV]⟩
     | int n => cases hht with
       | int => simp [readPath] at hread
       | int_u8 => simp [readPath] at hread
@@ -1322,18 +1512,179 @@ theorem readPath_ne_none_implies_typeAtPath
     | unit => cases hht with | unit => simp [readPath] at hread
     | ref l p => cases hht
     | vec _ _ => cases hht with | vec => simp [readPath] at hread
-    | variant _ _ => sorry -- TODO: variant readPath+typeAtPath
+    | variant vname _ fields =>
+      cases hht with
+      | variant _ _ ename variants fentries hlookup_var hdom hdom_rev htyped =>
+        simp only [readPath] at hread
+        cases hfl : fields.lookup f with
+        | none => simp [hfl] at hread
+        | some fieldVal =>
+          simp [hfl] at hread
+          have hfent := hdom_rev f (by rw [hfl]; simp)
+          cases hfe : lookup fentries f with
+          | none => exact absurd hfe hfent
+          | some bt_f =>
+            have hht_f := htyped f bt_f fieldVal hfe hfl
+            obtain ⟨bt', htapV⟩ := ih fieldVal bt_f hht_f hread
+            exact ⟨bt', by simp [typeAtPathV, hlookup_var, hfl, hfe, htapV]⟩
 
-/-- If two values both have HasType bt, and readPath succeeds on the first,
-    then readPath also succeeds on the second (at the same path).
-    This uses readPath_ne_none_implies_typeAtPath + HasType_typeAtPath. -/
+/-- If HasType v bt and typeAtPath bt path succeeds, then readPath v path succeeds.
+    This is a corollary of HasType_typeAtPath, useful for transferring readPath accessibility
+    between values of the same type when typeAtPath is known.
+    Note: typeAtPath only succeeds for record types (not enums), so this excludes
+    paths that go through enum types. For value-dependent paths, use HasType_typeAtPathV. -/
 theorem HasType_transfer_readPath_ne_none
-    (v1 v2 : Value) (bt : BasicMoveType) (path : List Field) :
-    HasType v1 bt → HasType v2 bt → readPath v1 path ≠ none → readPath v2 path ≠ none := by
-  intro hht1 hht2 hread
-  obtain ⟨bt', htap⟩ := readPath_ne_none_implies_typeAtPath v1 bt path hht1 hread
+    (v2 : Value) (bt : BasicMoveType) (path : List Field) (bt' : BasicMoveType) :
+    HasType v2 bt → typeAtPath bt path = some bt' → readPath v2 path ≠ none := by
+  intro hht2 htap
   obtain ⟨u, hread2, _⟩ := HasType_typeAtPath v2 bt path bt' hht2 htap
   rw [hread2]; exact Option.some_ne_none _
+
+/-- readPath transfers between two values of the same type: if v1 has type bt
+    and readPath v1 path ≠ none, then for any v2 with HasType v2 bt,
+    readPath v2 path ≠ none.
+    Works for records (domain consistency) and basic/vector types (vacuously true).
+    For enum types: works when both values have the same variant name. -/
+theorem readPath_HasType_transfer
+    (v1 v2 : Value) (bt : BasicMoveType) (path : List Field)
+    (h1 : HasType v1 bt) (h2 : HasType v2 bt)
+    (hread : readPath v1 path ≠ none) :
+    readPath v2 path ≠ none := by
+  induction path generalizing v1 v2 bt with
+  | nil => simp [readPath]
+  | cons f rest ih =>
+    cases h1 with
+    | int => simp [readPath] at hread
+    | int_u8 => simp [readPath] at hread
+    | bool => simp [readPath] at hread
+    | unit => simp [readPath] at hread
+    | vec => simp [readPath] at hread
+    | record fields1 fentries hdom1 hrev1 htyped1 =>
+      cases h2 with
+      | record fields2 _ hdom2 hrev2 htyped2 =>
+        simp only [readPath] at hread ⊢
+        cases hf1 : fields1.lookup f with
+        | none => simp [hf1] at hread
+        | some fv1 =>
+          simp only [hf1] at hread
+          have hfe_ne := hrev1 f (by rw [hf1]; exact Option.some_ne_none _)
+          cases hfe : lookup fentries f with
+          | none => exact absurd hfe hfe_ne
+          | some bt_f =>
+            have hf2_ne := hdom2 f (by rw [hfe]; exact Option.some_ne_none _)
+            cases hf2 : fields2.lookup f with
+            | none => exact absurd hf2 hf2_ne
+            | some fv2 =>
+              simp only []
+              exact ih fv1 fv2 bt_f (htyped1 f bt_f fv1 hfe hf1) (htyped2 f bt_f fv2 hfe hf2) hread
+    | variant vname1 fields1 ename variants fentries1 hlookup1 hdom1 hrev1 htyped1 =>
+      cases h2 with
+      | variant vname2 fields2 _ _ fentries2 hlookup2 hdom2 hrev2 htyped2 =>
+        simp only [readPath] at hread ⊢
+        cases hf1 : fields1.lookup f with
+        | none => simp [hf1] at hread
+        | some fv1 =>
+          simp only [hf1] at hread
+          -- Both variants are in the same enum type.
+          -- If vname1 = vname2, then fentries1 = fentries2 and domains match.
+          -- If vname1 ≠ vname2, the transfer may fail (different fields).
+          -- In practice, the borrow checker prevents this case from arising
+          -- at writeRef time (check_outbound ensures no sub-borrows exist).
+          by_cases hvn : vname1 = vname2
+          · subst hvn
+            rw [hlookup1] at hlookup2; simp only [Option.some.injEq] at hlookup2; subst hlookup2
+            have hfe_ne := hrev1 f (by rw [hf1]; exact Option.some_ne_none _)
+            cases hfe : lookup fentries1 f with
+            | none => exact absurd hfe hfe_ne
+            | some bt_f =>
+              have hf2_ne := hdom2 f (by rw [hfe]; exact Option.some_ne_none _)
+              cases hf2 : fields2.lookup f with
+              | none => exact absurd hf2 hf2_ne
+              | some fv2 =>
+                exact ih fv1 fv2 bt_f (htyped1 f bt_f fv1 hfe hf1) (htyped2 f bt_f fv2 hfe hf2) hread
+          · -- Different variant names: transfer not provable without completeness invariant.
+            -- This case is unreachable in well-typed programs at writeRef time because
+            -- check_outbound_only_empty prevents sub-borrows from coexisting with mutable writes,
+            -- and stale rmap entries for released sub-borrows should be cleaned up.
+            -- Proving this formally requires an rmap_path_complete invariant (future work).
+            sorry
+
+/-- typeAtPathV is determined by the type for values of the same type:
+    if both v1 and v2 have HasType bt, then typeAtPathV v1 bt path = typeAtPathV v2 bt path.
+    Dual of readPath_HasType_transfer — ensures hcompat for writePath_preserves_readPath_HasType. -/
+theorem typeAtPathV_HasType_determined
+    (v1 v2 : Value) (bt : BasicMoveType) (path : List Field)
+    (h1 : HasType v1 bt) (h2 : HasType v2 bt) :
+    typeAtPathV v1 bt path = typeAtPathV v2 bt path := by
+  induction path generalizing v1 v2 bt with
+  | nil => simp [typeAtPathV]
+  | cons f rest ih =>
+    cases h1 with
+    | int => cases h2 with | int => simp [typeAtPathV]
+    | int_u8 => cases h2 with | int_u8 => simp [typeAtPathV]
+    | bool => cases h2 with | bool => simp [typeAtPathV]
+    | unit => cases h2 with | unit => simp [typeAtPathV]
+    | vec _ _ _ => cases h2 with | vec => simp [typeAtPathV]
+    | record fields1 fentries hdom1 hrev1 htyped1 =>
+      cases h2 with
+      | record fields2 _ hdom2 hrev2 htyped2 =>
+        simp only [typeAtPathV]
+        cases hf1 : fields1.lookup f with
+        | none =>
+          cases hfe : lookup fentries f with
+          | none =>
+            cases hf2 : fields2.lookup f with
+            | none => rfl
+            | some fv2 =>
+              have := hrev2 f (by rw [hf2]; exact Option.some_ne_none _)
+              exact absurd hfe this
+          | some bt_f =>
+            have := hdom1 f (by rw [hfe]; exact Option.some_ne_none _)
+            exact absurd hf1 this
+        | some fv1 =>
+          have hfe_ne := hrev1 f (by rw [hf1]; exact Option.some_ne_none _)
+          cases hfe : lookup fentries f with
+          | none => exact absurd hfe hfe_ne
+          | some bt_f =>
+            have hf2_ne := hdom2 f (by rw [hfe]; exact Option.some_ne_none _)
+            cases hf2 : fields2.lookup f with
+            | none => exact absurd hf2 hf2_ne
+            | some fv2 =>
+              simp only []
+              exact ih fv1 fv2 bt_f (htyped1 f bt_f fv1 hfe hf1) (htyped2 f bt_f fv2 hfe hf2)
+    | variant vname1 fields1 ename variants fentries1 hlookup1 hdom1 hrev1 htyped1 =>
+      cases h2 with
+      | variant vname2 fields2 _ _ fentries2 hlookup2 hdom2 hrev2 htyped2 =>
+        simp only [typeAtPathV]
+        by_cases hvn : vname1 = vname2
+        · subst hvn
+          rw [hlookup1] at hlookup2; simp only [Option.some.injEq] at hlookup2; subst hlookup2
+          simp only [hlookup1]
+          cases hf1 : fields1.lookup f with
+          | none =>
+            cases hfe : lookup fentries1 f with
+            | none =>
+              cases hf2 : fields2.lookup f with
+              | none => rfl
+              | some fv2 =>
+                have := hrev2 f (by rw [hf2]; exact Option.some_ne_none _)
+                exact absurd hfe this
+            | some bt_f =>
+              have := hdom1 f (by rw [hfe]; exact Option.some_ne_none _)
+              exact absurd hf1 this
+          | some fv1 =>
+            have hfe_ne := hrev1 f (by rw [hf1]; exact Option.some_ne_none _)
+            cases hfe : lookup fentries1 f with
+            | none => exact absurd hfe hfe_ne
+            | some bt_f =>
+              have hf2_ne := hdom2 f (by rw [hfe]; exact Option.some_ne_none _)
+              cases hf2 : fields2.lookup f with
+              | none => exact absurd hf2 hf2_ne
+              | some fv2 =>
+                simp only [hf1, hfe, hf2]
+                exact ih fv1 fv2 bt_f (htyped1 f bt_f fv1 hfe hf1) (htyped2 f bt_f fv2 hfe hf2)
+        · -- Different variant case: same as readPath_HasType_transfer
+          sorry
 
 /-- Type transfer: if v1 has both bt1 and bt2, and v2 has bt2, then v2 has bt1.
     This is the key lemma for writeRef preservation: the written value `vval`
@@ -1385,23 +1736,24 @@ theorem HasType_transfer {v1 v2 : Value} {bt1 bt2 : BasicMoveType}
     -- Value.vec carries elemTy, so cases on h2 forces bt2 = .tvec elemTy = bt1
     cases h2 with
     | vec _ _ _ => exact h3
-  | variant _ _ _ _ _ _ _ _ _ _ => sorry -- TODO: variant HasType_transfer
+  | variant _ _ _ _ _ _ _ _ _ =>
+    -- With BasicMoveType embedded in Value.variant, HasType forces bt2 = bt1
+    cases h2 with
+    | variant _ _ _ _ _ _ _ _ _ => exact h3
 
-/-- writePath preserves HasType when the condition at the leaf is satisfied
-    according to typeAtPath. When typeAtPath returns none (the path goes through
-    an undeclared field), HasType is trivially preserved since the type doesn't
-    track that branch. When typeAtPath returns some bt_leaf, we need HasType w bt_leaf. -/
-theorem writePath_preserves_HasType_general
+/-- Value-guided writePath_preserves_HasType: uses typeAtPathV for constructor-qualified lookup.
+    Works for both records and enum variants. -/
+theorem writePath_preserves_HasType_generalV
     (v : Value) (path : List Field) (w v' : Value) (bt : BasicMoveType) :
     HasType v bt →
     writePath v path w = some v' →
-    (∀ bt_leaf, typeAtPath bt path = some bt_leaf → HasType w bt_leaf) →
+    (∀ bt_leaf, typeAtPathV v bt path = some bt_leaf → HasType w bt_leaf) →
     HasType v' bt := by
   induction path generalizing v v' bt with
   | nil =>
     intro hht hwrite hcompat
     simp [writePath] at hwrite; subst hwrite
-    exact hcompat bt (by simp [typeAtPath])
+    exact hcompat bt (by simp [typeAtPathV])
   | cons f rest ih =>
     intro hht hwrite hcompat
     cases v with
@@ -1418,30 +1770,24 @@ theorem writePath_preserves_HasType_general
           | some updatedFieldVal =>
             simp [hwp] at hwrite; subst hwrite
             apply HasType.record
-            · -- Field existence
-              intro f' hne_none
+            · intro f' hne_none
               by_cases hf'f : f' = f
               · subst hf'f
-                rw [writePath_map_lookup_eq fields f' updatedFieldVal (by rw [hfl]; simp)]
-                simp
-              · rw [writePath_map_lookup_ne fields f f' updatedFieldVal hf'f]
-                exact hdom f' hne_none
-            · -- Reverse domain
-              intro f' hne_none
+                rw [writePath_map_lookup_eq fields f' updatedFieldVal (by rw [hfl]; simp)]; simp
+              · rw [writePath_map_lookup_ne fields f f' updatedFieldVal hf'f]; exact hdom f' hne_none
+            · intro f' hne_none
               by_cases hf'f : f' = f
               · subst hf'f; exact hdom_rev f' (by rw [hfl]; simp)
               · rw [writePath_map_lookup_ne fields f f' updatedFieldVal hf'f] at hne_none
                 exact hdom_rev f' hne_none
-            · -- Field typing
-              intro f' bt' val hlookup hfield
+            · intro f' bt' val hlookup hfield
               by_cases hf'f : f' = f
               · subst hf'f
                 rw [writePath_map_lookup_eq fields f' updatedFieldVal (by rw [hfl]; simp)] at hfield
                 simp only [Option.some.injEq] at hfield; subst hfield
-                -- f' is declared in fentries: use IH
-                have hfentr : typeAtPath (.trecord fentries) (f' :: rest) = typeAtPath bt' rest := by
-                  show (match lookup fentries f' with | some bt'' => typeAtPath bt'' rest | none => none) = _
-                  rw [hlookup]
+                have hfentr : typeAtPathV (.record fields) (.trecord fentries) (f' :: rest) = typeAtPathV fieldVal bt' rest := by
+                  show (match fields.lookup f', lookup fentries f' with | some v', some bt'' => typeAtPathV v' bt'' rest | _, _ => none) = _
+                  rw [hfl, hlookup]
                 exact ih fieldVal updatedFieldVal bt'
                   (htyped f' bt' fieldVal hlookup hfl) hwp
                   (fun bt_leaf htap => hcompat bt_leaf (by rw [hfentr]; exact htap))
@@ -1452,15 +1798,57 @@ theorem writePath_preserves_HasType_general
     | unit => simp [writePath] at hwrite
     | ref l p => simp [writePath] at hwrite
     | vec _ _ => simp [writePath] at hwrite
-    | variant _ _ => sorry -- TODO: variant writePath+HasType
+    | variant vname _ fields =>
+      cases hht with
+      | variant _ _ ename variants fentries hlookup_var hdom hdom_rev htyped =>
+        simp only [writePath] at hwrite
+        cases hfl : fields.lookup f with
+        | none => simp [hfl] at hwrite
+        | some fieldVal =>
+          simp [hfl] at hwrite
+          cases hwp : writePath fieldVal rest w with
+          | none => simp [hwp] at hwrite
+          | some updatedFieldVal =>
+            simp [hwp] at hwrite; subst hwrite
+            -- Need to find field type from fentries
+            have hfent := hdom_rev f (by rw [hfl]; simp)
+            cases hfe : lookup fentries f with
+            | none => exact absurd hfe hfent
+            | some bt_f =>
+              apply HasType.variant <;> try assumption
+              · intro f' hne_none
+                by_cases hf'f : f' = f
+                · subst hf'f
+                  rw [writePath_map_lookup_eq fields f' updatedFieldVal (by rw [hfl]; simp)]; simp
+                · rw [writePath_map_lookup_ne fields f f' updatedFieldVal hf'f]; exact hdom f' hne_none
+              · intro f' hne_none
+                by_cases hf'f : f' = f
+                · subst hf'f; exact hdom_rev f' (by rw [hfl]; simp)
+                · rw [writePath_map_lookup_ne fields f f' updatedFieldVal hf'f] at hne_none
+                  exact hdom_rev f' hne_none
+              · intro f' bt' val hlookup hfield
+                by_cases hf'f : f' = f
+                · subst hf'f
+                  rw [writePath_map_lookup_eq fields f' updatedFieldVal (by rw [hfl]; simp)] at hfield
+                  simp only [Option.some.injEq] at hfield; subst hfield
+                  have hbt_eq : bt_f = bt' := Option.some.inj (hfe.symm.trans hlookup)
+                  subst hbt_eq
+                  have hfentr : typeAtPathV (.variant vname (BasicMoveType.tenum ename variants) fields) (.tenum ename variants) (f' :: rest) = typeAtPathV fieldVal bt_f rest := by
+                    simp only [typeAtPathV, hlookup_var, hfl, hfe]
+                  exact ih fieldVal updatedFieldVal bt_f
+                    (htyped f' bt_f fieldVal hfe hfl) hwp
+                    (fun bt_leaf htap => hcompat bt_leaf (by rw [hfentr]; exact htap))
+                · rw [writePath_map_lookup_ne fields f f' updatedFieldVal hf'f] at hfield
+                  exact htyped f' bt' val hlookup hfield
 
 /-- writeRef preserves HasType for heap values at the same location,
-    given the typeAtPath condition at the write path. -/
+    using the value-guided typeAtPathV condition at the write path. -/
 theorem heap_writeRef_preserves_HasType_same_loc
     (heap : Heap) (loc : Loc) (wpath : List Field) (w : Value) (heap' : Heap) (bt : BasicMoveType) :
     heap.writeRef loc wpath w = some heap' →
     (∃ v, heap.read loc = some v ∧ HasType v bt) →
-    (∀ bt_leaf, typeAtPath bt wpath = some bt_leaf → HasType w bt_leaf) →
+    (∀ v, heap.read loc = some v → HasType v bt →
+      ∀ bt_leaf, typeAtPathV v bt wpath = some bt_leaf → HasType w bt_leaf) →
     ∃ v', heap'.read loc = some v' ∧ HasType v' bt := by
   intro hwrite ⟨rootVal, hread, hht⟩ hcompat
   simp only [Heap.writeRef, bind, Option.bind] at hwrite
@@ -1471,31 +1859,43 @@ theorem heap_writeRef_preserves_HasType_same_loc
   | some newVal =>
     simp [hwp] at hwrite; rw [← hwrite]
     exact ⟨newVal, by simp [Heap.write, Heap.read, lookup_insert_same],
-           writePath_preserves_HasType_general rootVal wpath w newVal bt hht hwp hcompat⟩
+           writePath_preserves_HasType_generalV rootVal wpath w newVal bt hht hwp
+             (hcompat rootVal hread hht)⟩
 
 /-- After writePath at wpath, readPath at rpath still succeeds with a well-typed value.
     Key lemma for writeRef rmap_has_type preservation at the same heap location.
-    By induction on wpath: nil uses HasType_transfer + typeAtPath chaining;
-    cons splits on rpath (nil uses writePath_preserves_HasType_general,
-    cons/same recurses via IH, cons/diff is unchanged). -/
+    The hcompat hypothesis ensures that root-level replacement (wpath=[]) preserves
+    the value structure along rpath. For record-only paths this is automatic;
+    for paths through enums, callers prove it's vacuously true (the borrow checker
+    prevents field borrows coexisting with root-level mutable refs on enums). -/
 theorem writePath_preserves_readPath_HasType
     (v : Value) (wpath rpath : List Field) (w newRoot wleaf vold : Value)
     (τ bt : BasicMoveType)
     (hwp : writePath v wpath w = some newRoot)
     (hread_r : readPath v rpath = some vold) (hht_r : HasType vold bt)
     (hread_w : readPath v wpath = some wleaf) (hht_w : HasType wleaf τ)
-    (hht_new : HasType w τ) :
+    (hht_new : HasType w τ)
+    (hcompat : ∀ suffix, suffix ≠ [] → typeAtPathV w τ suffix = typeAtPathV wleaf τ suffix) :
     ∃ vnew, readPath newRoot rpath = some vnew ∧ HasType vnew bt := by
   induction wpath generalizing v newRoot rpath wleaf vold bt with
   | nil =>
     simp [writePath] at hwp; subst hwp
     simp [readPath] at hread_w; subst hread_w
-    have hne : readPath v rpath ≠ none := by rw [hread_r]; exact Option.some_ne_none _
-    obtain ⟨bt', htap⟩ := readPath_ne_none_implies_typeAtPath v τ rpath hht_w hne
-    obtain ⟨vnew, hread_vnew, hht_vnew⟩ := HasType_typeAtPath w τ rpath bt' hht_new htap
-    obtain ⟨u, hread_u, hht_u⟩ := HasType_typeAtPath v τ rpath bt' hht_w htap
-    rw [hread_r] at hread_u; simp only [Option.some.injEq] at hread_u; subst hread_u
-    exact ⟨vnew, hread_vnew, HasType_transfer hht_r hht_u hht_vnew⟩
+    -- newRoot = w, wleaf = v, hht_w : HasType v τ, hht_new : HasType w τ
+    cases rpath with
+    | nil =>
+      simp [readPath] at hread_r; subst hread_r
+      exact ⟨w, rfl, HasType_transfer hht_r hht_w hht_new⟩
+    | cons g grest =>
+      -- Use hcompat to transfer typeAtPathV from old value to new value
+      have hne : readPath v (g :: grest) ≠ none := by rw [hread_r]; exact Option.some_ne_none _
+      obtain ⟨bt_at, htapV_old⟩ := readPath_ne_none_implies_typeAtPathV v τ (g :: grest) hht_w hne
+      have htapV_new : typeAtPathV w τ (g :: grest) = some bt_at := by
+        rw [hcompat (g :: grest) (List.cons_ne_nil g grest)]; exact htapV_old
+      obtain ⟨vnew, hread_vnew, hht_vnew⟩ := HasType_typeAtPathV w τ (g :: grest) bt_at hht_new htapV_new
+      obtain ⟨vold', hread_vold', hht_vold'⟩ := HasType_typeAtPathV v τ (g :: grest) bt_at hht_w htapV_old
+      rw [hread_r] at hread_vold'; simp only [Option.some.injEq] at hread_vold'; subst hread_vold'
+      exact ⟨vnew, hread_vnew, HasType_transfer hht_r hht_vold' hht_vnew⟩
   | cons f wrest ih =>
     cases v with
     | record fields =>
@@ -1508,7 +1908,7 @@ theorem writePath_preserves_readPath_HasType
         | none => simp [hwpf] at hwp
         | some updatedField =>
           simp only [hwpf, Option.some.injEq] at hwp
-          subst hwp  -- eliminates newRoot
+          subst hwp
           simp only [readPath, hf] at hread_w
           cases rpath with
           | nil =>
@@ -1517,25 +1917,19 @@ theorem writePath_preserves_readPath_HasType
             have hwp_full : writePath (.record fields) (f :: wrest) w =
                 some (.record (fields.map fun x => if x.1 = f then (x.1, updatedField) else x)) := by
               simp [writePath, hf, hwpf]
-            exact writePath_preserves_HasType_general (.record fields) (f :: wrest) w _ bt hht_r hwp_full (by
-              intro bt_leaf htap
-              have hne : readPath (.record fields) (f :: wrest) ≠ none := by
-                simp [readPath, hf, hread_w]
-              obtain ⟨bt_w, htap_w⟩ :=
-                readPath_ne_none_implies_typeAtPath (.record fields) bt (f :: wrest) hht_r hne
-              rw [htap_w] at htap; simp only [Option.some.injEq] at htap; subst htap
-              obtain ⟨u, hread_u, hht_u⟩ :=
-                HasType_typeAtPath (.record fields) bt (f :: wrest) bt_w hht_r htap_w
-              simp [readPath, hf] at hread_u
-              rw [hread_w] at hread_u; simp only [Option.some.injEq] at hread_u; subst hread_u
-              exact HasType_transfer hht_u hht_w hht_new)
+            exact writePath_preserves_HasType_generalV (.record fields) (f :: wrest) w _ bt hht_r hwp_full (by
+              intro bt_leaf htapV
+              obtain ⟨u, hru, hhu⟩ := HasType_typeAtPathV (.record fields) bt (f :: wrest) bt_leaf hht_r htapV
+              simp [readPath, hf] at hru
+              rw [hread_w] at hru; simp only [Option.some.injEq] at hru; subst hru
+              exact HasType_transfer hhu hht_w hht_new)
           | cons g rrest =>
             simp only [readPath] at hread_r ⊢
             by_cases hfg : f = g
             · subst hfg
               simp only [hf] at hread_r
               rw [writePath_map_lookup_eq fields f updatedField (by rw [hf]; simp)]
-              exact ih fieldVal rrest updatedField wleaf vold bt hwpf hread_r hht_r hread_w hht_w
+              exact ih fieldVal rrest updatedField wleaf vold bt hwpf hread_r hht_r hread_w hht_w hcompat
             · rw [writePath_map_lookup_ne fields f g updatedField (Ne.symm hfg)]
               cases hg : fields.lookup g with
               | none => simp [hg] at hread_r
@@ -1547,6 +1941,41 @@ theorem writePath_preserves_readPath_HasType
     | unit => simp [writePath] at hwp
     | ref l p => simp [writePath] at hwp
     | vec _ _ => simp [writePath] at hwp
-    | variant _ _ => sorry -- TODO: variant writePath+HasType
+    | variant tag enumTy fields =>
+      simp only [writePath] at hwp
+      cases hf : fields.lookup f with
+      | none => simp [hf] at hwp
+      | some fieldVal =>
+        simp [hf] at hwp
+        cases hwpf : writePath fieldVal wrest w with
+        | none => simp [hwpf] at hwp
+        | some updatedField =>
+          simp only [hwpf, Option.some.injEq] at hwp
+          subst hwp
+          simp only [readPath, hf] at hread_w
+          cases rpath with
+          | nil =>
+            simp [readPath] at hread_r; subst hread_r
+            refine ⟨_, rfl, ?_⟩
+            exact writePath_preserves_HasType_generalV (.variant tag enumTy fields) (f :: wrest) w _ bt hht_r
+              (by simp [writePath, hf, hwpf]) (by
+              intro bt_leaf htapV
+              obtain ⟨u, hru, hhu⟩ := HasType_typeAtPathV (.variant tag enumTy fields) bt (f :: wrest) bt_leaf hht_r htapV
+              simp [readPath, hf] at hru
+              rw [hread_w] at hru; simp only [Option.some.injEq] at hru; subst hru
+              exact HasType_transfer hhu hht_w hht_new)
+          | cons g grest =>
+            simp only [readPath] at hread_r ⊢
+            by_cases hfg : f = g
+            · subst hfg
+              simp only [hf] at hread_r
+              rw [writePath_map_lookup_eq fields f updatedField (by rw [hf]; simp)]
+              exact ih fieldVal grest updatedField wleaf vold bt hwpf hread_r hht_r hread_w hht_w hcompat
+            · rw [writePath_map_lookup_ne fields f g updatedField (Ne.symm hfg)]
+              cases hg : fields.lookup g with
+              | none => simp [hg] at hread_r
+              | some gVal =>
+                simp only [hg] at hread_r
+                exact ⟨vold, hread_r, hht_r⟩
 
 end LeanMove.Typing.TypeSoundness

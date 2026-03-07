@@ -35,12 +35,15 @@ private def var_inner : Var := ⟨"inner"⟩
 private def var_copier : Var := ⟨"copier"⟩
 private def s (n : Nat) : Site := .site n
 
-private def threesType : BasicMoveType :=
-  .tenum "Threes" (AssocMap.mk [
+private def threesVariants : AssocMap Id (AssocMap Field BasicMoveType) :=
+  AssocMap.mk [
     ("Three", AssocMap.mk [(⟨"pos0"⟩, .u64)]),
     ("Two",   AssocMap.mk []),
     ("One",   AssocMap.mk [(⟨"pos0"⟩, .u64)])
-  ])
+  ]
+
+private def threesType : BasicMoveType :=
+  .tenum "Threes" threesVariants
 
 private def hw_t0 : FunDef := {
   params := []
@@ -55,7 +58,7 @@ private def hw_t0 : FunDef := {
     { label := "b0"
       body :=
         (letsite (s 0) ← #0) ;;
-        (letsite (s 1) ← packVariant("Threes", "Three", [(⟨"pos0"⟩, (s 0))])) ;;
+        (letsite (s 1) ← packVariant("Threes", "Three", threesVariants, [(⟨"pos0"⟩, (s 0))])) ;;
         (var_loc1 ::= (s 1)) ;;
         (fun cont => Stmt.letBind (s 2) (Expr.usage (Usage.borrowImm var_loc1)) cont) ;;
         Stmt.variantSwitch (s 2) [("One", "b1"), ("Two", "b2"), ("Three", "b3")]

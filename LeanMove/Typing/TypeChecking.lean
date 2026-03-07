@@ -104,6 +104,22 @@ def addFieldSites (fentries : AssocMap Field BasicMoveType) (se : AssocMap Site 
     | some bt => insert acc fa.2 (.basic bt)
     | none => acc) se fields
 
+-- Helper for variant ref unpack: adds ref field sites with fresh arefs
+-- For each (f, site) in fields, looks up f's type in fentries, creates a fresh ref,
+-- and inserts a borrow site while extending the pathEnv.
+def addRefFieldSites (r : Aref) (bk : BorrowingKind)
+    (fentries : AssocMap Field BasicMoveType)
+    (fields : List (Field × Site)) (env : TypeEnv) : TypeEnv :=
+  fields.foldl (fun env' (f_s : Field × Site) =>
+    let (f, site) := f_s
+    match lookup fentries f with
+    | some bt =>
+      let rf := nextFreshRefInEnv env'
+      {env' with
+        siteEnv := insert env'.siteEnv site (.ref bt rf bk)
+        pathEnv := update_with_extension rf r [.field f] env'.pathEnv}
+    | none => env') env
+
 -- Helper for vecUnpack: adds basic T sites for each element
 def addVecSites (T : BasicMoveType) (se : AssocMap Site MoveType) : List Site → AssocMap Site MoveType
   | [] => se
@@ -525,6 +541,20 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
         cont retTypes →
       typecheck_stmt lenv env (.assign x a cont) retTypes
 
+  -- x = a; cont // x is a valid var with ref type (reassign releases old borrow)
+  | var_assign_valid_ref : ∀ (lenv : LabelEnv) (env : TypeEnv) x a
+      (τ_old : BasicMoveType) (r_old : Aref) (bk_old : BorrowingKind) (τ' : MoveType) (ms : Mut)
+      cont retTypes,
+      LE.le .mutable ms →
+      lookup env.varEnv x = some (.validVar, .ref τ_old r_old bk_old, ms) →
+      lookup env.siteEnv a = some τ' →
+      typecheck_stmt lenv
+        {env with varEnv := update env.varEnv x (.validVar, τ', ms)
+                  siteEnv := delete env.siteEnv a
+                  pathEnv := delete_ref_node env.pathEnv r_old}
+        cont retTypes →
+      typecheck_stmt lenv env (.assign x a cont) retTypes
+
   -- x = a; cont // x is an invalid variable
   | var_assign_invalid : ∀ (lenv : LabelEnv) (env : TypeEnv) x a τ τ' cont retTypes,
       AssocMap.lookup env.varEnv x = some (.invalidVar, τ, .mutable) →
@@ -532,6 +562,18 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
       MoveType.compatible τ τ' →
       typecheck_stmt lenv
         {env with varEnv := update env.varEnv x (.validVar, τ', .mutable)
+                  siteEnv := delete env.siteEnv a}
+        cont retTypes →
+      typecheck_stmt lenv env (.assign x a cont) retTypes
+
+  -- x = a; cont // x has basic type (any IsValid status), simplified continuation
+  -- This rule is sound because basic values have no resources to release on overwrite.
+  | var_assign_overwrite_basic : ∀ (lenv : LabelEnv) (env : TypeEnv) x a
+      (isv : IsValid) (τ : BasicMoveType) cont retTypes,
+      AssocMap.lookup env.varEnv x = some (isv, .basic τ, .mutable) →
+      AssocMap.lookup env.siteEnv a = some (.basic τ) →
+      typecheck_stmt lenv
+        {env with varEnv := update env.varEnv x (.validVar, .basic τ, .mutable)
                   siteEnv := delete env.siteEnv a}
         cont retTypes →
       typecheck_stmt lenv env (.assign x a cont) retTypes
@@ -561,12 +603,20 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
         cont retTypes →
       typecheck_stmt lenv env (.call as fnName bs cont) retTypes
 
-  -- release(a); cont
+  -- release(a); cont — for ref sites (deletes ref from pathEnv)
   | release : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) (τ : BasicMoveType) (r : Aref) isBor cont retTypes,
       AssocMap.lookup env.siteEnv a = some (.ref τ r isBor) →
       typecheck_stmt lenv
         {env with siteEnv := delete env.siteEnv a
                   pathEnv := delete_ref_node env.pathEnv r}
+        cont retTypes →
+      typecheck_stmt lenv env (.release a cont) retTypes
+
+  -- release(a); cont — for basic sites (just removes from siteEnv)
+  | release_basic : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) (bt : BasicMoveType) cont retTypes,
+      AssocMap.lookup env.siteEnv a = some (.basic bt) →
+      typecheck_stmt lenv
+        {env with siteEnv := delete env.siteEnv a}
         cont retTypes →
       typecheck_stmt lenv env (.release a cont) retTypes
 
@@ -704,7 +754,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
         {env with siteEnv := insert (deleteAll env.siteEnv (fields.map Prod.snd)) b
                                     (.basic (.tenum enumName variants))}
         cont retTypes →
-      typecheck_stmt lenv env (.letBind b (.packVariant enumName variantName fields) cont) retTypes
+      typecheck_stmt lenv env (.letBind b (.packVariant enumName variantName variants fields) cont) retTypes
 
   -- E.V { f1: a1, ..., fn: an } = b; cont  (owned variant unpack)
   | unpackVariant_rule : ∀ (lenv : LabelEnv) (env : TypeEnv) (variantName : Id)
@@ -718,6 +768,23 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
       (∀ (f : Field) (a : Site), (f, a) ∈ fields → ∃ bt, AssocMap.lookup fentries f = some bt) →
       typecheck_stmt lenv
         {env with siteEnv := addFieldSites fentries (delete env.siteEnv b) fields}
+        cont retTypes →
+      typecheck_stmt lenv env (.unpackVariant variantName fields b cont) retTypes
+
+  -- &[mut] E.V { f1: a1, ..., fn: an } = b; cont  (ref variant unpack)
+  -- Creates borrows for each field of the variant
+  | unpackVariant_ref_rule : ∀ (lenv : LabelEnv) (env : TypeEnv) (variantName : Id)
+      (fields : List (Field × Site)) (b : Site)
+      (ename : Id) (variants : AssocMap Id (AssocMap Field BasicMoveType))
+      (fentries : AssocMap Field BasicMoveType) (r : Aref) (bk : BorrowingKind)
+      cont retTypes,
+      AssocMap.lookup env.siteEnv b = some (.ref (.tenum ename variants) r bk) →
+      AssocMap.lookup variants variantName = some fentries →
+      (∀ (f : Field) (a : Site), (f, a) ∈ fields → AssocMap.notIn env.siteEnv a) →
+      (∀ a₁ a₂, (∃ f₁ f₂, (f₁, a₁) ∈ fields ∧ (f₂, a₂) ∈ fields ∧ f₁ ≠ f₂) → a₁ ≠ a₂) →
+      (∀ (f : Field) (a : Site), (f, a) ∈ fields → ∃ bt, AssocMap.lookup fentries f = some bt) →
+      typecheck_stmt lenv
+        (addRefFieldSites r bk fentries fields {env with siteEnv := delete env.siteEnv b})
         cont retTypes →
       typecheck_stmt lenv env (.unpackVariant variantName fields b cont) retTypes
 

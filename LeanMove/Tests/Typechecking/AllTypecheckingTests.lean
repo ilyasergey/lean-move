@@ -27,6 +27,16 @@ import LeanMove.Tests.Typechecking.expressivity.accepted.subtree_writes_release
 import LeanMove.Tests.Typechecking.expressivity.accepted.vec_basic_ops
 import LeanMove.Tests.Typechecking.expressivity.accepted.vec_borrow_sequential
 import LeanMove.Tests.Typechecking.expressivity.accepted.vec_mut_then_imm_borrow
+import LeanMove.Tests.Typechecking.expressivity.accepted.enum_two_mutable_unpacks
+import LeanMove.Tests.Typechecking.expressivity.accepted.enum_double_unpack
+import LeanMove.Tests.Typechecking.expressivity.accepted.enum_valid_ref_unpack
+import LeanMove.Tests.Typechecking.expressivity.accepted.enum_variant_factor
+import LeanMove.Tests.Typechecking.expressivity.accepted.enum_match
+import LeanMove.Tests.Typechecking.expressivity.accepted.enum_borrow_field_mutable
+import LeanMove.Tests.Typechecking.expressivity.accepted.enum_valid_unpack_loop
+import LeanMove.Tests.Typechecking.expressivity.accepted.enum_factor_invalid
+import LeanMove.Tests.Typechecking.expressivity.accepted.enum_imm_borrow_on_mut_invalid
+import LeanMove.Tests.Typechecking.expressivity.accepted.enum_imm_borrow_on_mut_trivial_invalid
 
 -- Expressivity tests (rejected)
 import LeanMove.Tests.Typechecking.expressivity.rejected.simple_dangling
@@ -38,6 +48,9 @@ import LeanMove.Tests.Typechecking.expressivity.rejected.vec_double_borrow
 import LeanMove.Tests.Typechecking.expressivity.rejected.vec_mixed_borrow
 import LeanMove.Tests.Typechecking.expressivity.rejected.vec_move_after_borrow
 import LeanMove.Tests.Typechecking.expressivity.rejected.vec_pop_after_borrow
+import LeanMove.Tests.Typechecking.expressivity.rejected.enum_invalid_ref_unpack
+import LeanMove.Tests.Typechecking.expressivity.rejected.enum_invalid_ref_unpack_loop
+import LeanMove.Tests.Typechecking.expressivity.rejected.enum_borrow_owned
 
 /-! ## All Typechecking Tests
 

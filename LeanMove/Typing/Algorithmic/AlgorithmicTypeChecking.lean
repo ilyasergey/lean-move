@@ -124,14 +124,19 @@ def varenv_subst_equiv_bool (σ : List (Aref × Aref)) (ve1 ve2 : VarEnv) : Bool
   ve1.entries.all (fun (x, (isv1, τ1, ms1)) =>
     match lookup ve2 x with
     | some (isv2, τ2, ms2) =>
-      isv1 == isv2 && ms1 == ms2 &&
-      match isv1 with
-      | .validVar => applySubstMoveTypeList σ τ1 == τ2
-      | .invalidVar => MoveType.base_compatible_bool τ1 τ2
+      ms1 == ms2 &&
+      match isv1, isv2 with
+      | .validVar, .validVar => applySubstMoveTypeList σ τ1 == τ2
+      | .invalidVar, .invalidVar => MoveType.base_compatible_bool τ1 τ2
+      | .invalidVar, .validVar =>
+        match τ1, τ2 with
+        | .basic bt1, .basic bt2 => bt1.beq bt2
+        | _, _ => false
+      | .validVar, .invalidVar => false
     | none => false) &&
   ve2.entries.all (fun (x, _) => (lookup ve1 x).isSome)
 
-/-- Boolean check for SiteEnvSubstEquiv: site types match after σ-renaming. -/
+/-- Boolean check for SiteEnvSubstEquiv: site types match after σ-renaming -/
 def siteenv_subst_equiv_bool (σ : List (Aref × Aref)) (se1 se2 : SiteEnv) : Bool :=
   se1.entries.all (fun (k, τ1) =>
     match lookup se2 k with
@@ -543,21 +548,24 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
         | none => none
       else none
 
-    | .packVariant enumName variantName fields =>
+    | .packVariant enumName variantName variants fields =>
       if notIn env.siteEnv a && check_fields_distinct fields then
-        -- Need to determine the full enum type from the field types
-        -- For now, collect field types like pack, then wrap in tenum
+        -- Collect field types and verify they match the variant's field entries
         let fentries_opt := fields.foldlM (fun acc (f, site) =>
           match lookup env.siteEnv site with
           | some (.basic bt) => some (insert acc f bt)
           | _ => none) AssocMap.empty
         match fentries_opt with
         | some fentries =>
-          -- Build a single-variant enum type (the full variants map would need global info)
-          let variants := insert AssocMap.empty variantName fentries
-          let env' := {env with siteEnv := insert (deleteAll env.siteEnv (fields.map Prod.snd)) a
-                                                  (.basic (.tenum enumName variants))}
-          check_stmt lenv env' cont retTypes
+          -- Verify the variant exists in the full enum type and field types match
+          match lookup variants variantName with
+          | some expectedFentries =>
+            if fentries == expectedFentries then
+              let env' := {env with siteEnv := insert (deleteAll env.siteEnv (fields.map Prod.snd)) a
+                                                      (.basic (.tenum enumName variants))}
+              check_stmt lenv env' cont retTypes
+            else none
+          | none => none
         | none => none
       else none
 
@@ -647,6 +655,16 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
           else none
         | _ => none
       else none
+    | some (.validVar, .ref _τ_old r_old _bk_old, ms) =>
+      if ms == .mutable then
+        match lookup env.siteEnv a with
+        | some τ' =>
+          let env' := {env with varEnv := update env.varEnv x (.validVar, τ', ms)
+                                siteEnv := delete env.siteEnv a
+                                pathEnv := delete_ref_node env.pathEnv r_old}
+          check_stmt lenv env' cont retTypes
+        | none => none
+      else none
     | some (.invalidVar, τ, .mutable) =>
       match lookup env.siteEnv a with
       | some τ' =>
@@ -680,6 +698,9 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
     | some (.ref _ r _) =>
       let env' := {env with siteEnv := delete env.siteEnv a
                             pathEnv := delete_ref_node env.pathEnv r}
+      check_stmt lenv env' cont retTypes
+    | some (.basic _) =>
+      let env' := {env with siteEnv := delete env.siteEnv a}
       check_stmt lenv env' cont retTypes
     | _ => none
 
@@ -725,9 +746,10 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
       else none
     | _, _, _ => none
 
-  -- Enum: owned variant unpack
+  -- Enum: variant unpack (owned or ref)
   | .unpackVariant variantName fields b cont =>
     match lookup env.siteEnv b with
+    -- Owned unpack: source has basic enum type
     | some (.basic (.tenum _ename variants)) =>
       match lookup variants variantName with
       | some fentries =>
@@ -738,18 +760,45 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
           check_stmt lenv env' cont retTypes
         else none
       | none => none
+    -- Ref unpack: source has ref to enum type (creates borrows for each field)
+    | some (.ref (.tenum _ename variants) r bk) =>
+      match lookup variants variantName with
+      | some fentries =>
+        if check_unpack_fields_fresh env.siteEnv fields &&
+           check_fields_distinct fields &&
+           check_unpack_fields_exist fields fentries then
+          -- For each field, allocate a fresh ref and create a borrow
+          let envInit := {env with siteEnv := delete env.siteEnv b}
+          match fields.foldlM (fun env' (f, site) =>
+            match lookup fentries f with
+            | some bt =>
+              if notIn env'.siteEnv site then
+                let rf := nextFreshRefInEnv env'
+                some {env' with
+                  siteEnv := insert env'.siteEnv site (.ref bt rf bk)
+                  pathEnv := update_with_extension rf r [.field f] env'.pathEnv}
+              else none
+            | none => none
+          ) envInit with
+          | some env' => check_stmt lenv env' cont retTypes
+          | none => none
+        else none
+      | none => none
     | _ => none
 
   -- Enum: variant switch (terminal)
   | .variantSwitch src cases =>
     match lookup env.siteEnv src with
-    | some (.ref (.tenum _ename _variants) r _bk) =>
-      let env' := {env with siteEnv := delete env.siteEnv src
-                            pathEnv := delete_ref_node env.pathEnv r}
-      if cases.all (fun (_, label) =>
-        match lookup lenv label with
-        | some envL => TypeEnv.subsumes_bool envL env'
-        | none => false) then some env
+    | some (.ref (.tenum _ename variants) r _bk) =>
+      -- Check coverage (every variant has a matching case) AND each case label is valid
+      if variants.entries.all (fun (vname, _) =>
+           cases.any (fun (vname', _) => vname == vname')) &&
+         cases.all (fun (_, label) =>
+           match lookup lenv label with
+           | some envL => TypeEnv.subsumes_bool envL
+               {env with siteEnv := delete env.siteEnv src
+                         pathEnv := delete_ref_node env.pathEnv r}
+           | none => false) then some env
       else none
     | _ => none
 

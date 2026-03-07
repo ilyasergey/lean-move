@@ -79,7 +79,7 @@ macro "*" a:term:max " ::= " b:term:21 : term =>
   `((fun cont => Stmt.writeRef $a $b cont : StmtBuilder))
 
 -- Release builder: release s (produces StmtBuilder)
-macro "release" s:term : term =>
+macro "release" s:term:max : term =>
   `((fun cont => Stmt.release $s cont : StmtBuilder))
 
 -- Pack struct builder: letsite s ← pack("T", [(f, a)]) (produces StmtBuilder)
@@ -136,11 +136,15 @@ macro "vecPushBack" "(" ref:term "," val:term ")" : term =>
 macro "vecSwap" "(" ref:term "," idx1:term "," idx2:term ")" : term =>
   `((fun cont => Stmt.vecSwap $ref $idx1 $idx2 cont : StmtBuilder))
 
+-- Binop: letsite a ← binop(op, b, c) (produces StmtBuilder)
+macro "letsite" a:term " ← " "binop" "(" op:term "," b:term "," c:term ")" : term =>
+  `((fun cont => Stmt.letBind $a (Expr.binop $op $b $c) cont : StmtBuilder))
+
 -- Enum operations
 
--- Let binding with packVariant: letsite a ← packVariant(ename, vname, fields) (produces StmtBuilder)
-macro "letsite" a:term " ← " "packVariant" "(" ename:term "," vname:term "," fields:term ")" : term =>
-  `((fun cont => Stmt.letBind $a (Expr.packVariant $ename $vname $fields) cont : StmtBuilder))
+-- Let binding with packVariant: letsite a ← packVariant(ename, vname, variants, fields) (produces StmtBuilder)
+macro "letsite" a:term " ← " "packVariant" "(" ename:term "," vname:term "," variants:term "," fields:term ")" : term =>
+  `((fun cont => Stmt.letBind $a (Expr.packVariant $ename $vname $variants $fields) cont : StmtBuilder))
 
 -- Unpack variant builder: unpackVariant(vname, fields, src) (produces StmtBuilder)
 macro "unpackVariant" "(" vname:term "," fields:term "," src:term ")" : term =>

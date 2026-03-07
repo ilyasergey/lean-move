@@ -426,7 +426,7 @@ inductive Expr where
   | vecMutBorrow : Site → Site → Expr                     -- vec_mut_borrow<T>(ref, idx)
   | vecPopBack : Site → Expr                              -- vec_pop_back<T>(ref)
   -- Enum operations
-  | packVariant : Id → Id → List (Field × Site) → Expr    -- Enum.Variant { f: s, ... }
+  | packVariant : Id → Id → AssocMap Id (AssocMap Field BasicMoveType) → List (Field × Site) → Expr    -- Enum.Variant { f: s, ... } with full enum type
 deriving Repr, Inhabited, Hashable
 
 -- Statements in a-normal form with continuation-passing style

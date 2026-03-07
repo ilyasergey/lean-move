@@ -315,7 +315,7 @@ partial def flattenExpr (e : MvirExpr) : TransM FlatResult := do
         let s ← freshSite
         pure { bindings := [(s, .intLit 0)], result := s }
   | .packVariant enumName variantName fields =>
-    -- Flatten each field value, then packVariant
+    -- Flatten each field value, then packVariant with full enum type
     let mut allBindings : List (Site × Expr) := []
     let mut fieldSites : List (Field × Site) := []
     for (fname, fexpr) in fields do
@@ -323,7 +323,12 @@ partial def flattenExpr (e : MvirExpr) : TransM FlatResult := do
       allBindings := allBindings ++ fr.bindings
       fieldSites := fieldSites ++ [(⟨fname⟩, fr.result)]
     let s ← freshSite
-    pure { bindings := allBindings ++ [(s, .packVariant enumName variantName fieldSites)], result := s }
+    -- Look up the full enum type from resolved enums
+    let st ← get
+    let variants := match st.enums.find? (·.name == enumName) with
+      | some re => re.variants
+      | none => AssocMap.empty  -- fallback: shouldn't happen for well-formed input
+    pure { bindings := allBindings ++ [(s, .packVariant enumName variantName variants fieldSites)], result := s }
 
 /- ====================================================== -/
 /-       Statement Translation                             -/
@@ -466,9 +471,10 @@ where
         -- Regular assignment: x = expr
         let r ← flattenExpr expr
         if vars == ["_"] then
-          -- Discard: evaluate the expression but don't assign
+          -- Discard: evaluate the expression and release the result site
           let contOrSkip ← contM
-          pure (wrapBindings r.bindings contOrSkip)
+          let releaseStmt := Stmt.release r.result contOrSkip
+          pure (wrapBindings r.bindings releaseStmt)
         else
           match vars with
           | [var] =>

@@ -40,7 +40,7 @@ open AssocMap
 theorem pathReflectedInHeap_heap_alloc (rmap : RefMap) (heap : Heap) (v : Value)
     (r1 r2 : Aref) (p : List PathElement)
     (hrfl : PathReflectedInHeap rmap heap r1 r2 p)
-    (hlive : ∀ r loc path, rmap.map r = some (loc, path) → heap.readRef loc path ≠ none)
+    (hlive_r2 : ∀ loc path, rmap.map r2 = some (loc, path) → heap.readRef loc path ≠ none)
     (hlb : ∀ loc, heap.read loc ≠ none → loc < heap.nextLoc) :
     PathReflectedInHeap rmap (heap.alloc v).1 r1 r2 p := by
   unfold PathReflectedInHeap at hrfl ⊢
@@ -57,7 +57,7 @@ theorem pathReflectedInHeap_heap_alloc (rmap : RefMap) (heap : Heap) (v : Value)
       intro heq_loc
       obtain ⟨hpath, hread⟩ := hrfl heq_loc
       refine ⟨hpath, ?_⟩
-      have hloc2_lt := hlb loc2 (readRef_implies_read heap loc2 path2 (hlive r2 loc2 path2 hr2))
+      have hloc2_lt := hlb loc2 (readRef_implies_read heap loc2 path2 (hlive_r2 loc2 path2 hr2))
       have hne : loc2 ≠ heap.nextLoc := by intro h; subst h; exact Nat.lt_irrefl _ hloc2_lt
       rw [heap_alloc_preserves_readRef heap v loc2 path2 hne]
       exact hread
@@ -86,8 +86,8 @@ theorem wellTypedState_heap_alloc
       | invalidVar => exact hold
     site_consistent := hwt.site_consistent
     rmap_live := by
-      intro r loc path hrmap
-      have hlive := hwt.rmap_live r loc path hrmap
+      intro r loc path hr_tracked hrmap
+      have hlive := hwt.rmap_live r loc path hr_tracked hrmap
       have hlt := hlb loc (readRef_implies_read heap loc path hlive)
       have hne : loc ≠ heap.nextLoc := by intro h; subst h; exact Nat.lt_irrefl _ hlt
       rw [heap_alloc_preserves_readRef heap v loc path hne]
@@ -95,7 +95,8 @@ theorem wellTypedState_heap_alloc
     rmap_paths := by
       intro r1 r2 hr1 hr2 p hp
       exact pathReflectedInHeap_heap_alloc rmap heap v r1 r2 p
-        (hwt.rmap_paths r1 r2 hr1 hr2 p hp) hwt.rmap_live hlb
+        (hwt.rmap_paths r1 r2 hr1 hr2 p hp)
+        (fun loc path hrmap => hwt.rmap_live r2 loc path hr2 hrmap) hlb
     varEnv_refs_in_pathEnv := hwt.varEnv_refs_in_pathEnv
     siteEnv_refs_in_pathEnv := hwt.siteEnv_refs_in_pathEnv
     live_refs_unique := hwt.live_refs_unique
@@ -116,7 +117,12 @@ theorem wellTypedState_heap_alloc
     rmap_has_type := by
       intro r bt loc path hrmap hcond
       obtain ⟨val, hread, hht⟩ := hwt.rmap_has_type r bt loc path hrmap hcond
-      have hlt := hlb loc (readRef_implies_read heap loc path (hwt.rmap_live r loc path hrmap))
+      -- Derive tracking from hcond (ref is in varEnv or siteEnv → tracked)
+      have hr_tracked : r ∈ env.pathEnv.refs := by
+        rcases hcond with ⟨x, bk, ms, hvar⟩ | ⟨s, bk, hsite⟩
+        · exact hwt.varEnv_refs_in_pathEnv x bt r bk ms hvar
+        · exact hwt.siteEnv_refs_in_pathEnv s bt r bk hsite
+      have hlt := hlb loc (readRef_implies_read heap loc path (hwt.rmap_live r loc path hr_tracked hrmap))
       have hne : loc ≠ heap.nextLoc := by intro h; subst h; exact Nat.lt_irrefl _ hlt
       rw [heap_alloc_preserves_readRef heap v loc path hne]
       exact ⟨val, hread, hht⟩
@@ -168,15 +174,16 @@ theorem stackSafe_heap_alloc (stack : List Frame) (ri : Option ReturnInfo)
         intro s τ hse hni
         exact hsite_con s τ hse hni
       · -- rmap_live
-        intro r loc path hrmap
-        have hlive := hrmap_live r loc path hrmap
+        intro r loc path hr_tracked hrmap
+        have hlive := hrmap_live r loc path hr_tracked hrmap
         have hlt := hlb loc (readRef_implies_read heap loc path hlive)
         have hne : loc ≠ heap.nextLoc := by intro h; subst h; exact Nat.lt_irrefl _ hlt
         rw [heap_alloc_preserves_readRef heap v loc path hne]; exact hlive
       · -- rmap_paths
         intro r1 r2 hr1 hr2 p hp
         exact pathReflectedInHeap_heap_alloc cM heap v r1 r2 p
-          (hrmap_paths_f r1 r2 hr1 hr2 p hp) hrmap_live hlb
+          (hrmap_paths_f r1 r2 hr1 hr2 p hp)
+          (fun loc path hrmap => hrmap_live r2 loc path hr2 hrmap) hlb
       · -- heap_loc_bound
         exact heap_loc_bound_after_alloc heap v hlb
       · -- varStore_locs_bound
@@ -186,187 +193,17 @@ theorem stackSafe_heap_alloc (stack : List Frame) (ri : Option ReturnInfo)
       · -- rmap_has_type
         intro r bt loc path hrmap hcond
         obtain ⟨val, hread, hht⟩ := hrmap_ht r bt loc path hrmap hcond
-        have hlt := hlb loc (readRef_implies_read heap loc path (hrmap_live r loc path hrmap))
+        -- Derive tracking for r from hcond (ref in varEnv or non-result siteEnv)
+        have hr_tracked : r ∈ cE.pathEnv.refs := by
+          rcases hcond with ⟨x, bk, ms, hvar⟩ | ⟨s, bk, hsite, _⟩
+          · exact hve_refs x bt r bk ms hvar
+          · exact hse_refs s bt r bk hsite
+        have hlt := hlb loc (readRef_implies_read heap loc path (hrmap_live r loc path hr_tracked hrmap))
         have hne : loc ≠ heap.nextLoc := by intro h; subst h; exact Nat.lt_irrefl _ hlt
         rw [heap_alloc_preserves_readRef heap v loc path hne]; exact ⟨val, hread, hht⟩
       · -- funEnv_sig_consistent
         exact hfe_sig
       · exact stackSafe_heap_alloc rest callerFrame.returnInfo heap v hrest hlb
-
-/-- WellTypedState is preserved under heap.writeRef.
-    The write at (loc, wpath) changes the root value at loc from baseVal to
-    writePath baseVal wpath vval. All WellTypedState invariants are preserved because:
-    - For locations ≠ loc: heap reads unchanged
-    - For loc with basic-typed vars: writePath_preserves_HasType_general + HasType_transfer
-    - For loc with ref-typed vars: impossible (ref can't coexist with writePath success)
-    - For rmap_live/rmap_paths: heap_writeRef_preserves_readRef_same_loc + suffix transfer
-    - For rmap_has_type: writePath_preserves_readPath_HasType -/
-theorem wellTypedState_heap_writeRef
-    (frame : Frame) (stack : List Frame) (heap heap' : Heap)
-    (loc : Loc) (wpath : List Field) (vval v_leaf : Value) (τ : BasicMoveType)
-    (env : TypeEnv) (lenv : LabelEnv) (retTypes : List ParamType) (rmap : RefMap)
-    (hwt : WellTypedState ⟨frame, stack, heap⟩ env lenv retTypes rmap)
-    (hwr : heap.writeRef loc wpath vval = some heap')
-    (hv_leaf_read : heap.readRef loc wpath = some v_leaf)
-    (hv_leaf_ht : HasType v_leaf τ)
-    (hmval : HasType vval τ) :
-    WellTypedState ⟨frame, stack, heap'⟩ env lenv retTypes rmap := by
-  -- Extract base value and writePath facts
-  have hlb := hwt.heap_loc_bound
-  simp only [Heap.readRef, bind, Option.bind] at hv_leaf_read
-  simp only [Heap.writeRef, bind, Option.bind] at hwr
-  cases hbase : heap.read loc with
-  | none => simp [hbase] at hv_leaf_read
-  | some baseVal =>
-    simp only [hbase] at hv_leaf_read hwr
-    cases hwp : writePath baseVal wpath vval with
-    | none => simp [hwp] at hwr
-    | some newRoot =>
-      simp [hwp] at hwr
-      -- hwr : heap' = heap.write loc newRoot (or reverse)
-      -- hv_leaf_read : readPath baseVal wpath = some v_leaf
-      -- Helper: reads at other locations
-      have hread_diff : ∀ loc', loc' ≠ loc → heap'.read loc' = heap.read loc' := by
-        intro loc' hne; rw [← hwr]
-        exact heap_write_preserves_read heap loc loc' newRoot (Ne.symm hne)
-      have hread_loc : heap'.read loc = some newRoot := by
-        rw [← hwr]; simp [Heap.write, Heap.read, lookup_insert_same]
-      -- Reconstruct the full writeRef for helpers that need it
-      have hwr_full : heap.writeRef loc wpath vval = some heap' := by
-        simp [Heap.writeRef, bind, Option.bind, hbase, hwp, hwr]
-      exact {
-        env_wf := hwt.env_wf
-        stmt_typed := hwt.stmt_typed
-        var_consistent := by
-          intro x isv τ_x ms hvar
-          have hvc := hwt.var_consistent x isv τ_x ms hvar
-          cases isv with
-          | validVar =>
-            obtain ⟨loc_x, v_x, hvarStore, hread_x, hmatch_x⟩ := hvc
-            by_cases hloc : loc_x = loc
-            · subst hloc
-              have hveq : v_x = baseVal := by
-                rw [hbase] at hread_x; simp only [Option.some.injEq] at hread_x; exact hread_x.symm
-              subst hveq
-              refine ⟨loc_x, newRoot, hvarStore, hread_loc, ?_⟩
-              cases τ_x with
-              | basic bt_x =>
-                dsimp only [ValueMatchesType] at hmatch_x ⊢
-                exact writePath_preserves_HasType_general v_x wpath vval newRoot bt_x
-                  hmatch_x hwp (by
-                    intro bt_leaf htap
-                    obtain ⟨bt', htap'⟩ := readPath_ne_none_implies_typeAtPath v_x bt_x
-                      wpath hmatch_x (by rw [hv_leaf_read]; exact Option.some_ne_none _)
-                    rw [htap'] at htap; simp only [Option.some.injEq] at htap; subst htap
-                    obtain ⟨u, hru, hhu⟩ := HasType_typeAtPath v_x bt_x wpath bt' hmatch_x htap'
-                    rw [hv_leaf_read] at hru; simp only [Option.some.injEq] at hru; subst hru
-                    exact HasType_transfer hhu hv_leaf_ht hmval)
-              | ref bt_ref r_ref bk_ref =>
-                exfalso
-                dsimp only [ValueMatchesType] at hmatch_x
-                obtain ⟨loc', path', hveq, _⟩ := hmatch_x
-                rw [hveq] at hwp hv_leaf_read
-                cases wpath with
-                | cons f rest => simp [writePath] at hwp
-                | nil =>
-                  simp [readPath] at hv_leaf_read; rw [← hv_leaf_read] at hv_leaf_ht
-                  exact HasType_not_ref loc' path' τ hv_leaf_ht
-            · exact ⟨loc_x, v_x, hvarStore, by rw [hread_diff loc_x hloc]; exact hread_x, hmatch_x⟩
-          | invalidVar => exact hvc
-        site_consistent := hwt.site_consistent
-        rmap_live := by
-          intro r' loc' path' hrmap'
-          have hlive := hwt.rmap_live r' loc' path' hrmap'
-          by_cases hloc : loc = loc'
-          · subst hloc
-            exact heap_writeRef_preserves_readRef_same_loc heap loc wpath path' vval heap'
-              hwr_full hlive (by
-                intro suffix hsuffix
-                cases suffix with
-                | nil => simp [readPath]
-                | cons sf srest =>
-                  simp only [Heap.readRef, bind, Option.bind, hbase] at hlive
-                  rw [← hsuffix, readPath_append] at hlive
-                  simp only [hv_leaf_read, Option.bind] at hlive
-                  exact HasType_transfer_readPath_ne_none v_leaf vval τ
-                    (sf :: srest) hv_leaf_ht hmval hlive)
-          · simp only [Heap.readRef, bind, Option.bind] at hlive ⊢
-            rw [hread_diff loc' (Ne.symm hloc)]
-            exact hlive
-        rmap_paths := by
-          intro r1 r2 hr1 hr2 p hp
-          have hpih := hwt.rmap_paths r1 r2 hr1 hr2 p hp
-          unfold PathReflectedInHeap at hpih ⊢
-          cases hrm1 : rmap.map r1 with
-          | none => simp [hrm1] at hpih ⊢
-          | some p1 =>
-            obtain ⟨loc1, path1⟩ := p1
-            cases hrm2 : rmap.map r2 with
-            | none => simp [hrm1, hrm2] at hpih ⊢
-            | some p2 =>
-              obtain ⟨loc2, path2⟩ := p2
-              simp only [hrm1, hrm2] at hpih ⊢
-              intro hloc_eq
-              obtain ⟨hpath_eq, hne⟩ := hpih hloc_eq
-              refine ⟨hpath_eq, ?_⟩
-              by_cases hloc2 : loc = loc2
-              · subst hloc2
-                exact heap_writeRef_preserves_readRef_same_loc heap loc wpath path2 vval heap'
-                  hwr_full hne (by
-                    intro suffix hsuffix
-                    cases suffix with
-                    | nil => simp [readPath]
-                    | cons sf srest =>
-                      simp only [Heap.readRef, bind, Option.bind, hbase] at hne
-                      rw [← hsuffix, readPath_append] at hne
-                      simp only [hv_leaf_read, Option.bind] at hne
-                      exact HasType_transfer_readPath_ne_none v_leaf vval τ
-                        (sf :: srest) hv_leaf_ht hmval hne)
-              · simp only [Heap.readRef, bind, Option.bind] at hne ⊢
-                rw [hread_diff loc2 (Ne.symm hloc2)]
-                exact hne
-        varEnv_refs_in_pathEnv := hwt.varEnv_refs_in_pathEnv
-        siteEnv_refs_in_pathEnv := hwt.siteEnv_refs_in_pathEnv
-        live_refs_unique := hwt.live_refs_unique
-        blocks_typed := hwt.blocks_typed
-        lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
-        lenv_wf := hwt.lenv_wf
-        lenv_var_tracked := hwt.lenv_var_tracked
-        lenv_var_unique := hwt.lenv_var_unique
-        lenv_funEnv_eq := hwt.lenv_funEnv_eq
-        funEnv_typed := hwt.funEnv_typed
-        heap_loc_bound := heap_loc_bound_after_writeRef heap loc wpath vval heap' hlb hwr_full
-        rmap_root_none := hwt.rmap_root_none
-        no_paths_to_root := hwt.no_paths_to_root
-        root_path_coherence := hwt.root_path_coherence
-        paths_from_non_member_empty := hwt.paths_from_non_member_empty
-        paths_to_non_member_empty := hwt.paths_to_non_member_empty
-        self_loop_only_empty := hwt.self_loop_only_empty
-        rmap_has_type := by
-          intro r' bt loc' path' hrmap' hcond
-          obtain ⟨v_old, hread_old, hht_old⟩ := hwt.rmap_has_type r' bt loc' path' hrmap' hcond
-          by_cases hloc' : loc = loc'
-          · subst hloc'
-            simp only [Heap.readRef, bind, Option.bind, hbase] at hread_old
-            obtain ⟨vnew, hread_vnew, hht_vnew⟩ := writePath_preserves_readPath_HasType
-              baseVal wpath path' vval newRoot v_leaf v_old τ bt
-              hwp hread_old hht_old hv_leaf_read hv_leaf_ht hmval
-            exact ⟨vnew, by simp [Heap.readRef, bind, Option.bind, hread_loc, hread_vnew], hht_vnew⟩
-          · refine ⟨v_old, ?_, hht_old⟩
-            simp only [Heap.readRef, bind, Option.bind] at hread_old ⊢
-            rw [hread_diff loc' (Ne.symm hloc')]
-            exact hread_old
-        funEnv_sig_consistent := hwt.funEnv_sig_consistent
-        refs_tracked_mapped := hwt.refs_tracked_mapped
-        lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
-        has_return_info := hwt.has_return_info
-        varStore_locs_bound := by
-          intro y loc_y hvar
-          have hlt := hwt.varStore_locs_bound y loc_y hvar
-          -- writeRef preserves nextLoc: heap'.nextLoc = heap.nextLoc
-          -- heap' = heap.write loc newRoot, and Heap.write doesn't change nextLoc
-          simp only [← hwr, Heap.write]; exact hlt
-      }
 
 /-- StackSafe is preserved under heap.writeRef -/
 theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
@@ -429,13 +266,10 @@ theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
                 cases τ_x with
                 | basic bt_x =>
                   dsimp only [ValueMatchesType] at hmatch_x ⊢
-                  exact writePath_preserves_HasType_general v_x wpath vval newRoot bt_x
+                  exact writePath_preserves_HasType_generalV v_x wpath vval newRoot bt_x
                     hmatch_x hwp (by
-                      intro bt_leaf htap
-                      obtain ⟨bt', htap'⟩ := readPath_ne_none_implies_typeAtPath v_x bt_x
-                        wpath hmatch_x (by rw [hv_leaf_read']; exact Option.some_ne_none _)
-                      rw [htap'] at htap; simp only [Option.some.injEq] at htap; subst htap
-                      obtain ⟨u, hru, hhu⟩ := HasType_typeAtPath v_x bt_x wpath bt' hmatch_x htap'
+                      intro bt_leaf htapV
+                      obtain ⟨u, hru, hhu⟩ := HasType_typeAtPathV v_x bt_x wpath bt_leaf hmatch_x htapV
                       rw [hv_leaf_read'] at hru; simp only [Option.some.injEq] at hru; subst hru
                       exact HasType_transfer hhu hv_leaf_ht hmval)
                 | ref bt_ref r_ref bk_ref =>
@@ -453,8 +287,8 @@ theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
           · -- site_consistent
             exact hsite_con
           · -- rmap_live
-            intro r' loc' path' hrmap'
-            have hlive := hrmap_live r' loc' path' hrmap'
+            intro r' loc' path' hr'_tracked hrmap'
+            have hlive := hrmap_live r' loc' path' hr'_tracked hrmap'
             by_cases hloc : loc = loc'
             · subst hloc
               exact heap_writeRef_preserves_readRef_same_loc heap loc wpath path' vval heap'
@@ -466,7 +300,7 @@ theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
                     simp only [Heap.readRef, bind, Option.bind, hbase] at hlive
                     rw [← hsuffix, readPath_append] at hlive
                     simp only [hv_leaf_read', Option.bind] at hlive
-                    exact HasType_transfer_readPath_ne_none v_leaf vval τ
+                    exact readPath_HasType_transfer v_leaf vval τ
                       (sf :: srest) hv_leaf_ht hmval hlive)
             · simp only [Heap.readRef, bind, Option.bind] at hlive ⊢
               rw [hread_diff loc' (Ne.symm hloc)]
@@ -498,7 +332,7 @@ theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
                         simp only [Heap.readRef, bind, Option.bind, hbase] at hne
                         rw [← hsuffix, readPath_append] at hne
                         simp only [hv_leaf_read', Option.bind] at hne
-                        exact HasType_transfer_readPath_ne_none v_leaf vval τ
+                        exact readPath_HasType_transfer v_leaf vval τ
                           (sf :: srest) hv_leaf_ht hmval hne)
                 · simp only [Heap.readRef, bind, Option.bind] at hne ⊢
                   rw [hread_diff loc2 (Ne.symm hloc2)]
@@ -518,6 +352,7 @@ theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
               obtain ⟨vnew, hread_vnew, hht_vnew⟩ := writePath_preserves_readPath_HasType
                 baseVal wpath path' vval newRoot v_leaf v_old τ bt
                 hwp hread_old hht_old hv_leaf_read' hv_leaf_ht hmval
+                (fun suffix _ => typeAtPathV_HasType_determined vval v_leaf τ suffix hmval hv_leaf_ht)
               exact ⟨vnew, by simp [Heap.readRef, bind, Option.bind, hread_loc, hread_vnew], hht_vnew⟩
             · refine ⟨v_old, ?_, hht_old⟩
               simp only [Heap.readRef, bind, Option.bind] at hread_old ⊢
@@ -623,11 +458,13 @@ theorem returned_ref_is_live
     (siteEnv : SiteEnv) (siteStore : SiteStore) (rmap : RefMap) (heap : Heap)
     (sites : List Site) (retTypes : List ParamType) (vals : List Value)
     (loc : Loc) (path : List Field)
+    {pe_refs : List Aref}
     (hcsv : collectSiteValues siteStore sites = some vals)
     (htc : types_conform siteEnv sites retTypes)
     (hsc : ∀ s τ, lookup siteEnv s = some τ →
       ∃ v, lookup siteStore s = some v ∧ ValueMatchesType v τ rmap)
-    (hrl : ∀ r loc path, rmap.map r = some (loc, path) → heap.readRef loc path ≠ none)
+    (hse_refs : ∀ s bt r bk, lookup siteEnv s = some (.ref bt r bk) → r ∈ pe_refs)
+    (hrl : ∀ r loc path, r ∈ pe_refs → rmap.map r = some (loc, path) → heap.readRef loc path ≠ none)
     (hv : Value.ref loc path ∈ vals) :
     heap.readRef loc path ≠ none := by
   obtain ⟨cs, hcs_mem, hlu⟩ := collectSiteValues_mem siteStore sites vals (.ref loc path) hcsv hv
@@ -639,7 +476,7 @@ theorem returned_ref_is_live
   | ref bt r bk =>
     obtain ⟨loc', path', hveq, hrmap_eq⟩ := hvm
     simp at hveq; obtain ⟨rfl, rfl⟩ := hveq
-    exact hrl r loc path hrmap_eq
+    exact hrl r loc path (hse_refs cs bt r bk hτ) hrmap_eq
 
 /-- Derive ReturnValsWellTyped from callee's typing info.
     Bridges callee's types_conform + site_consistent with caller's types_conform
@@ -814,7 +651,7 @@ theorem extendWithReturns_new_mapping_type
           | unit => subst hv; exact Value.noConfusion hveq
           | «record» fs => subst hv; exact Value.noConfusion hveq
           | vec _ => subst hv; exact Value.noConfusion hveq
-          | variant _ _ => subst hv; exact Value.noConfusion hveq
+          | variant _ _ _ => subst hv; exact Value.noConfusion hveq
 
 /-- Monotonicity: if rmap already maps r, extendWithReturns still maps r. -/
 theorem RefMap.extendWithReturns_ne_none (rmap : RefMap) (siteEnv : SiteEnv)
@@ -846,7 +683,7 @@ theorem RefMap.extendWithReturns_ne_none (rmap : RefMap) (siteEnv : SiteEnv)
           | unit => exact ih rmap vs h
           | «record» _ => exact ih rmap vs h
           | vec _ => exact ih rmap vs h
-          | variant _ _ => exact ih rmap vs h
+          | variant _ _ _ => exact ih rmap vs h
 
 /-- If a result site has a ref type mapping abstract ref r, and ReturnValsWellTyped holds,
     then extendWithReturns maps r (r is non-none in the result). -/
@@ -885,7 +722,7 @@ theorem RefMap.extendWithReturns_maps_result_ref
           | unit => simp at hveq
           | «record» _ => simp at hveq
           | vec _ => simp at hveq
-          | variant _ _ => simp at hveq
+          | variant _ _ _ => simp at hveq
         · -- s ∈ ss: recurse with IH
           cases τ' with
           | basic _ =>
@@ -900,7 +737,7 @@ theorem RefMap.extendWithReturns_maps_result_ref
             | unit => simp at hveq'
             | «record» _ => simp at hveq'
             | vec _ => simp at hveq'
-            | variant _ _ => simp at hveq'
+            | variant _ _ _ => simp at hveq'
 
 /-- Result sites get the correct values after bindReturnValues + extendWithReturns.
     For each result site s with type τ in siteEnv, produces a value in newSiteStore
@@ -952,7 +789,7 @@ theorem returnVals_site_consistent
             | unit => simp at hveq'
             | «record» _ => simp at hveq'
             | vec _ => simp at hveq'
-            | variant _ _ => simp at hveq'
+            | variant _ _ _ => simp at hveq'
       · -- s ∉ ss, so s = s'
         have hseq : s = s' := by
           rcases List.mem_cons.mp hs with h | h
@@ -1000,7 +837,7 @@ theorem returnVals_site_consistent
             | unit => simp at hveq
             | «record» _ => simp at hveq
             | vec _ => simp at hveq
-            | variant _ _ => simp at hveq
+            | variant _ _ _ => simp at hveq
 
 -- ============================================================
 -- Part 5: StackSafe preservation through allocArgs
@@ -1462,7 +1299,7 @@ lemma paramRefKeys_sublist (params : List (Var × MoveType)) (args : List Value)
         | unit => exact List.Sublist.cons _ (ih as')
         | record _ => exact List.Sublist.cons _ (ih as')
         | vec _ => exact List.Sublist.cons _ (ih as')
-        | variant _ _ => exact List.Sublist.cons _ (ih as')
+        | variant _ _ _ => exact List.Sublist.cons _ (ih as')
 
 /-- allocArgs stores the exact argument value for each param/arg pair. -/
 lemma allocArgs_param_stores_arg (heap : Heap) (params : List (Var × MoveType))

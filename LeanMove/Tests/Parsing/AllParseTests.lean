@@ -26,6 +26,18 @@ import LeanMove.Tests.Parsing.Test_vec_dangling_borrow
 import LeanMove.Tests.Parsing.Test_vec_mut_then_imm_borrow
 import LeanMove.Tests.Parsing.Test_enum_match
 import LeanMove.Tests.Parsing.Test_enum_all_parse
+import LeanMove.Tests.Parsing.Test_enum_two_mutable_unpacks
+import LeanMove.Tests.Parsing.Test_enum_double_unpack
+import LeanMove.Tests.Parsing.Test_enum_valid_ref_unpack
+import LeanMove.Tests.Parsing.Test_enum_invalid_ref_unpack
+import LeanMove.Tests.Parsing.Test_enum_imm_borrow_on_mut_trivial_invalid
+import LeanMove.Tests.Parsing.Test_enum_variant_factor
+import LeanMove.Tests.Parsing.Test_enum_factor_invalid
+import LeanMove.Tests.Parsing.Test_enum_borrow_field_mutable
+import LeanMove.Tests.Parsing.Test_enum_valid_unpack_loop
+import LeanMove.Tests.Parsing.Test_enum_imm_borrow_on_mut_invalid
+import LeanMove.Tests.Parsing.Test_enum_invalid_ref_unpack_loop
+import LeanMove.Tests.Parsing.Test_enum_borrow_owned
 
 /-! ## All Parse Tests
 
