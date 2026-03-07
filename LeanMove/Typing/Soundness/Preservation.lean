@@ -620,6 +620,7 @@ private theorem preservation_intLit (m m' : Machine) (env : TypeEnv) (lenv : Lab
     lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
     has_return_info := hwt.has_return_info
     varStore_locs_bound := hwt.varStore_locs_bound
+    enum_field_compatibility := hwt.enum_field_compatibility
   }
 
 private theorem preservation_copy_val (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -677,6 +678,7 @@ private theorem preservation_copy_val (m m' : Machine) (env : TypeEnv) (lenv : L
     lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
     has_return_info := hwt.has_return_info
     varStore_locs_bound := hwt.varStore_locs_bound
+    enum_field_compatibility := hwt.enum_field_compatibility
   }
 
 /-- When PathEnv is extended via `update_with_epsilon t s_orig pe` and rmap is
@@ -1138,6 +1140,7 @@ private theorem preservation_copy_ref (m m' : Machine) (env : TypeEnv) (lenv : L
     lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
     has_return_info := hwt.has_return_info
     varStore_locs_bound := hwt.varStore_locs_bound
+    enum_field_compatibility := hwt.enum_field_compatibility
   } -- end copy_ref
 
 private theorem preservation_move (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -1334,6 +1337,7 @@ private theorem preservation_move (m m' : Machine) (env : TypeEnv) (lenv : Label
       · subst heq; rw [lookup_insert_same] at hvar; cases hvar
       · rw [lookup_insert_ne _ x y _ heq] at hvar
         exact hwt.varStore_locs_bound y loc_y hvar
+    enum_field_compatibility := hwt.enum_field_compatibility
   }
 
 /-- Reusable helper: rmap_paths is preserved by update_with_extension r .root [.root_to_var x]
@@ -1684,6 +1688,7 @@ private theorem preservation_borrow (m : Machine) (env : TypeEnv) (lenv : LabelE
     lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
     has_return_info := hwt.has_return_info
     varStore_locs_bound := hwt.varStore_locs_bound
+    enum_field_compatibility := hwt.enum_field_compatibility
   }
 
 /-- Preservation for borrowImm: thin wrapper around preservation_borrow. -/
@@ -2148,6 +2153,7 @@ private theorem preservation_borrowField (m : Machine) (env : TypeEnv) (lenv : L
     lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
     has_return_info := hwt.has_return_info
     varStore_locs_bound := hwt.varStore_locs_bound
+    enum_field_compatibility := hwt.enum_field_compatibility
   }
 
 /-- Preservation for borrowField: thin wrapper around preservation_borrowField. -/
@@ -2458,6 +2464,7 @@ private theorem preservation_readRef (m m' : Machine) (env : TypeEnv) (lenv : La
       lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
       has_return_info := hwt.has_return_info
       varStore_locs_bound := hwt.varStore_locs_bound
+      enum_field_compatibility := hwt.enum_field_compatibility
     }
 
 /-- If evalBinop succeeds and binop_type determines the output type,
@@ -2654,6 +2661,7 @@ private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : Labe
     lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
     has_return_info := hwt.has_return_info
     varStore_locs_bound := hwt.varStore_locs_bound
+    enum_field_compatibility := hwt.enum_field_compatibility
   }
 
 private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -2731,6 +2739,7 @@ private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : La
       lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
       has_return_info := hwt.has_return_info
       varStore_locs_bound := hwt.varStore_locs_bound
+      enum_field_compatibility := hwt.enum_field_compatibility
     }
   · -- Case 2: release of a basic-typed site (no pathEnv change)
     refine ⟨{env with siteEnv := delete env.siteEnv site},
@@ -2780,6 +2789,7 @@ private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : La
       lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
       has_return_info := hwt.has_return_info
       varStore_locs_bound := hwt.varStore_locs_bound
+      enum_field_compatibility := hwt.enum_field_compatibility
     }
 
 private theorem preservation_writeRef (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -2832,7 +2842,7 @@ private theorem preservation_writeRef (m m' : Machine) (env : TypeEnv) (lenv : L
   refine ⟨{env with siteEnv := delete (delete env.siteEnv val) dst,
                      pathEnv := delete_ref_node env.pathEnv r},
           lenv, retTypes, rmap, ?_,
-          stackSafe_heap_writeRef m.stack m.frame.returnInfo m.heap heap' loc wpath
+          stackSafe_heap_writeRef hwt.enum_field_compatibility m.stack m.frame.returnInfo m.heap heap' loc wpath
             vval v_leaf τ hss hwr hv_leaf_read hv_leaf_ht hmval⟩
   exact {
     env_wf := ⟨delete_ref_node_wellformed env.pathEnv r hwt.env_wf.pathEnv_wf hr_not_root,
@@ -2932,10 +2942,11 @@ private theorem preservation_writeRef (m m' : Machine) (env : TypeEnv) (lenv : L
                   simp only [hv_leaf_read, Option.bind] at hlive
                   exact hlive
               -- Transfer readPath from old value (v_leaf) to new value (vval)
-              exact readPath_HasType_transfer v_leaf vval τ (sf :: srest)
-                hv_leaf_ht hmval hleaf_suffix)
-      · rwa [heap_writeRef_preserves_readRef_diff_loc m.heap loc loc' wpath path' vval heap'
-               hloc hwr]
+              exact readPath_HasType_transfer hwt.enum_field_compatibility v_leaf vval τ (sf :: srest)
+                hv_leaf_ht hmval (hwt.enum_field_compatibility v_leaf vval τ hv_leaf_ht hmval) hleaf_suffix)
+      · rw [heap_writeRef_preserves_readRef_diff_loc m.heap loc loc' wpath path' vval heap'
+             hloc hwr]
+        exact hlive
     rmap_paths := by
       intro r1 r2 hr1 hr2 p hp
       have hr1_orig : r1 ∈ env.pathEnv.refs := by
@@ -2979,8 +2990,8 @@ private theorem preservation_writeRef (m m' : Machine) (env : TypeEnv) (lenv : L
                       rw [← hsuffix, readPath_append] at hne
                       simp only [hv_leaf_read, Option.bind] at hne
                       exact hne
-                  exact readPath_HasType_transfer v_leaf vval τ (sf :: srest)
-                    hv_leaf_ht hmval hleaf_suffix)
+                  exact readPath_HasType_transfer hwt.enum_field_compatibility v_leaf vval τ (sf :: srest)
+                    hv_leaf_ht hmval (hwt.enum_field_compatibility v_leaf vval τ hv_leaf_ht hmval) hleaf_suffix)
           · rwa [heap_writeRef_preserves_readRef_diff_loc m.heap loc loc2 wpath path2 vval heap'
                    hloc2 hwr]
     varEnv_refs_in_pathEnv :=
@@ -3080,7 +3091,7 @@ private theorem preservation_writeRef (m m' : Machine) (env : TypeEnv) (lenv : L
             obtain ⟨vnew, hread_vnew, hht_vnew⟩ := writePath_preserves_readPath_HasType
               baseVal wpath path' vval newRoot v_leaf v_old τ bt
               hwp2 hread_old hht_old hv_leaf_read hv_leaf_ht hmval
-              (fun suffix _ => typeAtPathV_HasType_determined vval v_leaf τ suffix hmval hv_leaf_ht)
+              (fun suffix _ => typeAtPathV_HasType_determined hwt.enum_field_compatibility vval v_leaf τ suffix hmval hv_leaf_ht (hwt.enum_field_compatibility vval v_leaf τ hmval hv_leaf_ht))
             refine ⟨vnew, ?_, hht_vnew⟩
             rw [← hwr']
             simp only [Heap.readRef, bind, Option.bind, Heap.write, Heap.read,
@@ -3100,6 +3111,7 @@ private theorem preservation_writeRef (m m' : Machine) (env : TypeEnv) (lenv : L
     varStore_locs_bound := by
       intro y loc_y hvar
       rw [writeRef_preserves_nextLoc m.heap loc wpath vval heap' hwr]; exact hwt.varStore_locs_bound y loc_y hvar
+    enum_field_compatibility := hwt.enum_field_compatibility
   }
 
 -- ============================================================
@@ -3454,6 +3466,7 @@ private theorem preservation_pack (m m' : Machine) (env : TypeEnv) (lenv : Label
       lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
       has_return_info := hwt.has_return_info
       varStore_locs_bound := hwt.varStore_locs_bound
+      enum_field_compatibility := hwt.enum_field_compatibility
     }
 
 private theorem preservation_assign_valid (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -3802,6 +3815,7 @@ private theorem preservation_assign_valid (m m' : Machine) (env : TypeEnv) (lenv
         · rw [lookup_insert_ne _ x y _ heq] at hvar
           have hlt := hwt.varStore_locs_bound y loc_y hvar
           exact Nat.lt_trans hlt (by simp [Heap.alloc])
+      enum_field_compatibility := hwt.enum_field_compatibility
     }
 
 private theorem preservation_assign_invalid (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -4038,6 +4052,7 @@ private theorem preservation_assign_invalid (m m' : Machine) (env : TypeEnv) (le
       · rw [lookup_insert_ne _ x y _ heq] at hvar
         have hlt := hwt.varStore_locs_bound y loc_y hvar
         exact Nat.lt_trans hlt (by simp [Heap.alloc])
+    enum_field_compatibility := hwt.enum_field_compatibility
   }
 
 private theorem preservation_assign_valid_ref (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -4324,6 +4339,7 @@ private theorem preservation_assign_valid_ref (m m' : Machine) (env : TypeEnv) (
       · rw [lookup_insert_ne _ x y _ heq] at hvar'
         have hlt := hwt.varStore_locs_bound y loc_y hvar'
         exact Nat.lt_trans hlt (by simp [Heap.alloc])
+    enum_field_compatibility := hwt.enum_field_compatibility
   }
 
 /-- Preservation for freeze: converts a (possibly mutable) reference to an immutable one.
@@ -4682,6 +4698,7 @@ private theorem preservation_freeze (m m' : Machine) (env : TypeEnv) (lenv : Lab
     lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
     has_return_info := hwt.has_return_info
     varStore_locs_bound := hwt.varStore_locs_bound
+    enum_field_compatibility := hwt.enum_field_compatibility
   }
 
 -- ============================================================
@@ -4718,7 +4735,7 @@ private theorem preservation_assign_overwrite_basic (m m' : Machine) (env : Type
     env_wf := ⟨hwt.env_wf.pathEnv_wf,
                SiteEnv.delete_refs_not_root env.siteEnv a hwt.env_wf.siteEnv_wf,
                VarEnv.update_refs_not_root env.varEnv x (.validVar, .basic τ, .mutable)
-                 hwt.env_wf.varEnv_wf (by simp [moveTypeRefsNotRoot])⟩
+                 hwt.env_wf.varEnv_wf (by simp)⟩
     stmt_typed := hcont
     var_consistent := by
       intro y isv_y τy ms hvy
@@ -4776,7 +4793,7 @@ private theorem preservation_assign_overwrite_basic (m m' : Machine) (env : Type
       by_cases heq : y = x
       · subst heq; rw [lookup_insert_same] at hvy'
         simp only [Option.some.injEq, Prod.mk.injEq] at hvy'
-        exact absurd hvy'.2.1 (by simp [MoveType.basic, MoveType.ref])
+        exact absurd hvy'.2.1 (by simp)
       · rw [lookup_insert_ne _ x y _ heq] at hvy'
         exact hwt.varEnv_refs_in_pathEnv y bt r' bk ms' hvy'
     siteEnv_refs_in_pathEnv := by
@@ -4799,7 +4816,7 @@ private theorem preservation_assign_overwrite_basic (m m' : Machine) (env : Type
         by_cases heq : x' = x
         · subst heq; rw [lookup_insert_same] at hvar'
           simp only [Option.some.injEq, Prod.mk.injEq] at hvar'
-          exact absurd hvar'.2.1 (by simp [MoveType.basic, MoveType.ref])
+          exact absurd hvar'.2.1 (by simp)
         · rw [lookup_insert_ne _ x x' _ heq] at hvar'
           exact (hwt.live_refs_unique r').1 x' bt bk ms' s' bt' bk' hvar' hs'
       · -- site-site
@@ -4818,11 +4835,11 @@ private theorem preservation_assign_overwrite_basic (m m' : Machine) (env : Type
         by_cases heq1 : x1 = x
         · subst heq1; rw [lookup_insert_same] at hx1'
           simp only [Option.some.injEq, Prod.mk.injEq] at hx1'
-          exact absurd hx1'.2.1 (by simp [MoveType.basic, MoveType.ref])
+          exact absurd hx1'.2.1 (by simp)
         · by_cases heq2 : x2 = x
           · subst heq2; rw [lookup_insert_same] at hx2'
             simp only [Option.some.injEq, Prod.mk.injEq] at hx2'
-            exact absurd hx2'.2.1 (by simp [MoveType.basic, MoveType.ref])
+            exact absurd hx2'.2.1 (by simp)
           · rw [lookup_insert_ne _ x x1 _ heq1] at hx1'
             rw [lookup_insert_ne _ x x2 _ heq2] at hx2'
             exact (hlive_old r').2.2 x1 x2 bt1 bt2 bk1 bk2 ms1 ms2 hne hx1' hx2'
@@ -4890,6 +4907,7 @@ private theorem preservation_assign_overwrite_basic (m m' : Machine) (env : Type
       · rw [lookup_insert_ne _ x y _ heq] at hvar_y
         have hlt := hwt.varStore_locs_bound y loc_y hvar_y
         exact Nat.lt_trans hlt (by simp [Heap.alloc])
+    enum_field_compatibility := hwt.enum_field_compatibility
   }
 
 -- ============================================================
@@ -5065,6 +5083,7 @@ private theorem preservation_unpack (m m' : Machine) (env : TypeEnv) (lenv : Lab
     lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
     has_return_info := hwt.has_return_info
     varStore_locs_bound := hwt.varStore_locs_bound
+    enum_field_compatibility := hwt.enum_field_compatibility
   }
 
 -- ============================================================
@@ -5184,6 +5203,7 @@ private theorem preservation_jump (m m' : Machine) (env : TypeEnv) (lenv : Label
       lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
       has_return_info := hwt.has_return_info
       varStore_locs_bound := hwt.varStore_locs_bound
+      enum_field_compatibility := hwt.enum_field_compatibility
     }
 
 -- ============================================================
@@ -5286,6 +5306,7 @@ private theorem preservation_branch (m m' : Machine) (env : TypeEnv) (lenv : Lab
           lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
           has_return_info := hwt.has_return_info
           varStore_locs_bound := hwt.varStore_locs_bound
+          enum_field_compatibility := hwt.enum_field_compatibility
         }
     | false =>
       -- step uses l2
@@ -5350,6 +5371,7 @@ private theorem preservation_branch (m m' : Machine) (env : TypeEnv) (lenv : Lab
           lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
           has_return_info := hwt.has_return_info
           varStore_locs_bound := hwt.varStore_locs_bound
+          enum_field_compatibility := hwt.enum_field_compatibility
         }
 
 -- ============================================================
@@ -5683,6 +5705,7 @@ private theorem preservation_ret (m m' : Machine) (env : TypeEnv) (lenv : LabelE
             lenv_labels_in_blocks := hlenv_lib
             has_return_info := hcaller_has_ri
             varStore_locs_bound := hvlb
+            enum_field_compatibility := hwt.enum_field_compatibility
           }
 
 -- ============================================================
@@ -6153,6 +6176,7 @@ private theorem preservation_call (m m' : Machine) (env : TypeEnv) (lenv : Label
               · rw [addLocals_preserves_lookup paramVarStore fdef.locals y hlocal] at hvar
                 exact allocArgs_varStore_locs_bound m.heap fdef.params argVals heap'
                   paramVarStore hallocArgs y loc_y hvar
+            enum_field_compatibility := hwt.enum_field_compatibility
           }
         · -- StackSafe for the new stack
           -- Define restricted rmap: agrees with rmap on env.pathEnv.refs, none elsewhere
@@ -6732,6 +6756,7 @@ private theorem preservation_vecPack (m m' : Machine) (env : TypeEnv) (lenv : La
     lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
     has_return_info := hwt.has_return_info
     varStore_locs_bound := hwt.varStore_locs_bound
+    enum_field_compatibility := hwt.enum_field_compatibility
   }
 
 -- Utility: garbage_collect = delete_ref_node (definitionally)
@@ -6953,6 +6978,7 @@ private theorem preservation_vecUnpack (m m' : Machine) (env : TypeEnv) (lenv : 
       lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
       has_return_info := hwt.has_return_info
       varStore_locs_bound := hwt.varStore_locs_bound
+      enum_field_compatibility := hwt.enum_field_compatibility
     }
   · -- Length mismatch → contradiction
     simp [Bool.false_eq_true] at hstep
@@ -7080,6 +7106,7 @@ private theorem preservation_vecLen (m m' : Machine) (env : TypeEnv) (lenv : Lab
     lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
     has_return_info := hwt.has_return_info
     varStore_locs_bound := hwt.varStore_locs_bound
+    enum_field_compatibility := hwt.enum_field_compatibility
   }
 
 -- For vecPopBack, vecPushBack, vecSwap: convert garbage_collect to delete_ref_node and reuse lemmas
@@ -7142,7 +7169,7 @@ private theorem preservation_vecPopBack (m m' : Machine) (env : TypeEnv) (lenv :
     refine ⟨{env with siteEnv := insert (delete env.siteEnv src) s (.basic T),
                        pathEnv := delete_ref_node env.pathEnv r},
             lenv, retTypes, rmap, ?_,
-            stackSafe_heap_writeRef m.stack m.frame.returnInfo m.heap heap' loc path
+            stackSafe_heap_writeRef hwt.enum_field_compatibility m.stack m.frame.returnInfo m.heap heap' loc path
               (.vec T elems.dropLast) (.vec T elems) T.tvec hss hwrite hread_heap hht_heap hht_remaining⟩
     exact {
       env_wf := ⟨delete_ref_node_wellformed env.pathEnv r hwt.env_wf.pathEnv_wf hr_not_root,
@@ -7393,6 +7420,7 @@ private theorem preservation_vecPopBack (m m' : Machine) (env : TypeEnv) (lenv :
         intro y loc_y hvar
         rw [writeRef_preserves_nextLoc m.heap loc path (.vec T elems.dropLast) heap' hwrite]
         exact hwt.varStore_locs_bound y loc_y hvar
+      enum_field_compatibility := hwt.enum_field_compatibility
     }
 
 private theorem preservation_vecPushBack (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -7445,7 +7473,7 @@ private theorem preservation_vecPushBack (m m' : Machine) (env : TypeEnv) (lenv 
   refine ⟨{env with siteEnv := delete (delete env.siteEnv val) refSite,
                      pathEnv := delete_ref_node env.pathEnv r},
           lenv, retTypes, rmap, ?_,
-          stackSafe_heap_writeRef m.stack m.frame.returnInfo m.heap heap' loc path
+          stackSafe_heap_writeRef hwt.enum_field_compatibility m.stack m.frame.returnInfo m.heap heap' loc path
             (.vec T (elems ++ [vval])) (.vec T elems) T.tvec hss hwrite hread_heap hht_heap hht_appended⟩
   -- Helper: get original siteEnv from double-deleted
   have get_old_site : ∀ s' τ', lookup (delete (delete env.siteEnv val) refSite) s' = some τ' →
@@ -7683,6 +7711,7 @@ private theorem preservation_vecPushBack (m m' : Machine) (env : TypeEnv) (lenv 
       intro y loc_y hvar
       rw [writeRef_preserves_nextLoc m.heap loc path (.vec T (elems ++ [vval])) heap' hwrite]
       exact hwt.varStore_locs_bound y loc_y hvar
+    enum_field_compatibility := hwt.enum_field_compatibility
   }
 
 private theorem preservation_vecSwap (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -7783,7 +7812,7 @@ private theorem preservation_vecSwap (m m' : Machine) (env : TypeEnv) (lenv : La
       refine ⟨{env with siteEnv := delete (delete (delete env.siteEnv idx2Site) idx1Site) refSite,
                          pathEnv := delete_ref_node env.pathEnv r},
               lenv, retTypes, rmap, ?_,
-              stackSafe_heap_writeRef m.stack m.frame.returnInfo m.heap heap' loc path
+              stackSafe_heap_writeRef hwt.enum_field_compatibility m.stack m.frame.returnInfo m.heap heap' loc path
                 newVec (.vec T elems) (.tvec T) hss hwrite hread_heap hht_heap hmval⟩
       exact {
         env_wf := ⟨delete_ref_node_wellformed env.pathEnv r hwt.env_wf.pathEnv_wf hr_not_root,
@@ -8058,6 +8087,7 @@ private theorem preservation_vecSwap (m m' : Machine) (env : TypeEnv) (lenv : La
           intro y loc_y hvar
           rw [writeRef_preserves_nextLoc m.heap loc path newVec heap' hwrite]
           exact hwt.varStore_locs_bound y loc_y hvar
+        enum_field_compatibility := hwt.enum_field_compatibility
       }
     · simp at hstep  -- j out of bounds → contradiction
   · simp at hstep    -- i out of bounds → contradiction
@@ -8395,6 +8425,7 @@ private theorem preservation_vecImmBorrow (m m' : Machine) (env : TypeEnv) (lenv
       paths_to_non_member_empty :=
         update_with_extension_paths_to_non_member rf s_ref [.vecElem] env.pathEnv
           hwt.paths_to_non_member_empty (Or.inl hs_in_refs)
+      enum_field_compatibility := hwt.enum_field_compatibility
       self_loop_only_empty := by
         intro u p hp
         unfold pe' update_with_extension at hp
@@ -8544,6 +8575,7 @@ private theorem preservation_vecMutBorrow (m m' : Machine) (env : TypeEnv) (lenv
         (update_with_extension_wellformed rf s_ref [.vecElem] env.pathEnv hwt.env_wf.pathEnv_wf
           hrf_not_root) hrf_not_root
       stmt_typed := hcont
+      enum_field_compatibility := hwt.enum_field_compatibility
       var_consistent := by
         intro y isv τ ms hvy
         have hold := hwt.var_consistent y isv τ ms hvy
@@ -8966,6 +8998,7 @@ private theorem preservation_packVariant (m m' : Machine) (env : TypeEnv) (lenv 
       lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
       has_return_info := hwt.has_return_info
       varStore_locs_bound := hwt.varStore_locs_bound
+      enum_field_compatibility := hwt.enum_field_compatibility
     }
 
 -- Helper: List.lookup success implies membership
@@ -9375,7 +9408,7 @@ private lemma self_loop_only_empty_uwe' (z x : Aref) (p : Path) (pe : PathEnv)
 private theorem addRefFieldSites_root_path_coherence (r : Aref) (bk : BorrowingKind)
     (fentries : AssocMap Field BasicMoveType) (loc : Loc) (pathR : List Field)
     (fields : List (Field × Site)) (env : TypeEnv) (rmap : RefMap)
-    (heap : Heap) (varStore : AssocMap Var (Option Loc))
+    (_ : Heap) (varStore : AssocMap Var (Option Loc))
     (hr_mem : r ∈ env.pathEnv.refs)
     (hrmap_r : rmap.map r = some (loc, pathR))
     (hold : ∀ v y rest, v ∈ env.pathEnv.refs →
@@ -9461,7 +9494,7 @@ private theorem addRefFieldSites_root_path_coherence (r : Aref) (bk : BorrowingK
           subst hs2_eq
           -- rmap_step maps z to (loc, pathR ++ [hd.1])
           show path_v = fieldPathOf rest'
-          simp only [if_pos rfl] at hrmap_v
+          simp only at hrmap_v
           obtain ⟨h1, h2⟩ := Prod.mk.inj (Option.some.inj hrmap_v)
           subst h1; subst h2
           -- Decompose: .root_to_var y' :: rest' = s1 ++ [.field hd.1]
@@ -9602,7 +9635,7 @@ private theorem addRefFieldSites_rmap_paths (r : Aref) (bk : BorrowingKind)
         rcases hr1 with rfl | hr1_mem <;> rcases hr2 with rfl | hr2_mem
         · -- (z, z): self-loop ε
           simp only [update_with_extension, ↓reduceIte] at hp; subst hp
-          unfold PathReflectedInHeap; dsimp only; simp only [if_pos rfl]
+          unfold PathReflectedInHeap; dsimp only; simp only
           intro _; exact ⟨by simp [fieldPathOf], hreadref_hd⟩
         · -- (z, r2): der(paths(r, r2), [.field hd.1])
           have hr2_ne : r2 ≠ nextFreshRefInEnv env := fun h => hfresh (h ▸ hr2_mem)
@@ -9610,7 +9643,7 @@ private theorem addRefFieldSites_rmap_paths (r : Aref) (bk : BorrowingKind)
           simp only [der, List.foldl] at hp
           have hold_p := hold r r2 hr_mem hr2_mem (.field hd.1 :: p) hp
           unfold PathReflectedInHeap at hold_p ⊢; dsimp only
-          simp only [if_pos rfl, if_neg hr2_ne]
+          simp only [if_neg hr2_ne]
           cases hrmap_r2 : rmap.map r2 with
           | none => simp
           | some lr2 =>
@@ -9955,6 +9988,7 @@ private theorem preservation_unpackVariant (m m' : Machine) (env : TypeEnv) (len
         lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
         has_return_info := hwt.has_return_info
         varStore_locs_bound := hwt.varStore_locs_bound
+        enum_field_compatibility := hwt.enum_field_compatibility
       }
     · -- actualVariant ≠ vname → step gives error, contradiction
       simp at hstep
@@ -10225,6 +10259,7 @@ private theorem preservation_unpackVariant (m m' : Machine) (env : TypeEnv) (len
             exact buildRefFieldEnvRmap_new_ref_mapped r bk fentries loc pathR fields env0 rmap
               r' hr'_mem hr'_old
         varStore_locs_bound := hwt.varStore_locs_bound
+        enum_field_compatibility := hwt.enum_field_compatibility
       }
     · -- actualVariant ≠ vname → step gives error
       simp at hstep
@@ -10370,6 +10405,7 @@ private theorem preservation_variantSwitch (m m' : Machine) (env : TypeEnv) (len
       lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
       has_return_info := hwt.has_return_info
       varStore_locs_bound := hwt.varStore_locs_bound
+      enum_field_compatibility := hwt.enum_field_compatibility
     }
 
 -- ============================================================

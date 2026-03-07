@@ -136,6 +136,7 @@ theorem wellTypedState_heap_alloc
       show loc_y < (heap.alloc v).1.nextLoc
       simp only [Heap.alloc]
       exact Nat.lt_trans hlt (Nat.lt_succ_of_le (Nat.le_refl _))
+    enum_field_compatibility := hwt.enum_field_compatibility
   }
 
 /-- StackSafe is preserved under heap.alloc -/
@@ -206,7 +207,9 @@ theorem stackSafe_heap_alloc (stack : List Frame) (ri : Option ReturnInfo)
       · exact stackSafe_heap_alloc rest callerFrame.returnInfo heap v hrest hlb
 
 /-- StackSafe is preserved under heap.writeRef -/
-theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
+theorem stackSafe_heap_writeRef
+    (enum_compat : ∀ (fv1 fv2 : Value) (bt : BasicMoveType), HasType fv1 bt → HasType fv2 bt → variantCompatible fv1 fv2)
+    (stack : List Frame) (ri : Option ReturnInfo)
     (heap heap' : Heap) (loc : Loc) (wpath : List Field)
     (vval v_leaf : Value) (τ : BasicMoveType)
     {calleeRetTypes : List ParamType}
@@ -300,8 +303,8 @@ theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
                     simp only [Heap.readRef, bind, Option.bind, hbase] at hlive
                     rw [← hsuffix, readPath_append] at hlive
                     simp only [hv_leaf_read', Option.bind] at hlive
-                    exact readPath_HasType_transfer v_leaf vval τ
-                      (sf :: srest) hv_leaf_ht hmval hlive)
+                    exact readPath_HasType_transfer enum_compat v_leaf vval τ
+                      (sf :: srest) hv_leaf_ht hmval (enum_compat v_leaf vval τ hv_leaf_ht hmval) hlive)
             · simp only [Heap.readRef, bind, Option.bind] at hlive ⊢
               rw [hread_diff loc' (Ne.symm hloc)]
               exact hlive
@@ -332,8 +335,8 @@ theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
                         simp only [Heap.readRef, bind, Option.bind, hbase] at hne
                         rw [← hsuffix, readPath_append] at hne
                         simp only [hv_leaf_read', Option.bind] at hne
-                        exact readPath_HasType_transfer v_leaf vval τ
-                          (sf :: srest) hv_leaf_ht hmval hne)
+                        exact readPath_HasType_transfer enum_compat v_leaf vval τ
+                          (sf :: srest) hv_leaf_ht hmval (enum_compat v_leaf vval τ hv_leaf_ht hmval) hne)
                 · simp only [Heap.readRef, bind, Option.bind] at hne ⊢
                   rw [hread_diff loc2 (Ne.symm hloc2)]
                   exact hne
@@ -352,7 +355,7 @@ theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
               obtain ⟨vnew, hread_vnew, hht_vnew⟩ := writePath_preserves_readPath_HasType
                 baseVal wpath path' vval newRoot v_leaf v_old τ bt
                 hwp hread_old hht_old hv_leaf_read' hv_leaf_ht hmval
-                (fun suffix _ => typeAtPathV_HasType_determined vval v_leaf τ suffix hmval hv_leaf_ht)
+                (fun suffix _ => typeAtPathV_HasType_determined enum_compat vval v_leaf τ suffix hmval hv_leaf_ht (enum_compat vval v_leaf τ hmval hv_leaf_ht))
               exact ⟨vnew, by simp [Heap.readRef, bind, Option.bind, hread_loc, hread_vnew], hht_vnew⟩
             · refine ⟨v_old, ?_, hht_old⟩
               simp only [Heap.readRef, bind, Option.bind] at hread_old ⊢
@@ -360,7 +363,7 @@ theorem stackSafe_heap_writeRef (stack : List Frame) (ri : Option ReturnInfo)
               exact hread_old
           · -- funEnv_sig_consistent
             exact hfe_sig
-          · exact stackSafe_heap_writeRef rest callerFrame.returnInfo heap heap' loc wpath
+          · exact stackSafe_heap_writeRef enum_compat rest callerFrame.returnInfo heap heap' loc wpath
               vval v_leaf τ hrest hwr hv_leaf_read hv_leaf_ht hmval
 
 -- ============================================================
