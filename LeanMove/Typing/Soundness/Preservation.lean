@@ -2457,6 +2457,7 @@ private theorem preservation_readRef (m m' : Machine) (env : TypeEnv) (lenv : La
             rw [lookup_delete_ne _ src s' hne_src] at hsite
             exact Or.inr ⟨s', bk, hsite⟩
       funEnv_sig_consistent := hwt.funEnv_sig_consistent
+      enum_field_compatibility := hwt.enum_field_compatibility
       refs_tracked_mapped := by
         intro ref href
         simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at href
@@ -2464,7 +2465,6 @@ private theorem preservation_readRef (m m' : Machine) (env : TypeEnv) (lenv : La
       lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
       has_return_info := hwt.has_return_info
       varStore_locs_bound := hwt.varStore_locs_bound
-      enum_field_compatibility := hwt.enum_field_compatibility
     }
 
 /-- If evalBinop succeeds and binop_type determines the output type,
