@@ -136,7 +136,7 @@ theorem wellTypedState_heap_alloc
       show loc_y < (heap.alloc v).1.nextLoc
       simp only [Heap.alloc]
       exact Nat.lt_trans hlt (Nat.lt_succ_of_le (Nat.le_refl _))
-    enum_field_compatibility := hwt.enum_field_compatibility
+    enum_mutable_no_extension := hwt.enum_mutable_no_extension
   }
 
 /-- StackSafe is preserved under heap.alloc -/
@@ -210,7 +210,6 @@ theorem stackSafe_heap_alloc (globalEnumEnv : EnumEnv) (stack : List Frame) (ri 
 /-- StackSafe is preserved under heap.writeRef -/
 theorem stackSafe_heap_writeRef
     (globalEnumEnv : EnumEnv)
-    (enum_compat : ∀ (fv1 fv2 : Value) (bt : BasicMoveType), HasType globalEnumEnv fv1 bt → HasType globalEnumEnv fv2 bt → variantCompatible fv1 fv2)
     (stack : List Frame) (ri : Option ReturnInfo)
     (heap heap' : Heap) (loc : Loc) (wpath : List Field)
     (vval v_leaf : Value) (τ : BasicMoveType)
@@ -219,7 +218,11 @@ theorem stackSafe_heap_writeRef
     (hwr : heap.writeRef loc wpath vval = some heap')
     (hv_leaf_read : heap.readRef loc wpath = some v_leaf)
     (hv_leaf_ht : HasType globalEnumEnv v_leaf τ)
-    (hmval : HasType globalEnumEnv vval τ) :
+    (hmval : HasType globalEnumEnv vval τ)
+    (htransfer_read : ∀ (suffix : List Field), suffix ≠ [] →
+      readPath v_leaf suffix ≠ none → readPath vval suffix ≠ none)
+    (htransfer_type : ∀ (suffix : List Field), suffix ≠ [] →
+      typeAtPathV globalEnumEnv vval τ suffix = typeAtPathV globalEnumEnv v_leaf τ suffix) :
     StackSafe globalEnumEnv stack ri heap' calleeRetTypes := by
   cases stack with
   | nil => simp [StackSafe]
@@ -237,7 +240,6 @@ theorem stackSafe_heap_writeRef
         hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hrtm, hvar_con, hsite_con, hrmap_live, hrmap_paths_f,
         hhlb, hvlb, hrmap_ht, hfe_sig, htc⟩ := hfields.2.2
       -- Instantiate enum hypotheses with cE.enumEnv via henum_eq
-      have enum_compat_cE : ∀ (fv1 fv2 : Value) (bt : BasicMoveType), HasType cE.enumEnv fv1 bt → HasType cE.enumEnv fv2 bt → variantCompatible fv1 fv2 := henum_eq ▸ enum_compat
       have hv_leaf_ht_cE : HasType cE.enumEnv v_leaf τ := henum_eq ▸ hv_leaf_ht
       have hmval_cE : HasType cE.enumEnv vval τ := henum_eq ▸ hmval
       -- Extract base value and writePath facts for field maintenance
@@ -310,8 +312,7 @@ theorem stackSafe_heap_writeRef
                     simp only [Heap.readRef, bind, Option.bind, hbase] at hlive
                     rw [← hsuffix, readPath_append] at hlive
                     simp only [hv_leaf_read', Option.bind] at hlive
-                    exact readPath_HasType_transfer enum_compat_cE v_leaf vval τ
-                      (sf :: srest) hv_leaf_ht_cE hmval_cE (enum_compat_cE v_leaf vval τ hv_leaf_ht_cE hmval_cE) hlive)
+                    exact htransfer_read (sf :: srest) (List.cons_ne_nil _ _) hlive)
             · simp only [Heap.readRef, bind, Option.bind] at hlive ⊢
               rw [hread_diff loc' (Ne.symm hloc)]
               exact hlive
@@ -339,11 +340,20 @@ theorem stackSafe_heap_writeRef
                       cases suffix with
                       | nil => simp [readPath]
                       | cons sf srest =>
+                        -- rmap_paths suffix: need readPath transfer
+                        -- path2 = wpath ++ sf :: srest, so suffix is non-empty
+                        -- We don't have hlive unfolded here like in rmap_live case
+                        -- but hne gives us readRef at path2 ≠ none
                         simp only [Heap.readRef, bind, Option.bind, hbase] at hne
                         rw [← hsuffix, readPath_append] at hne
-                        simp only [hv_leaf_read', Option.bind] at hne
-                        exact readPath_HasType_transfer enum_compat_cE v_leaf vval τ
-                          (sf :: srest) hv_leaf_ht_cE hmval_cE (enum_compat_cE v_leaf vval τ hv_leaf_ht_cE hmval_cE) hne)
+                        cases hrl : readPath baseVal wpath with
+                        | none => simp [hrl] at hv_leaf_read'
+                        | some vl =>
+                          simp only [hrl, Option.bind] at hne
+                          have : vl = v_leaf := by
+                            simp only [hrl, Option.some.injEq] at hv_leaf_read'; exact hv_leaf_read'
+                          subst this
+                          exact htransfer_read (sf :: srest) (List.cons_ne_nil _ _) hne)
                 · simp only [Heap.readRef, bind, Option.bind] at hne ⊢
                   rw [hread_diff loc2 (Ne.symm hloc2)]
                   exact hne
@@ -362,7 +372,7 @@ theorem stackSafe_heap_writeRef
               obtain ⟨vnew, hread_vnew, hht_vnew⟩ := writePath_preserves_readPath_HasType
                 baseVal wpath path' vval newRoot v_leaf v_old τ bt
                 hwp hread_old hht_old hv_leaf_read' hv_leaf_ht_cE hmval_cE
-                (fun suffix _ => typeAtPathV_HasType_determined enum_compat_cE vval v_leaf τ suffix hmval_cE hv_leaf_ht_cE (enum_compat_cE vval v_leaf τ hmval_cE hv_leaf_ht_cE))
+                (fun suffix hne_suffix => henum_eq ▸ htransfer_type suffix hne_suffix)
               exact ⟨vnew, by simp [Heap.readRef, bind, Option.bind, hread_loc, hread_vnew], hht_vnew⟩
             · refine ⟨v_old, ?_, hht_old⟩
               simp only [Heap.readRef, bind, Option.bind] at hread_old ⊢
@@ -370,8 +380,8 @@ theorem stackSafe_heap_writeRef
               exact hread_old
           · -- funEnv_sig_consistent
             exact hfe_sig
-          · exact stackSafe_heap_writeRef globalEnumEnv enum_compat rest callerFrame.returnInfo heap heap' loc wpath
-              vval v_leaf τ hrest hwr hv_leaf_read hv_leaf_ht hmval
+          · exact stackSafe_heap_writeRef globalEnumEnv rest callerFrame.returnInfo heap heap' loc wpath
+              vval v_leaf τ hrest hwr hv_leaf_read hv_leaf_ht hmval htransfer_read htransfer_type
 
 -- ============================================================
 -- Part 2: Helper Lemmas for preservation_ret

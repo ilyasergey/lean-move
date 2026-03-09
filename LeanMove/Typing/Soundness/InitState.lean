@@ -309,6 +309,43 @@ def checkArgsCompatible (params : List (Var × MoveType)) (args : List Value) (h
 -- Part 11b': Soundness Assumptions
 -- ============================================================
 
+/-- Check that `prefix_` is a proper prefix of `list` (same elements, strictly shorter). -/
+def isProperListPrefix [DecidableEq α] (prefix_ : List α) (list : List α) : Bool :=
+  prefix_.length < list.length && decide (list.take prefix_.length = prefix_)
+
+/-- If `isProperListPrefix` returns false and `list = prefix_ ++ suffix`, then `suffix = []`. -/
+theorem not_isProperListPrefix_no_extension [DecidableEq α] (prefix_ list : List α)
+    (h : isProperListPrefix prefix_ list = false) (suffix : List α)
+    (heq : list = prefix_ ++ suffix) : suffix = [] := by
+  unfold isProperListPrefix at h
+  rw [Bool.and_eq_false_iff] at h
+  subst heq
+  rcases h with h | h
+  · simp [List.length_append] at h
+    cases suffix with
+    | nil => rfl
+    | cons _ _ => simp at h
+  · rw [decide_eq_false_iff_not] at h
+    simp at h
+
+/-- Decidable check: no mutable borrow of enum-containing type has a path extension
+    by a different ref-typed param at the same heap location. -/
+def checkParamEnumNoExtension (params : List (Var × MoveType)) (args : List Value) : Bool :=
+  let entries := params.zip args
+  entries.all fun ((_, τ1), v1) =>
+    match τ1, v1 with
+    | .ref bt1 r1 .siteBorrowMut, .ref loc1 path1 =>
+      if bt1.containsEnum then
+        entries.all fun ((_, τ2), v2) =>
+          match τ2, v2 with
+          | .ref _ r2 _, .ref loc2 path2 =>
+            if decide (r1 ≠ r2) && decide (loc1 = loc2) then
+              !isProperListPrefix path1 path2
+            else true
+          | _, _ => true
+      else true
+    | _, _ => true
+
 /-- Semantic prerequisites for type soundness that are not captured by the
     relational type-checking judgment `typecheck_fun`.
 
@@ -439,76 +476,13 @@ structure SoundnessAssumptions (f : FunDef) (lenv : LabelEnv) (enumEnv : EnumEnv
       `blockEnv.enumEnv` to equal the global `enumEnv`. -/
   lenv_enumEnv_eq : ∀ l env, lookup lenv l = some env → env.enumEnv = enumEnv
 
-  /-- Enum variant uniqueness: for a well-typed initialization, if two enum variants
-      have the same enum type, they have the same variant name.
-      This ensures global uniqueness of variant names within each enum type. -/
-  enum_variant_uniqueness : ∀ (vn1 vn2 : Id) (ename : Id)
-    (fields1 fields2 : List (Field × Value)),
-    HasType enumEnv (.variant vn1 ename fields1) (.tenum ename) →
-    HasType enumEnv (.variant vn2 ename fields2) (.tenum ename) →
-    vn1 = vn2
-
-  /-- Enum field compatibility for initialization: any two values of the same basic type
-      are variant-compatible. This follows from enum_variant_uniqueness. -/
-  enum_field_compatibility : ∀ (fv1 fv2 : Value) (bt : BasicMoveType),
-    HasType enumEnv fv1 bt → HasType enumEnv fv2 bt → variantCompatible fv1 fv2
-
-/-- Check that each enum in the EnumEnv has at most one variant.
-    This is a sufficient condition for enum_variant_uniqueness. -/
-def checkEnumSingleVariant (enumEnv : EnumEnv) : Bool :=
-  enumEnv.entries.all fun (_, ed) => ed.variants.entries.length ≤ 1
-
-/-- If checkEnumSingleVariant succeeds, then enum_variant_uniqueness holds. -/
-theorem checkEnumSingleVariant_sound (enumEnv : EnumEnv)
-    (hcheck : checkEnumSingleVariant enumEnv = true) :
-    ∀ (vn1 vn2 : Id) (ename : Id) (fields1 fields2 : List (Field × Value)),
-    HasType enumEnv (.variant vn1 ename fields1) (.tenum ename) →
-    HasType enumEnv (.variant vn2 ename fields2) (.tenum ename) →
-    vn1 = vn2 := by
-  intro vn1 vn2 ename fields1 fields2 ht1 ht2
-  cases ht1 with
-  | variant _ _ _ fentries1 hevf1 _ _ _ =>
-    cases ht2 with
-    | variant _ _ _ fentries2 hevf2 _ _ _ =>
-      -- hevf1 : enumVariantFields enumEnv ename vn1 = some fentries1
-      -- hevf2 : enumVariantFields enumEnv ename vn2 = some fentries2
-      unfold enumVariantFields at hevf1 hevf2
-      cases hlookup_e : enumEnv.lookup ename with
-      | none => simp [hlookup_e] at hevf1
-      | some enumDef =>
-        simp only [hlookup_e] at hevf1 hevf2
-        -- enumDef.variants has ≤ 1 entry
-        simp only [checkEnumSingleVariant, List.all_eq_true] at hcheck
-        have hmem := AssocMap.lookup_some enumEnv ename enumDef hlookup_e
-        have hle := hcheck (ename, enumDef) hmem
-        simp only [decide_eq_true_eq] at hle
-        -- Extract variant lookups from the match
-        -- enumDef.variants.lookup is List.lookup on entries
-        cases hv1 : enumDef.variants.lookup vn1 with
-        | none => simp [hv1] at hevf1
-        | some vd1 =>
-          cases hv2 : enumDef.variants.lookup vn2 with
-          | none => simp [hv2] at hevf2
-          | some vd2 =>
-            -- Both vn1 and vn2 have successful lookups in a list of length ≤ 1
-            -- The list is enumDef.variants.entries
-            unfold AssocMap.lookup at hv1 hv2
-            -- hv1 : List.lookup vn1 enumDef.variants.entries = some vd1
-            -- hv2 : List.lookup vn2 enumDef.variants.entries = some vd2
-            -- hle : enumDef.variants.entries.length ≤ 1
-            -- Both vn1 and vn2 lookup successfully in a list of length ≤ 1
-            -- Case split on the entries list
-            match hents : enumDef.variants.entries, hle, hv1, hv2 with
-            | [], _, hv1, _ => simp [List.lookup] at hv1
-            | [(k, _)], _, hv1, hv2 =>
-              simp only [List.lookup] at hv1 hv2
-              cases h1 : (vn1 == k) with
-              | false => simp [h1] at hv1
-              | true =>
-                cases h2 : (vn2 == k) with
-                | false => simp [h2] at hv2
-                | true => exact (eq_of_beq h1).trans (eq_of_beq h2).symm
-            | _ :: _ :: _, hle, _, _ => simp [List.length] at hle
+  /-- Mutable borrows of enum-containing types have no extending refs at the same
+      heap location among the initial arguments. -/
+  param_enum_no_extension : ∀ x1 x2 bt1 bt2 r1 r2 bk2 loc path suffix,
+    ((x1, .ref bt1 r1 .siteBorrowMut), Value.ref loc path) ∈ f.params.zip args →
+    bt1.containsEnum = true →
+    ((x2, .ref bt2 r2 bk2), Value.ref loc (path ++ suffix)) ∈ f.params.zip args →
+    r1 ≠ r2 → suffix ≠ [] → False
 
 def SoundnessAssumptions.checkDecidable (f : FunDef) (lenvDec : LabelEnvDec)
     (enumEnv : EnumEnv) (funEnv : AssocMap Id FunDef) (fte : FunTypingEnv)
@@ -553,8 +527,8 @@ def SoundnessAssumptions.checkDecidable (f : FunDef) (lenvDec : LabelEnvDec)
   lenvDec.entries.all (fun (l, _) => f.blocks.any (fun b => b.label == l)) &&
   -- lenv_enumEnv_eq: all lenv entries have enumEnv matching the global one
   lenvDec.entries.all (fun (_, ted) => ted.enumEnv == enumEnv) &&
-  -- enumSingleVariant: each enum has at most one variant (current limitation)
-  checkEnumSingleVariant enumEnv &&
+  -- param_enum_no_extension: no mutable enum borrow has extending ref at same location
+  checkParamEnumNoExtension f.params args &&
   -- args_length: argument count matches parameter count
   decide (f.params.length = args.length)
 
@@ -822,27 +796,21 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     simp only [beq_iff_eq] at hchk
     simp only [TypeEnvDec.toTypeEnv]
     exact hchk
+  param_enum_no_extension := by
+    simp only [checkDecidable, Bool.and_eq_true] at hcheck
+    obtain ⟨⟨_, hpene⟩, _⟩ := hcheck
+    intro x1 x2 bt1 bt2 r1 r2 bk2 loc path suffix hmem1 hce hmem2 hne hsuf
+    simp only [checkParamEnumNoExtension, List.all_eq_true] at hpene
+    have h1 := hpene _ hmem1
+    simp only [hce, ite_true, List.all_eq_true] at h1
+    have h2 := h1 _ hmem2
+    dsimp only at h2
+    simp only [decide_true, Bool.and_true, decide_eq_true hne, ite_true,
+      Bool.not_eq_true'] at h2
+    exact hsuf (not_isProperListPrefix_no_extension path (path ++ suffix) h2 suffix rfl)
   args_length := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
     exact decide_eq_true_eq.mp hcheck.2
-  enum_variant_uniqueness := by
-    simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    exact checkEnumSingleVariant_sound enumEnv hcheck.1.2
-  enum_field_compatibility := by
-    simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    have hsv := checkEnumSingleVariant_sound enumEnv hcheck.1.2
-    intro fv1 fv2 bt htype1 htype2
-    exact variantCompatible_of_not_both_different_variants fv1 fv2 (by
-      intro h
-      obtain ⟨n1, bt1, fields1, n2, bt2, fields2, h1, h2, hne⟩ := h
-      subst h1 h2
-      cases htype1 with
-      | variant _ _ _ fentries1 hevf1 hcov1a hcov1b hflds1 =>
-      cases htype2 with
-      | variant _ _ _ fentries2 hevf2 hcov2a hcov2b hflds2 =>
-      exact hne (hsv n1 n2 bt1 fields1 fields2
-        (.variant _ _ _ _ hevf1 hcov1a hcov1b hflds1)
-        (.variant _ _ _ _ hevf2 hcov2a hcov2b hflds2)))
 
 -- ============================================================
 -- Part 11c: allocArgs_param_has_type + initState_safe
@@ -1336,13 +1304,23 @@ theorem initState_safe (f : FunDef) (lenv : LabelEnv) (enumEnv : EnumEnv) (funEn
             · rw [addLocals_preserves_lookup paramVarStore f.locals y hlocal] at hvar
               exact allocArgs_varStore_locs_bound heap f.params args heap'
                 paramVarStore hallocArgs y loc_y hvar
-          enum_field_compatibility := by
-            intro fv1 fv2 bt h1 h2
-            have henumEnv_block_rev : LookupEquiv blockEnv.enumEnv enumEnv :=
-              fun k => (henumEnv_block k).symm
-            exact ha.enum_field_compatibility fv1 fv2 bt
-              (HasType_of_lookupEquiv henumEnv_block_rev _ _ h1)
-              (HasType_of_lookupEquiv henumEnv_block_rev _ _ h2)
+          enum_mutable_no_extension := by
+            intro r bt loc path hr hce hb hrmap r' hr' hne suffix hsuf
+            rcases hb with ⟨s, hs⟩ | ⟨x, ms, hx⟩
+            · rw [hsiteEnv_empty s] at hs; cases hs
+            · intro hrmap'
+              obtain ⟨x2, bt2, bk2, hmem2⟩ := hrmap_mem r' loc (path ++ suffix) hrmap'
+              have ⟨_, hparam⟩ := hvar_init_exact x (.ref bt r .siteBorrowMut) ms hx
+              obtain ⟨v, hmem1⟩ := hmem_zip_of_param x (.ref bt r .siteBorrowMut) hparam
+              have hcompat := ha.args_compatible x (.ref bt r .siteBorrowMut) v hmem1
+              obtain ⟨loc', path', hveq, _⟩ := hcompat
+              subst hveq
+              have hrmap1 := hrmap_of_param x bt r .siteBorrowMut loc' path' hmem1
+              rw [hrmap] at hrmap1
+              simp only [Option.some.injEq, Prod.mk.injEq] at hrmap1
+              obtain ⟨rfl, rfl⟩ := hrmap1
+              exact ha.param_enum_no_extension x x2 bt bt2 r r' bk2 loc path suffix
+                hmem1 hce hmem2 hne.symm hsuf
         }
       · -- StackSafe [] none heap' = True
         simp only [StackSafe]

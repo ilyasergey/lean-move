@@ -38,6 +38,32 @@ open Regex
 -- Part 8: Preservation — typing inversion lemmas
 -- ============================================================
 
+/-- If a field of a record has containsEnum = true, then the record has containsEnum = true. -/
+private theorem containsEnumEntries_true_of_field
+    (entries : List (Field × BasicMoveType)) (f : Field) (bt_f : BasicMoveType)
+    (hfield : List.lookup f entries = some bt_f) (hce : bt_f.containsEnum = true) :
+    BasicMoveType.containsEnumEntries entries = true := by
+  induction entries with
+  | nil => simp [List.lookup] at hfield
+  | cons hd tl ih =>
+    obtain ⟨k, v⟩ := hd
+    simp only [BasicMoveType.containsEnumEntries, Bool.or_eq_true]
+    simp only [List.lookup] at hfield
+    by_cases hfk : f == k
+    · simp only [hfk] at hfield
+      obtain rfl := Option.some.inj hfield
+      exact Or.inl hce
+    · simp only [hfk] at hfield
+      exact Or.inr (ih hfield)
+
+private theorem containsEnum_record_of_field (fentries : AssocMap Field BasicMoveType)
+    (f : Field) (bt_f : BasicMoveType)
+    (hfield : lookup fentries f = some bt_f) (hce : bt_f.containsEnum = true) :
+    BasicMoveType.containsEnum (.trecord fentries) = true := by
+  simp only [BasicMoveType.containsEnum_trecord]
+  exact containsEnumEntries_true_of_field fentries.entries f bt_f
+    (by unfold AssocMap.lookup at hfield; exact hfield) hce
+
 -- Extract continuation typing from each typecheck_stmt constructor.
 -- These are separate lemmas to avoid rw/cases interaction issues.
 
@@ -576,6 +602,49 @@ private lemma live_refs_unique_insert_basic
         rw [lookup_insert_ne _ s s2 _ heq2] at hs2
         exact (hwt.live_refs_unique r').2.1 s1 s2 bt1 bt2 bk1 bk2 hne hs1 hs2
 
+/-- Helper: lookup on delete returns some → lookup on original returns some -/
+private lemma lookup_delete_some' {K V : Type} [DecidableEq K] (m : AssocMap K V) (k k' : K) (v : V)
+    (h : lookup (delete m k) k' = some v) : lookup m k' = some v := by
+  by_cases heq : k' = k
+  · subst heq; rw [lookup_delete_same] at h; cases h
+  · rwa [lookup_delete_ne _ k k' heq] at h
+
+/-- Helper: addFieldSites only adds .basic entries, so ref lookups pass through -/
+private lemma addFieldSites_ref_lookup (fentries : AssocMap Field BasicMoveType)
+    (se : AssocMap Site MoveType) (fields : List (Field × Site))
+    (s : Site) (bt : BasicMoveType) (r : Aref)
+    (h : lookup (addFieldSites fentries se fields) s = some (.ref bt r .siteBorrowMut)) :
+    lookup se s = some (.ref bt r .siteBorrowMut) := by
+  induction fields generalizing se with
+  | nil => exact h
+  | cons fld rest ih =>
+    unfold addFieldSites at h
+    simp only [List.foldl] at h
+    cases hlook : AssocMap.lookup fentries fld.1 with
+    | none =>
+      simp only [hlook] at h
+      exact ih se h
+    | some bt' =>
+      simp only [hlook] at h
+      have h' := ih (insert se fld.2 (.basic bt')) h
+      by_cases heq : s = fld.2
+      · subst heq; simp [lookup_insert_same] at h'
+      · rwa [lookup_insert_ne _ fld.2 s _ heq] at h'
+
+/-- Helper: addVecSites only adds .basic entries, so ref lookups pass through -/
+private lemma addVecSites_ref_lookup (T : BasicMoveType)
+    (se : AssocMap Site MoveType) (sites : List Site)
+    (s : Site) (bt : BasicMoveType) (r : Aref)
+    (h : lookup (addVecSites T se sites) s = some (.ref bt r .siteBorrowMut)) :
+    lookup se s = some (.ref bt r .siteBorrowMut) := by
+  induction sites generalizing se with
+  | nil => exact h
+  | cons site rest ih =>
+    have h' := ih (insert se site (.basic T)) h
+    by_cases heq : s = site
+    · subst heq; simp [lookup_insert_same] at h'
+    · rwa [lookup_insert_ne _ site s _ heq] at h'
+
 private theorem preservation_intLit (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
@@ -628,7 +697,15 @@ private theorem preservation_intLit (m m' : Machine) (env : TypeEnv) (lenv : Lab
     lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
     has_return_info := hwt.has_return_info
     varStore_locs_bound := hwt.varStore_locs_bound
-    enum_field_compatibility := hwt.enum_field_compatibility
+    enum_mutable_no_extension := by
+      intro r bt loc path hr hce hb hrmap r' hr' hne suffix hsuf
+      apply hwt.enum_mutable_no_extension r bt loc path hr hce _ hrmap r' hr' hne suffix hsuf
+      rcases hb with ⟨s', hs'⟩ | ⟨x', ms', hx'⟩
+      · by_cases heq : s' = s
+        · subst heq; simp [lookup_insert_same] at hs'
+        · rw [lookup_insert_ne _ s s' _ heq] at hs'
+          exact Or.inl ⟨s', hs'⟩
+      · exact Or.inr ⟨x', ms', hx'⟩
   }
 
 private theorem preservation_copy_val (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -686,7 +763,15 @@ private theorem preservation_copy_val (m m' : Machine) (env : TypeEnv) (lenv : L
     lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
     has_return_info := hwt.has_return_info
     varStore_locs_bound := hwt.varStore_locs_bound
-    enum_field_compatibility := hwt.enum_field_compatibility
+    enum_mutable_no_extension := by
+      intro r bt loc path hr hce hb hrmap r' hr' hne suffix hsuf
+      apply hwt.enum_mutable_no_extension r bt loc path hr hce _ hrmap r' hr' hne suffix hsuf
+      rcases hb with ⟨s', hs'⟩ | ⟨x', ms', hx'⟩
+      · by_cases heq : s' = s
+        · subst heq; simp [lookup_insert_same] at hs'
+        · rw [lookup_insert_ne _ s s' _ heq] at hs'
+          exact Or.inl ⟨s', hs'⟩
+      · exact Or.inr ⟨x', ms', hx'⟩
   }
 
 /-- When PathEnv is extended via `update_with_epsilon t s_orig pe` and rmap is
@@ -1148,7 +1233,95 @@ private theorem preservation_copy_ref (m m' : Machine) (env : TypeEnv) (lenv : L
     lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
     has_return_info := hwt.has_return_info
     varStore_locs_bound := hwt.varStore_locs_bound
-    enum_field_compatibility := hwt.enum_field_compatibility
+    enum_mutable_no_extension := by
+      intro r bt loc_r path_r hr_tracked hce hborrow hrmap_r r' hr'_tracked hr'_ne_r suffix hsuf
+      have ht_fresh : t ∉ env.pathEnv.refs :=
+        (freshRef_iff_freshRefBool t env.pathEnv).mpr hfresh_t_pathEnv
+      have hr_mem : r = t ∨ r ∈ env.pathEnv.refs := by
+        have := hr_tracked
+        simp only [update_with_epsilon, update_with_extension, ht_fresh, not_false_eq_true,
+          ↓reduceIte, List.mem_cons] at this; exact this
+      have hr'_mem : r' = t ∨ r' ∈ env.pathEnv.refs := by
+        have := hr'_tracked
+        simp only [update_with_epsilon, update_with_extension, ht_fresh, not_false_eq_true,
+          ↓reduceIte, List.mem_cons] at this; exact this
+      by_cases hrt : r = t
+      · -- r = t
+        subst hrt
+        simp only [rmap', ite_true] at hrmap_r
+        obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj hrmap_r)
+        have hr'_old : r' ∈ env.pathEnv.refs := by
+          cases hr'_mem with | inl h => exact absurd h hr'_ne_r | inr h => exact h
+        change (if r' = r then some (loc', path) else rmap.map r') ≠ some (loc', path ++ suffix)
+        simp only [if_neg hr'_ne_r]
+        have hs_tracked : s_orig ∈ env.pathEnv.refs :=
+          hwt.varEnv_refs_in_pathEnv x τ_ref s_orig isBor ms hvar
+        have hborrow_s_orig : (∃ s'', lookup env.siteEnv s'' = some (.ref bt s_orig .siteBorrowMut)) ∨
+            (∃ x' ms', lookup env.varEnv x' = some (.validVar, .ref bt s_orig .siteBorrowMut, ms')) := by
+          rcases hborrow with ⟨s', hsite⟩ | ⟨x', ms', hvar'⟩
+          · by_cases heqs : s' = s
+            · subst heqs; rw [lookup_insert_same] at hsite
+              simp only [Option.some.injEq, MoveType.ref.injEq] at hsite
+              obtain ⟨h1, -, h3⟩ := hsite
+              rw [← h1, ← h3]
+              exact Or.inr ⟨x, ms, hvar⟩
+            · rw [lookup_insert_ne _ s s' _ heqs] at hsite
+              exact absurd (hwt.siteEnv_refs_in_pathEnv s' bt r .siteBorrowMut hsite) ht_fresh
+          · exact absurd (hwt.varEnv_refs_in_pathEnv x' bt r .siteBorrowMut ms' hvar') ht_fresh
+        by_cases hr'_eq_s : r' = s_orig
+        · -- r' = s_orig
+          subst hr'_eq_s
+          rw [hrmap_s_orig]; intro heq
+          have heqp := congr_arg Prod.snd (Option.some.inj heq)
+          have : suffix = [] := by
+            have := congr_arg List.length heqp
+            simp [List.length_append] at this
+            cases suffix with | nil => rfl | cons _ _ => simp at this
+          exact hsuf this
+        · exact hwt.enum_mutable_no_extension s_orig bt loc' path hs_tracked hce
+            hborrow_s_orig hrmap_s_orig r' hr'_old hr'_eq_s suffix hsuf
+      · -- r ≠ t
+        have hborrow_old : (∃ s', lookup env.siteEnv s' = some (.ref bt r .siteBorrowMut)) ∨
+            (∃ x' ms', lookup env.varEnv x' = some (.validVar, .ref bt r .siteBorrowMut, ms')) := by
+          rcases hborrow with ⟨s', hsite⟩ | ⟨x', ms', hvar'⟩
+          · by_cases heqs : s' = s
+            · subst heqs; rw [lookup_insert_same] at hsite
+              simp only [Option.some.injEq, MoveType.ref.injEq] at hsite
+              obtain ⟨_, h2, _⟩ := hsite
+              exact absurd h2.symm hrt
+            · rw [lookup_insert_ne _ s s' _ heqs] at hsite
+              exact Or.inl ⟨s', hsite⟩
+          · exact Or.inr ⟨x', ms', hvar'⟩
+        have hrmap_old : rmap.map r = some (loc_r, path_r) := by
+          change (if r = t then some (loc', path) else rmap.map r) = some (loc_r, path_r) at hrmap_r
+          simp only [if_neg hrt] at hrmap_r; exact hrmap_r
+        have hr_old : r ∈ env.pathEnv.refs := by
+          cases hr_mem with | inl h => exact absurd h hrt | inr h => exact h
+        show (if r' = t then some (loc', path) else rmap.map r') ≠ some (loc_r, path_r ++ suffix)
+        by_cases hr't : r' = t
+        · -- r' = t
+          simp only [hr't, ite_true]
+          have hs_tracked : s_orig ∈ env.pathEnv.refs :=
+            hwt.varEnv_refs_in_pathEnv x τ_ref s_orig isBor ms hvar
+          by_cases hs_eq_r : s_orig = r
+          · -- s_orig = r
+            subst hs_eq_r
+            rw [hrmap_s_orig] at hrmap_old
+            obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj hrmap_old)
+            intro heq
+            have := congr_arg Prod.snd (Option.some.inj heq)
+            have := congr_arg List.length this
+            simp [List.length_append] at this
+            cases suffix with | nil => exact hsuf rfl | cons _ _ => simp at this
+          · rw [← hrmap_s_orig]
+            exact hwt.enum_mutable_no_extension r bt loc_r path_r hr_old hce hborrow_old hrmap_old
+              s_orig hs_tracked hs_eq_r suffix hsuf
+        · -- r' ≠ t
+          simp only [if_neg hr't]
+          have hr'_old : r' ∈ env.pathEnv.refs := by
+            cases hr'_mem with | inl h => exact absurd h hr't | inr h => exact h
+          exact hwt.enum_mutable_no_extension r bt loc_r path_r hr_old hce hborrow_old hrmap_old
+            r' hr'_old hr'_ne_r suffix hsuf
   } -- end copy_ref
 
 private theorem preservation_move (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -1345,7 +1518,24 @@ private theorem preservation_move (m m' : Machine) (env : TypeEnv) (lenv : Label
       · subst heq; rw [lookup_insert_same] at hvar; cases hvar
       · rw [lookup_insert_ne _ x y _ heq] at hvar
         exact hwt.varStore_locs_bound y loc_y hvar
-    enum_field_compatibility := hwt.enum_field_compatibility
+    enum_mutable_no_extension := by
+      intro r bt loc path hr hce hb hrmap r' hr' hne suffix hsuf
+      apply hwt.enum_mutable_no_extension r bt loc path hr hce _ hrmap r' hr' hne suffix hsuf
+      rcases hb with ⟨s', hs'⟩ | ⟨x', ms', hx'⟩
+      · by_cases heq : s' = s
+        · subst heq; rw [lookup_insert_same] at hs'
+          simp only [Option.some.injEq, MoveType.ref.injEq] at hs'
+          obtain ⟨rfl, rfl, rfl⟩ := hs'
+          exact Or.inr ⟨x, ms, hvar⟩
+        · rw [lookup_insert_ne _ s s' _ heq] at hs'
+          exact Or.inl ⟨s', hs'⟩
+      · -- varEnv changed: x invalidated, others unchanged
+        have hupd : update env.varEnv x (.invalidVar, τ, ms) = insert env.varEnv x (.invalidVar, τ, ms) := rfl
+        rw [hupd] at hx'
+        have hne_x : x' ≠ x := by
+          intro h; subst h; rw [lookup_insert_same] at hx'; simp at hx'
+        rw [lookup_insert_ne _ x x' _ hne_x] at hx'
+        exact Or.inr ⟨x', ms', hx'⟩
   }
 
 /-- Reusable helper: rmap_paths is preserved by update_with_extension r .root [.root_to_var x]
@@ -1736,7 +1926,58 @@ private theorem preservation_borrow (m : Machine) (env : TypeEnv) (lenv : LabelE
     lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
     has_return_info := hwt.has_return_info
     varStore_locs_bound := hwt.varStore_locs_bound
-    enum_field_compatibility := hwt.enum_field_compatibility
+    enum_mutable_no_extension := by
+      intro r_arg bt loc_r path_r hr_tracked hce hborrow hrmap_r r' hr'_tracked hr'_ne_r suffix hsuf
+      rw [hrefs_eq] at hr_tracked hr'_tracked
+      have hr_mem := List.mem_cons.mp hr_tracked
+      have hr'_mem := List.mem_cons.mp hr'_tracked
+      by_cases hrt : r_arg = r
+      · -- r_arg = r (fresh)
+        have hrmap_eq : rmap'.map r_arg = some (loc, []) := by
+          show (if r_arg = r then some (loc, []) else rmap.map r_arg) = some (loc, [])
+          simp [hrt]
+        rw [hrmap_eq] at hrmap_r
+        obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj hrmap_r)
+        rcases hborrow with ⟨s', hsite⟩ | ⟨x', ms', hvar'⟩
+        · by_cases heqs : s' = s
+          · subst heqs; rw [lookup_insert_same] at hsite
+            simp only [Option.some.injEq, MoveType.ref.injEq] at hsite
+            obtain ⟨_, _, _⟩ := hsite
+            sorry
+          · rw [lookup_insert_ne _ s s' _ heqs] at hsite
+            rw [hrt] at hsite
+            exact absurd (hwt.siteEnv_refs_in_pathEnv s' bt r .siteBorrowMut hsite) hr_fresh_pe
+        · have hvar_env := hve_valid x' .validVar (.ref bt r_arg .siteBorrowMut) ms' hvar' rfl
+          rw [hrt] at hvar_env
+          exact absurd (hwt.varEnv_refs_in_pathEnv x' bt r .siteBorrowMut ms' hvar_env) hr_fresh_pe
+      · -- r_arg ≠ r
+        have hborrow_old : (∃ s', lookup env.siteEnv s' = some (.ref bt r_arg .siteBorrowMut)) ∨
+            (∃ x' ms', lookup env.varEnv x' = some (.validVar, .ref bt r_arg .siteBorrowMut, ms')) := by
+          rcases hborrow with ⟨s', hsite⟩ | ⟨x', ms', hvar'⟩
+          · by_cases heqs : s' = s
+            · subst heqs; rw [lookup_insert_same] at hsite
+              simp only [Option.some.injEq, MoveType.ref.injEq] at hsite
+              exact absurd hsite.2.1.symm hrt
+            · rw [lookup_insert_ne _ s s' _ heqs] at hsite
+              exact Or.inl ⟨s', hsite⟩
+          · exact Or.inr ⟨x', ms', hve_valid x' .validVar (.ref bt r_arg .siteBorrowMut) ms' hvar' rfl⟩
+        have hrmap_old : rmap.map r_arg = some (loc_r, path_r) := by
+          change (if r_arg = r then some (loc, []) else rmap.map r_arg) = some (loc_r, path_r) at hrmap_r
+          simp only [if_neg hrt] at hrmap_r; exact hrmap_r
+        have hr_old : r_arg ∈ env.pathEnv.refs := by
+          cases hr_mem with | inl h => exact absurd h hrt | inr h => exact h
+        show (if r' = r then some (loc, []) else rmap.map r') ≠ some (loc_r, path_r ++ suffix)
+        by_cases hr't : r' = r
+        · -- r' = r (fresh)
+          simp only [hr't, ite_true]
+          intro heq
+          obtain ⟨_, hpath⟩ := Prod.mk.inj (Option.some.inj heq)
+          simp at hpath; exact hsuf hpath.2
+        · simp only [if_neg hr't]
+          have hr'_old : r' ∈ env.pathEnv.refs := by
+            cases hr'_mem with | inl h => exact absurd h hr't | inr h => exact h
+          exact hwt.enum_mutable_no_extension r_arg bt loc_r path_r hr_old hce hborrow_old hrmap_old
+            r' hr'_old hr'_ne_r suffix hsuf
   }
 
 /-- Preservation for borrowImm: thin wrapper around preservation_borrow. -/
@@ -2233,7 +2474,7 @@ private theorem preservation_borrowField (m : Machine) (env : TypeEnv) (lenv : L
     lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
     has_return_info := hwt.has_return_info
     varStore_locs_bound := hwt.varStore_locs_bound
-    enum_field_compatibility := hwt.enum_field_compatibility
+    enum_mutable_no_extension := sorry
   }
 
 /-- Preservation for borrowField: thin wrapper around preservation_borrowField. -/
@@ -2537,7 +2778,19 @@ private theorem preservation_readRef (m m' : Machine) (env : TypeEnv) (lenv : La
             rw [lookup_delete_ne _ src s' hne_src] at hsite
             exact Or.inr ⟨s', bk, hsite⟩
       funEnv_sig_consistent := hwt.funEnv_sig_consistent
-      enum_field_compatibility := hwt.enum_field_compatibility
+      enum_mutable_no_extension := enum_mutable_no_extension_transfer hwt _
+        (fun r' bt hb => by
+          rcases hb with ⟨s', hsite⟩ | ⟨x, ms, hvar⟩
+          · by_cases heqs : s' = s
+            · subst heqs; simp [lookup_insert_same] at hsite
+            · rw [lookup_insert_ne _ s s' _ heqs] at hsite
+              have hne_src : s' ≠ src := by
+                intro h; subst h; rw [lookup_delete_same] at hsite; simp at hsite
+              rw [lookup_delete_ne _ src s' hne_src] at hsite
+              exact Or.inl ⟨s', hsite⟩
+          · exact Or.inr ⟨x, ms, hvar⟩)
+        (fun r' hr => by
+          simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hr; exact hr.1)
       refs_tracked_mapped := by
         intro ref href
         simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at href
@@ -2741,7 +2994,21 @@ private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : Labe
     lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
     has_return_info := hwt.has_return_info
     varStore_locs_bound := hwt.varStore_locs_bound
-    enum_field_compatibility := hwt.enum_field_compatibility
+    enum_mutable_no_extension := enum_mutable_no_extension_transfer hwt _
+      (fun r' bt hb => by
+        rcases hb with ⟨s', hsite⟩ | ⟨x, ms, hvar⟩
+        · by_cases heqs : s' = s
+          · subst heqs; simp [lookup_insert_same] at hsite
+          · rw [lookup_insert_ne _ s s' _ heqs] at hsite
+            have hne_b : s' ≠ sB := by
+              intro h; rw [h, lookup_delete_same] at hsite; simp at hsite
+            rw [lookup_delete_ne _ sB s' hne_b] at hsite
+            have hne_a : s' ≠ sA := by
+              intro h; rw [h, lookup_delete_same] at hsite; simp at hsite
+            rw [lookup_delete_ne _ sA s' hne_a] at hsite
+            exact Or.inl ⟨s', hsite⟩
+        · exact Or.inr ⟨x, ms, hvar⟩)
+      (fun r' hr => hr)
   }
 
 private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -2819,7 +3086,12 @@ private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : La
       lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
       has_return_info := hwt.has_return_info
       varStore_locs_bound := hwt.varStore_locs_bound
-      enum_field_compatibility := hwt.enum_field_compatibility
+      enum_mutable_no_extension := enum_mutable_no_extension_transfer hwt _
+        (fun r' bt' hb => by
+          rcases hb with ⟨s', hs'⟩ | ⟨x', ms', hx'⟩
+          · exact Or.inl ⟨s', lookup_delete_some' _ site s' _ hs'⟩
+          · exact Or.inr ⟨x', ms', hx'⟩)
+        (by intro r' hr'; simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hr'; exact hr'.1)
     }
   · -- Case 2: release of a basic-typed site (no pathEnv change)
     refine ⟨{env with siteEnv := delete env.siteEnv site},
@@ -2869,7 +3141,15 @@ private theorem preservation_release (m m' : Machine) (env : TypeEnv) (lenv : La
       lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
       has_return_info := hwt.has_return_info
       varStore_locs_bound := hwt.varStore_locs_bound
-      enum_field_compatibility := hwt.enum_field_compatibility
+      enum_mutable_no_extension :=
+        enum_mutable_no_extension_transfer hwt
+          {env with siteEnv := delete env.siteEnv site}
+          (fun r' bt' hb => by
+            rcases hb with ⟨s', hs'⟩ | ⟨x', ms', hx'⟩
+            · have hne : s' ≠ site := by intro h; subst h; rw [lookup_delete_same] at hs'; simp at hs'
+              exact Or.inl ⟨s', by rwa [lookup_delete_ne _ site s' hne] at hs'⟩
+            · exact Or.inr ⟨x', ms', hx'⟩)
+          (fun r' hr' => hr')
     }
 
 private theorem preservation_writeRef (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -2922,8 +3202,10 @@ private theorem preservation_writeRef (m m' : Machine) (env : TypeEnv) (lenv : L
   refine ⟨{env with siteEnv := delete (delete env.siteEnv val) dst,
                      pathEnv := delete_ref_node env.pathEnv r},
           lenv, retTypes, rmap, rfl, ?_,
-          stackSafe_heap_writeRef env.enumEnv hwt.enum_field_compatibility m.stack m.frame.returnInfo m.heap heap' loc wpath
-            vval v_leaf τ hss hwr hv_leaf_read hv_leaf_ht hmval⟩
+          stackSafe_heap_writeRef env.enumEnv m.stack m.frame.returnInfo m.heap heap' loc wpath
+            vval v_leaf τ hss hwr hv_leaf_read hv_leaf_ht hmval
+            (fun suffix hne_s => readPath_HasType_transfer_no_enum v_leaf vval τ suffix sorry hv_leaf_ht hmval)
+            (fun suffix hne_s => typeAtPathV_HasType_determined_no_enum vval v_leaf τ suffix sorry hmval hv_leaf_ht)⟩
   exact {
     env_wf := ⟨delete_ref_node_wellformed env.pathEnv r hwt.env_wf.pathEnv_wf hr_not_root,
                SiteEnv.delete_refs_not_root _ dst
@@ -3021,9 +3303,18 @@ private theorem preservation_writeRef (m m' : Machine) (env : TypeEnv) (lenv : L
                   rw [← hsuffix, readPath_append] at hlive
                   simp only [hv_leaf_read, Option.bind] at hlive
                   exact hlive
-              -- Transfer readPath from old value (v_leaf) to new value (vval)
-              exact readPath_HasType_transfer (hwt.enum_field_compatibility) v_leaf vval τ (sf :: srest)
-                hv_leaf_ht hmval (hwt.enum_field_compatibility v_leaf vval τ hv_leaf_ht hmval) hleaf_suffix)
+              cases hce : τ.containsEnum with
+              | true =>
+                exfalso
+                have hr'_ne_r : r' ≠ r := by
+                  simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hr'_tracked
+                  exact hr'_tracked.2
+                have hext := hwt.enum_mutable_no_extension r τ loc wpath hr_tracked hce
+                  (Or.inl ⟨dst, hdst_type⟩) hrmap r' hr'_old hr'_ne_r (sf :: srest) (List.cons_ne_nil _ _)
+                rw [hsuffix] at hext
+                exact absurd hrmap' hext
+              | false =>
+                exact readPath_HasType_transfer_no_enum v_leaf vval τ (sf :: srest) hce hv_leaf_ht hmval hleaf_suffix)
       · rw [heap_writeRef_preserves_readRef_diff_loc m.heap loc loc' wpath path' vval heap'
              hloc hwr]
         exact hlive
@@ -3060,8 +3351,14 @@ private theorem preservation_writeRef (m m' : Machine) (env : TypeEnv) (lenv : L
                 cases suffix with
                 | nil => simp [readPath]
                 | cons sf srest =>
-                  -- Same pattern as rmap_live suffix case
-                  have hleaf_suffix : readPath v_leaf (sf :: srest) ≠ none := by
+                  cases hce : τ.containsEnum with
+                  | true =>
+                    exfalso
+                    have hext := hwt.enum_mutable_no_extension r τ loc wpath hr_tracked hce
+                      (Or.inl ⟨dst, hdst_type⟩) hrmap r2 hr2_orig hr2_ne_r (sf :: srest) (List.cons_ne_nil _ _)
+                    rw [hsuffix] at hext
+                    exact absurd hrm2 hext
+                  | false =>
                     simp only [Heap.readRef, bind, Option.bind] at hne hv_leaf_read
                     cases hbase : m.heap.read loc with
                     | none => simp [hbase] at hv_leaf_read
@@ -3069,9 +3366,7 @@ private theorem preservation_writeRef (m m' : Machine) (env : TypeEnv) (lenv : L
                       simp only [hbase] at hne hv_leaf_read
                       rw [← hsuffix, readPath_append] at hne
                       simp only [hv_leaf_read, Option.bind] at hne
-                      exact hne
-                  exact readPath_HasType_transfer (hwt.enum_field_compatibility) v_leaf vval τ (sf :: srest)
-                    hv_leaf_ht hmval (hwt.enum_field_compatibility v_leaf vval τ hv_leaf_ht hmval) hleaf_suffix)
+                      exact readPath_HasType_transfer_no_enum v_leaf vval τ (sf :: srest) hce hv_leaf_ht hmval hne)
           · rwa [heap_writeRef_preserves_readRef_diff_loc m.heap loc loc2 wpath path2 vval heap'
                    hloc2 hwr]
     varEnv_refs_in_pathEnv :=
@@ -3168,14 +3463,47 @@ private theorem preservation_writeRef (m m' : Machine) (env : TypeEnv) (lenv : L
           | some newRoot =>
             simp [hwp2] at hwr'
             -- hwr' : m.heap.write loc newRoot = heap'
-            obtain ⟨vnew, hread_vnew, hht_vnew⟩ := writePath_preserves_readPath_HasType
-              baseVal wpath path' vval newRoot v_leaf v_old τ bt
-              hwp2 hread_old hht_old hv_leaf_read hv_leaf_ht hmval
-              (fun suffix _ => typeAtPathV_HasType_determined (hwt.enum_field_compatibility) vval v_leaf τ suffix hmval hv_leaf_ht (hwt.enum_field_compatibility vval v_leaf τ hmval hv_leaf_ht))
-            refine ⟨vnew, ?_, hht_vnew⟩
-            rw [← hwr']
-            simp only [Heap.readRef, bind, Option.bind, Heap.write, Heap.read,
-                        lookup_insert_same, hread_vnew]
+            by_cases hr'r : r' = r
+            · -- r' = r: path' = wpath, after writeRef we read vval with type τ
+              subst hr'r
+              rw [hrmap] at hrmap'; simp only [Option.some.injEq, Prod.mk.injEq] at hrmap'
+              obtain ⟨_, rfl⟩ := hrmap'
+              -- After writePath, readPath at wpath gives the new value vval
+              have hread_vnew : readPath newRoot wpath = some vval :=
+                readPath_after_writePath_same baseVal wpath vval newRoot hwp2
+              -- bt = τ because both v_old and v_leaf are at the same path
+              have hveq : v_old = v_leaf := by
+                rw [hread_old] at hv_leaf_read; simp only [Option.some.injEq] at hv_leaf_read; exact hv_leaf_read
+              subst hveq
+              refine ⟨vval, ?_, HasType_transfer hht_old hv_leaf_ht hmval⟩
+              rw [← hwr']
+              simp only [Heap.readRef, bind, Option.bind, Heap.write, Heap.read,
+                          lookup_insert_same, hread_vnew]
+            · -- r' ≠ r
+              have hr'_old : r' ∈ env.pathEnv.refs := by
+                rcases hcond' with ⟨x, bk, ms, hvar⟩ | ⟨s', bk, hsite⟩
+                · exact hwt.varEnv_refs_in_pathEnv x bt r' bk ms hvar
+                · exact hwt.siteEnv_refs_in_pathEnv s' bt r' bk hsite
+              have h_rpath := by
+                cases hce : τ.containsEnum with
+                | false =>
+                  exact writePath_preserves_readPath_HasType
+                    baseVal wpath path' vval newRoot v_leaf v_old τ bt
+                    hwp2 hread_old hht_old hv_leaf_read hv_leaf_ht hmval
+                    (fun suffix hsne => typeAtPathV_HasType_determined_no_enum vval v_leaf τ suffix hce hmval hv_leaf_ht)
+                | true =>
+                  exact writePath_preserves_readPath_HasType_no_ext
+                    baseVal wpath path' vval newRoot v_leaf v_old τ bt
+                    hwp2 hread_old hht_old hv_leaf_read hv_leaf_ht hmval
+                    (fun suffix hsne heq =>
+                      hwt.enum_mutable_no_extension r τ loc wpath hr_tracked hce
+                        (Or.inl ⟨dst, hdst_type⟩) hrmap r' hr'_old hr'r suffix hsne
+                        (heq ▸ hrmap'))
+              obtain ⟨vnew, hread_vnew, hht_vnew⟩ := h_rpath
+              refine ⟨vnew, ?_, hht_vnew⟩
+              rw [← hwr']
+              simp only [Heap.readRef, bind, Option.bind, Heap.write, Heap.read,
+                          lookup_insert_same, hread_vnew]
       · have hread' : heap'.readRef loc' path' = some v_old := by
           rw [heap_writeRef_preserves_readRef_diff_loc m.heap loc loc' wpath path' vval heap'
                 hloc' hwr]
@@ -3191,7 +3519,21 @@ private theorem preservation_writeRef (m m' : Machine) (env : TypeEnv) (lenv : L
     varStore_locs_bound := by
       intro y loc_y hvar
       rw [writeRef_preserves_nextLoc m.heap loc wpath vval heap' hwr]; exact hwt.varStore_locs_bound y loc_y hvar
-    enum_field_compatibility := hwt.enum_field_compatibility
+    enum_mutable_no_extension :=
+      enum_mutable_no_extension_transfer hwt
+        {env with siteEnv := delete (delete env.siteEnv val) dst,
+                  pathEnv := delete_ref_node env.pathEnv r}
+        (fun r' bt' hb => by
+          rcases hb with ⟨s', hs'⟩ | ⟨x', ms', hx'⟩
+          · have hne_dst : s' ≠ dst := by intro h; subst h; rw [lookup_delete_same] at hs'; simp at hs'
+            rw [lookup_delete_ne _ dst s' hne_dst] at hs'
+            have hne_val : s' ≠ val := by intro h; subst h; rw [lookup_delete_same] at hs'; simp at hs'
+            rw [lookup_delete_ne _ val s' hne_val] at hs'
+            exact Or.inl ⟨s', hs'⟩
+          · exact Or.inr ⟨x', ms', hx'⟩)
+        (fun r' hr' => by
+          simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hr'
+          exact hr'.1)
   }
 
 -- ============================================================
@@ -3546,7 +3888,15 @@ private theorem preservation_pack (m m' : Machine) (env : TypeEnv) (lenv : Label
       lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
       has_return_info := hwt.has_return_info
       varStore_locs_bound := hwt.varStore_locs_bound
-      enum_field_compatibility := hwt.enum_field_compatibility
+      enum_mutable_no_extension := enum_mutable_no_extension_transfer hwt _
+        (fun r' bt hb => by
+          rcases hb with ⟨s', hsite⟩ | ⟨x, ms, hvar⟩
+          · by_cases heqs : s' = s
+            · subst heqs; simp [lookup_insert_same] at hsite
+            · rw [lookup_insert_ne _ s s' _ heqs] at hsite
+              exact Or.inl ⟨s', lookup_deleteAll_some env.siteEnv _ s' _ hsite⟩
+          · exact Or.inr ⟨x, ms, hvar⟩)
+        (fun r' hr => hr)
     }
 
 private theorem preservation_assign_valid (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -3895,7 +4245,20 @@ private theorem preservation_assign_valid (m m' : Machine) (env : TypeEnv) (lenv
         · rw [lookup_insert_ne _ x y _ heq] at hvar
           have hlt := hwt.varStore_locs_bound y loc_y hvar
           exact Nat.lt_trans hlt (by simp [Heap.alloc])
-      enum_field_compatibility := hwt.enum_field_compatibility
+      enum_mutable_no_extension :=
+        enum_mutable_no_extension_transfer hwt env'
+          (fun r' bt hb => by
+            rcases hb with ⟨s', hs'⟩ | ⟨x', ms', hx'⟩
+            · -- siteEnv: se' = delete (delete (insert env.siteEnv ax (.ref τ r .siteBorrowMut)) a) ax
+              have hne_ax : s' ≠ ax := by intro h; subst h; rw [lookup_delete_same] at hs'; simp at hs'
+              rw [lookup_delete_ne _ ax s' hne_ax] at hs'
+              have hne_a : s' ≠ a := by intro h; subst h; rw [lookup_delete_same] at hs'; simp at hs'
+              rw [lookup_delete_ne _ a s' hne_a] at hs'
+              rw [lookup_insert_ne _ ax s' _ hne_ax] at hs'
+              exact Or.inl ⟨s', hs'⟩
+            · -- varEnv unchanged
+              exact Or.inr ⟨x', ms', hx'⟩)
+          (fun r' hr' => by rw [hgc_refs] at hr'; exact hr')
     }
 
 private theorem preservation_assign_invalid (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -4132,7 +4495,24 @@ private theorem preservation_assign_invalid (m m' : Machine) (env : TypeEnv) (le
       · rw [lookup_insert_ne _ x y _ heq] at hvar
         have hlt := hwt.varStore_locs_bound y loc_y hvar
         exact Nat.lt_trans hlt (by simp [Heap.alloc])
-    enum_field_compatibility := hwt.enum_field_compatibility
+    enum_mutable_no_extension := enum_mutable_no_extension_transfer hwt _
+      (fun r bt hb => by
+        rcases hb with ⟨s', hsite⟩ | ⟨x', ms', hvar'⟩
+        · have hne : s' ≠ a := by
+            intro h; subst h; rw [lookup_delete_same] at hsite; simp at hsite
+          rw [lookup_delete_ne env.siteEnv a s' hne] at hsite
+          exact Or.inl ⟨s', hsite⟩
+        · have hvar'' : lookup (insert env.varEnv x (.validVar, τ', .mutable)) x' =
+              some (.validVar, .ref bt r .siteBorrowMut, ms') := hvar'
+          by_cases heq : x' = x
+          · subst heq; rw [lookup_insert_same] at hvar''
+            have hτ : τ' = .ref bt r .siteBorrowMut := by
+              simp only [Option.some.injEq, Prod.mk.injEq] at hvar''; exact hvar''.2.1
+            rw [hτ] at hsite_a
+            exact Or.inl ⟨a, hsite_a⟩
+          · rw [lookup_insert_ne _ x x' _ heq] at hvar''
+            exact Or.inr ⟨x', ms', hvar''⟩)
+      (fun r' hr => hr)
   }
 
 private theorem preservation_assign_valid_ref (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -4419,7 +4799,26 @@ private theorem preservation_assign_valid_ref (m m' : Machine) (env : TypeEnv) (
       · rw [lookup_insert_ne _ x y _ heq] at hvar'
         have hlt := hwt.varStore_locs_bound y loc_y hvar'
         exact Nat.lt_trans hlt (by simp [Heap.alloc])
-    enum_field_compatibility := hwt.enum_field_compatibility
+    enum_mutable_no_extension := enum_mutable_no_extension_transfer hwt _
+      (fun r bt hb => by
+        rcases hb with ⟨s', hsite⟩ | ⟨x', ms', hvar'⟩
+        · have hne : s' ≠ a := by
+            intro h; subst h; rw [lookup_delete_same] at hsite; simp at hsite
+          rw [lookup_delete_ne env.siteEnv a s' hne] at hsite
+          exact Or.inl ⟨s', hsite⟩
+        · have hvar'' : lookup (insert env.varEnv x (.validVar, τ', ms)) x' =
+              some (.validVar, .ref bt r .siteBorrowMut, ms') := hvar'
+          by_cases heq : x' = x
+          · subst heq; rw [lookup_insert_same] at hvar''
+            have hτ : τ' = .ref bt r .siteBorrowMut := by
+              simp only [Option.some.injEq, Prod.mk.injEq] at hvar''; exact hvar''.2.1
+            rw [hτ] at hsite_a
+            exact Or.inl ⟨a, hsite_a⟩
+          · rw [lookup_insert_ne _ x x' _ heq] at hvar''
+            exact Or.inr ⟨x', ms', hvar''⟩)
+      (fun r' hr => by
+        have hr' : r' ∈ (delete_ref_node env.pathEnv r_old).refs := hr
+        simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hr'; exact hr'.1)
   }
 
 /-- Preservation for freeze: converts a (possibly mutable) reference to an immutable one.
@@ -4778,7 +5177,69 @@ private theorem preservation_freeze (m m' : Machine) (env : TypeEnv) (lenv : Lab
     lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
     has_return_info := hwt.has_return_info
     varStore_locs_bound := hwt.varStore_locs_bound
-    enum_field_compatibility := hwt.enum_field_compatibility
+    enum_mutable_no_extension := by
+      intro r_arg bt_arg loc_r path_r hr_tracked hce hborrow hrmap_r r'_arg hr'_tracked hr'_ne_r suffix hsuf
+      have hr_arg_facts : (r_arg = r' ∨ r_arg ∈ env.pathEnv.refs) ∧ r_arg ≠ r := by
+        rw [hpe_refs] at hr_tracked
+        simp only [List.mem_filter, decide_eq_true_eq, List.mem_cons] at hr_tracked; exact hr_tracked
+      have hr'_arg_facts : (r'_arg = r' ∨ r'_arg ∈ env.pathEnv.refs) ∧ r'_arg ≠ r := by
+        rw [hpe_refs] at hr'_tracked
+        simp only [List.mem_filter, decide_eq_true_eq, List.mem_cons] at hr'_tracked; exact hr'_tracked
+      by_cases hrt : r_arg = r'
+      · -- r_arg = r' (fresh): new site has .siteBorrowImm, not .siteBorrowMut
+        exfalso
+        subst hrt
+        rcases hborrow with ⟨s', hsite'⟩ | ⟨x', ms', hvar'⟩
+        · by_cases heqs : s' = s
+          · subst heqs; rw [lookup_insert_same] at hsite'
+            simp only [Option.some.injEq, MoveType.ref.injEq] at hsite'
+            exact absurd hsite'.2.2 (by decide)
+          · rw [lookup_insert_ne _ s s' _ heqs] at hsite'
+            have hne_src : s' ≠ src := by
+              intro h; subst h; rw [lookup_delete_same] at hsite'; simp at hsite'
+            rw [lookup_delete_ne _ src s' hne_src] at hsite'
+            exact absurd (hwt.siteEnv_refs_in_pathEnv s' bt_arg r_arg .siteBorrowMut hsite') hr'_fresh_pe
+        · exact absurd (hwt.varEnv_refs_in_pathEnv x' bt_arg r_arg .siteBorrowMut ms' hvar') hr'_fresh_pe
+      · -- r_arg ≠ r'
+        have hr_arg_old : r_arg ∈ env.pathEnv.refs := by
+          cases hr_arg_facts.1 with | inl h => exact absurd h hrt | inr h => exact h
+        have hrmap_old : rmap.map r_arg = some (loc_r, path_r) := by
+          change (if r_arg = r' then _ else rmap.map r_arg) = _ at hrmap_r
+          simp only [if_neg hrt] at hrmap_r; exact hrmap_r
+        have hborrow_old : (∃ s', lookup env.siteEnv s' = some (.ref bt_arg r_arg .siteBorrowMut)) ∨
+            (∃ x' ms', lookup env.varEnv x' = some (.validVar, .ref bt_arg r_arg .siteBorrowMut, ms')) := by
+          rcases hborrow with ⟨s', hsite'⟩ | ⟨x', ms', hvar'⟩
+          · by_cases heqs : s' = s
+            · subst heqs; rw [lookup_insert_same] at hsite'
+              simp only [Option.some.injEq, MoveType.ref.injEq] at hsite'
+              exact absurd hsite'.2.1.symm hrt
+            · rw [lookup_insert_ne _ s s' _ heqs] at hsite'
+              have hne_src : s' ≠ src := by
+                intro h; subst h; rw [lookup_delete_same] at hsite'; simp at hsite'
+              rw [lookup_delete_ne _ src s' hne_src] at hsite'
+              exact Or.inl ⟨s', hsite'⟩
+          · exact Or.inr ⟨x', ms', hvar'⟩
+        show (if r'_arg = r' then some (loc, path) else rmap.map r'_arg) ≠ some (loc_r, path_r ++ suffix)
+        by_cases hr't : r'_arg = r'
+        · -- r'_arg = r' (fresh)
+          simp only [hr't, ite_true]
+          by_cases hr_eq : r = r_arg
+          · subst hr_eq
+            rw [hrmap] at hrmap_old
+            obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj hrmap_old)
+            intro heq
+            have hpeq := (Prod.mk.inj (Option.some.inj heq)).2
+            cases suffix with
+            | nil => exact hsuf rfl
+            | cons _ _ => simp at hpeq
+          · rw [← hrmap]
+            exact hwt.enum_mutable_no_extension r_arg bt_arg loc_r path_r hr_arg_old hce hborrow_old hrmap_old
+              r hr_in_refs hr_eq suffix hsuf
+        · simp only [if_neg hr't]
+          have hr'_arg_old : r'_arg ∈ env.pathEnv.refs := by
+            cases hr'_arg_facts.1 with | inl h => exact absurd h hr't | inr h => exact h
+          exact hwt.enum_mutable_no_extension r_arg bt_arg loc_r path_r hr_arg_old hce hborrow_old hrmap_old
+            r'_arg hr'_arg_old hr'_ne_r suffix hsuf
   }
 
 -- ============================================================
@@ -4987,7 +5448,22 @@ private theorem preservation_assign_overwrite_basic (m m' : Machine) (env : Type
       · rw [lookup_insert_ne _ x y _ heq] at hvar_y
         have hlt := hwt.varStore_locs_bound y loc_y hvar_y
         exact Nat.lt_trans hlt (by simp [Heap.alloc])
-    enum_field_compatibility := hwt.enum_field_compatibility
+    enum_mutable_no_extension := enum_mutable_no_extension_transfer hwt _
+      (fun r bt hb => by
+        rcases hb with ⟨s', hsite⟩ | ⟨x', ms', hvar'⟩
+        · have hne : s' ≠ a := by
+            intro h; subst h; rw [lookup_delete_same] at hsite; simp at hsite
+          rw [lookup_delete_ne env.siteEnv a s' hne] at hsite
+          exact Or.inl ⟨s', hsite⟩
+        · have hvar'' : lookup (insert env.varEnv x (.validVar, .basic τ, .mutable)) x' =
+              some (.validVar, .ref bt r .siteBorrowMut, ms') := hvar'
+          by_cases heq : x' = x
+          · subst heq; rw [lookup_insert_same] at hvar''
+            simp only [Option.some.injEq, Prod.mk.injEq] at hvar''
+            exact absurd hvar''.2.1 (by simp)
+          · rw [lookup_insert_ne _ x x' _ heq] at hvar''
+            exact Or.inr ⟨x', ms', hvar''⟩)
+      (fun r' hr => hr)
   }
 
 -- ============================================================
@@ -5163,7 +5639,23 @@ private theorem preservation_unpack (m m' : Machine) (env : TypeEnv) (lenv : Lab
     lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
     has_return_info := hwt.has_return_info
     varStore_locs_bound := hwt.varStore_locs_bound
-    enum_field_compatibility := hwt.enum_field_compatibility
+    enum_mutable_no_extension := enum_mutable_no_extension_transfer hwt _
+      (fun r bt hb => by
+        rcases hb with ⟨s', hsite⟩ | ⟨x, ms, hvar⟩
+        · by_cases hs'_in : s' ∈ fields.map Prod.snd
+          · obtain ⟨⟨fd, sd⟩, hmem_fd, heq_s'⟩ := List.mem_map.mp hs'_in
+            simp at heq_s'; subst heq_s'
+            obtain ⟨_, _, hlookup_new⟩ := field_site_lookup sd fd hmem_fd
+            rw [hlookup_new] at hsite; cases hsite
+          · have hlookup_env := addFieldSites_lookup_not_in_fields fentries
+                (delete env.siteEnv src) fields s' hs'_in
+            rw [hlookup_env] at hsite
+            have hne_src : s' ≠ src := by
+              intro h; subst h; rw [lookup_delete_same] at hsite; cases hsite
+            rw [lookup_delete_ne _ src s' hne_src] at hsite
+            exact Or.inl ⟨s', hsite⟩
+        · exact Or.inr ⟨x, ms, hvar⟩)
+      (fun r' hr => hr)
   }
 
 -- ============================================================
@@ -5283,7 +5775,8 @@ private theorem preservation_jump (m m' : Machine) (env : TypeEnv) (lenv : Label
       lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
       has_return_info := hwt.has_return_info
       varStore_locs_bound := hwt.varStore_locs_bound
-      enum_field_compatibility := hwt.enum_field_compatibility
+      enum_mutable_no_extension := by
+        exact hwt.enum_mutable_no_extension
     }
 
 -- ============================================================
@@ -5386,7 +5879,12 @@ private theorem preservation_branch (m m' : Machine) (env : TypeEnv) (lenv : Lab
           lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
           has_return_info := hwt.has_return_info
           varStore_locs_bound := hwt.varStore_locs_bound
-          enum_field_compatibility := hwt.enum_field_compatibility
+          enum_mutable_no_extension := by
+            intro r bt loc path hr hce hb hrmap r' hr' hne suffix hsuf
+            apply hwt.enum_mutable_no_extension r bt loc path hr hce _ hrmap r' hr' hne suffix hsuf
+            rcases hb with ⟨s, hs⟩ | ⟨x', ms', hx'⟩
+            · simp [hse' s] at hs
+            · exact Or.inr ⟨x', ms', hx'⟩
         }
     | false =>
       -- step uses l2
@@ -5451,7 +5949,12 @@ private theorem preservation_branch (m m' : Machine) (env : TypeEnv) (lenv : Lab
           lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
           has_return_info := hwt.has_return_info
           varStore_locs_bound := hwt.varStore_locs_bound
-          enum_field_compatibility := hwt.enum_field_compatibility
+          enum_mutable_no_extension := by
+            intro r bt loc path hr hce hb hrmap r' hr' hne suffix hsuf
+            apply hwt.enum_mutable_no_extension r bt loc path hr hce _ hrmap r' hr' hne suffix hsuf
+            rcases hb with ⟨s, hs⟩ | ⟨x', ms', hx'⟩
+            · simp [hse' s] at hs
+            · exact Or.inr ⟨x', ms', hx'⟩
         }
 
 -- ============================================================
@@ -5790,7 +6293,7 @@ private theorem preservation_ret (m m' : Machine) (env : TypeEnv) (lenv : LabelE
             lenv_labels_in_blocks := hlenv_lib
             has_return_info := hcaller_has_ri
             varStore_locs_bound := hvlb
-            enum_field_compatibility := by rw [henum_eq]; exact hwt.enum_field_compatibility
+            enum_mutable_no_extension := sorry
           }
 
 -- ============================================================
@@ -6271,9 +6774,11 @@ private theorem preservation_call (m m' : Machine) (env : TypeEnv) (lenv : Label
               · rw [addLocals_preserves_lookup paramVarStore fdef.locals y hlocal] at hvar
                 exact allocArgs_varStore_locs_bound m.heap fdef.params argVals heap'
                   paramVarStore hallocArgs y loc_y hvar
-            enum_field_compatibility := by
-              rw [hlenv_enumEnv_callee entryLabel blockEnv hlookup_callee]
-              exact hwt.enum_field_compatibility
+            enum_mutable_no_extension := by
+              intro r bt loc path hr hce hb hrmap r' hr' hne suffix hsuf
+              rcases hb with ⟨s, hs⟩ | ⟨x, ms, hx⟩
+              · simp [hsiteEnv_empty s] at hs
+              · sorry -- call case: params have no extensions
           }
         · -- StackSafe for the new stack
           -- Define restricted rmap: agrees with rmap on env.pathEnv.refs, none elsewhere
@@ -6860,7 +7365,15 @@ private theorem preservation_vecPack (m m' : Machine) (env : TypeEnv) (lenv : La
     lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
     has_return_info := hwt.has_return_info
     varStore_locs_bound := hwt.varStore_locs_bound
-    enum_field_compatibility := hwt.enum_field_compatibility
+    enum_mutable_no_extension := enum_mutable_no_extension_transfer hwt _
+      (fun r bt hb => by
+        rcases hb with ⟨s', hsite⟩ | ⟨x, ms, hvar⟩
+        · by_cases heq : s' = s
+          · subst heq; simp [lookup_insert_same] at hsite
+          · rw [lookup_insert_ne _ s s' _ heq] at hsite
+            exact Or.inl ⟨s', lookup_deleteAll_some env.siteEnv _ s' _ hsite⟩
+        · exact Or.inr ⟨x, ms, hvar⟩)
+      (fun r' hr => hr)
   }
 
 -- Utility: garbage_collect = delete_ref_node (definitionally)
@@ -7082,7 +7595,18 @@ private theorem preservation_vecUnpack (m m' : Machine) (env : TypeEnv) (lenv : 
       lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
       has_return_info := hwt.has_return_info
       varStore_locs_bound := hwt.varStore_locs_bound
-      enum_field_compatibility := hwt.enum_field_compatibility
+      enum_mutable_no_extension := enum_mutable_no_extension_transfer hwt _
+        (fun r bt hb => by
+          rcases hb with ⟨s', hsite⟩ | ⟨x, ms, hvar⟩
+          · by_cases hs'_in : s' ∈ results
+            · rw [addVecSites_lookup_mem T _ results s' hnodup hs'_in] at hsite; cases hsite
+            · rw [addVecSites_lookup_not_in T _ results s' hs'_in] at hsite
+              have hne_src : s' ≠ src := by
+                intro h; subst h; rw [lookup_delete_same] at hsite; cases hsite
+              rw [lookup_delete_ne _ src s' hne_src] at hsite
+              exact Or.inl ⟨s', hsite⟩
+          · exact Or.inr ⟨x, ms, hvar⟩)
+        (fun r' hr => hr)
     }
   · -- Length mismatch → contradiction
     simp [Bool.false_eq_true] at hstep
@@ -7210,7 +7734,19 @@ private theorem preservation_vecLen (m m' : Machine) (env : TypeEnv) (lenv : Lab
     lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
     has_return_info := hwt.has_return_info
     varStore_locs_bound := hwt.varStore_locs_bound
-    enum_field_compatibility := hwt.enum_field_compatibility
+    enum_mutable_no_extension := enum_mutable_no_extension_transfer hwt _
+      (fun r' bt hb => by
+        rcases hb with ⟨s', hsite⟩ | ⟨x, ms, hvar⟩
+        · by_cases heqs : s' = s
+          · subst heqs; simp [lookup_insert_same] at hsite
+          · rw [lookup_insert_ne _ s s' _ heqs] at hsite
+            have hne_src : s' ≠ src := by
+              intro h; subst h; rw [lookup_delete_same] at hsite; simp at hsite
+            rw [lookup_delete_ne _ src s' hne_src] at hsite
+            exact Or.inl ⟨s', hsite⟩
+        · exact Or.inr ⟨x, ms, hvar⟩)
+      (fun r' hr => by
+        simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hr; exact hr.1)
   }
 
 -- For vecPopBack, vecPushBack, vecSwap: convert garbage_collect to delete_ref_node and reuse lemmas
@@ -7273,9 +7809,11 @@ private theorem preservation_vecPopBack (m m' : Machine) (env : TypeEnv) (lenv :
     refine ⟨{env with siteEnv := insert (delete env.siteEnv src) s (.basic T),
                        pathEnv := delete_ref_node env.pathEnv r},
             lenv, retTypes, rmap, rfl, ?_,
-            stackSafe_heap_writeRef env.enumEnv hwt.enum_field_compatibility m.stack m.frame.returnInfo m.heap heap' loc path
+            stackSafe_heap_writeRef env.enumEnv m.stack m.frame.returnInfo m.heap heap' loc path
               (.vec T elems.dropLast) (.vec T elems) (.tvec T) hss hwrite hread_heap
-              hht_heap hht_remaining⟩
+              hht_heap hht_remaining
+              (fun suffix hne_s hread => by cases suffix with | nil => exact absurd rfl hne_s | cons f rest => simp [readPath] at hread)
+              (fun suffix hne_s => by cases suffix with | nil => exact absurd rfl hne_s | cons f rest => simp [typeAtPathV])⟩
     exact {
       env_wf := ⟨delete_ref_node_wellformed env.pathEnv r hwt.env_wf.pathEnv_wf hr_not_root,
                  SiteEnv.insert_refs_not_root (delete env.siteEnv src) s (.basic T)
@@ -7525,7 +8063,19 @@ private theorem preservation_vecPopBack (m m' : Machine) (env : TypeEnv) (lenv :
         intro y loc_y hvar
         rw [writeRef_preserves_nextLoc m.heap loc path (.vec T elems.dropLast) heap' hwrite]
         exact hwt.varStore_locs_bound y loc_y hvar
-      enum_field_compatibility := hwt.enum_field_compatibility
+      enum_mutable_no_extension := enum_mutable_no_extension_transfer hwt _
+        (fun r' bt hb => by
+          rcases hb with ⟨s', hsite⟩ | ⟨x, ms, hvar⟩
+          · by_cases heqs : s' = s
+            · subst heqs; simp [lookup_insert_same] at hsite
+            · rw [lookup_insert_ne _ s s' _ heqs] at hsite
+              have hne_src : s' ≠ src := by
+                intro h; subst h; rw [lookup_delete_same] at hsite; simp at hsite
+              rw [lookup_delete_ne _ src s' hne_src] at hsite
+              exact Or.inl ⟨s', hsite⟩
+          · exact Or.inr ⟨x, ms, hvar⟩)
+        (fun r' hr => by
+          simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hr; exact hr.1)
     }
 
 private theorem preservation_vecPushBack (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -7578,9 +8128,11 @@ private theorem preservation_vecPushBack (m m' : Machine) (env : TypeEnv) (lenv 
   refine ⟨{env with siteEnv := delete (delete env.siteEnv val) refSite,
                      pathEnv := delete_ref_node env.pathEnv r},
           lenv, retTypes, rmap, rfl, ?_,
-          stackSafe_heap_writeRef env.enumEnv hwt.enum_field_compatibility m.stack m.frame.returnInfo m.heap heap' loc path
+          stackSafe_heap_writeRef env.enumEnv m.stack m.frame.returnInfo m.heap heap' loc path
             (.vec T (elems ++ [vval])) (.vec T elems) (.tvec T) hss hwrite hread_heap
-            hht_heap hht_appended⟩
+            hht_heap hht_appended
+            (fun suffix hne_s hread => by cases suffix with | nil => exact absurd rfl hne_s | cons f rest => simp [readPath] at hread)
+            (fun suffix hne_s => by cases suffix with | nil => exact absurd rfl hne_s | cons f rest => simp [typeAtPathV])⟩
   -- Helper: get original siteEnv from double-deleted
   have get_old_site : ∀ s' τ', lookup (delete (delete env.siteEnv val) refSite) s' = some τ' →
       lookup env.siteEnv s' = some τ' := by
@@ -7817,7 +8369,13 @@ private theorem preservation_vecPushBack (m m' : Machine) (env : TypeEnv) (lenv 
       intro y loc_y hvar
       rw [writeRef_preserves_nextLoc m.heap loc path (.vec T (elems ++ [vval])) heap' hwrite]
       exact hwt.varStore_locs_bound y loc_y hvar
-    enum_field_compatibility := hwt.enum_field_compatibility
+    enum_mutable_no_extension := enum_mutable_no_extension_transfer hwt _
+      (fun r' bt hb => by
+        rcases hb with ⟨s', hsite⟩ | ⟨x, ms, hvar⟩
+        · exact Or.inl ⟨s', get_old_site s' _ hsite⟩
+        · exact Or.inr ⟨x, ms, hvar⟩)
+      (fun r' hr => by
+        simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hr; exact hr.1)
   }
 
 private theorem preservation_vecSwap (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -7918,9 +8476,11 @@ private theorem preservation_vecSwap (m m' : Machine) (env : TypeEnv) (lenv : La
       refine ⟨{env with siteEnv := delete (delete (delete env.siteEnv idx2Site) idx1Site) refSite,
                          pathEnv := delete_ref_node env.pathEnv r},
               lenv, retTypes, rmap, rfl, ?_,
-              stackSafe_heap_writeRef env.enumEnv hwt.enum_field_compatibility m.stack m.frame.returnInfo m.heap heap' loc path
+              stackSafe_heap_writeRef env.enumEnv m.stack m.frame.returnInfo m.heap heap' loc path
                 newVec (.vec T elems) (.tvec T) hss hwrite hread_heap
-                hht_heap hmval⟩
+                hht_heap hmval
+                (fun suffix hne_s hread => by cases suffix with | nil => exact absurd rfl hne_s | cons f rest => simp [readPath] at hread)
+                (fun suffix hne_s => by cases suffix with | nil => exact absurd rfl hne_s | cons f rest => simp [typeAtPathV])⟩
       exact {
         env_wf := ⟨delete_ref_node_wellformed env.pathEnv r hwt.env_wf.pathEnv_wf hr_not_root,
                    SiteEnv.delete_refs_not_root _ _
@@ -8194,7 +8754,22 @@ private theorem preservation_vecSwap (m m' : Machine) (env : TypeEnv) (lenv : La
           intro y loc_y hvar
           rw [writeRef_preserves_nextLoc m.heap loc path newVec heap' hwrite]
           exact hwt.varStore_locs_bound y loc_y hvar
-        enum_field_compatibility := hwt.enum_field_compatibility
+        enum_mutable_no_extension := enum_mutable_no_extension_transfer hwt _
+          (fun r' bt hb => by
+            rcases hb with ⟨s', hsite⟩ | ⟨x, ms, hvar⟩
+            · have hne_ref : s' ≠ refSite := by
+                intro h; subst h; rw [lookup_delete_same] at hsite; simp at hsite
+              rw [lookup_delete_ne _ refSite s' hne_ref] at hsite
+              have hne_idx1 : s' ≠ idx1Site := by
+                intro h; subst h; rw [lookup_delete_same] at hsite; simp at hsite
+              rw [lookup_delete_ne _ idx1Site s' hne_idx1] at hsite
+              have hne_idx2 : s' ≠ idx2Site := by
+                intro h; subst h; rw [lookup_delete_same] at hsite; simp at hsite
+              rw [lookup_delete_ne _ idx2Site s' hne_idx2] at hsite
+              exact Or.inl ⟨s', hsite⟩
+            · exact Or.inr ⟨x, ms, hvar⟩)
+          (fun r' hr => by
+            simp only [delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hr; exact hr.1)
       }
     · simp at hstep  -- j out of bounds → contradiction
   · simp at hstep    -- i out of bounds → contradiction
@@ -8516,7 +9091,6 @@ private theorem preservation_vecImmBorrow (m m' : Machine) (env : TypeEnv) (lenv
           simp only [rmap', ite_true] at hrmap_v
           obtain ⟨h1, h2⟩ := Prod.mk.inj (Option.some.inj hrmap_v)
           subst h1; subst h2
-          -- heq_loc : elemLoc = loc_y, but elemLoc = heap.nextLoc and loc_y < heap.nextLoc
           exfalso
           have hloc_y_lt := hwt.varStore_locs_bound y loc_y hloc
           rw [helemLoc] at heq_loc; grind
@@ -8532,7 +9106,59 @@ private theorem preservation_vecImmBorrow (m m' : Machine) (env : TypeEnv) (lenv
       paths_to_non_member_empty :=
         update_with_extension_paths_to_non_member rf s_ref [.vecElem] env.pathEnv
           hwt.paths_to_non_member_empty (Or.inl hs_in_refs)
-      enum_field_compatibility := hwt.enum_field_compatibility
+      enum_mutable_no_extension := by
+        intro r_arg bt_arg loc_r path_r hr_tracked hce hborrow hrmap_r r'_arg hr'_tracked hr'_ne_r suffix hsuf
+        rw [hrefs_eq] at hr_tracked hr'_tracked
+        simp only [List.mem_cons] at hr_tracked hr'_tracked
+        by_cases hrt : r_arg = rf
+        · -- r_arg = rf (fresh): new site has .siteBorrowImm, not .siteBorrowMut
+          exfalso; subst hrt
+          rcases hborrow with ⟨s', hsite'⟩ | ⟨x', ms', hvar'⟩
+          · by_cases heqs : s' = s
+            · subst heqs; rw [lookup_insert_same] at hsite'
+              simp only [Option.some.injEq, MoveType.ref.injEq] at hsite'
+              exact absurd hsite'.2.2 (by decide)
+            · rw [lookup_insert_ne _ s s' _ heqs] at hsite'
+              have hne_src : s' ≠ src := by intro h; subst h; rw [lookup_delete_delete_first_none] at hsite'; cases hsite'
+              have hne_idx : s' ≠ idx := by intro h; subst h; rw [lookup_delete_same] at hsite'; cases hsite'
+              rw [lookup_delete_ne _ idx s' hne_idx, lookup_delete_ne _ src s' hne_src] at hsite'
+              exact absurd (hwt.siteEnv_refs_in_pathEnv s' bt_arg r_arg .siteBorrowMut hsite') hrf_fresh_pe
+          · exact absurd (hwt.varEnv_refs_in_pathEnv x' bt_arg r_arg .siteBorrowMut ms' hvar') hrf_fresh_pe
+        · -- r_arg ≠ rf
+          have hr_old : r_arg ∈ env.pathEnv.refs := by
+            cases hr_tracked with | inl h => exact absurd h hrt | inr h => exact h
+          have hrmap_old : rmap.map r_arg = some (loc_r, path_r) := by
+            change (if r_arg = rf then _ else rmap.map r_arg) = _ at hrmap_r
+            simp only [if_neg hrt] at hrmap_r; exact hrmap_r
+          have hborrow_old : (∃ s', lookup env.siteEnv s' = some (.ref bt_arg r_arg .siteBorrowMut)) ∨
+              (∃ x' ms', lookup env.varEnv x' = some (.validVar, .ref bt_arg r_arg .siteBorrowMut, ms')) := by
+            rcases hborrow with ⟨s', hsite'⟩ | ⟨x', ms', hvar'⟩
+            · by_cases heqs : s' = s
+              · subst heqs; rw [lookup_insert_same] at hsite'
+                simp only [Option.some.injEq, MoveType.ref.injEq] at hsite'
+                exact absurd hsite'.2.1.symm hrt
+              · rw [lookup_insert_ne _ s s' _ heqs] at hsite'
+                have hne_src : s' ≠ src := by intro h; subst h; rw [lookup_delete_delete_first_none] at hsite'; cases hsite'
+                have hne_idx : s' ≠ idx := by intro h; subst h; rw [lookup_delete_same] at hsite'; cases hsite'
+                rw [lookup_delete_ne _ idx s' hne_idx, lookup_delete_ne _ src s' hne_src] at hsite'
+                exact Or.inl ⟨s', hsite'⟩
+            · exact Or.inr ⟨x', ms', hvar'⟩
+          show (if r'_arg = rf then some (elemLoc, []) else rmap.map r'_arg) ≠ some (loc_r, path_r ++ suffix)
+          by_cases hr't : r'_arg = rf
+          · -- r'_arg = rf (fresh): loc_r < elemLoc
+            simp only [hr't, ite_true]
+            intro heq
+            have := congr_arg Prod.fst (Option.some.inj heq)
+            simp only [Prod.fst] at this
+            rw [helemLoc] at this
+            have hlt := hwt.heap_loc_bound loc_r (readRef_implies_read m.heap loc_r path_r
+              (hwt.rmap_live r_arg loc_r path_r hr_old hrmap_old))
+            exact absurd this.symm (Nat.ne_of_lt hlt)
+          · simp only [if_neg hr't]
+            have hr'_old : r'_arg ∈ env.pathEnv.refs := by
+              cases hr'_tracked with | inl h => exact absurd h hr't | inr h => exact h
+            exact hwt.enum_mutable_no_extension r_arg bt_arg loc_r path_r hr_old hce hborrow_old hrmap_old
+              r'_arg hr'_old hr'_ne_r suffix hsuf
       self_loop_only_empty := by
         intro u p hp
         unfold pe' update_with_extension at hp
@@ -8543,13 +9169,10 @@ private theorem preservation_vecImmBorrow (m m' : Machine) (env : TypeEnv) (lenv
       rmap_has_type := by
         intro r_arg bt_r loc_r path_r hrmap_r hcond
         by_cases hrt : r_arg = rf
-        · -- r_arg = rf: rmap'(rf) = (elemLoc, [])
+        · -- r_arg = rf
           simp only [rmap', hrt, ite_true] at hrmap_r
           obtain ⟨h1, h2⟩ := Prod.mk.inj (Option.some.inj hrmap_r)
           rw [← h1, ← h2]
-          -- Need HasType at (elemLoc, []) in heap'
-          -- heap'.readRef elemLoc [] = some elem, and HasType elem T
-          -- Need bt_r = T from condition
           rcases hcond with ⟨x', bk', ms', hvar'⟩ | ⟨s', bk', hsite'⟩
           · rw [hrt] at hvar'
             exact absurd (hwt.varEnv_refs_in_pathEnv x' bt_r rf bk' ms' hvar') hrf_fresh_pe
@@ -8564,7 +9187,7 @@ private theorem preservation_vecImmBorrow (m m' : Machine) (env : TypeEnv) (lenv
               rw [lookup_delete_ne _ idx s' hne_idx, lookup_delete_ne _ src s' hne_src] at hsite'
               rw [hrt] at hsite'
               exact absurd (hwt.siteEnv_refs_in_pathEnv s' bt_r rf bk' hsite') hrf_fresh_pe
-        · -- r_arg ≠ rf: delegate to old + alloc preserves
+        · -- r_arg ≠ rf
           simp only [rmap', if_neg hrt] at hrmap_r
           have hold := hwt.rmap_has_type r_arg bt_r loc_r path_r hrmap_r
           rcases hcond with ⟨x', bk', ms', hvar'⟩ | ⟨s', bk', hsite'⟩
@@ -8682,7 +9305,66 @@ private theorem preservation_vecMutBorrow (m m' : Machine) (env : TypeEnv) (lenv
         (update_with_extension_wellformed rf s_ref [.vecElem] env.pathEnv hwt.env_wf.pathEnv_wf
           hrf_not_root) hrf_not_root
       stmt_typed := hcont
-      enum_field_compatibility := hwt.enum_field_compatibility
+      enum_mutable_no_extension := by
+        intro r_arg bt_arg loc_r path_r hr_tracked hce hborrow hrmap_r r'_arg hr'_tracked hr'_ne_r suffix hsuf
+        rw [hrefs_eq] at hr_tracked hr'_tracked
+        simp only [List.mem_cons] at hr_tracked hr'_tracked
+        by_cases hrt : r_arg = rf
+        · -- r_arg = rf (fresh)
+          subst hrt
+          simp only [rmap', ite_true] at hrmap_r
+          obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj hrmap_r)
+          have hr'_old : r'_arg ∈ env.pathEnv.refs := by
+            cases hr'_tracked with | inl h => exact absurd h hr'_ne_r | inr h => exact h
+          change (if r'_arg = r_arg then some (elemLoc, []) else rmap.map r'_arg) ≠
+            some (elemLoc, [] ++ suffix)
+          simp only [if_neg hr'_ne_r]
+          intro heq
+          cases hrmap_r' : rmap.map r'_arg with
+          | none => simp [hrmap_r'] at heq
+          | some p =>
+            obtain ⟨loc', path'⟩ := p
+            simp only [hrmap_r', Option.some.injEq] at heq
+            obtain ⟨hloc_eq, _⟩ := Prod.mk.inj heq
+            have hlt := hwt.heap_loc_bound loc' (readRef_implies_read m.heap loc' path'
+              (hwt.rmap_live r'_arg loc' path' hr'_old hrmap_r'))
+            rw [helemLoc] at hloc_eq
+            rw [hloc_eq] at hlt; exact Nat.lt_irrefl _ hlt
+        · -- r_arg ≠ rf
+          have hr_old : r_arg ∈ env.pathEnv.refs := by
+            cases hr_tracked with | inl h => exact absurd h hrt | inr h => exact h
+          have hrmap_old : rmap.map r_arg = some (loc_r, path_r) := by
+            change (if r_arg = rf then _ else rmap.map r_arg) = _ at hrmap_r
+            simp only [if_neg hrt] at hrmap_r; exact hrmap_r
+          have hborrow_old : (∃ s', lookup env.siteEnv s' = some (.ref bt_arg r_arg .siteBorrowMut)) ∨
+              (∃ x' ms', lookup env.varEnv x' = some (.validVar, .ref bt_arg r_arg .siteBorrowMut, ms')) := by
+            rcases hborrow with ⟨s', hsite'⟩ | ⟨x', ms', hvar'⟩
+            · by_cases heqs : s' = s
+              · subst heqs; rw [lookup_insert_same] at hsite'
+                simp only [Option.some.injEq, MoveType.ref.injEq] at hsite'
+                exact absurd hsite'.2.1.symm hrt
+              · rw [lookup_insert_ne _ s s' _ heqs] at hsite'
+                have hne_src : s' ≠ src := by intro h; subst h; rw [lookup_delete_delete_first_none] at hsite'; cases hsite'
+                have hne_idx : s' ≠ idx := by intro h; subst h; rw [lookup_delete_same] at hsite'; cases hsite'
+                rw [lookup_delete_ne _ idx s' hne_idx, lookup_delete_ne _ src s' hne_src] at hsite'
+                exact Or.inl ⟨s', hsite'⟩
+            · exact Or.inr ⟨x', ms', hvar'⟩
+          show (if r'_arg = rf then some (elemLoc, []) else rmap.map r'_arg) ≠ some (loc_r, path_r ++ suffix)
+          by_cases hr't : r'_arg = rf
+          · -- r'_arg = rf: loc_r < elemLoc
+            simp only [hr't, ite_true]
+            intro heq
+            have hloc_eq := congr_arg Prod.fst (Option.some.inj heq)
+            simp at hloc_eq
+            have hlt := hwt.heap_loc_bound loc_r (readRef_implies_read m.heap loc_r path_r
+              (hwt.rmap_live r_arg loc_r path_r hr_old hrmap_old))
+            rw [helemLoc] at hloc_eq
+            rw [hloc_eq] at hlt; exact Nat.lt_irrefl _ hlt
+          · simp only [if_neg hr't]
+            have hr'_old : r'_arg ∈ env.pathEnv.refs := by
+              cases hr'_tracked with | inl h => exact absurd h hr't | inr h => exact h
+            exact hwt.enum_mutable_no_extension r_arg bt_arg loc_r path_r hr_old hce hborrow_old hrmap_old
+              r'_arg hr'_old hr'_ne_r suffix hsuf
       var_consistent := by
         intro y isv τ ms hvy
         have hold := hwt.var_consistent y isv τ ms hvy
@@ -9107,7 +9789,15 @@ private theorem preservation_packVariant (m m' : Machine) (env : TypeEnv) (lenv 
       lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
       has_return_info := hwt.has_return_info
       varStore_locs_bound := hwt.varStore_locs_bound
-      enum_field_compatibility := hwt.enum_field_compatibility
+      enum_mutable_no_extension := enum_mutable_no_extension_transfer hwt _
+        (fun r bt hb => by
+          rcases hb with ⟨s', hsite⟩ | ⟨x, ms, hvar⟩
+          · by_cases heq : s' = s
+            · subst heq; simp [lookup_insert_same] at hsite
+            · rw [lookup_insert_ne _ s s' _ heq] at hsite
+              exact Or.inl ⟨s', lookup_deleteAll_some env.siteEnv _ s' _ hsite⟩
+          · exact Or.inr ⟨x, ms, hvar⟩)
+        (fun r' hr => hr)
     }
 
 -- Helper: List.lookup success implies membership
@@ -10102,7 +10792,23 @@ private theorem preservation_unpackVariant (m m' : Machine) (env : TypeEnv) (len
         lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
         has_return_info := hwt.has_return_info
         varStore_locs_bound := hwt.varStore_locs_bound
-        enum_field_compatibility := hwt.enum_field_compatibility
+        enum_mutable_no_extension := enum_mutable_no_extension_transfer hwt _
+          (fun r bt hb => by
+            rcases hb with ⟨s', hsite⟩ | ⟨x, ms, hvar⟩
+            · by_cases hs'_in : s' ∈ fields.map Prod.snd
+              · obtain ⟨⟨fd, sd⟩, hmem_fd, heq_s'⟩ := List.mem_map.mp hs'_in
+                simp at heq_s'; subst heq_s'
+                obtain ⟨_, _, hlookup_new⟩ := field_site_lookup sd fd hmem_fd
+                rw [hlookup_new] at hsite; cases hsite
+              · have hlookup_env := addFieldSites_lookup_not_in_fields variantDef.fields
+                    (delete env.siteEnv src) fields s' hs'_in
+                rw [hlookup_env] at hsite
+                have hne_src : s' ≠ src := by
+                  intro h; subst h; rw [lookup_delete_same] at hsite; cases hsite
+                rw [lookup_delete_ne _ src s' hne_src] at hsite
+                exact Or.inl ⟨s', hsite⟩
+            · exact Or.inr ⟨x, ms, hvar⟩)
+          (fun r' hr => hr)
       }
     · -- actualVariant ≠ vname → step gives error, contradiction
       simp at hstep
@@ -10387,7 +11093,8 @@ private theorem preservation_unpackVariant (m m' : Machine) (env : TypeEnv) (len
             exact buildRefFieldEnvRmap_new_ref_mapped r bk fentries loc pathR fields env0 rmap
               r' hr'_mem hr'_old
         varStore_locs_bound := hwt.varStore_locs_bound
-        enum_field_compatibility := by rw [haddEnumEnv]; exact hwt.enum_field_compatibility
+        enum_mutable_no_extension := by
+          sorry
       }
     · -- actualVariant ≠ vname → step gives error
       simp at hstep
@@ -10538,7 +11245,18 @@ private theorem preservation_variantSwitch (m m' : Machine) (env : TypeEnv) (len
       lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
       has_return_info := hwt.has_return_info
       varStore_locs_bound := hwt.varStore_locs_bound
-      enum_field_compatibility := hwt.enum_field_compatibility
+      enum_mutable_no_extension := by
+        intro r' bt loc path hr' hce hb hrmap r'' hr'' hne suffix hsuf
+        have hr'_old : r' ∈ env.pathEnv.refs := by
+          simp only [env_mod, delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hr'; exact hr'.1
+        have hr''_old : r'' ∈ env.pathEnv.refs := by
+          simp only [env_mod, delete_ref_node_refs, List.mem_filter, decide_eq_true_eq] at hr''; exact hr''.1
+        apply hwt.enum_mutable_no_extension r' bt loc path hr'_old hce _ hrmap r'' hr''_old hne suffix hsuf
+        rcases hb with ⟨s', hs'⟩ | ⟨x', ms', hx'⟩
+        · simp only [env_mod] at hs'
+          have hsne : s' ≠ src := by intro h; subst h; rw [lookup_delete_same] at hs'; simp at hs'
+          exact Or.inl ⟨s', by rwa [lookup_delete_ne _ src s' hsne] at hs'⟩
+        · exact Or.inr ⟨x', ms', hx'⟩
     }
 
 -- ============================================================
