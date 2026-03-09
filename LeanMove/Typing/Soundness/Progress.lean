@@ -1260,7 +1260,7 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
       | borrowMut x =>
         simp only [step, hs] at hstep
         cases hst
-        next _ _ _ _ _ _ hvar _ =>
+        next _ _ _ _ _ _ hvar _ _ =>
           have ⟨loc, hloc⟩ := getVarLoc_some_of_validVar hwt hvar
           rw [hloc] at hstep; cases hstep
 

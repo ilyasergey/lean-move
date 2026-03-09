@@ -218,6 +218,33 @@ instance : DecidableEq BasicMoveType := fun t1 t2 =>
     isFalse (fun heq => h (BasicMoveType.beq_of_eq t1 t2 heq))
 
 /- ---------------------------------------------------- -/
+/-       containsEnum: type transitively contains enum   -/
+/- ---------------------------------------------------- -/
+
+mutual
+  def BasicMoveType.containsEnum : BasicMoveType → Bool
+    | .tenum _ => true
+    | .trecord fentries => BasicMoveType.containsEnumEntries fentries.entries
+    | .tvec bt => BasicMoveType.containsEnum bt
+    | _ => false
+
+  def BasicMoveType.containsEnumEntries : List (Field × BasicMoveType) → Bool
+    | [] => false
+    | (_, bt) :: rest => BasicMoveType.containsEnum bt || BasicMoveType.containsEnumEntries rest
+end
+
+@[simp] theorem BasicMoveType.containsEnum_u64 : BasicMoveType.containsEnum .u64 = false := rfl
+@[simp] theorem BasicMoveType.containsEnum_u8 : BasicMoveType.containsEnum .u8 = false := rfl
+@[simp] theorem BasicMoveType.containsEnum_tbool : BasicMoveType.containsEnum .tbool = false := rfl
+@[simp] theorem BasicMoveType.containsEnum_tunit : BasicMoveType.containsEnum .tunit = false := rfl
+@[simp] theorem BasicMoveType.containsEnum_trecord (m : AssocMap Field BasicMoveType) :
+    BasicMoveType.containsEnum (.trecord m) = BasicMoveType.containsEnumEntries m.entries := rfl
+@[simp] theorem BasicMoveType.containsEnum_tvec (bt : BasicMoveType) :
+    BasicMoveType.containsEnum (.tvec bt) = BasicMoveType.containsEnum bt := rfl
+@[simp] theorem BasicMoveType.containsEnum_tenum (n : Id) :
+    BasicMoveType.containsEnum (.tenum n) = true := rfl
+
+/- ---------------------------------------------------- -/
 /-       MoveType and Related Types                      -/
 /- ---------------------------------------------------- -/
 

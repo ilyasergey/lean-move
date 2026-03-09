@@ -635,19 +635,34 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
           split at h
           · rename_i hcond
             simp only [Bool.and_eq_true, beq_iff_eq] at hcond
-            obtain ⟨hms, hfresh⟩ := hcond
+            obtain ⟨⟨hms, hnotIn⟩, hnotbor⟩ := hcond
             let r := nextFreshRefInEnv env
             apply typecheck_stmt.let_bind_borrowMut (τ := τ) (ms := ms) (r := r)
             · simp only [hms, LE.le, Mut.le]
             · simp only [hlookup]
-            · exact hfresh
+            · -- containsEnum → not_borrowed
+              intro hce
+              simp only [hce, Bool.not_true, Bool.false_or] at hnotbor
+              exact not_borrowed_bool_sound x env hwf.pathEnv_wf hnotbor
+            · exact hnotIn
             · exact nextFreshRefInEnv_fresh_prop env
             · have hr_not_root : r ≠ Aref.root := nextFreshRefInEnv_not_root env
               have hpe' := update_with_extension_wellformed r .root [.root_to_var x] _
                 (update_with_epsilon_wellformed r r env.pathEnv hwf.pathEnv_wf hr_not_root) hr_not_root
               have hτ : match (MoveType.ref τ r .siteBorrowMut) with | .ref _ r' _ => r' ≠ Aref.root | .basic _ => True :=
                 nextFreshRefInEnv_not_root env
-              have hwf' := TypeEnv.insert_pathEnv_wf env a (.ref τ r .siteBorrowMut) _ hwf hpe' hτ
+              have hve' : VarEnv.RefsNotRoot
+                  (if BasicMoveType.containsEnum τ then update env.varEnv x (.invalidVar, .basic τ, ms) else env.varEnv) := by
+                split
+                · exact VarEnv.update_refs_not_root env.varEnv x _ hwf.varEnv_wf (by trivial)
+                · exact hwf.varEnv_wf
+              have hwf' : TypeEnv.WellFormed
+                  {env with varEnv := if BasicMoveType.containsEnum τ then update env.varEnv x (.invalidVar, .basic τ, ms)
+                                      else env.varEnv
+                            siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowMut)
+                            pathEnv := update_with_epsilon r r env.pathEnv |>
+                                       update_with_extension r .root [.root_to_var x]} :=
+                ⟨hpe', SiteEnv.insert_refs_not_root env.siteEnv a _ hwf.siteEnv_wf hr_not_root, hve'⟩
               exact ih_cont _ hwf' h
           · simp at h
         | (.validVar, .ref _ _ _, _) => simp at h
@@ -1944,8 +1959,16 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
                   have ha_type : lookup env.siteEnv a = some (.basic τ) := by
                     rw [hτ_eq]; exact hlookup_a
                   apply typecheck_stmt.var_assign_valid (τ := τ) (ms := ms) (r := r) (ax := ax)
-                  · simp only [beq_iff_eq] at hms; simp only [hms, LE.le, Mut.le]
+                  · simp only [Bool.and_eq_true, beq_iff_eq] at hms
+                    obtain ⟨hms_mut, hnotbor⟩ := hms
+                    simp only [hms_mut, LE.le, Mut.le]
                   · exact hlookup
+                  · -- containsEnum → not_borrowed
+                    simp only [Bool.and_eq_true, beq_iff_eq] at hms
+                    obtain ⟨_, hnotbor⟩ := hms
+                    intro hce
+                    simp only [hce, Bool.not_true, Bool.false_or] at hnotbor
+                    exact not_borrowed_bool_sound x env hwf.pathEnv_wf hnotbor
                   · exact ha_type
                   · exact hfresh_ax
                   · exact nextFreshRefInEnv_fresh_prop env

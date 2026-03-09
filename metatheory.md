@@ -1119,16 +1119,44 @@ module definitions.
    variant name is a runtime error analogous to `vectorError` for
    out-of-bounds access.
 
-2. **Single-variant restriction for soundness.** The
-   `enum_field_compatibility` invariant requires that two values of the
-   same type have compatible variant structure. For multi-variant enums,
-   this can fail when two references at the same heap location point to
-   values with different variant names (different field domains). The
-   `checkEnumSingleVariant` restriction avoids this by ensuring each enum
-   type has at most one variant. Lifting this restriction requires
-   additional invariants (e.g., proving that mutable borrow exclusivity
-   prevents two live references from observing different variants at the
-   same location).
+2. **Multi-variant enum soundness via `containsEnum`-conditional
+   restrictions.** The core challenge for multi-variant enums is the
+   `writeRef` suffix case: when two references point to the same heap
+   location, writing through one must preserve typing for the other.
+   For enum types, `typeAtPathV` depends on the runtime variant name,
+   so writing a different variant through a mutable borrow would
+   invalidate sub-paths of any co-located reference.
+
+   Our approach mirrors Move's own borrow checker philosophy: **mutable
+   borrows of enum-containing types are treated more restrictively than
+   borrows of plain types**. Specifically:
+
+   - `BasicMoveType.containsEnum` recursively checks whether a type
+     transitively contains `.tenum` (through records, vectors, or
+     directly).
+   - `let_bind_borrowMut` adds two conditional restrictions when
+     `containsEnum τ = true`: (a) `not_borrowed x env` — no existing
+     tracked reference has a path to variable `x`, and (b) the source
+     variable is invalidated in the continuation environment.
+   - `var_assign_valid` adds the same `not_borrowed` guard for
+     assignments to enum-containing types.
+
+   For non-enum types, both conditions are vacuously satisfied, so
+   existing programs are unaffected. This design aligns with Move's
+   intent: Move's bytecode verifier applies similar restrictions to
+   enum values to prevent variant-tag aliasing through mutable
+   references. In Move:
+   - `VariantSwitch` takes an immutable reference to inspect the
+     variant tag before dispatching
+   - `UnpackVariantMutRef` borrows variant fields mutably, but the
+     borrow checker ensures no conflicting borrows exist that could
+     observe a variant change
+   - The verification rules for reference-based variant unpacking are
+     "very similar to borrowing each field sequentially" — our
+     `addRefFieldSites` implements exactly this pattern
+
+   The previous `checkEnumSingleVariant` restriction is being replaced
+   by this finer-grained approach (work in progress).
 
 3. **`EnumEnv` as explicit parameter.** Rather than embedding enum
    definitions in the type itself (`BasicMoveType` carries only the enum

@@ -125,15 +125,18 @@ private theorem inv_borrowMut
     (h : typecheck_stmt lenv env (.letBind a (.usage (.borrowMut x)) cont) retTypes) :
     ∃ τ ms r,
       lookup env.varEnv x = some (.validVar, .basic τ, ms) ∧
+      (BasicMoveType.containsEnum τ → not_borrowed x env) ∧
       freshRefInEnv r env ∧
       typecheck_stmt lenv
-        {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowMut)
+        {env with varEnv := if BasicMoveType.containsEnum τ then update env.varEnv x (.invalidVar, .basic τ, ms)
+                             else env.varEnv
+                  siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowMut)
                   pathEnv := update_with_extension r .root [.root_to_var x]
                               (update_with_epsilon r r env.pathEnv)}
         cont retTypes :=
   match h with
-  | .let_bind_borrowMut _ _ _ _ τ ms r _ _ _ hlookup _ hfresh hcont =>
-    ⟨τ, ms, r, hlookup, hfresh, hcont⟩
+  | .let_bind_borrowMut _ _ _ _ τ ms r _ _ _ hlookup hnotBorrowed _ hfresh hcont =>
+    ⟨τ, ms, r, hlookup, hnotBorrowed, hfresh, hcont⟩
 
 private theorem inv_readRef
     (h : typecheck_stmt lenv env (.letBind c (.readRef src) cont) retTypes) :
@@ -464,6 +467,7 @@ private theorem inv_assign
     (h : typecheck_stmt lenv env (.assign x a cont) retTypes) :
     (∃ ax τ ms r,
       lookup env.varEnv x = some (.validVar, .basic τ, ms) ∧
+      (BasicMoveType.containsEnum τ → not_borrowed x env) ∧
       lookup env.siteEnv a = some (.basic τ) ∧
       freshRefInEnv r env ∧
       notIn env.siteEnv ax ∧
@@ -497,8 +501,8 @@ private theorem inv_assign
                   siteEnv := delete env.siteEnv a}
         cont retTypes) :=
   match h with
-  | .var_assign_valid _ _ _ _ ax τ ms r _ _ _ hlookup ha_type hnotin hfresh hcont =>
-    .inl ⟨ax, τ, ms, r, hlookup, ha_type, hfresh, hnotin, hcont⟩
+  | .var_assign_valid _ _ _ _ ax τ ms r _ _ _ hlookup hnotBorrowed ha_type hnotin hfresh hcont =>
+    .inl ⟨ax, τ, ms, r, hlookup, hnotBorrowed, ha_type, hfresh, hnotin, hcont⟩
   | .var_assign_valid_ref _ _ _ _ τ_old r_old bk_old τ' ms _ _ hle hlookup_var hlookup_site hcont =>
     .inr (.inl ⟨τ_old, r_old, bk_old, τ', ms, hle, hlookup_var, hlookup_site, hcont⟩)
   | .var_assign_invalid _ _ _ _ τ τ' _ _ hlookup_var hlookup_site hcompat hcont =>
@@ -1460,8 +1464,18 @@ private theorem preservation_borrow (m : Machine) (env : TypeEnv) (lenv : LabelE
     -- Inversion results
     (τ : BasicMoveType) (r : Aref)
     (hfresh : freshRefInEnv r env)
+    -- VarEnv for continuation (may differ from env.varEnv for borrowMut with enum types)
+    (ve' : VarEnv)
+    (hve_valid : ∀ y isv τ' ms',
+      lookup ve' y = some (isv, τ', ms') → isv = .validVar →
+      lookup env.varEnv y = some (isv, τ', ms'))
+    (hve_invalid_consistent : ∀ y τ' ms',
+      lookup ve' y = some (.invalidVar, τ', ms') →
+      lookup m.frame.varStore y = some none ∨ ∃ loc, lookup m.frame.varStore y = some (some loc))
+    (hve_wf : VarEnv.RefsNotRoot ve')
     (hcont : typecheck_stmt lenv
-      {env with siteEnv := insert env.siteEnv s (.ref τ r bk),
+      {env with varEnv := ve',
+                siteEnv := insert env.siteEnv s (.ref τ r bk),
                 pathEnv := update_with_extension r .root [.root_to_var x]
                             (update_with_epsilon r r env.pathEnv)}
       cont retTypes)
@@ -1503,7 +1517,8 @@ private theorem preservation_borrow (m : Machine) (env : TypeEnv) (lenv : LabelE
                ↓reduceIte]
     exact hpe_mid_refs
   -- 6. Construct WellTypedState
-  refine ⟨{env with siteEnv := insert env.siteEnv s (.ref τ r bk),
+  refine ⟨{env with varEnv := ve',
+                     siteEnv := insert env.siteEnv s (.ref τ r bk),
                      pathEnv := pe'},
           lenv, retTypes, rmap', rfl, ?_, hss⟩
   exact {
@@ -1512,9 +1527,25 @@ private theorem preservation_borrow (m : Machine) (env : TypeEnv) (lenv : LabelE
         hr_not_root
       have hpe' := update_with_extension_wellformed r .root [.root_to_var x]
         (update_with_epsilon r r env.pathEnv) hpe_eps hr_not_root
-      exact TypeEnv.insert_pathEnv_wf env s (.ref τ r bk) _ hwt.env_wf hpe' hr_not_root
+      exact ⟨hpe', SiteEnv.insert_refs_not_root env.siteEnv s _ hwt.env_wf.siteEnv_wf hr_not_root, hve_wf⟩
     stmt_typed := hcont
-    var_consistent := var_consistent_extend_rmap_fresh hwt r loc [] hfresh
+    var_consistent := by
+      intro y isv τ_y ms_y hlook_y
+      cases isv with
+      | validVar =>
+        have hlook_orig := hve_valid y .validVar τ_y ms_y hlook_y rfl
+        have ⟨loc_y, v_y, hloc_y, hread_y, hht_y⟩ := hwt.var_consistent y .validVar τ_y ms_y hlook_orig
+        refine ⟨loc_y, v_y, hloc_y, hread_y, ?_⟩
+        cases τ_y with
+        | basic _ => exact hht_y
+        | ref bt r_y bk_y =>
+          obtain ⟨loc_v, path_v, hv_eq, hrmap_r⟩ := hht_y
+          have hrt : r_y ≠ r := Ne.symm (freshRefInEnv_ne_varEnv_ref r env y .validVar bt r_y bk_y ms_y hfresh hlook_orig)
+          refine ⟨loc_v, path_v, hv_eq, ?_⟩
+          show (if r_y = r then some (loc, []) else rmap.map r_y) = some (loc_v, path_v)
+          rw [if_neg hrt]; exact hrmap_r
+      | invalidVar =>
+        exact hve_invalid_consistent y τ_y ms_y hlook_y
     site_consistent := by
       intro s'' τ' hl
       by_cases heq : s'' = s
@@ -1538,7 +1569,8 @@ private theorem preservation_borrow (m : Machine) (env : TypeEnv) (lenv : LabelE
         hwt.rmap_live hwt.rmap_paths
     varEnv_refs_in_pathEnv := by
       intro x' bt' r' bk' ms' hv
-      have hold := hwt.varEnv_refs_in_pathEnv x' bt' r' bk' ms' hv
+      have hv_orig := hve_valid x' .validVar (.ref bt' r' bk') ms' hv rfl
+      have hold := hwt.varEnv_refs_in_pathEnv x' bt' r' bk' ms' hv_orig
       show r' ∈ pe'.refs
       rw [hrefs_eq]
       exact List.mem_cons_of_mem r hold
@@ -1554,8 +1586,18 @@ private theorem preservation_borrow (m : Machine) (env : TypeEnv) (lenv : LabelE
         rw [hr_eq]; exact .head _
       · rw [lookup_insert_ne _ s s' _ heq] at hl
         exact List.mem_cons_of_mem r (hwt.siteEnv_refs_in_pathEnv s' bt' r' bk' hl)
-    live_refs_unique := live_refs_unique_insert_fresh_ref hwt s (.ref τ r bk) r
-      hr_fresh_pe (fun _ r' _ h => by simp only [MoveType.ref.injEq] at h; exact h.2.1.symm)
+    live_refs_unique := by
+      have hold := live_refs_unique_insert_fresh_ref hwt s (.ref τ r bk) r
+        hr_fresh_pe (fun _ r' _ h => by simp only [MoveType.ref.injEq] at h; exact h.2.1.symm)
+      intro r'
+      refine ⟨fun x' bt' bk' ms' s' bt'' bk'' hv hs => ?_,
+              (hold r').2.1,
+              fun x' y bt' bt'' bk' bk'' ms' ms'' hne hx hy => ?_⟩
+      · have hv_orig := hve_valid x' .validVar (.ref bt' r' bk') ms' hv rfl
+        exact (hold r').1 x' bt' bk' ms' s' bt'' bk'' hv_orig hs
+      · have hx_orig := hve_valid x' .validVar (.ref bt' r' bk') ms' hx rfl
+        have hy_orig := hve_valid y .validVar (.ref bt'' r' bk'') ms'' hy rfl
+        exact (hold r').2.2 x' y bt' bt'' bk' bk'' ms' ms'' hne hx_orig hy_orig
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     lenv_wf := hwt.lenv_wf
@@ -1651,7 +1693,8 @@ private theorem preservation_borrow (m : Machine) (env : TypeEnv) (lenv : LabelE
         -- siteEnv case gives the unique entry (s, .ref τ r' bk)
         have hbt_eq : bt = τ := by
           rcases hcond with ⟨x', bk', ms', hvar'⟩ | ⟨s', bk', hsite'⟩
-          · exact absurd (hwt.varEnv_refs_in_pathEnv x' bt r' bk' ms' hvar') hr_fresh_pe
+          · have hvar_orig := hve_valid x' .validVar (.ref bt r' bk') ms' hvar' rfl
+            exact absurd (hwt.varEnv_refs_in_pathEnv x' bt r' bk' ms' hvar_orig) hr_fresh_pe
           · by_cases heqs : s' = s
             · subst heqs; rw [lookup_insert_same] at hsite'
               simp only [Option.some.injEq, MoveType.ref.injEq] at hsite'
@@ -1666,7 +1709,8 @@ private theorem preservation_borrow (m : Machine) (env : TypeEnv) (lenv : LabelE
         simp only [rmap', if_neg hrt] at hrmap
         apply hwt.rmap_has_type r' bt loc_r path_r hrmap
         rcases hcond with ⟨x', bk', ms', hvar'⟩ | ⟨s', bk', hsite'⟩
-        · exact Or.inl ⟨x', bk', ms', hvar'⟩
+        · have hvar_orig := hve_valid x' .validVar (.ref bt r' bk') ms' hvar' rfl
+          exact Or.inl ⟨x', bk', ms', hvar_orig⟩
         · by_cases heqs : s' = s
           · subst heqs; rw [lookup_insert_same] at hsite'
             simp only [Option.some.injEq, MoveType.ref.injEq] at hsite'
@@ -1713,7 +1757,9 @@ private theorem preservation_borrowImm (m m' : Machine) (env : TypeEnv) (lenv : 
   have hgl : getVarLoc m x = some loc := by unfold getVarLoc; simp [hloc]
   simp only [step, hstmt, hgl, ExecState.running.injEq] at hstep; subst hstep
   exact preservation_borrow m env lenv retTypes rmap hwt hss s x cont .siteBorrowImm
-    τ r hfresh hcont loc val hloc hread hht_val
+    τ r hfresh env.varEnv
+    (fun _ _ _ _ h _ => h) (fun y τ' ms' h => hwt.var_consistent y .invalidVar τ' ms' h)
+    hwt.env_wf.varEnv_wf hcont loc val hloc hread hht_val
 
 /-- Preservation for borrowMut: thin wrapper around preservation_borrow. -/
 private theorem preservation_borrowMut (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -1726,14 +1772,44 @@ private theorem preservation_borrowMut (m m' : Machine) (env : TypeEnv) (lenv : 
     ∃ env' lenv' retTypes' rmap',
       env'.enumEnv = env.enumEnv ∧ WellTypedState m' env' lenv' retTypes' rmap' ∧
       StackSafe env.enumEnv m'.stack m'.frame.returnInfo m'.heap retTypes' := by
-  obtain ⟨τ, ms, r, hlookup, hfresh, hcont⟩ :=
+  obtain ⟨τ, ms, r, hlookup, _hnotBorrowed, hfresh, hcont⟩ :=
     inv_borrowMut (by rw [← hstmt]; exact hwt.stmt_typed)
   obtain ⟨loc, val, hloc, hread, hht_val⟩ :=
     hwt.var_consistent x .validVar (.basic τ) ms hlookup
   have hgl : getVarLoc m x = some loc := by unfold getVarLoc; simp [hloc]
   simp only [step, hstmt, hgl, ExecState.running.injEq] at hstep; subst hstep
+  -- Conditional varEnv for the continuation
+  let ve' := if BasicMoveType.containsEnum τ then update env.varEnv x (.invalidVar, .basic τ, ms) else env.varEnv
+  have hve_valid : ∀ y isv τ' ms', lookup ve' y = some (isv, τ', ms') → isv = .validVar →
+      lookup env.varEnv y = some (isv, τ', ms') := by
+    intro y isv τ' ms' hl hisv
+    simp only [ve'] at hl
+    split at hl
+    · change lookup (insert env.varEnv x (.invalidVar, .basic τ, ms)) y = _ at hl
+      by_cases hy : y = x
+      · subst hy; rw [lookup_insert_same] at hl; simp [hisv] at hl
+      · rwa [lookup_insert_ne _ _ _ _ hy] at hl
+    · exact hl
+  have hve_invalid_consistent : ∀ y τ' ms', lookup ve' y = some (.invalidVar, τ', ms') →
+      lookup m.frame.varStore y = some none ∨ ∃ loc', lookup m.frame.varStore y = some (some loc') := by
+    intro y τ' ms' hl
+    simp only [ve'] at hl
+    split at hl
+    · change lookup (insert env.varEnv x (.invalidVar, .basic τ, ms)) y = _ at hl
+      by_cases hy : y = x
+      · subst hy
+        -- x was validVar with loc, so varStore has some (some loc)
+        exact .inr ⟨loc, hloc⟩
+      · rw [lookup_insert_ne _ _ _ _ hy] at hl
+        exact hwt.var_consistent y .invalidVar τ' ms' hl
+    · exact hwt.var_consistent y .invalidVar τ' ms' hl
+  have hve_wf : VarEnv.RefsNotRoot ve' := by
+    simp only [ve']
+    split
+    · exact VarEnv.update_refs_not_root env.varEnv x _ hwt.env_wf.varEnv_wf (by trivial)
+    · exact hwt.env_wf.varEnv_wf
   exact preservation_borrow m env lenv retTypes rmap hwt hss s x cont .siteBorrowMut
-    τ r hfresh hcont loc val hloc hread hht_val
+    τ r hfresh ve' hve_valid hve_invalid_consistent hve_wf hcont loc val hloc hread hht_val
 
 /-- fieldPathOf distributes over append. -/
 private theorem fieldPathOf_append (l₁ l₂ : List PathElement) :
@@ -10515,7 +10591,7 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
   | release site cont => exact preservation_release m m' env lenv retTypes rmap hwt hss site cont hstmt hstep
   | assign x site cont =>
     rcases inv_assign (by rw [← hstmt]; exact hwt.stmt_typed) with
-      ⟨ax, τ, ms, r, hvar, ha_type, hfresh, hnotin, hcont⟩ |
+      ⟨ax, τ, ms, r, hvar, _hnotBorrowed, ha_type, hfresh, hnotin, hcont⟩ |
       ⟨τ_old, r_old, bk_old, τ', ms, hle, hvar, hsite, hcont⟩ |
       ⟨τ, τ', hvar, hsite, hcompat, hcont⟩ |
       ⟨isv, τ, hvar, hsite, hcont⟩

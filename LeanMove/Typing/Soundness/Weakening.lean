@@ -1856,6 +1856,7 @@ private theorem weaken_let_bind_borrowMut
     (cont : Stmt) (retTypes : List ParamType)
     (hle : LE.le .mutable ms)
     (hlookup : lookup envL.varEnv x_var = some (.validVar, .basic τ, ms))
+    (hnotBorrowed : BasicMoveType.containsEnum τ → not_borrowed x_var envL)
     (hnotIn : notIn envL.siteEnv a)
     (hfresh : freshRefInEnv r envL)
     (hsub : TypeEnv.subsumes envL env)
@@ -1871,7 +1872,9 @@ private theorem weaken_let_bind_borrowMut
     (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
     (hroot : Aref.root ∈ envL.pathEnv.refs)
     (ih : WeakenIH lenv
-        {envL with siteEnv := insert envL.siteEnv a (.ref τ r .siteBorrowMut)
+        {envL with varEnv := if BasicMoveType.containsEnum τ then update envL.varEnv x_var (.invalidVar, .basic τ, ms)
+                              else envL.varEnv
+                   siteEnv := insert envL.siteEnv a (.ref τ r .siteBorrowMut)
                    pathEnv := update_with_epsilon r r envL.pathEnv |>
                               update_with_extension r .root [.root_to_var x_var]}
         cont retTypes) :
@@ -1898,8 +1901,41 @@ private theorem weaken_let_bind_borrowMut
         (update_with_epsilon r r envL.pathEnv)).refs = r :: envL.pathEnv.refs := by
     rw [uwe_absorbs_epsilon r .root _ envL.pathEnv hr_fresh_pe (Ne.symm hr_ne_root),
         uwe_refs_fresh r .root _ envL.pathEnv hr_fresh_pe]
+  -- Helper: valid ref lookup in conditional varEnv implies lookup in original varEnv
+  have hlook_cond_to_orig : ∀ x' bt' s' bk' ms',
+      lookup (if BasicMoveType.containsEnum τ then update envL.varEnv x_var (.invalidVar, .basic τ, ms)
+              else envL.varEnv) x' = some (.validVar, .ref bt' s' bk', ms') →
+      lookup envL.varEnv x' = some (.validVar, .ref bt' s' bk', ms') := by
+    intro x' bt' s' bk' ms' h
+    split at h
+    · -- containsEnum = true: update envL.varEnv x_var (.invalidVar, .basic τ, ms)
+      change lookup (insert envL.varEnv x_var (.invalidVar, .basic τ, ms)) x' = _ at h
+      by_cases hx : x' = x_var
+      · subst hx; rw [lookup_insert_same] at h; simp at h
+      · rwa [lookup_insert_ne _ _ _ _ hx] at h
+    · exact h
+  -- Helper: VarEnvSubstEquiv for conditional varEnv
+  have hve_cond : VarEnvSubstEquiv σ
+      (if BasicMoveType.containsEnum τ then update envL.varEnv x_var (.invalidVar, .basic τ, ms) else envL.varEnv)
+      (if BasicMoveType.containsEnum τ then update env.varEnv x_var (.invalidVar, .basic τ, ms) else env.varEnv) := by
+    split
+    · have := VarEnvSubstEquiv_update_invalid σ _ _ x_var (.basic τ) ms hve
+      simp only [applySubstMoveType] at this; exact this
+    · exact hve
+  -- Helper: VarEnv.RefsNotRoot for conditional varEnvs
+  have hve_wfL_cond : VarEnv.RefsNotRoot
+      (if BasicMoveType.containsEnum τ then update envL.varEnv x_var (.invalidVar, .basic τ, ms) else envL.varEnv) := by
+    split
+    · exact VarEnv.update_refs_not_root envL.varEnv x_var _ hwfL.varEnv_wf (by trivial)
+    · exact hwfL.varEnv_wf
+  have hve_wfE_cond : VarEnv.RefsNotRoot
+      (if BasicMoveType.containsEnum τ then update env.varEnv x_var (.invalidVar, .basic τ, ms) else env.varEnv) := by
+    split
+    · exact VarEnv.update_refs_not_root env.varEnv x_var _ hwfE.varEnv_wf (by trivial)
+    · exact hwfE.varEnv_wf
   apply typecheck_stmt.let_bind_borrowMut lenv env _ _ _ _ r' _ _
     hle hlook_env
+    (fun hce => not_borrowed_weaken σ _ env _ (hnotBorrowed hce) hpaths hid hrefs hroot)
     (SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn)
     hr'_fresh_prop
   apply ih
@@ -1908,9 +1944,10 @@ private theorem weaken_let_bind_borrowMut
         uwe_absorbs_epsilon r' .root _ env.pathEnv hr'_fresh_pe (Ne.symm hr'_not_root)]
     refine ⟨extendSubst σ r r',
       extendSubst_id σ r r' hid hr_refid,
-      VarEnvSubstEquiv_extend σ r r' _ _ hve
+      VarEnvSubstEquiv_extend σ r r' _ _ hve_cond
         (fun x' bt' s' bk' ms' hlook' =>
-          Ne.symm (freshRefInEnv_ne_varEnv_ref r _ x' .validVar bt' s' bk' ms' hfresh hlook')),
+          Ne.symm (freshRefInEnv_ne_varEnv_ref r _ x' .validVar bt' s' bk' ms' hfresh
+            (hlook_cond_to_orig x' bt' s' bk' ms' hlook'))),
       SiteEnvSubstEquiv_extend_insert_ref σ r r' _ _ _ _ _ hse
         (fun k bt ref bk hlook' =>
           Ne.symm (freshRefInEnv_ne_siteEnv_ref r _ k bt ref bk hfresh hlook')),
@@ -1932,13 +1969,13 @@ private theorem weaken_let_bind_borrowMut
             (update_with_epsilon_wellformed r r envL.pathEnv hwfL.pathEnv_wf hr_ne_root)
             hr_ne_root,
            SiteEnv.insert_refs_not_root _ _ _ hwfL.siteEnv_wf hr_ne_root,
-           hwfL.varEnv_wf⟩
+           hve_wfL_cond⟩
   · exact ⟨update_with_extension_wellformed r' .root [.root_to_var x_var]
             (update_with_epsilon r' r' env.pathEnv)
             (update_with_epsilon_wellformed r' r' env.pathEnv hwfE.pathEnv_wf hr'_not_root)
             hr'_not_root,
            SiteEnv.insert_refs_not_root _ _ _ hwfE.siteEnv_wf hr'_not_root,
-           hwfE.varEnv_wf⟩
+           hve_wfE_cond⟩
   · intro s' bt ref bk hlook_s'
     simp only [h_compound_refs]
     by_cases hs' : s' = a
@@ -1950,10 +1987,34 @@ private theorem weaken_let_bind_borrowMut
       exact .tail _ (hsite_tracked _ _ _ _ hlook_s')
   · intro x' bt ref bk ms' hlook_x'
     simp only [h_compound_refs]
-    exact .tail _ (hvar_tracked _ _ _ _ _ hlook_x')
-  · exact RefsUnique_insert_fresh_ref _ _ _ _ _ _ huniq
+    exact .tail _ (hvar_tracked _ _ _ _ _ (hlook_cond_to_orig x' bt ref bk ms' hlook_x'))
+  · -- RefsUnique for conditional varEnv
+    have huniq_cond : RefsUnique
+        (if BasicMoveType.containsEnum τ then update envL.varEnv x_var (.invalidVar, .basic τ, ms) else envL.varEnv)
+        envL.siteEnv := by
+      split
+      · intro ref; refine ⟨fun x' bt' bk' ms' s bt bk hlook_x' hlook_s => ?_,
+            (huniq ref).2.1,
+            fun x' y bt' bt'' bk' bk'' ms' ms'' hne hlook_x' hlook_y => ?_⟩
+        · change lookup (insert envL.varEnv x_var (.invalidVar, .basic τ, ms)) x' = _ at hlook_x'
+          by_cases hx : x' = x_var
+          · subst hx; rw [lookup_insert_same] at hlook_x'; simp at hlook_x'
+          · rw [lookup_insert_ne _ _ _ _ hx] at hlook_x'
+            exact (huniq ref).1 x' bt' bk' ms' s bt bk hlook_x' hlook_s
+        · change lookup (insert envL.varEnv x_var (.invalidVar, .basic τ, ms)) x' = _ at hlook_x'
+          change lookup (insert envL.varEnv x_var (.invalidVar, .basic τ, ms)) y = _ at hlook_y
+          by_cases hx : x' = x_var
+          · subst hx; rw [lookup_insert_same] at hlook_x'; simp at hlook_x'
+          · by_cases hy : y = x_var
+            · subst hy; rw [lookup_insert_same] at hlook_y; simp at hlook_y
+            · rw [lookup_insert_ne _ _ _ _ hx] at hlook_x'
+              rw [lookup_insert_ne _ _ _ _ hy] at hlook_y
+              exact (huniq ref).2.2 x' y bt' bt'' bk' bk'' ms' ms'' hne hlook_x' hlook_y
+      · exact huniq
+    exact RefsUnique_insert_fresh_ref _ _ _ _ _ _ huniq_cond
       (fun x' bt' ref bk' ms' hlook' =>
-        Ne.symm (freshRefInEnv_ne_varEnv_ref r _ x' .validVar bt' ref bk' ms' hfresh hlook'))
+        Ne.symm (freshRefInEnv_ne_varEnv_ref r _ x' .validVar bt' ref bk' ms' hfresh
+          (hlook_cond_to_orig x' bt' ref bk' ms' hlook')))
       (fun s' bt' ref bk' hlook' =>
         Ne.symm (freshRefInEnv_ne_siteEnv_ref r _ s' bt' ref bk' hfresh hlook'))
   · exact update_with_extension_paths_to_non_member r' .root [.root_to_var x_var] _
@@ -2375,6 +2436,7 @@ private theorem weaken_var_assign_valid
     (cont : Stmt) (retTypes : List ParamType)
     (hms : LE.le .mutable ms)
     (hlook_x : lookup envL.varEnv x = some (.validVar, .basic τ, ms))
+    (hnotBorrowed : BasicMoveType.containsEnum τ → not_borrowed x envL)
     (hlook_a : lookup envL.siteEnv a = some (.basic τ))
     (hnotIn : notIn envL.siteEnv ax)
     (hfresh : freshRefInEnv r envL)
@@ -2413,7 +2475,9 @@ private theorem weaken_var_assign_valid
   have hr''_not_paramRef := nextFreshRefInEnv_not_paramRef env
   -- Apply var_assign_valid rule for env with r''
   apply typecheck_stmt.var_assign_valid lenv env _ _ ax τ _ r'' _ _
-    hms hlook_x_env hlook_a_env
+    hms hlook_x_env
+    (fun hce => not_borrowed_weaken σ _ env _ (hnotBorrowed hce) hpaths hid hrefs hroot)
+    hlook_a_env
     (SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn)
     hr''_fresh_prop
   -- IH: need subsumes for modified envs
@@ -7750,17 +7814,17 @@ private theorem weaken_variantSwitch_rule
                   {envL with siteEnv := delete envL.siteEnv src
                              pathEnv := delete_ref_node envL.pathEnv r})
     (hsub : TypeEnv.subsumes envL env)
-    (hfuneq : envL.funEnv = env.funEnv)
-    (hwfL : TypeEnv.WellFormed envL) (hwfE : TypeEnv.WellFormed env)
+    (_ : envL.funEnv = env.funEnv)
+    (_ : TypeEnv.WellFormed envL) (_ : TypeEnv.WellFormed env)
     (hsite_tracked : ∀ s bt r bk, lookup envL.siteEnv s = some (.ref bt r bk) → r ∈ envL.pathEnv.refs)
-    (hvar_tracked : ∀ x bt r bk ms, lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) → r ∈ envL.pathEnv.refs)
-    (huniq : RefsUnique envL.varEnv envL.siteEnv)
-    (hpaths_to_nm : ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
+    (_ : ∀ x bt r bk ms, lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) → r ∈ envL.pathEnv.refs)
+    (_ : RefsUnique envL.varEnv envL.siteEnv)
+    (_ : ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
       ¬interpret_regex (env.pathEnv.paths (u, v)) p)
-    (hpaths_from_nm : ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
+    (_ : ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
       ¬interpret_regex (env.pathEnv.paths (u, v)) p)
-    (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
-    (hroot : Aref.root ∈ envL.pathEnv.refs) :
+    (_ : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
+    (_ : Aref.root ∈ envL.pathEnv.refs) :
     typecheck_stmt lenv env (.variantSwitch src cases) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj_σ, hnonroot, hpaths_σ, henum_equiv⟩ := hsub
   have hlook_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_src
@@ -7923,9 +7987,9 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
       hlookup hnotIn hfresh
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
-  | let_bind_borrowMut envL a x_var _ _ r _ _ hle hlookup hnotIn hfresh _ ih =>
+  | let_bind_borrowMut envL a x_var _ _ r _ _ hle hlookup hnotBorrowed hnotIn hfresh _ ih =>
     exact weaken_let_bind_borrowMut lenv envL env a x_var _ _ r _ _
-      hle hlookup hnotIn hfresh
+      hle hlookup hnotBorrowed hnotIn hfresh
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   | let_bind_borrowField envL a af f _ _ _ _ s rf _ _ hlookup_a hbt hlookup_f hnotIn hfresh _ ih =>
@@ -7943,9 +8007,9 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
       hlook hnotIn hfresh
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
-  | var_assign_valid envL x a ax τ ms r _ _ hms hlook_x hlook_a hnotIn hfresh _ ih =>
+  | var_assign_valid envL x a ax τ ms r _ _ hms hlook_x hnotBorrowed hlook_a hnotIn hfresh _ ih =>
     exact weaken_var_assign_valid lenv envL env x a ax τ ms r _ _
-      hms hlook_x hlook_a hnotIn hfresh
+      hms hlook_x hnotBorrowed hlook_a hnotIn hfresh
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   | var_assign_valid_ref _ _ _ _ _ _ _ _ _ _ hle hlook_x hlook_a _ ih =>

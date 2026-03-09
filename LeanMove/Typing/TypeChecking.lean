@@ -421,10 +421,13 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
   | let_bind_borrowMut : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) x τ ms (r : Aref) cont retTypes,
       LE.le .mutable ms →
       lookup env.varEnv x = some (.validVar, .basic τ, ms) →
+      (BasicMoveType.containsEnum τ → not_borrowed x env) →
       notIn env.siteEnv a →
       freshRefInEnv r env →
       typecheck_stmt lenv
-        {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowMut)
+        {env with varEnv := if BasicMoveType.containsEnum τ then update env.varEnv x (.invalidVar, .basic τ, ms)
+                             else env.varEnv
+                  siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowMut)
                   pathEnv := update_with_epsilon r r env.pathEnv |>
                              update_with_extension r .root [.root_to_var x]}
         cont retTypes →
@@ -528,6 +531,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
   | var_assign_valid : ∀ (lenv : LabelEnv) (env : TypeEnv) x a ax τ ms (r : Aref) cont retTypes,
       LE.le .mutable ms →
       lookup env.varEnv x = some (.validVar, .basic τ, ms) →
+      (BasicMoveType.containsEnum τ → not_borrowed x env) →
       lookup env.siteEnv a = some (.basic τ) →
       notIn env.siteEnv ax →
       freshRefInEnv r env →
