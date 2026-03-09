@@ -78,7 +78,7 @@ def borrow_sig : FunSig := ⟨[⟨.trecord box_entries, some true⟩], [⟨.trec
 open LeanMove.Tests.Parsing.TestUtils
 
 private def extensionAfterCallMvir :=
-  include_str "extension_after_call.mvir"
+  include_str "../../../MVIR/extension_after_call.mvir"
 
 private def parsedFuns := (parseAndTranslate extensionAfterCallMvir).toOption.get!
 

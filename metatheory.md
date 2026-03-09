@@ -97,6 +97,8 @@ LeanMove/
 ├── Structures/                    AssocMap, Regex, ListUtils, PathMap
 │
 └── Tests/
+    ├── MVIR/                      Move IR source files (.mvir) shared by tests
+    ├── Parsing/                   Parser and translator tests
     ├── Typechecking/
     │   ├── litmus/                Basic accepted / rejected examples
     │   └── expressivity/          Transpiled Move bytecode verifier tests

@@ -87,7 +87,7 @@ def var_cond : Var := ⟨"cond"⟩
 open LeanMove.Tests.Parsing.TestUtils
 
 private def aliasWriteAfterJoinMvir :=
-  include_str "alias_write_after_join.mvir"
+  include_str "../../../MVIR/alias_write_after_join.mvir"
 
 -- Verify that parsing the MVIR succeeds
 #guard (parseAndTranslate aliasWriteAfterJoinMvir).isOk

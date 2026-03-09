@@ -20,7 +20,7 @@ open LeanMove.Lang.MoveIR.Translate
 open LeanMove.Tests.Parsing.TestUtils
 
 private def vecBasicOpsMvir :=
-  include_str "../Typechecking/expressivity/accepted/vec_basic_ops.mvir"
+  include_str "../MVIR/vec_basic_ops.mvir"
 
 #guard (parseMvir vecBasicOpsMvir).isOk
 #guard (parseAndTranslate vecBasicOpsMvir).isOk

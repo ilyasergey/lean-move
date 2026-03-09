@@ -23,7 +23,7 @@ open LeanMove.Tests.Parsing.TestUtils
 open LeanMove.Tests.Expressivity.ExtensionWritesAfterJoin
 
 def extensionWritesAfterJoinMvir :=
-  include_str "../Typechecking/expressivity/accepted/extension_writes_after_join.mvir"
+  include_str "../MVIR/extension_writes_after_join.mvir"
 
 -- Parse succeeds
 #guard (parseMvir extensionWritesAfterJoinMvir).isOk

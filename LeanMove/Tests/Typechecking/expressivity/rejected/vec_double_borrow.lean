@@ -41,7 +41,7 @@ namespace LeanMove.Tests.Expressivity.VecDoubleBorrow
 open LeanMove.Tests.Parsing.TestUtils
 
 private def vecDoubleBorrowMvir :=
-  include_str "vec_double_borrow.mvir"
+  include_str "../../../MVIR/vec_double_borrow.mvir"
 
 #guard (parseAndTranslate vecDoubleBorrowMvir).isOk
 

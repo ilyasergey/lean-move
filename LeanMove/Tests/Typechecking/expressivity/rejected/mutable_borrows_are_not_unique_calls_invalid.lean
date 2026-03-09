@@ -152,7 +152,7 @@ def call_funEnv : FunEnv :=
 open LeanMove.Tests.Parsing.TestUtils
 
 private def mutableBorrowsNotUniqueCallsMvir :=
-  include_str "mutable_borrows_are_not_unique_calls.mvir"
+  include_str "../../../MVIR/mutable_borrows_are_not_unique_calls.mvir"
 
 #guard (parseAndTranslate mutableBorrowsNotUniqueCallsMvir).isOk
 

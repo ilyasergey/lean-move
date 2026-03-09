@@ -46,7 +46,7 @@ namespace LeanMove.Tests.Expressivity.VecDanglingBorrow
 open LeanMove.Tests.Parsing.TestUtils
 
 private def vecDanglingBorrowMvir :=
-  include_str "vec_dangling_borrow.mvir"
+  include_str "../../../MVIR/vec_dangling_borrow.mvir"
 
 #guard (parseAndTranslate vecDanglingBorrowMvir).isOk
 

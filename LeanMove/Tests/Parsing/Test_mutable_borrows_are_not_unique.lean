@@ -24,7 +24,7 @@ open LeanMove.Tests.Parsing.TestUtils
 open LeanMove.Tests.Expressivity.MutableBorrowsNotUnique
 
 def mutableBorrowsAreNotUniqueMvir :=
-  include_str "../Typechecking/expressivity/accepted/mutable_borrows_are_not_unique.mvir"
+  include_str "../MVIR/mutable_borrows_are_not_unique.mvir"
 
 -- Parse succeeds
 #guard (parseMvir mutableBorrowsAreNotUniqueMvir).isOk

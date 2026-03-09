@@ -135,7 +135,7 @@ def id_sig : FunSig := ⟨[⟨.u64, some false⟩], [⟨.u64, some false⟩]⟩
 open LeanMove.Tests.Parsing.TestUtils
 
 private def immBorrowAfterMutCallMvir :=
-  include_str "imm_borrow_after_mut_call.mvir"
+  include_str "../../../MVIR/imm_borrow_after_mut_call.mvir"
 
 #guard (parseAndTranslate immBorrowAfterMutCallMvir).isOk
 

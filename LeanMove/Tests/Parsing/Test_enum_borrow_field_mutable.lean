@@ -21,7 +21,7 @@ open LeanMove.Lang.MoveIR.Translate
 open LeanMove.Tests.Parsing.TestUtils
 
 private def src :=
-  include_str "../Typechecking/expressivity/accepted/enum_borrow_field_mutable.mvir"
+  include_str "../MVIR/enum_borrow_field_mutable.mvir"
 
 #guard (parseMvir src).isOk
 #guard (parseAndTranslate src).isOk

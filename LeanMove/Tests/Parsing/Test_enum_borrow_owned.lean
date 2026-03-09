@@ -20,7 +20,7 @@ open LeanMove.Lang.MoveIR.Translate
 open LeanMove.Tests.Parsing.TestUtils
 
 private def src :=
-  include_str "../Typechecking/expressivity/rejected/enum_borrow_owned.mvir"
+  include_str "../MVIR/enum_borrow_owned.mvir"
 
 #guard (parseMvir src).isOk
 #guard (parseAndTranslate src).isOk

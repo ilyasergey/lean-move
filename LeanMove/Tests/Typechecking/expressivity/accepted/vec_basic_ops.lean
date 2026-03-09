@@ -40,7 +40,7 @@ namespace LeanMove.Tests.Expressivity.VecBasicOps
 open LeanMove.Tests.Parsing.TestUtils
 
 private def vecBasicOpsMvir :=
-  include_str "vec_basic_ops.mvir"
+  include_str "../../../MVIR/vec_basic_ops.mvir"
 
 #guard (parseAndTranslate vecBasicOpsMvir).isOk
 

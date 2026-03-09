@@ -22,7 +22,7 @@ open LeanMove.Tests.Parsing.TestUtils
 open LeanMove.Tests.Expressivity.AliasWriteAfterJoin
 
 def aliasWriteAfterJoinMvir :=
-  include_str "../Typechecking/expressivity/accepted/alias_write_after_join.mvir"
+  include_str "../MVIR/alias_write_after_join.mvir"
 
 -- Parse succeeds
 #guard (parseMvir aliasWriteAfterJoinMvir).isOk

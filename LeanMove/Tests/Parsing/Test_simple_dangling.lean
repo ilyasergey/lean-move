@@ -25,7 +25,7 @@ open LeanMove.Tests.Parsing.TestUtils
 open LeanMove.Tests.Expressivity.SimpleDangling
 
 def simpleDanglingMvir :=
-  include_str "../Typechecking/expressivity/rejected/simple_dangling.mvir"
+  include_str "../MVIR/simple_dangling.mvir"
 
 -- Parse succeeds
 #guard (parseMvir simpleDanglingMvir).isOk

@@ -102,7 +102,7 @@ def var_y : Var := ⟨"y"⟩
 open LeanMove.Tests.Parsing.TestUtils
 
 private def subtreeWritesReleaseMvir :=
-  include_str "subtree_writes_release.mvir"
+  include_str "../../../MVIR/subtree_writes_release.mvir"
 
 -- Verify that parsing the MVIR succeeds
 #guard (parseAndTranslate subtreeWritesReleaseMvir).isOk

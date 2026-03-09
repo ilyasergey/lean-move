@@ -24,7 +24,7 @@ open LeanMove.Tests.Parsing.TestUtils
 open LeanMove.Tests.Expressivity.AliasWrites
 
 def aliasWritesMvir :=
-  include_str "../Typechecking/expressivity/accepted/alias_writes.mvir"
+  include_str "../MVIR/alias_writes.mvir"
 
 -- Parse succeeds
 #guard (parseMvir aliasWritesMvir).isOk

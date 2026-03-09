@@ -40,7 +40,7 @@ namespace LeanMove.Tests.Expressivity.VecPopAfterBorrow
 open LeanMove.Tests.Parsing.TestUtils
 
 private def vecPopAfterBorrowMvir :=
-  include_str "vec_pop_after_borrow.mvir"
+  include_str "../../../MVIR/vec_pop_after_borrow.mvir"
 
 #guard (parseAndTranslate vecPopAfterBorrowMvir).isOk
 

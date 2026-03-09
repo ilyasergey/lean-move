@@ -34,6 +34,8 @@ lake build expressivity # expressivity tests only
 - `LeanMove/Tests/Typechecking/litmus/` — basic accepted / rejected examples
 - `LeanMove/Tests/Typechecking/expressivity/` — transpiled from the
   [Move bytecode verifier tests](https://github.com/tnowacki/sui/tree/example-tests/external-crates/move/crates/bytecode-verifier-transactional-tests/tests/reference_safety/expressivity)
+- `LeanMove/Tests/MVIR/` — Move IR source files (`.mvir`) shared across
+  parsing and type-checking tests
 
 ### Build runtime tests only
 ```bash

@@ -44,7 +44,7 @@ namespace LeanMove.Tests.Expressivity.VecBorrowSequential
 open LeanMove.Tests.Parsing.TestUtils
 
 private def vecBorrowSeqMvir :=
-  include_str "vec_borrow_sequential.mvir"
+  include_str "../../../MVIR/vec_borrow_sequential.mvir"
 
 #guard (parseAndTranslate vecBorrowSeqMvir).isOk
 

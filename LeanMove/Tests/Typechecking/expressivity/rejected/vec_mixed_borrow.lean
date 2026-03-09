@@ -40,7 +40,7 @@ namespace LeanMove.Tests.Expressivity.VecMixedBorrow
 open LeanMove.Tests.Parsing.TestUtils
 
 private def vecMixedBorrowMvir :=
-  include_str "vec_mixed_borrow.mvir"
+  include_str "../../../MVIR/vec_mixed_borrow.mvir"
 
 #guard (parseAndTranslate vecMixedBorrowMvir).isOk
 

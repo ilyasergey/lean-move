@@ -151,7 +151,7 @@ def var_f_2_2 : Var := ⟨"f_2_2"⟩
 open LeanMove.Tests.Parsing.TestUtils
 
 private def mutableBorrowsNotUniqueMvir :=
-  include_str "mutable_borrows_are_not_unique.mvir"
+  include_str "../../../MVIR/mutable_borrows_are_not_unique.mvir"
 
 private def parsedFuns := (parseAndTranslate mutableBorrowsNotUniqueMvir).toOption.get!
 

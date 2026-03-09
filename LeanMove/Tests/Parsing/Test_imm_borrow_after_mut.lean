@@ -23,7 +23,7 @@ open LeanMove.Tests.Parsing.TestUtils
 open LeanMove.Tests.Expressivity.ImmBorrowAfterMut
 
 def immBorrowAfterMutMvir :=
-  include_str "../Typechecking/expressivity/accepted/imm_borrow_after_mut.mvir"
+  include_str "../MVIR/imm_borrow_after_mut.mvir"
 
 -- Parse succeeds
 #guard (parseMvir immBorrowAfterMutMvir).isOk

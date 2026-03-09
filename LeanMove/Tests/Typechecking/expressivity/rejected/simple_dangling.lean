@@ -158,7 +158,7 @@ def field_call_funSig : FunSig := ⟨[⟨.trecord s_entries, some true⟩], [⟨
 open LeanMove.Tests.Parsing.TestUtils
 
 private def simpleDanglingMvir :=
-  include_str "simple_dangling.mvir"
+  include_str "../../../MVIR/simple_dangling.mvir"
 
 #guard (parseAndTranslate simpleDanglingMvir).isOk
 

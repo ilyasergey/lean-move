@@ -24,7 +24,7 @@ open LeanMove.Tests.Parsing.TestUtils
 open LeanMove.Tests.Expressivity.SubtreeWritesRelease
 
 def subtreeWritesReleaseMvir :=
-  include_str "../Typechecking/expressivity/accepted/subtree_writes_release.mvir"
+  include_str "../MVIR/subtree_writes_release.mvir"
 
 -- Parse succeeds
 #guard (parseMvir subtreeWritesReleaseMvir).isOk

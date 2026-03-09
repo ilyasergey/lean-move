@@ -94,7 +94,7 @@ def var_f : Var := ⟨"f"⟩
 open LeanMove.Tests.Parsing.TestUtils
 
 private def extensionWritesAfterJoinMvir :=
-  include_str "extension_writes_after_join.mvir"
+  include_str "../../../MVIR/extension_writes_after_join.mvir"
 
 -- Verify that parsing the MVIR succeeds
 #guard (parseAndTranslate extensionWritesAfterJoinMvir).isOk

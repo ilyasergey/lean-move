@@ -24,7 +24,7 @@ open LeanMove.Tests.Parsing.TestUtils
 open LeanMove.Tests.Expressivity.MultipleMutableReturnValues
 
 def multibleMutableReturnValuesMvir :=
-  include_str "../Typechecking/expressivity/accepted/multible_mutable_return_values.mvir"
+  include_str "../MVIR/multible_mutable_return_values.mvir"
 
 -- Parse succeeds
 #guard (parseMvir multibleMutableReturnValuesMvir).isOk

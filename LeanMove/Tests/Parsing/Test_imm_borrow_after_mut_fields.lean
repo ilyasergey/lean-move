@@ -24,7 +24,7 @@ open LeanMove.Tests.Parsing.TestUtils
 open LeanMove.Tests.Expressivity.ImmBorrowAfterMutFieldsInvalid
 
 def immBorrowAfterMutFieldsMvir :=
-  include_str "../Typechecking/expressivity/rejected/imm_borrow_after_mut_fields.mvir"
+  include_str "../MVIR/imm_borrow_after_mut_fields.mvir"
 
 -- Parse succeeds
 #guard (parseMvir immBorrowAfterMutFieldsMvir).isOk

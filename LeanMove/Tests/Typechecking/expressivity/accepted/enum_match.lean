@@ -27,7 +27,7 @@ open LeanMove.Tests.Parsing.TestUtils
 open AssocMap
 
 private def enumMatchMvir :=
-  include_str "enum_match.mvir"
+  include_str "../../../MVIR/enum_match.mvir"
 
 #guard (parseAndTranslateWithEnums enumMatchMvir).isOk
 

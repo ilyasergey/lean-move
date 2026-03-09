@@ -19,7 +19,7 @@ open LeanMove.Lang.MoveIR.Translate
 open LeanMove.Tests.Parsing.TestUtils
 
 private def vecMoveAfterBorrowMvir :=
-  include_str "../Typechecking/expressivity/rejected/vec_move_after_borrow.mvir"
+  include_str "../MVIR/vec_move_after_borrow.mvir"
 
 #guard (parseMvir vecMoveAfterBorrowMvir).isOk
 #guard (parseAndTranslate vecMoveAfterBorrowMvir).isOk

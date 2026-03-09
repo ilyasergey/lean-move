@@ -30,7 +30,7 @@ open LeanMove.Lang.MoveLight
 open LeanMove.Typing
 open LeanMove.Tests.Parsing.TestUtils
 
-private def src := include_str "enum_double_unpack.mvir"
+private def src := include_str "../../../MVIR/enum_double_unpack.mvir"
 
 #guard (parseAndTranslateWithEnums src).isOk
 

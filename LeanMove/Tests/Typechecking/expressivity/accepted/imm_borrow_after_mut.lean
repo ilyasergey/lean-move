@@ -58,7 +58,7 @@ def var_rimm : Var := ⟨"rimm"⟩
 open LeanMove.Tests.Parsing.TestUtils
 
 private def immBorrowAfterMutMvir :=
-  include_str "imm_borrow_after_mut.mvir"
+  include_str "../../../MVIR/imm_borrow_after_mut.mvir"
 
 private def parsedFuns := (parseAndTranslate immBorrowAfterMutMvir).toOption.get!
 

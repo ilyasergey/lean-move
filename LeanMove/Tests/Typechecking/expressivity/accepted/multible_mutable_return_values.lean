@@ -73,7 +73,7 @@ def var_y : Var := ⟨"y"⟩
 open LeanMove.Tests.Parsing.TestUtils
 
 private def multibleMutableReturnValuesMvir :=
-  include_str "multible_mutable_return_values.mvir"
+  include_str "../../../MVIR/multible_mutable_return_values.mvir"
 
 private def parsedFuns := (parseAndTranslate multibleMutableReturnValuesMvir).toOption.get!
 

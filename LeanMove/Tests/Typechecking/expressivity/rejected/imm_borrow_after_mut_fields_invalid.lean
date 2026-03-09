@@ -120,7 +120,7 @@ def var_f_imm : Var := ⟨"f_imm"⟩
 open LeanMove.Tests.Parsing.TestUtils
 
 private def immBorrowAfterMutFieldsMvir :=
-  include_str "imm_borrow_after_mut_fields.mvir"
+  include_str "../../../MVIR/imm_borrow_after_mut_fields.mvir"
 
 #guard (parseAndTranslate immBorrowAfterMutFieldsMvir).isOk
 

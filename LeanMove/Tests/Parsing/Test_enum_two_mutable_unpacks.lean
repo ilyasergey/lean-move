@@ -19,7 +19,7 @@ open LeanMove.Lang.MoveIR.Translate
 open LeanMove.Tests.Parsing.TestUtils
 
 private def src :=
-  include_str "../Typechecking/expressivity/accepted/enum_two_mutable_unpacks.mvir"
+  include_str "../MVIR/enum_two_mutable_unpacks.mvir"
 
 #guard (parseMvir src).isOk
 #guard (parseAndTranslate src).isOk

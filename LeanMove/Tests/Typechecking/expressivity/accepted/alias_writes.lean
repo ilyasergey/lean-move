@@ -61,7 +61,7 @@ def var_y : Var := ⟨"y"⟩
 open LeanMove.Tests.Parsing.TestUtils
 
 private def aliasWritesMvir :=
-  include_str "alias_writes.mvir"
+  include_str "../../../MVIR/alias_writes.mvir"
 
 private def parsedFuns := (parseAndTranslate aliasWritesMvir).toOption.get!
 

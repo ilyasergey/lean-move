@@ -26,7 +26,7 @@ open LeanMove.Lang.MoveLight
 open LeanMove.Typing
 open LeanMove.Tests.Parsing.TestUtils
 
-private def src := include_str "enum_borrow_owned.mvir"
+private def src := include_str "../../../MVIR/enum_borrow_owned.mvir"
 
 #guard (parseAndTranslate src).isOk
 

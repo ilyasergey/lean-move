@@ -23,7 +23,7 @@ open LeanMove.Tests.Parsing.TestUtils
 open LeanMove.Tests.Expressivity.ExtensionAfterCall
 
 def extensionAfterCallMvir :=
-  include_str "../Typechecking/expressivity/accepted/extension_after_call.mvir"
+  include_str "../MVIR/extension_after_call.mvir"
 
 -- Parse succeeds
 #guard (parseMvir extensionAfterCallMvir).isOk

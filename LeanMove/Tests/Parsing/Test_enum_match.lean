@@ -19,7 +19,7 @@ open LeanMove.Lang.MoveIR.Translate
 open LeanMove.Tests.Parsing.TestUtils
 
 private def enumMatchMvir :=
-  include_str "../Typechecking/expressivity/accepted/enum_match.mvir"
+  include_str "../MVIR/enum_match.mvir"
 
 #guard (parseMvir enumMatchMvir).isOk
 #guard (parseAndTranslate enumMatchMvir).isOk
