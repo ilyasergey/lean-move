@@ -48,7 +48,7 @@ def SafeExecState (state : ExecState) : Prop :=
   match state with
   | .running m => ∃ env lenv retTypes rmap,
       WellTypedState m env lenv retTypes rmap ∧
-      StackSafe m.stack m.frame.returnInfo m.heap retTypes
+      StackSafe env.enumEnv m.stack m.frame.returnInfo m.heap retTypes
   | .halted _ => True
   | .error e => e.isAcceptable
 
@@ -68,7 +68,9 @@ theorem safe_step (state : ExecState)
     cases result with
     | running m' =>
       simp only [SafeExecState]
-      exact preservation m m' env lenv retTypes rmap hwt hss hres
+      obtain ⟨env', lenv', retTypes', rmap', henum_eq, hwt', hss'⟩ :=
+        preservation m m' env lenv retTypes rmap hwt hss hres
+      exact ⟨env', lenv', retTypes', rmap', hwt', henum_eq ▸ hss'⟩
     | halted v => simp [SafeExecState]
     | error e =>
       simp only [SafeExecState]

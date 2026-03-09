@@ -160,7 +160,7 @@ def t_lenvDec : LabelEnvDec :=
 theorem t_check : check_fun_dec parsed_t t_lenvDec = true := by native_decide
 
 -- Main theorem: t is well-typed (relational)
-theorem t_welltyped : ∃ lenv, typecheck_fun parsed_t lenv :=
-  ⟨_, check_fun_dec_sound _ _ t_check⟩
+theorem t_welltyped : ∃ lenv, typecheck_fun parsed_t lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ t_check⟩
 
 end LeanMove.Tests.Expressivity.ExtensionWritesAfterJoin

@@ -741,33 +741,33 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
   -- let b = packVariant(enumName, variantName, fields); cont
   | let_bind_packVariant : ∀ (lenv : LabelEnv) (env : TypeEnv) (b : Site) (enumName variantName : Id)
       (fields : List (Field × Site))
-      (variants : AssocMap Id (AssocMap Field BasicMoveType))
-      (fentries : AssocMap Field BasicMoveType) cont retTypes,
+      (enumDef : EnumDef) (variantDef : EnumVariantDef) cont retTypes,
       notIn env.siteEnv b →
-      AssocMap.lookup variants variantName = some fentries →
+      AssocMap.lookup env.enumEnv enumName = some enumDef →
+      AssocMap.lookup enumDef.variants variantName = some variantDef →
       (∀ f a, (f, a) ∈ fields →
          ∃ (bt : BasicMoveType), lookup env.siteEnv a = some (.basic bt) ∧
-                                 lookup fentries f = some bt) →
-      (∀ f, lookup fentries f ≠ none → ∃ a, (f, a) ∈ fields) →
+                                 lookup variantDef.fields f = some bt) →
+      (∀ f, lookup variantDef.fields f ≠ none → ∃ a, (f, a) ∈ fields) →
       (∀ a₁ a₂, (∃ f₁ f₂, (f₁, a₁) ∈ fields ∧ (f₂, a₂) ∈ fields ∧ f₁ ≠ f₂) → a₁ ≠ a₂) →
       typecheck_stmt lenv
         {env with siteEnv := insert (deleteAll env.siteEnv (fields.map Prod.snd)) b
-                                    (.basic (.tenum enumName variants))}
+                                    (.basic (.tenum enumName))}
         cont retTypes →
-      typecheck_stmt lenv env (.letBind b (.packVariant enumName variantName variants fields) cont) retTypes
+      typecheck_stmt lenv env (.letBind b (.packVariant enumName variantName fields) cont) retTypes
 
   -- E.V { f1: a1, ..., fn: an } = b; cont  (owned variant unpack)
   | unpackVariant_rule : ∀ (lenv : LabelEnv) (env : TypeEnv) (variantName : Id)
       (fields : List (Field × Site)) (b : Site)
-      (ename : Id) (variants : AssocMap Id (AssocMap Field BasicMoveType))
-      (fentries : AssocMap Field BasicMoveType) cont retTypes,
-      AssocMap.lookup env.siteEnv b = some (.basic (.tenum ename variants)) →
-      AssocMap.lookup variants variantName = some fentries →
+      (ename : Id) (enumDef : EnumDef) (variantDef : EnumVariantDef) cont retTypes,
+      AssocMap.lookup env.siteEnv b = some (.basic (.tenum ename)) →
+      AssocMap.lookup env.enumEnv ename = some enumDef →
+      AssocMap.lookup enumDef.variants variantName = some variantDef →
       (∀ (f : Field) (a : Site), (f, a) ∈ fields → AssocMap.notIn env.siteEnv a) →
       (∀ a₁ a₂, (∃ f₁ f₂, (f₁, a₁) ∈ fields ∧ (f₂, a₂) ∈ fields ∧ f₁ ≠ f₂) → a₁ ≠ a₂) →
-      (∀ (f : Field) (a : Site), (f, a) ∈ fields → ∃ bt, AssocMap.lookup fentries f = some bt) →
+      (∀ (f : Field) (a : Site), (f, a) ∈ fields → ∃ bt, AssocMap.lookup variantDef.fields f = some bt) →
       typecheck_stmt lenv
-        {env with siteEnv := addFieldSites fentries (delete env.siteEnv b) fields}
+        {env with siteEnv := addFieldSites variantDef.fields (delete env.siteEnv b) fields}
         cont retTypes →
       typecheck_stmt lenv env (.unpackVariant variantName fields b cont) retTypes
 
@@ -775,16 +775,16 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
   -- Creates borrows for each field of the variant
   | unpackVariant_ref_rule : ∀ (lenv : LabelEnv) (env : TypeEnv) (variantName : Id)
       (fields : List (Field × Site)) (b : Site)
-      (ename : Id) (variants : AssocMap Id (AssocMap Field BasicMoveType))
-      (fentries : AssocMap Field BasicMoveType) (r : Aref) (bk : BorrowingKind)
-      cont retTypes,
-      AssocMap.lookup env.siteEnv b = some (.ref (.tenum ename variants) r bk) →
-      AssocMap.lookup variants variantName = some fentries →
+      (ename : Id) (enumDef : EnumDef) (variantDef : EnumVariantDef)
+      (r : Aref) (bk : BorrowingKind) cont retTypes,
+      AssocMap.lookup env.siteEnv b = some (.ref (.tenum ename) r bk) →
+      AssocMap.lookup env.enumEnv ename = some enumDef →
+      AssocMap.lookup enumDef.variants variantName = some variantDef →
       (∀ (f : Field) (a : Site), (f, a) ∈ fields → AssocMap.notIn env.siteEnv a) →
       (∀ a₁ a₂, (∃ f₁ f₂, (f₁, a₁) ∈ fields ∧ (f₂, a₂) ∈ fields ∧ f₁ ≠ f₂) → a₁ ≠ a₂) →
-      (∀ (f : Field) (a : Site), (f, a) ∈ fields → ∃ bt, AssocMap.lookup fentries f = some bt) →
+      (∀ (f : Field) (a : Site), (f, a) ∈ fields → ∃ bt, AssocMap.lookup variantDef.fields f = some bt) →
       typecheck_stmt lenv
-        (addRefFieldSites r bk fentries fields {env with siteEnv := delete env.siteEnv b})
+        (addRefFieldSites r bk variantDef.fields fields {env with siteEnv := delete env.siteEnv b})
         cont retTypes →
       typecheck_stmt lenv env (.unpackVariant variantName fields b cont) retTypes
 
@@ -792,11 +792,11 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
   -- Borrows the enum for tag dispatch, then releases the borrow
   | variantSwitch_rule : ∀ (lenv : LabelEnv) (env : TypeEnv) (src : Site)
       (cases : List (Id × Label))
-      (ename : Id) (variants : AssocMap Id (AssocMap Field BasicMoveType))
-      (r : Aref) (bk : BorrowingKind) (retTypes : List ParamType),
-      AssocMap.lookup env.siteEnv src = some (.ref (.tenum ename variants) r bk) →
+      (ename : Id) (enumDef : EnumDef) (r : Aref) (bk : BorrowingKind) (retTypes : List ParamType),
+      AssocMap.lookup env.siteEnv src = some (.ref (.tenum ename) r bk) →
+      AssocMap.lookup env.enumEnv ename = some enumDef →
       -- All variants are covered
-      (∀ vname, AssocMap.lookup variants vname ≠ none → ∃ label, (vname, label) ∈ cases) →
+      (∀ vname, AssocMap.lookup enumDef.variants vname ≠ none → ∃ label, (vname, label) ∈ cases) →
       -- Each case label exists in lenv and target env subsumes current env minus the borrow
       (∀ vname label, (vname, label) ∈ cases →
          ∃ envL, AssocMap.lookup lenv label = some envL ∧
@@ -846,18 +846,19 @@ def init_fun_varEnv (f : FunDef) : VarEnv :=
   add_locals_to_varEnv (init_varEnv_from_params f.params) f.locals
 
 /-- Construct the initial TypeEnv for a function.
-    Derives siteEnv (empty), varEnv (from params + locals), and pathEnv (from params). -/
-def mkInitEnv (f : FunDef) (funEnv : FunEnv := AssocMap.empty) : TypeEnv :=
+    Derives siteEnv (empty), varEnv (from params + locals), pathEnv (from params), and enumEnv. -/
+def mkInitEnv (f : FunDef) (funEnv : FunEnv := AssocMap.empty) (enumEnv : EnumEnv := AssocMap.empty) : TypeEnv :=
   { siteEnv := AssocMap.empty
     varEnv := init_fun_varEnv f
     pathEnv := init_fun_pathEnv f
-    funEnv := funEnv }
+    funEnv := funEnv
+    enumEnv := enumEnv }
 
 /-- Construct a LabelEnv for a single-block function.
     Uses the first block's label as the entry point. -/
-def mkLabelEnv (f : FunDef) (funEnv : FunEnv := AssocMap.empty) : LabelEnv :=
+def mkLabelEnv (f : FunDef) (funEnv : FunEnv := AssocMap.empty) (enumEnv : EnumEnv := AssocMap.empty) : LabelEnv :=
   match f.blocks with
-  | b :: _ => AssocMap.insert AssocMap.empty b.label (mkInitEnv f funEnv)
+  | b :: _ => AssocMap.insert AssocMap.empty b.label (mkInitEnv f funEnv enumEnv)
   | [] => AssocMap.empty
 
 /--
@@ -876,12 +877,13 @@ def mkLabelEnv (f : FunDef) (funEnv : FunEnv := AssocMap.empty) : LabelEnv :=
   Each block is independent - there is no fall-through between blocks.
   The LabelEnv represents loop invariants / block entry conditions.
 -/
-inductive typecheck_fun : FunDef → LabelEnv → Prop where
-  | fun_ok : ∀ (f : FunDef) (lenv : LabelEnv) (initEnv : TypeEnv),
-    -- The initial environment has the initialized varEnv, empty siteEnv, initialized pathEnv
+inductive typecheck_fun : FunDef → LabelEnv → EnumEnv → Prop where
+  | fun_ok : ∀ (f : FunDef) (lenv : LabelEnv) (enumEnv : EnumEnv) (initEnv : TypeEnv),
+    -- The initial environment has the initialized varEnv, empty siteEnv, initialized pathEnv, and enumEnv
     initEnv.varEnv = init_fun_varEnv f →
     initEnv.siteEnv = AssocMap.empty →
     initEnv.pathEnv = init_fun_pathEnv f →
+    initEnv.enumEnv = enumEnv →
     -- The function must have at least one block (entry block)
     f.blocks ≠ [] →
     -- The entry block (first block) must have an environment equivalent to initEnv
@@ -895,7 +897,7 @@ inductive typecheck_fun : FunDef → LabelEnv → Prop where
       ∀ blockEnv, AssocMap.lookup lenv block.label = some blockEnv →
         typecheck_block lenv block blockEnv f.returnType) →
     -- The function type checks
-    typecheck_fun f lenv
+    typecheck_fun f lenv enumEnv
 
 -- Notation macros for type checking relations
 -- These provide more readable syntax for the relations

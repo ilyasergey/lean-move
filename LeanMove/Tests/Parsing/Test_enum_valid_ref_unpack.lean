@@ -36,13 +36,7 @@ private def var_t : Var := ⟨"t"⟩
 private def s (n : Nat) : Site := .site n
 
 -- AssocMap.insert prepends, so entries are reversed from declaration order
-private def xVariants : AssocMap Id (AssocMap Field BasicMoveType) :=
-  AssocMap.mk [
-    ("Two", AssocMap.mk [(⟨"y"⟩, .u64), (⟨"x"⟩, .u64)]),
-    ("One", AssocMap.mk [(⟨"x"⟩, .u64)])
-  ]
-
-private def xType : BasicMoveType := .tenum "X" xVariants
+private def xType : BasicMoveType := .tenum "o.X"
 
 -- ----------------------------------------------------------------
 -- h: Two→One unpack, write to x, unpack One, write to y, write to x
@@ -183,7 +177,7 @@ private def hw_k : FunDef := {
         release (s 5) ;;
         (letsite (s 6) ← move var_e) ;;
         (letsite (s 7) ← #0) ;;
-        (letsite (s 8) ← packVariant("X", "One", xVariants, [(⟨"x"⟩, (s 7))])) ;;
+        (letsite (s 8) ← packVariant("o.X", "One", [(⟨"x"⟩, (s 7))])) ;;
         (*(s 6) ::= (s 8)) ;;
         ret []
     }
@@ -222,7 +216,7 @@ private def hw_k1 : FunDef := {
         (var_t ::= (s 6)) ;;
         (letsite (s 7) ← move var_e) ;;
         (letsite (s 8) ← #0) ;;
-        (letsite (s 9) ← packVariant("X", "One", xVariants, [(⟨"x"⟩, (s 8))])) ;;
+        (letsite (s 9) ← packVariant("o.X", "One", [(⟨"x"⟩, (s 8))])) ;;
         (*(s 7) ::= (s 9)) ;;
         (letsite (s 10) ← move var_t) ;;
         abort (s 10)

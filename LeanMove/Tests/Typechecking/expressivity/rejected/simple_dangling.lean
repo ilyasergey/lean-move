@@ -221,15 +221,15 @@ mechanism — the small-step semantics intentionally does not enforce it.
 
 def field_dangling_lenv := mkLabelEnv parsed_field_t
 
-#eval check_fun parsed_field_t field_dangling_lenv
+#eval check_fun parsed_field_t field_dangling_lenv AssocMap.empty
 
-#guard !check_fun parsed_field_t field_dangling_lenv
+#guard !check_fun parsed_field_t field_dangling_lenv AssocMap.empty
 
 def nested_field_dangling_lenv := mkLabelEnv parsed_nested_field_t
 
-#eval check_fun parsed_nested_field_t nested_field_dangling_lenv
+#eval check_fun parsed_nested_field_t nested_field_dangling_lenv AssocMap.empty
 
-#guard !check_fun parsed_nested_field_t nested_field_dangling_lenv
+#guard !check_fun parsed_nested_field_t nested_field_dangling_lenv AssocMap.empty
 
 -- Function environment for simple_call (contains signature of f)
 def simple_call_funEnv : FunEnv :=
@@ -237,9 +237,9 @@ def simple_call_funEnv : FunEnv :=
 
 def simple_call_dangling_lenv := mkLabelEnv parsed_simple_call_t simple_call_funEnv
 
-#eval check_fun parsed_simple_call_t simple_call_dangling_lenv
+#eval check_fun parsed_simple_call_t simple_call_dangling_lenv AssocMap.empty
 
-#guard !check_fun parsed_simple_call_t simple_call_dangling_lenv
+#guard !check_fun parsed_simple_call_t simple_call_dangling_lenv AssocMap.empty
 
 -- Function environment for field_call (contains signature of f)
 def field_call_funEnv : FunEnv :=
@@ -247,8 +247,8 @@ def field_call_funEnv : FunEnv :=
 
 def field_call_dangling_lenv := mkLabelEnv parsed_field_call_t field_call_funEnv
 
-#eval check_fun parsed_field_call_t field_call_dangling_lenv
+#eval check_fun parsed_field_call_t field_call_dangling_lenv AssocMap.empty
 
-#guard !check_fun parsed_field_call_t field_call_dangling_lenv
+#guard !check_fun parsed_field_call_t field_call_dangling_lenv AssocMap.empty
 
 end LeanMove.Tests.Expressivity.SimpleDangling

@@ -34,10 +34,7 @@ private def var_a : Var := ⟨"a"⟩
 private def var_x : Var := ⟨"x"⟩
 private def s (n : Nat) : Site := .site n
 
-private def sVariants : AssocMap Id (AssocMap Field BasicMoveType) :=
-  AssocMap.mk [("V", AssocMap.mk [(⟨"g"⟩, .u64)])]
-
-private def sType : BasicMoveType := .tenum "S" sVariants
+private def sType : BasicMoveType := .tenum "M.S"
 
 -- ----------------------------------------------------------------
 -- M.bar: freeze → immutable unpack → return

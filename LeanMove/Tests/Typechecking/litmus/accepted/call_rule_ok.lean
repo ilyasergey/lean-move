@@ -154,8 +154,8 @@ theorem basic_return_then_write_check :
     check_fun_dec basic_return_then_write basic_return_then_write_lenvDec = true := by rfl
 
 theorem basic_return_then_write_welltyped :
-    ∃ lenv, typecheck_fun basic_return_then_write lenv :=
-  ⟨_, check_fun_dec_sound _ _ basic_return_then_write_check⟩
+    ∃ lenv, typecheck_fun basic_return_then_write lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ basic_return_then_write_check⟩
 
 -- ═══════════════════════════════════════════════════════
 -- Test 2: read_through_call_output
@@ -207,7 +207,7 @@ theorem read_call_output_check :
     check_fun_dec read_call_output read_call_output_lenvDec = true := by rfl
 
 theorem read_call_output_welltyped :
-    ∃ lenv, typecheck_fun read_call_output lenv :=
-  ⟨_, check_fun_dec_sound _ _ read_call_output_check⟩
+    ∃ lenv, typecheck_fun read_call_output lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ read_call_output_check⟩
 
 end LeanMove.Tests.Litmus.CallRuleOk

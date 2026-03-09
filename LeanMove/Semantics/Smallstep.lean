@@ -46,7 +46,7 @@ inductive Value where
   | record : List (Field × Value) → Value
   | ref : Loc → List Field → Value    -- heap location + field access path
   | vec : BasicMoveType → List Value → Value  -- vector with element type and values
-  | variant : Id → BasicMoveType → List (Field × Value) → Value  -- enum variant with tag, enum type, and fields
+  | variant : Id → Id → List (Field × Value) → Value  -- enum variant with variant name, enum name, and fields
 deriving Repr, Inhabited
 
 /-- Boolean equality for Values -/
@@ -566,13 +566,13 @@ def step (state : ExecState) : ExecState :=
           }
 
       -- Pack enum variant
-      | .packVariant enumName variantName variants fieldSites =>
+      | .packVariant enumName variantName fieldSites =>
         match collectPackFields f.siteStore fieldSites with
         | none => .error (.uninitializedSite (.site 0))
         | some fieldVals =>
           .running {
             frame := { f with
-              siteStore := AssocMap.insert f.siteStore s (.variant variantName (.tenum enumName variants) fieldVals)
+              siteStore := AssocMap.insert f.siteStore s (.variant variantName enumName fieldVals)
               stmt := cont
             }
             stack := m.stack

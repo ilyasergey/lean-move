@@ -35,10 +35,7 @@ private def var_f_ref : Var := ⟨"f_ref"⟩
 private def var_returned_ref : Var := ⟨"returned_ref"⟩
 private def s (n : Nat) : Site := .site n
 
-private def xVariants : AssocMap Id (AssocMap Field BasicMoveType) :=
-  AssocMap.mk [("V", AssocMap.mk [(⟨"f"⟩, .u64)])]
-
-private def xType : BasicMoveType := .tenum "X" xVariants
+private def xType : BasicMoveType := .tenum "Tester.X"
 
 -- ----------------------------------------------------------------
 -- bump_and_give: unpack, write, freeze, return

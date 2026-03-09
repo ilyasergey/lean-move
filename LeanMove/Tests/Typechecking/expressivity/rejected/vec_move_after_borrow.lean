@@ -55,7 +55,7 @@ def parsed_move_after_mut :=
 def move_after_imm_lenv := mkLabelEnv parsed_move_after_imm
 def move_after_mut_lenv := mkLabelEnv parsed_move_after_mut
 
-#guard !check_fun parsed_move_after_imm move_after_imm_lenv
-#guard !check_fun parsed_move_after_mut move_after_mut_lenv
+#guard !check_fun parsed_move_after_imm move_after_imm_lenv AssocMap.empty
+#guard !check_fun parsed_move_after_mut move_after_mut_lenv AssocMap.empty
 
 end LeanMove.Tests.Expressivity.VecMoveAfterBorrow

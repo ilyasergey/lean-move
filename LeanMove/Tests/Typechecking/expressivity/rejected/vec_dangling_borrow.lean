@@ -68,16 +68,16 @@ def push_while_borrow_lenv := mkLabelEnv parsed_push_while_borrow
 def pop_while_borrow_lenv := mkLabelEnv parsed_pop_while_borrow
 def write_while_borrow_lenv := mkLabelEnv parsed_write_while_borrow
 
-#eval check_fun parsed_push_while_borrow push_while_borrow_lenv
+#eval check_fun parsed_push_while_borrow push_while_borrow_lenv AssocMap.empty
 
-#guard !check_fun parsed_push_while_borrow push_while_borrow_lenv
+#guard !check_fun parsed_push_while_borrow push_while_borrow_lenv AssocMap.empty
 
-#eval check_fun parsed_pop_while_borrow pop_while_borrow_lenv
+#eval check_fun parsed_pop_while_borrow pop_while_borrow_lenv AssocMap.empty
 
-#guard !check_fun parsed_pop_while_borrow pop_while_borrow_lenv
+#guard !check_fun parsed_pop_while_borrow pop_while_borrow_lenv AssocMap.empty
 
-#eval check_fun parsed_write_while_borrow write_while_borrow_lenv
+#eval check_fun parsed_write_while_borrow write_while_borrow_lenv AssocMap.empty
 
-#guard !check_fun parsed_write_while_borrow write_while_borrow_lenv
+#guard !check_fun parsed_write_while_borrow write_while_borrow_lenv AssocMap.empty
 
 end LeanMove.Tests.Expressivity.VecDanglingBorrow

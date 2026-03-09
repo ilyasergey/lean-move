@@ -30,9 +30,17 @@ open LeanMove.Tests.Parsing.TestUtils
 
 private def src := include_str "enum_imm_borrow_on_mut_trivial_invalid.mvir"
 
-#guard (parseAndTranslate src).isOk
+#guard (parseAndTranslateWithEnums src).isOk
 
-private def parsedFuns := (parseAndTranslate src).toOption.get!
+private def parsedFuns : List (String × String × FunDef) :=
+  match parseAndTranslateWithEnums src with
+  | Except.ok (funs, _) => funs
+  | Except.error _ => []
+
+private def enumEnv : EnumEnv :=
+  match parseAndTranslateWithEnums src with
+  | Except.ok (_, ee) => ee
+  | Except.error _ => ⟨[]⟩
 
 -- 2 functions
 #guard parsedFuns.length == 2
@@ -41,13 +49,13 @@ private def parsedFuns := (parseAndTranslate src).toOption.get!
 def parsed_bump := (findFunAt parsedFuns 0).get!
 #guard parsed_bump.blocks.length == 1
 
-def bump_lenvDec := mkLabelEnvDec parsed_bump
+def bump_lenvDec := mkLabelEnvDec parsed_bump (enumEnv := enumEnv)
 
 theorem bump_check :
-  check_fun_dec parsed_bump bump_lenvDec = true := by native_decide
+  check_fun_dec parsed_bump bump_lenvDec enumEnv = true := by native_decide
 
-theorem bump_welltyped : ∃ lenv, typecheck_fun parsed_bump lenv :=
-  ⟨_, check_fun_dec_sound _ _ bump_check⟩
+theorem bump_welltyped : ∃ lenv, typecheck_fun parsed_bump lenv enumEnv :=
+  ⟨_, check_fun_dec_sound _ _ _ bump_check⟩
 
 -- contrived_example_no: single-block, should be REJECTED
 -- (mutably borrows x_ref while returned_ref borrows it)

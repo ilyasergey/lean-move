@@ -93,6 +93,6 @@ def fn_return_mut_with_field_borrow : FunDef := {
 def fn_lenv := mkLabelEnv fn_return_mut_with_field_borrow
 
 -- The algorithmic checker rejects this
-#guard !check_fun fn_return_mut_with_field_borrow fn_lenv
+#guard !check_fun fn_return_mut_with_field_borrow fn_lenv AssocMap.empty
 
 end LeanMove.Tests.Litmus.ReturnMutWithOutstandingBorrow

@@ -33,17 +33,11 @@ private def src :=
 private def var_e : Var := ⟨"e"⟩
 private def var_x : Var := ⟨"x"⟩
 private def var_y : Var := ⟨"y"⟩
-private def var__ : Var := ⟨"_"⟩
+private def var_uu : Var := ⟨"_"⟩
 private def s (n : Nat) : Site := .site n
 
 -- AssocMap.insert prepends, so entries are reversed from declaration order
-private def xVariants : AssocMap Id (AssocMap Field BasicMoveType) :=
-  AssocMap.mk [
-    ("Two", AssocMap.mk [(⟨"y"⟩, .u64), (⟨"x"⟩, .u64)]),
-    ("One", AssocMap.mk [(⟨"x"⟩, .u64)])
-  ]
-
-private def xType : BasicMoveType := .tenum "X" xVariants
+private def xType : BasicMoveType := .tenum "o.X"
 
 -- ----------------------------------------------------------------
 -- m1 (index 0): writes to *move(e) while fields borrowed from copy(e)
@@ -71,7 +65,7 @@ private def hw_m1 : FunDef := {
         (var_x ::= (s 6)) ;;
         (letsite (s 7) ← move var_e) ;;
         (letsite (s 8) ← #0) ;;
-        (letsite (s 9) ← packVariant("X", "One", xVariants, [(⟨"x"⟩, (s 8))])) ;;
+        (letsite (s 9) ← packVariant("o.X", "One", [(⟨"x"⟩, (s 8))])) ;;
         (*(s 7) ::= (s 9)) ;;
         (letsite (s 10) ← move var_y) ;;
         (letsite (s 11) ← #3) ;;
@@ -102,7 +96,7 @@ private def hw_overwrite : FunDef := {
       body :=
         (letsite (s 0) ← move var_e) ;;
         (letsite (s 1) ← #0) ;;
-        (letsite (s 2) ← packVariant("X", "One", xVariants, [(⟨"x"⟩, (s 1))])) ;;
+        (letsite (s 2) ← packVariant("o.X", "One", [(⟨"x"⟩, (s 1))])) ;;
         (*(s 0) ::= (s 2)) ;;
         ret []
     }

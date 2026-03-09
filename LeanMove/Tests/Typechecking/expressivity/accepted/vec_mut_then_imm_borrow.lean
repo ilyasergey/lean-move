@@ -56,7 +56,7 @@ theorem mut_then_imm_check :
   check_fun_dec parsed_mut_then_imm mut_then_imm_lenvDec = true := by native_decide
 
 -- Relational Type Checking (via Algorithmic Soundness)
-theorem mut_then_imm_welltyped : ∃ lenv, typecheck_fun parsed_mut_then_imm lenv :=
-  ⟨_, check_fun_dec_sound _ _ mut_then_imm_check⟩
+theorem mut_then_imm_welltyped : ∃ lenv, typecheck_fun parsed_mut_then_imm lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ mut_then_imm_check⟩
 
 end LeanMove.Tests.Expressivity.VecMutThenImmBorrow

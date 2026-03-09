@@ -96,8 +96,8 @@ def fn_return_basic_lenvDec := mkLabelEnvDec fn_return_basic
 theorem fn_return_basic_check :
     check_fun_dec fn_return_basic fn_return_basic_lenvDec = true := by rfl
 
-theorem fn_return_basic_welltyped : ∃ lenv, typecheck_fun fn_return_basic lenv :=
-  ⟨_, check_fun_dec_sound _ _ fn_return_basic_check⟩
+theorem fn_return_basic_welltyped : ∃ lenv, typecheck_fun fn_return_basic lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ fn_return_basic_check⟩
 
 -- ═══════════════════════════════════════════════════════
 -- Test 2: fn_return_param_ref — returns a moved param ref
@@ -127,8 +127,8 @@ def fn_return_param_ref_lenvDec := mkLabelEnvDec fn_return_param_ref
 theorem fn_return_param_ref_check :
     check_fun_dec fn_return_param_ref fn_return_param_ref_lenvDec = true := by rfl
 
-theorem fn_return_param_ref_welltyped : ∃ lenv, typecheck_fun fn_return_param_ref lenv :=
-  ⟨_, check_fun_dec_sound _ _ fn_return_param_ref_check⟩
+theorem fn_return_param_ref_welltyped : ∃ lenv, typecheck_fun fn_return_param_ref lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ fn_return_param_ref_check⟩
 
 -- ═══════════════════════════════════════════════════════
 -- Test 3: fn_return_two_independent_mut_refs
@@ -160,7 +160,7 @@ def fn_return_two_lenvDec := mkLabelEnvDec fn_return_two
 theorem fn_return_two_check :
     check_fun_dec fn_return_two fn_return_two_lenvDec = true := by rfl
 
-theorem fn_return_two_welltyped : ∃ lenv, typecheck_fun fn_return_two lenv :=
-  ⟨_, check_fun_dec_sound _ _ fn_return_two_check⟩
+theorem fn_return_two_welltyped : ∃ lenv, typecheck_fun fn_return_two lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ fn_return_two_check⟩
 
 end LeanMove.Tests.Litmus.ReturnParamRefOk

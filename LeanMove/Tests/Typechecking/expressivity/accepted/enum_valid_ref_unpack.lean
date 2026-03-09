@@ -27,9 +27,17 @@ open LeanMove.Tests.Parsing.TestUtils
 
 private def src := include_str "enum_valid_ref_unpack.mvir"
 
-#guard (parseAndTranslate src).isOk
+#guard (parseAndTranslateWithEnums src).isOk
 
-private def parsedFuns := (parseAndTranslate src).toOption.get!
+private def parsedFuns : List (String × String × FunDef) :=
+  match parseAndTranslateWithEnums src with
+  | Except.ok (funs, _) => funs
+  | Except.error _ => []
+
+private def enumEnv : EnumEnv :=
+  match parseAndTranslateWithEnums src with
+  | Except.ok (_, ee) => ee
+  | Except.error _ => ⟨[]⟩
 
 def parsed_h := (findFunInModule parsedFuns "o" "h").get!
 def parsed_f := (findFunInModule parsedFuns "o" "f").get!
@@ -40,28 +48,28 @@ def parsed_g := (findFunInModule parsedFuns "o" "g").get!
 #guard parsed_g.blocks.length == 1
 
 -- Algorithmic type checking
-def h_lenvDec := mkLabelEnvDec parsed_h
-def f_lenvDec := mkLabelEnvDec parsed_f
-def g_lenvDec := mkLabelEnvDec parsed_g
+def h_lenvDec := mkLabelEnvDec parsed_h (enumEnv := enumEnv)
+def f_lenvDec := mkLabelEnvDec parsed_f (enumEnv := enumEnv)
+def g_lenvDec := mkLabelEnvDec parsed_g (enumEnv := enumEnv)
 
 theorem h_check :
-  check_fun_dec parsed_h h_lenvDec = true := by native_decide
+  check_fun_dec parsed_h h_lenvDec enumEnv = true := by native_decide
 
 theorem f_check :
-  check_fun_dec parsed_f f_lenvDec = true := by native_decide
+  check_fun_dec parsed_f f_lenvDec enumEnv = true := by native_decide
 
 theorem g_check :
-  check_fun_dec parsed_g g_lenvDec = true := by native_decide
+  check_fun_dec parsed_g g_lenvDec enumEnv = true := by native_decide
 
 -- Relational Type Checking
-theorem h_welltyped : ∃ lenv, typecheck_fun parsed_h lenv :=
-  ⟨_, check_fun_dec_sound _ _ h_check⟩
+theorem h_welltyped : ∃ lenv, typecheck_fun parsed_h lenv enumEnv :=
+  ⟨_, check_fun_dec_sound _ _ _ h_check⟩
 
-theorem f_welltyped : ∃ lenv, typecheck_fun parsed_f lenv :=
-  ⟨_, check_fun_dec_sound _ _ f_check⟩
+theorem f_welltyped : ∃ lenv, typecheck_fun parsed_f lenv enumEnv :=
+  ⟨_, check_fun_dec_sound _ _ _ f_check⟩
 
-theorem g_welltyped : ∃ lenv, typecheck_fun parsed_g lenv :=
-  ⟨_, check_fun_dec_sound _ _ g_check⟩
+theorem g_welltyped : ∃ lenv, typecheck_fun parsed_g lenv enumEnv :=
+  ⟨_, check_fun_dec_sound _ _ _ g_check⟩
 
 -- Functions k and k1: freeze + immutable unpack + release + writeRef via packVariant
 -- The translator now emits release for `_ = move(x)` patterns, which properly
@@ -72,19 +80,19 @@ def parsed_k1 := (findFunInModule parsedFuns "o" "k1").get!
 #guard parsed_k.blocks.length == 1
 #guard parsed_k1.blocks.length == 1
 
-def k_lenvDec := mkLabelEnvDec parsed_k
-def k1_lenvDec := mkLabelEnvDec parsed_k1
+def k_lenvDec := mkLabelEnvDec parsed_k (enumEnv := enumEnv)
+def k1_lenvDec := mkLabelEnvDec parsed_k1 (enumEnv := enumEnv)
 
 theorem k_check :
-  check_fun_dec parsed_k k_lenvDec = true := by native_decide
+  check_fun_dec parsed_k k_lenvDec enumEnv = true := by native_decide
 
 theorem k1_check :
-  check_fun_dec parsed_k1 k1_lenvDec = true := by native_decide
+  check_fun_dec parsed_k1 k1_lenvDec enumEnv = true := by native_decide
 
-theorem k_welltyped : ∃ lenv, typecheck_fun parsed_k lenv :=
-  ⟨_, check_fun_dec_sound _ _ k_check⟩
+theorem k_welltyped : ∃ lenv, typecheck_fun parsed_k lenv enumEnv :=
+  ⟨_, check_fun_dec_sound _ _ _ k_check⟩
 
-theorem k1_welltyped : ∃ lenv, typecheck_fun parsed_k1 lenv :=
-  ⟨_, check_fun_dec_sound _ _ k1_check⟩
+theorem k1_welltyped : ∃ lenv, typecheck_fun parsed_k1 lenv enumEnv :=
+  ⟨_, check_fun_dec_sound _ _ _ k1_check⟩
 
 end LeanMove.Tests.Expressivity.EnumValidRefUnpack

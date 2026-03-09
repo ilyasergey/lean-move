@@ -184,10 +184,10 @@ theorem fields_write_check : check_fun_dec parsed_fields_write fields_write_lenv
 -- -           Relational Type Checking Theorems      --
 -- -----------------------------------------------------
 
-theorem fields_welltyped : ∃ lenv, typecheck_fun parsed_fields lenv :=
-  ⟨_, check_fun_dec_sound _ _ fields_check⟩
+theorem fields_welltyped : ∃ lenv, typecheck_fun parsed_fields lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ fields_check⟩
 
-theorem fields_write_welltyped : ∃ lenv, typecheck_fun parsed_fields_write lenv :=
-  ⟨_, check_fun_dec_sound _ _ fields_write_check⟩
+theorem fields_write_welltyped : ∃ lenv, typecheck_fun parsed_fields_write lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ fields_write_check⟩
 
 end LeanMove.Tests.Expressivity.MutableBorrowsNotUnique

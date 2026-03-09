@@ -70,7 +70,7 @@ mutual
     | .tunit => ".tunit"
     | .trecord m => s!".trecord {ppAssocMap m}"
     | .tvec t => s!"(.tvec {ppBasicMoveType t})"
-    | .tenum name variants => s!"(.tenum \"{name}\" {ppVariantMap variants})"
+    | .tenum name => s!"(.tenum \"{name}\")"
 
   partial def ppVariantMap (m : AssocMap Id (AssocMap Field BasicMoveType)) : String :=
     ppVariantEntries m.entries
@@ -153,7 +153,7 @@ def ppExpr : Expr → String
   | .vecImmBorrow s idx => s!"vecImmBorrow({ppSite s}, {ppSite idx})"
   | .vecMutBorrow s idx => s!"vecMutBorrow({ppSite s}, {ppSite idx})"
   | .vecPopBack s => s!"vecPopBack({ppSite s})"
-  | .packVariant ename vname _variants fields =>
+  | .packVariant ename vname fields =>
     s!"packVariant(\"{ename}\", \"{vname}\", {ppFieldSitePairs fields})"
 
 /-- Pretty-print a statement using macro syntax.

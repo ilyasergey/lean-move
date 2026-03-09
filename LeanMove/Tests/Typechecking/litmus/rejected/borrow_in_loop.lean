@@ -105,10 +105,10 @@ rejects it because it cannot prove the loop invariant is maintained.
 def foo_lenv := mkLabelEnv foo
 
 -- Debug
-#eval check_fun foo foo_lenv
+#eval check_fun foo foo_lenv AssocMap.empty
 
 -- Test: algorithmic checker rejects foo
-#guard !check_fun foo foo_lenv
+#guard !check_fun foo foo_lenv AssocMap.empty
 
 open Stmt
 

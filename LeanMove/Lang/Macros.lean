@@ -142,9 +142,9 @@ macro "letsite" a:term " ← " "binop" "(" op:term "," b:term "," c:term ")" : t
 
 -- Enum operations
 
--- Let binding with packVariant: letsite a ← packVariant(ename, vname, variants, fields) (produces StmtBuilder)
-macro "letsite" a:term " ← " "packVariant" "(" ename:term "," vname:term "," variants:term "," fields:term ")" : term =>
-  `((fun cont => Stmt.letBind $a (Expr.packVariant $ename $vname $variants $fields) cont : StmtBuilder))
+-- Let binding with packVariant: letsite a ← packVariant(ename, vname, fields) (produces StmtBuilder)
+macro "letsite" a:term " ← " "packVariant" "(" ename:term "," vname:term "," fields:term ")" : term =>
+  `((fun cont => Stmt.letBind $a (Expr.packVariant $ename $vname $fields) cont : StmtBuilder))
 
 -- Unpack variant builder: unpackVariant(vname, fields, src) (produces StmtBuilder)
 macro "unpackVariant" "(" vname:term "," fields:term "," src:term ")" : term =>

@@ -170,9 +170,9 @@ a `danglingRef` runtime error. This is a genuine dangling pointer.
 def foo_lenv := mkLabelEnv foo
 
 -- Debug
-#eval check_fun foo foo_lenv
+#eval check_fun foo foo_lenv AssocMap.empty
 
 -- Test: algorithmic checker rejects foo
-#guard !check_fun foo foo_lenv
+#guard !check_fun foo foo_lenv AssocMap.empty
 
 end LeanMove.Tests.DanglingRef

@@ -30,9 +30,17 @@ open LeanMove.Tests.Parsing.TestUtils
 
 private def src := include_str "enum_factor_invalid.mvir"
 
-#guard (parseAndTranslate src).isOk
+#guard (parseAndTranslateWithEnums src).isOk
 
-private def parsedFuns := (parseAndTranslate src).toOption.get!
+private def parsedFuns : List (String × String × FunDef) :=
+  match parseAndTranslateWithEnums src with
+  | Except.ok (funs, _) => funs
+  | Except.error _ => []
+
+private def enumEnv : EnumEnv :=
+  match parseAndTranslateWithEnums src with
+  | Except.ok (_, ee) => ee
+  | Except.error _ => ⟨[]⟩
 
 -- 2 functions
 #guard parsedFuns.length == 2
@@ -41,13 +49,13 @@ private def parsedFuns := (parseAndTranslate src).toOption.get!
 def parsed_bar := (findFunInModule parsedFuns "M" "bar").get!
 #guard parsed_bar.blocks.length == 1
 
-def bar_lenvDec := mkLabelEnvDec parsed_bar
+def bar_lenvDec := mkLabelEnvDec parsed_bar (enumEnv := enumEnv)
 
 theorem bar_check :
-  check_fun_dec parsed_bar bar_lenvDec = true := by native_decide
+  check_fun_dec parsed_bar bar_lenvDec enumEnv = true := by native_decide
 
-theorem bar_welltyped : ∃ lenv, typecheck_fun parsed_bar lenv :=
-  ⟨_, check_fun_dec_sound _ _ bar_check⟩
+theorem bar_welltyped : ∃ lenv, typecheck_fun parsed_bar lenv enumEnv :=
+  ⟨_, check_fun_dec_sound _ _ _ bar_check⟩
 
 -- M.t1 is multi-block (4 blocks)
 def parsed_t1 := (findFunInModule parsedFuns "M" "t1").get!
@@ -59,6 +67,6 @@ def t1_lenvDec := mkLabelEnvDecAll parsed_t1
 
 -- M.t1 should be rejected (borrows field of root that has weak empty borrow)
 -- Without funEnv for the call, the checker may behave differently
-#guard !check_fun_dec parsed_t1 t1_lenvDec
+#guard !check_fun_dec parsed_t1 t1_lenvDec enumEnv
 
 end LeanMove.Tests.Expressivity.EnumFactorInvalid

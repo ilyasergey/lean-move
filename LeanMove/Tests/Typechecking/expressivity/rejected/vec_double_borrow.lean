@@ -58,7 +58,7 @@ def parsed_mut_then_mut :=
 def imm_then_mut_lenv := mkLabelEnv parsed_imm_then_mut
 def mut_then_mut_lenv := mkLabelEnv parsed_mut_then_mut
 
-#guard !check_fun parsed_imm_then_mut imm_then_mut_lenv
-#guard !check_fun parsed_mut_then_mut mut_then_mut_lenv
+#guard !check_fun parsed_imm_then_mut imm_then_mut_lenv AssocMap.empty
+#guard !check_fun parsed_mut_then_mut mut_then_mut_lenv AssocMap.empty
 
 end LeanMove.Tests.Expressivity.VecDoubleBorrow

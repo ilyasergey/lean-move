@@ -29,9 +29,17 @@ open LeanMove.Tests.Parsing.TestUtils
 
 private def src := include_str "enum_variant_factor.mvir"
 
-#guard (parseAndTranslate src).isOk
+#guard (parseAndTranslateWithEnums src).isOk
 
-private def parsedFuns := (parseAndTranslate src).toOption.get!
+private def parsedFuns : List (String × String × FunDef) :=
+  match parseAndTranslateWithEnums src with
+  | Except.ok (funs, _) => funs
+  | Except.error _ => []
+
+private def enumEnv : EnumEnv :=
+  match parseAndTranslateWithEnums src with
+  | Except.ok (_, ee) => ee
+  | Except.error _ => ⟨[]⟩
 
 -- 7 modules: o1(0), o2(1), o3(2), o4(3), o5(4), invalid(5), invalid2(6)
 def parsed_o1 := (findFunAt parsedFuns 0).get!  -- o1.f
@@ -53,50 +61,50 @@ def parsed_invalid2 := (findFunAt parsedFuns 6).get!  -- invalid2.h
 
 -- o1-o5 are ACCEPTED by our type system
 -- (o1-o4 are rejected by Sui's bytecode verifier but accepted by our more precise aliasing model)
-def o1_lenvDec := mkLabelEnvDec parsed_o1
-def o2_lenvDec := mkLabelEnvDec parsed_o2
-def o3_lenvDec := mkLabelEnvDec parsed_o3
-def o4_lenvDec := mkLabelEnvDec parsed_o4
-def o5_lenvDec := mkLabelEnvDec parsed_o5
+def o1_lenvDec := mkLabelEnvDec parsed_o1 (enumEnv := enumEnv)
+def o2_lenvDec := mkLabelEnvDec parsed_o2 (enumEnv := enumEnv)
+def o3_lenvDec := mkLabelEnvDec parsed_o3 (enumEnv := enumEnv)
+def o4_lenvDec := mkLabelEnvDec parsed_o4 (enumEnv := enumEnv)
+def o5_lenvDec := mkLabelEnvDec parsed_o5 (enumEnv := enumEnv)
 
 theorem o1_check :
-  check_fun_dec parsed_o1 o1_lenvDec = true := by native_decide
+  check_fun_dec parsed_o1 o1_lenvDec enumEnv = true := by native_decide
 
 theorem o2_check :
-  check_fun_dec parsed_o2 o2_lenvDec = true := by native_decide
+  check_fun_dec parsed_o2 o2_lenvDec enumEnv = true := by native_decide
 
 theorem o3_check :
-  check_fun_dec parsed_o3 o3_lenvDec = true := by native_decide
+  check_fun_dec parsed_o3 o3_lenvDec enumEnv = true := by native_decide
 
 theorem o4_check :
-  check_fun_dec parsed_o4 o4_lenvDec = true := by native_decide
+  check_fun_dec parsed_o4 o4_lenvDec enumEnv = true := by native_decide
 
 theorem o5_check :
-  check_fun_dec parsed_o5 o5_lenvDec = true := by native_decide
+  check_fun_dec parsed_o5 o5_lenvDec enumEnv = true := by native_decide
 
 -- Relational Type Checking
-theorem o1_welltyped : ∃ lenv, typecheck_fun parsed_o1 lenv :=
-  ⟨_, check_fun_dec_sound _ _ o1_check⟩
+theorem o1_welltyped : ∃ lenv, typecheck_fun parsed_o1 lenv enumEnv :=
+  ⟨_, check_fun_dec_sound _ _ _ o1_check⟩
 
-theorem o2_welltyped : ∃ lenv, typecheck_fun parsed_o2 lenv :=
-  ⟨_, check_fun_dec_sound _ _ o2_check⟩
+theorem o2_welltyped : ∃ lenv, typecheck_fun parsed_o2 lenv enumEnv :=
+  ⟨_, check_fun_dec_sound _ _ _ o2_check⟩
 
-theorem o3_welltyped : ∃ lenv, typecheck_fun parsed_o3 lenv :=
-  ⟨_, check_fun_dec_sound _ _ o3_check⟩
+theorem o3_welltyped : ∃ lenv, typecheck_fun parsed_o3 lenv enumEnv :=
+  ⟨_, check_fun_dec_sound _ _ _ o3_check⟩
 
-theorem o4_welltyped : ∃ lenv, typecheck_fun parsed_o4 lenv :=
-  ⟨_, check_fun_dec_sound _ _ o4_check⟩
+theorem o4_welltyped : ∃ lenv, typecheck_fun parsed_o4 lenv enumEnv :=
+  ⟨_, check_fun_dec_sound _ _ _ o4_check⟩
 
-theorem o5_welltyped : ∃ lenv, typecheck_fun parsed_o5 lenv :=
-  ⟨_, check_fun_dec_sound _ _ o5_check⟩
+theorem o5_welltyped : ∃ lenv, typecheck_fun parsed_o5 lenv enumEnv :=
+  ⟨_, check_fun_dec_sound _ _ _ o5_check⟩
 
-def invalid_lenvDec := mkLabelEnvDec parsed_invalid
-def invalid2_lenvDec := mkLabelEnvDec parsed_invalid2
+def invalid_lenvDec := mkLabelEnvDec parsed_invalid (enumEnv := enumEnv)
+def invalid2_lenvDec := mkLabelEnvDec parsed_invalid2 (enumEnv := enumEnv)
 
 theorem invalid_rejected :
-  check_fun_dec parsed_invalid invalid_lenvDec = true := by native_decide
+  check_fun_dec parsed_invalid invalid_lenvDec enumEnv = true := by native_decide
 
 theorem invalid2_rejected :
-  check_fun_dec parsed_invalid2 invalid2_lenvDec = true := by native_decide
+  check_fun_dec parsed_invalid2 invalid2_lenvDec enumEnv = true := by native_decide
 
 end LeanMove.Tests.Expressivity.EnumVariantFactor

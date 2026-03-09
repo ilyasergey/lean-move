@@ -60,9 +60,10 @@ def TypeEnv.equiv_bool (env1 env2 : TypeEnv) : Bool :=
   lookup_equiv_bool env1.siteEnv env2.siteEnv &&
   varenv_lookup_compatible_bool env1.varEnv env2.varEnv &&
   env1.pathEnv.refs == env2.pathEnv.refs &&
-  env1.pathEnv.refs.all fun u =>
+  (env1.pathEnv.refs.all fun u =>
     env1.pathEnv.refs.all fun v =>
-      regexBeq (env1.pathEnv.paths (u, v)) (env2.pathEnv.paths (u, v))
+      regexBeq (env1.pathEnv.paths (u, v)) (env2.pathEnv.paths (u, v))) &&
+  lookup_equiv_bool env1.enumEnv env2.enumEnv
 
 /- ---------------------------------------------------- -/
 /-       Refid Substitution (algorithmic)               -/
@@ -232,10 +233,11 @@ def TypeEnv.subsumes_bool (envL env : TypeEnv) : Bool :=
        mapped.all (fun r => env.pathEnv.refs.contains r)) &&
       -- Check that env's refs have no duplicates (implies σ is injective on envL's refs)
       (env.pathEnv.refs.eraseDups.length == env.pathEnv.refs.length) &&
-      envL.pathEnv.refs.all fun u =>
+      (envL.pathEnv.refs.all fun u =>
         envL.pathEnv.refs.all fun v =>
           regexSubsumedBy (env.pathEnv.paths (applySubstArefList σ u, applySubstArefList σ v))
-            (envL.pathEnv.paths (u, v))
+            (envL.pathEnv.paths (u, v))) &&
+      lookup_equiv_bool envL.enumEnv env.enumEnv
 
 /-- Boolean check for all_fresh_sites -/
 def all_fresh_sites_bool (env: TypeEnv) (as: List Site) : Bool :=
@@ -548,7 +550,7 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
         | none => none
       else none
 
-    | .packVariant enumName variantName variants fields =>
+    | .packVariant enumName variantName fields =>
       if notIn env.siteEnv a && check_fields_distinct fields then
         -- Collect field types and verify they match the variant's field entries
         let fentries_opt := fields.foldlM (fun acc (f, site) =>
@@ -557,14 +559,17 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
           | _ => none) AssocMap.empty
         match fentries_opt with
         | some fentries =>
-          -- Verify the variant exists in the full enum type and field types match
-          match lookup variants variantName with
-          | some expectedFentries =>
-            if fentries == expectedFentries then
-              let env' := {env with siteEnv := insert (deleteAll env.siteEnv (fields.map Prod.snd)) a
-                                                      (.basic (.tenum enumName variants))}
-              check_stmt lenv env' cont retTypes
-            else none
+          -- Verify the variant exists in the enum environment and field types match
+          match lookup env.enumEnv enumName with
+          | some enumDef =>
+            match lookup enumDef.variants variantName with
+            | some variantDef =>
+              if fentries == variantDef.fields then
+                let env' := {env with siteEnv := insert (deleteAll env.siteEnv (fields.map Prod.snd)) a
+                                                        (.basic (.tenum enumName))}
+                check_stmt lenv env' cont retTypes
+              else none
+            | none => none
           | none => none
         | none => none
       else none
@@ -750,56 +755,67 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
   | .unpackVariant variantName fields b cont =>
     match lookup env.siteEnv b with
     -- Owned unpack: source has basic enum type
-    | some (.basic (.tenum _ename variants)) =>
-      match lookup variants variantName with
-      | some fentries =>
-        if check_unpack_fields_fresh env.siteEnv fields &&
-           check_fields_distinct fields &&
-           check_unpack_fields_exist fields fentries then
-          let env' := {env with siteEnv := addFieldSites fentries (delete env.siteEnv b) fields}
-          check_stmt lenv env' cont retTypes
-        else none
+    | some (.basic (.tenum ename)) =>
+      match lookup env.enumEnv ename with
+      | some enumDef =>
+        match lookup enumDef.variants variantName with
+        | some variantDef =>
+          let fentries := variantDef.fields
+          if check_unpack_fields_fresh env.siteEnv fields &&
+             check_fields_distinct fields &&
+             check_unpack_fields_exist fields fentries then
+            let env' := {env with siteEnv := addFieldSites fentries (delete env.siteEnv b) fields}
+            check_stmt lenv env' cont retTypes
+          else none
+        | none => none
       | none => none
     -- Ref unpack: source has ref to enum type (creates borrows for each field)
-    | some (.ref (.tenum _ename variants) r bk) =>
-      match lookup variants variantName with
-      | some fentries =>
-        if check_unpack_fields_fresh env.siteEnv fields &&
-           check_fields_distinct fields &&
-           check_unpack_fields_exist fields fentries then
-          -- For each field, allocate a fresh ref and create a borrow
-          let envInit := {env with siteEnv := delete env.siteEnv b}
-          match fields.foldlM (fun env' (f, site) =>
-            match lookup fentries f with
-            | some bt =>
-              if notIn env'.siteEnv site then
-                let rf := nextFreshRefInEnv env'
-                some {env' with
-                  siteEnv := insert env'.siteEnv site (.ref bt rf bk)
-                  pathEnv := update_with_extension rf r [.field f] env'.pathEnv}
-              else none
+    | some (.ref (.tenum ename) r bk) =>
+      match lookup env.enumEnv ename with
+      | some enumDef =>
+        match lookup enumDef.variants variantName with
+        | some variantDef =>
+          let fentries := variantDef.fields
+          if check_unpack_fields_fresh env.siteEnv fields &&
+             check_fields_distinct fields &&
+             check_unpack_fields_exist fields fentries then
+            -- For each field, allocate a fresh ref and create a borrow
+            let envInit := {env with siteEnv := delete env.siteEnv b}
+            match fields.foldlM (fun env' (f, site) =>
+              match lookup fentries f with
+              | some bt =>
+                if notIn env'.siteEnv site then
+                  let rf := nextFreshRefInEnv env'
+                  some {env' with
+                    siteEnv := insert env'.siteEnv site (.ref bt rf bk)
+                    pathEnv := update_with_extension rf r [.field f] env'.pathEnv}
+                else none
+              | none => none
+            ) envInit with
+            | some env' => check_stmt lenv env' cont retTypes
             | none => none
-          ) envInit with
-          | some env' => check_stmt lenv env' cont retTypes
-          | none => none
-        else none
+          else none
+        | none => none
       | none => none
     | _ => none
 
   -- Enum: variant switch (terminal)
   | .variantSwitch src cases =>
     match lookup env.siteEnv src with
-    | some (.ref (.tenum _ename variants) r _bk) =>
-      -- Check coverage (every variant has a matching case) AND each case label is valid
-      if variants.entries.all (fun (vname, _) =>
-           cases.any (fun (vname', _) => vname == vname')) &&
+    | some (.ref (.tenum ename) r _bk) =>
+      match lookup env.enumEnv ename with
+      | some enumDef =>
+        -- Check coverage (every variant has a matching case) AND each case label is valid
+        if enumDef.variants.entries.all (fun (vname, _) =>
+             cases.any (fun (vname', _) => vname == vname')) &&
          cases.all (fun (_, label) =>
            match lookup lenv label with
            | some envL => TypeEnv.subsumes_bool envL
                {env with siteEnv := delete env.siteEnv src
                          pathEnv := delete_ref_node env.pathEnv r}
            | none => false) then some env
-      else none
+        else none
+      | none => none
     | _ => none
 
 /-- Check a single block -/
@@ -807,13 +823,14 @@ def check_block (lenv : LabelEnv) (block : Block) (expectedEnv : TypeEnv) (retTy
   (check_stmt lenv expectedEnv block.body retTypes).isSome
 
 /-- Algorithmic type checking for functions. Returns true if the function type checks. -/
-def check_fun (f : FunDef) (lenv : LabelEnv) : Bool :=
+def check_fun (f : FunDef) (lenv : LabelEnv) (enumEnv : EnumEnv) : Bool :=
   let initVarEnv := init_fun_varEnv f
   let initEnv : TypeEnv := {
     varEnv := initVarEnv,
     siteEnv := AssocMap.empty,
     pathEnv := init_fun_pathEnv f,
-    funEnv := AssocMap.empty
+    funEnv := AssocMap.empty,
+    enumEnv := enumEnv
   }
   match f.blocks with
   | [] => false

@@ -113,16 +113,16 @@ theorem borrow_local_and_copy_ref_reverse_check :
 -- -           Relational Type Checking Theorems      --
 -- -----------------------------------------------------
 
-theorem borrow_local_twice_welltyped : ∃ lenv, typecheck_fun parsed_borrow_local_twice lenv :=
-  ⟨_, check_fun_dec_sound _ _ borrow_local_twice_check⟩
+theorem borrow_local_twice_welltyped : ∃ lenv, typecheck_fun parsed_borrow_local_twice lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ borrow_local_twice_check⟩
 
-theorem borrow_local_twice_reverse_welltyped : ∃ lenv, typecheck_fun parsed_borrow_local_twice_reverse lenv :=
-  ⟨_, check_fun_dec_sound _ _ borrow_local_twice_reverse_check⟩
+theorem borrow_local_twice_reverse_welltyped : ∃ lenv, typecheck_fun parsed_borrow_local_twice_reverse lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ borrow_local_twice_reverse_check⟩
 
-theorem borrow_local_and_copy_ref_welltyped : ∃ lenv, typecheck_fun parsed_borrow_local_and_copy_ref lenv :=
-  ⟨_, check_fun_dec_sound _ _ borrow_local_and_copy_ref_check⟩
+theorem borrow_local_and_copy_ref_welltyped : ∃ lenv, typecheck_fun parsed_borrow_local_and_copy_ref lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ borrow_local_and_copy_ref_check⟩
 
-theorem borrow_local_and_copy_ref_reverse_welltyped : ∃ lenv, typecheck_fun parsed_borrow_local_and_copy_ref_reverse lenv :=
-  ⟨_, check_fun_dec_sound _ _ borrow_local_and_copy_ref_reverse_check⟩
+theorem borrow_local_and_copy_ref_reverse_welltyped : ∃ lenv, typecheck_fun parsed_borrow_local_and_copy_ref_reverse lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ borrow_local_and_copy_ref_reverse_check⟩
 
 end LeanMove.Tests.Expressivity.AliasWrites

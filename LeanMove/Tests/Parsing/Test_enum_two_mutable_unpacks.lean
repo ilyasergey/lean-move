@@ -36,12 +36,7 @@ private def var_aa_ref : Var := ⟨"aa_ref"⟩
 private def var_bb_ref : Var := ⟨"bb_ref"⟩
 private def s (n : Nat) : Site := .site n
 
-private def fooVariants : AssocMap Id (AssocMap Field BasicMoveType) :=
-  AssocMap.mk [
-    ("V", AssocMap.mk [(⟨"b"⟩, .u64), (⟨"a"⟩, .u64)])
-  ]
-
-private def fooType : BasicMoveType := .tenum "Foo" fooVariants
+private def fooType : BasicMoveType := .tenum "M.Foo"
 
 private def hw_fn : FunDef := {
   params := [(var_addr, .ref fooType (.paramRef var_addr) .siteBorrowMut)]

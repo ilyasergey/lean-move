@@ -154,10 +154,10 @@ borrow rules.
 def invalid_write_lenv := mkLabelEnv parsed_invalid_write
 
 -- Debug
-#eval check_fun parsed_invalid_write invalid_write_lenv
+#eval check_fun parsed_invalid_write invalid_write_lenv AssocMap.empty
 
 -- Test: algorithmic checker rejects invalid_write
-#guard !check_fun parsed_invalid_write invalid_write_lenv
+#guard !check_fun parsed_invalid_write invalid_write_lenv AssocMap.empty
 
 -- Theorem: invalid_write is ILL-typed (REJECTED by type checker)
 -- Note: proving this formally requires the completeness theorem (check_fun_complete),

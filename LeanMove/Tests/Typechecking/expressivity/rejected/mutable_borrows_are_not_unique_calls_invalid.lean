@@ -190,9 +190,9 @@ small-step semantics intentionally does not enforce borrow rules.
 def call_and_write_invalid_lenv := mkLabelEnv parsed_call_and_write_invalid call_funEnv
 
 -- Debug
-#eval check_fun parsed_call_and_write_invalid call_and_write_invalid_lenv
+#eval check_fun parsed_call_and_write_invalid call_and_write_invalid_lenv AssocMap.empty
 
 -- Test: algorithmic checker rejects call_and_write_invalid
-#guard !check_fun parsed_call_and_write_invalid call_and_write_invalid_lenv
+#guard !check_fun parsed_call_and_write_invalid call_and_write_invalid_lenv AssocMap.empty
 
 end LeanMove.Tests.Expressivity.MutableBorrowsNotUniqueCallsInvalid

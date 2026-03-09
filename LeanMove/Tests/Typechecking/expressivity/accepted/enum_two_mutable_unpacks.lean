@@ -27,9 +27,17 @@ open LeanMove.Tests.Parsing.TestUtils
 
 private def src := include_str "enum_two_mutable_unpacks.mvir"
 
-#guard (parseAndTranslate src).isOk
+#guard (parseAndTranslateWithEnums src).isOk
 
-private def parsedFuns := (parseAndTranslate src).toOption.get!
+private def parsedFuns : List (String × String × FunDef) :=
+  match parseAndTranslateWithEnums src with
+  | Except.ok (funs, _) => funs
+  | Except.error _ => []
+
+private def enumEnv : EnumEnv :=
+  match parseAndTranslateWithEnums src with
+  | Except.ok (_, ee) => ee
+  | Except.error _ => ⟨[]⟩
 
 def parsed_fn := (findFunInModule parsedFuns "M" "create_mutable_field_addresses").get!
 
@@ -37,12 +45,12 @@ def parsed_fn := (findFunInModule parsedFuns "M" "create_mutable_field_addresses
 #guard parsed_fn.blocks.length == 1
 
 -- Algorithmic type checking
-def fn_lenvDec := mkLabelEnvDec parsed_fn
+def fn_lenvDec := mkLabelEnvDec parsed_fn (enumEnv := enumEnv)
 
 theorem fn_check :
-  check_fun_dec parsed_fn fn_lenvDec = true := by native_decide
+  check_fun_dec parsed_fn fn_lenvDec enumEnv = true := by native_decide
 
-theorem fn_welltyped : ∃ lenv, typecheck_fun parsed_fn lenv :=
-  ⟨_, check_fun_dec_sound _ _ fn_check⟩
+theorem fn_welltyped : ∃ lenv, typecheck_fun parsed_fn lenv enumEnv :=
+  ⟨_, check_fun_dec_sound _ _ _ fn_check⟩
 
 end LeanMove.Tests.Expressivity.EnumTwoMutableUnpacks

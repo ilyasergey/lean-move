@@ -36,13 +36,7 @@ private def var_y : Var := ⟨"y"⟩
 private def s (n : Nat) : Site := .site n
 
 -- AssocMap.insert prepends, so entries are reversed from declaration order
-private def xVariants : AssocMap Id (AssocMap Field BasicMoveType) :=
-  AssocMap.mk [
-    ("Two", AssocMap.mk [(⟨"y"⟩, .u64), (⟨"x"⟩, .u64)]),
-    ("One", AssocMap.mk [(⟨"y"⟩, .u64), (⟨"x"⟩, .u64)])
-  ]
-
-private def xType : BasicMoveType := .tenum "X" xVariants
+private def xType : BasicMoveType := .tenum "o.X"
 
 -- ----------------------------------------------------------------
 -- Function a: reuses field vars across unpacks (sequencing issue)

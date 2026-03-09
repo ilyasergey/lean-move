@@ -142,8 +142,8 @@ def M_new_lenvDec := mkLabelEnvDec M_new module_funEnv
 theorem M_new_check : check_fun_dec M_new M_new_lenvDec = true := by rfl
 
 -- Theorem: M.new is well-typed (via algorithmic soundness)
-theorem M_new_welltyped : ∃ lenv, typecheck_fun M_new lenv :=
-  ⟨_, check_fun_dec_sound _ _ M_new_check⟩
+theorem M_new_welltyped : ∃ lenv, typecheck_fun M_new lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ M_new_check⟩
 
 -- -----------------------------------------------------
 -- -                     M.t                          --
@@ -189,8 +189,8 @@ def M_t_lenvDec := mkLabelEnvDec M_t module_funEnv
 theorem M_t_check : check_fun_dec M_t M_t_lenvDec = true := by rfl
 
 -- Theorem: M_t is well-typed (via algorithmic soundness)
-theorem M_t_welltyped : ∃ lenv, typecheck_fun M_t lenv :=
-  ⟨_, check_fun_dec_sound _ _ M_t_check⟩
+theorem M_t_welltyped : ∃ lenv, typecheck_fun M_t lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ M_t_check⟩
 
 -- -----------------------------------------------------
 -- -                     foo                          --
@@ -241,7 +241,7 @@ def foo_lenvDec := mkLabelEnvDec foo module_funEnv
 theorem foo_check : check_fun_dec foo foo_lenvDec = true := by rfl
 
 -- Theorem: foo is well-typed (via algorithmic soundness)
-theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv :=
-  ⟨_, check_fun_dec_sound _ _ foo_check⟩
+theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ foo_check⟩
 
 end LeanMove.Tests

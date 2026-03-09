@@ -129,9 +129,9 @@ partial def alphaBasicType (l r : BasicMoveType) : AlphaM Bool :=
   | .tunit, .tunit => pure true
   | .trecord m1, .trecord m2 => alphaEntries m1.entries m2.entries
   | .tvec t1, .tvec t2 => alphaBasicType t1 t2
-  | .tenum n1 vs1, .tenum n2 vs2 => do
+  | .tenum n1, .tenum n2 => do
     if n1 != n2 then return false
-    alphaVariantMap vs1.entries vs2.entries
+    return true  -- For now, just check enum names are equal
   | _, _ => pure false
 
 /-- Check alpha-equivalence of variant switch cases (Id × Label pairs) -/
@@ -212,7 +212,7 @@ partial def alphaExpr (l r : Expr) : AlphaM Bool :=
     if !(← matchSite s1 s2) then return false
     matchSite i1 i2
   | .vecPopBack s1, .vecPopBack s2 => matchSite s1 s2
-  | .packVariant e1 v1 _ fs1, .packVariant e2 v2 _ fs2 => do
+  | .packVariant e1 v1 fs1, .packVariant e2 v2 fs2 => do
     if e1 != e2 then return false
     if v1 != v2 then return false
     alphaFieldSites fs1 fs2
@@ -408,5 +408,41 @@ def findFunAt (results : List (String × String × FunDef)) (idx : Nat) : Option
   match results[idx]? with
   | some (_, _, fd) => some fd
   | none => none
+
+/-- Convert a ResolvedEnum to an EnumDef -/
+def resolvedEnumToEnumDef (re : MoveIR.Translate.ResolvedEnum) : EnumDef :=
+  let variants := re.variants.entries.foldl (fun acc (vname, fieldMap) =>
+    AssocMap.insert acc vname { name := vname, fields := fieldMap }) AssocMap.empty
+  { name := re.name, variants := variants }
+
+/-- Build an EnumEnv from a list of ResolvedEnums -/
+def buildEnumEnv (enums : List MoveIR.Translate.ResolvedEnum) : EnumEnv :=
+  enums.foldl (fun acc re =>
+    AssocMap.insert acc re.name (resolvedEnumToEnumDef re)) AssocMap.empty
+
+/-- Parse MVIR text and translate, returning both FunDefs and EnumEnv.
+    Accumulates enum definitions across all modules (names are module-qualified). -/
+def parseAndTranslateWithEnums (input : String) :
+    Except String (List (String × String × FunDef) × EnumEnv) := do
+  let file ← parseMvir input
+  let action : MoveIR.Translate.TransM
+      (List (String × String × FunDef) × List MoveIR.Translate.ResolvedEnum) := do
+    let mut allFuns : List (String × String × FunDef) := []
+    let mut allEnums : List MoveIR.Translate.ResolvedEnum := []
+    for mod in file.modules do
+      let funs ← MoveIR.Translate.translateModule mod
+      -- Accumulate enums from the state after each module translation
+      allEnums := allEnums ++ (← get).enums
+      for (fname, fd) in funs do
+        allFuns := allFuns ++ [(mod.name, fname, fd)]
+    pure (allFuns, allEnums)
+  let ((result, allEnums), _) := action.run default
+  let enumEnv := buildEnumEnv allEnums
+  pure (result, enumEnv)
+
+/-- Extract just the EnumEnv from parsed MVIR text -/
+def parseEnumEnv (input : String) : Except String EnumEnv := do
+  let (_, enumEnv) ← parseAndTranslateWithEnums input
+  pure enumEnv
 
 end LeanMove.Tests.Parsing.TestUtils

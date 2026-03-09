@@ -29,9 +29,17 @@ open AssocMap
 private def enumMatchMvir :=
   include_str "enum_match.mvir"
 
-#guard (parseAndTranslate enumMatchMvir).isOk
+#guard (parseAndTranslateWithEnums enumMatchMvir).isOk
 
-private def parsedFuns := (parseAndTranslate enumMatchMvir).toOption.get!
+private def parsedFuns :=
+  match (parseAndTranslateWithEnums enumMatchMvir : Except String _) with
+  | Except.ok (funs, _) => funs
+  | Except.error _ => []
+
+private def enumEnv : EnumEnv :=
+  match (parseAndTranslateWithEnums enumMatchMvir : Except String _) with
+  | Except.ok (_, ee) => ee
+  | Except.error _ => AssocMap.empty
 
 def parsed_t0 := (findFunInModule parsedFuns "m" "t0").get!
 
@@ -64,13 +72,15 @@ private def join_varEnv : VarEnv :=
 -- Manual label env with precise varEnvs for each block
 def t0_lenvDec : LabelEnvDec :=
   let f := freshenBlockEnv parsed_t0
-  let initEnv := mkInitEnvDec parsed_t0
+  let initEnv := mkInitEnvDec parsed_t0 (enumEnv := enumEnv)
   let switchEnv : TypeEnvDec :=
     { siteEnv := AssocMap.empty, varEnv := switch_target_varEnv,
-      pathEnv := init_fun_pathEnvDec parsed_t0.params, funEnv := AssocMap.empty }
+      pathEnv := init_fun_pathEnvDec parsed_t0.params, funEnv := AssocMap.empty,
+      enumEnv := enumEnv }
   let joinEnv : TypeEnvDec :=
     { siteEnv := AssocMap.empty, varEnv := join_varEnv,
-      pathEnv := init_fun_pathEnvDec parsed_t0.params, funEnv := AssocMap.empty }
+      pathEnv := init_fun_pathEnvDec parsed_t0.params, funEnv := AssocMap.empty,
+      enumEnv := enumEnv }
   insert (insert (insert (insert (insert AssocMap.empty
     "l0" (f initEnv))
     "l1" (f switchEnv))
@@ -96,6 +106,6 @@ private def checkBlockAt (i : Nat) : Bool :=
 #guard checkBlockAt 4   -- l4
 
 -- Full function type check
-theorem enum_match_typechecks : check_fun_dec parsed_t0 t0_lenvDec = true := by native_decide
+theorem enum_match_typechecks : check_fun_dec parsed_t0 t0_lenvDec enumEnv = true := by native_decide
 
 end LeanMove.Tests.Expressivity.EnumMatch

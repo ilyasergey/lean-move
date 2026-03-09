@@ -173,9 +173,9 @@ def invalid_funEnv : FunEnv :=
 
 def invalid_lenv := mkLabelEnv parsed_invalid invalid_funEnv
 
-#eval check_fun parsed_invalid invalid_lenv
+#eval check_fun parsed_invalid invalid_lenv AssocMap.empty
 
 -- Test: algorithmic checker rejects invalid
-#guard !check_fun parsed_invalid invalid_lenv
+#guard !check_fun parsed_invalid invalid_lenv AssocMap.empty
 
 end LeanMove.Tests.Expressivity.ImmBorrowAfterMutCallInvalid

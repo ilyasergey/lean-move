@@ -27,9 +27,17 @@ open LeanMove.Tests.Parsing.TestUtils
 
 private def src := include_str "enum_borrow_field_mutable.mvir"
 
-#guard (parseAndTranslate src).isOk
+#guard (parseAndTranslateWithEnums src).isOk
 
-private def parsedFuns := (parseAndTranslate src).toOption.get!
+private def parsedFuns : List (String × String × FunDef) :=
+  match parseAndTranslateWithEnums src with
+  | Except.ok (funs, _) => funs
+  | Except.error _ => []
+
+def enumEnv : EnumEnv :=
+  match parseAndTranslateWithEnums src with
+  | Except.ok (_, ee) => ee
+  | Except.error _ => ⟨[]⟩
 
 -- 6 functions across 3 modules
 #guard parsedFuns.length == 6
@@ -46,13 +54,13 @@ def parsed_M2_bar := (findFunInModule parsedFuns "M2" "bar").get!
 def parsed_M2_baz := (findFunInModule parsedFuns "M2" "baz").get!
 #guard parsed_M2_baz.blocks.length == 1
 
-def M2_baz_lenvDec := mkLabelEnvDec parsed_M2_baz
+def M2_baz_lenvDec := mkLabelEnvDec parsed_M2_baz (enumEnv := enumEnv)
 
 theorem M2_baz_check :
-  check_fun_dec parsed_M2_baz M2_baz_lenvDec = true := by native_decide
+  check_fun_dec parsed_M2_baz M2_baz_lenvDec enumEnv = true := by native_decide
 
-theorem M2_baz_welltyped : ∃ lenv, typecheck_fun parsed_M2_baz lenv :=
-  ⟨_, check_fun_dec_sound _ _ M2_baz_check⟩
+theorem M2_baz_welltyped : ∃ lenv, typecheck_fun parsed_M2_baz lenv enumEnv :=
+  ⟨_, check_fun_dec_sound _ _ _ M2_baz_check⟩
 
 -- M.foo is multi-block (4 blocks): start→branch, f→jump end, t→fall through end, end→return
 def parsed_M_foo := (findFunInModule parsedFuns "M" "foo").get!
@@ -61,7 +69,7 @@ def parsed_M_foo := (findFunInModule parsedFuns "M" "foo").get!
 def M_foo_lenvDec := mkLabelEnvDecAll parsed_M_foo
 
 -- M.foo type-checking attempt with mkLabelEnvDecAll
-#guard !check_fun_dec parsed_M_foo M_foo_lenvDec
+#guard !check_fun_dec parsed_M_foo M_foo_lenvDec enumEnv
 -- mkLabelEnvDecAll doesn't produce precise enough label envs for multi-block branching
 
 end LeanMove.Tests.Expressivity.EnumBorrowFieldMutable

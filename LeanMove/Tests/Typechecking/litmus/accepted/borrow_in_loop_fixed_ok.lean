@@ -112,7 +112,7 @@ def foo_lenvDec := mkLabelEnvDec foo
 theorem foo_check : check_fun_dec foo foo_lenvDec = true := by rfl
 
 -- Theorem: foo is well-typed (via algorithmic soundness)
-theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv :=
-  ⟨_, check_fun_dec_sound _ _ foo_check⟩
+theorem foo_welltyped : ∃ lenv, typecheck_fun foo lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ foo_check⟩
 
 end LeanMove.Tests.BorrowInLoopFixed

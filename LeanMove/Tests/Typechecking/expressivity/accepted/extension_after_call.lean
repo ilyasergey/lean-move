@@ -112,10 +112,10 @@ theorem fn_write_check : check_fun_dec parsed_fn_write fn_write_lenvDec = true :
 -- -           Relational Type Checking Theorems      --
 -- -----------------------------------------------------
 
-theorem borrow_welltyped : ∃ lenv, typecheck_fun parsed_fn_borrow lenv :=
-  ⟨_, check_fun_dec_sound _ _ fn_borrow_check⟩
+theorem borrow_welltyped : ∃ lenv, typecheck_fun parsed_fn_borrow lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ fn_borrow_check⟩
 
-theorem write_welltyped : ∃ lenv, typecheck_fun parsed_fn_write lenv :=
-  ⟨_, check_fun_dec_sound _ _ fn_write_check⟩
+theorem write_welltyped : ∃ lenv, typecheck_fun parsed_fn_write lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ fn_write_check⟩
 
 end LeanMove.Tests.Expressivity.ExtensionAfterCall

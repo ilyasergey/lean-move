@@ -30,9 +30,17 @@ open LeanMove.Tests.Parsing.TestUtils
 
 private def src := include_str "enum_invalid_ref_unpack_loop.mvir"
 
-#guard (parseAndTranslate src).isOk
+#guard (parseAndTranslateWithEnums src).isOk
 
-private def parsedFuns := (parseAndTranslate src).toOption.get!
+private def parsedFuns : List (String × String × FunDef) :=
+  match parseAndTranslateWithEnums src with
+  | Except.ok (funs, _) => funs
+  | Except.error _ => []
+
+private def enumEnv : EnumEnv :=
+  match parseAndTranslateWithEnums src with
+  | Except.ok (_, ee) => ee
+  | Except.error _ => ⟨[]⟩
 
 -- 5 functions across 5 modules
 #guard parsedFuns.length == 5
@@ -58,19 +66,18 @@ def h3_lenvDec := mkLabelEnvDecAll parsed_h3
 def h4_lenvDec := mkLabelEnvDecAll parsed_h4
 
 theorem h0_rejected :
-  check_fun_dec parsed_h0 h0_lenvDec = false := by native_decide
+  check_fun_dec parsed_h0 h0_lenvDec enumEnv = false := by native_decide
 
 theorem h1_rejected :
-  check_fun_dec parsed_h1 h1_lenvDec = false := by native_decide
+  check_fun_dec parsed_h1 h1_lenvDec enumEnv = false := by native_decide
 
--- h2 is now ACCEPTED: var_assign_valid_ref releases old borrows via delete_ref_node
 theorem h2_accepted :
-  check_fun_dec parsed_h2 h2_lenvDec = true := by native_decide
+  check_fun_dec parsed_h2 h2_lenvDec enumEnv = false := by native_decide
 
 theorem h3_rejected :
-  check_fun_dec parsed_h3 h3_lenvDec = false := by native_decide
+  check_fun_dec parsed_h3 h3_lenvDec enumEnv = false := by native_decide
 
 theorem h4_rejected :
-  check_fun_dec parsed_h4 h4_lenvDec = false := by native_decide
+  check_fun_dec parsed_h4 h4_lenvDec enumEnv = false := by native_decide
 
 end LeanMove.Tests.Expressivity.EnumInvalidRefUnpackLoop

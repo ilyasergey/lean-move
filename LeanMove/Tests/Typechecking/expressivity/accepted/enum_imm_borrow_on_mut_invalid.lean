@@ -34,9 +34,17 @@ open LeanMove.Tests.Parsing.TestUtils
 
 private def src := include_str "enum_imm_borrow_on_mut_invalid.mvir"
 
-#guard (parseAndTranslate src).isOk
+#guard (parseAndTranslateWithEnums src).isOk
 
-private def parsedFuns := (parseAndTranslate src).toOption.get!
+private def parsedFuns : List (String × String × FunDef) :=
+  match parseAndTranslateWithEnums src with
+  | Except.ok (funs, _) => funs
+  | Except.error _ => []
+
+private def enumEnv : EnumEnv :=
+  match parseAndTranslateWithEnums src with
+  | Except.ok (_, ee) => ee
+  | Except.error _ => ⟨[]⟩
 
 -- 6 functions across 2 modules
 #guard parsedFuns.length == 6
@@ -46,24 +54,24 @@ private def parsedFuns := (parseAndTranslate src).toOption.get!
 def parsed_bump1 := (findFunAt parsedFuns 1).get!
 #guard parsed_bump1.blocks.length == 1
 
-def bump1_lenvDec := mkLabelEnvDec parsed_bump1
+def bump1_lenvDec := mkLabelEnvDec parsed_bump1 (enumEnv := enumEnv)
 
 theorem bump1_check :
-  check_fun_dec parsed_bump1 bump1_lenvDec = true := by native_decide
+  check_fun_dec parsed_bump1 bump1_lenvDec enumEnv = true := by native_decide
 
-theorem bump1_welltyped : ∃ lenv, typecheck_fun parsed_bump1 lenv :=
-  ⟨_, check_fun_dec_sound _ _ bump1_check⟩
+theorem bump1_welltyped : ∃ lenv, typecheck_fun parsed_bump1 lenv enumEnv :=
+  ⟨_, check_fun_dec_sound _ _ _ bump1_check⟩
 
 -- Module 0x43: bump_and_give (index 4)
 def parsed_bump2 := (findFunAt parsedFuns 4).get!
 #guard parsed_bump2.blocks.length == 1
 
-def bump2_lenvDec := mkLabelEnvDec parsed_bump2
+def bump2_lenvDec := mkLabelEnvDec parsed_bump2 (enumEnv := enumEnv)
 
 theorem bump2_check :
-  check_fun_dec parsed_bump2 bump2_lenvDec = true := by native_decide
+  check_fun_dec parsed_bump2 bump2_lenvDec enumEnv = true := by native_decide
 
-theorem bump2_welltyped : ∃ lenv, typecheck_fun parsed_bump2 lenv :=
-  ⟨_, check_fun_dec_sound _ _ bump2_check⟩
+theorem bump2_welltyped : ∃ lenv, typecheck_fun parsed_bump2 lenv enumEnv :=
+  ⟨_, check_fun_dec_sound _ _ _ bump2_check⟩
 
 end LeanMove.Tests.Expressivity.EnumImmBorrowOnMutInvalid

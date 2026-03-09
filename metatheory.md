@@ -14,13 +14,17 @@ core calculus of the Move intermediate representation — and proved it
 - The type checker is **executable**: it runs as a boolean function inside
   Lean and can verify programs by kernel reduction (`by rfl`).
 - The soundness theorem guarantees that well-typed programs **never produce
-  non-acceptable errors** at runtime. The type system rules out **8 of 12**
+  non-acceptable errors** at runtime. The type system rules out **8 of 13**
   runtime error constructors — including dangling references,
   uninitialized variables, type mismatches, unknown labels/functions,
-  arity mismatches, and invalid field accesses. Only 4 *acceptable*
+  arity mismatches, and invalid field accesses. Only 5 *acceptable*
   errors remain: `divisionByZero` (runtime arithmetic), `outOfFuel`
-  (bounded interpreter), `aborted` (well-typed `abort` statement), and
-  `vectorError` (out-of-bounds access, empty pop, length mismatch).
+  (bounded interpreter), `aborted` (well-typed `abort` statement),
+  `vectorError` (out-of-bounds access, empty pop, length mismatch),
+  and `variantMismatch` (unpacking with wrong variant name).
+- The language supports **vectors** (Part III) and **enums** (Part IV) as
+  extensions to the core calculus, each fully integrated into the type
+  system and soundness proof.
 - We demonstrate this end-to-end on programs drawn from the **Move bytecode
   verifier's own test suite**: each program is type-checked, executed on a
   concrete heap, and certified free of all preventable errors — all within
@@ -43,12 +47,19 @@ The formalisation does **not** cover:
 - **Loops with complex invariants.** Back edges are supported via label
   environments, but the formalisation does not synthesise loop invariants;
   they must be provided as part of the label environment.
+- **Multi-variant enum soundness.** Enum types are fully supported in
+  the syntax, typing rules, and operational semantics; however, the
+  current soundness proof restricts to enums with **at most one variant**
+  (`checkEnumSingleVariant`). Multi-variant enums type-check and execute
+  correctly but are not yet covered by the decidable soundness certificate
+  (see Part IV for details).
 
 These restrictions keep the core calculus small enough for complete
 machine-checked soundness proofs while still capturing the essence of
 Move's reference-safety discipline — aliased mutable borrows, field
 borrows, freeze, release, cross-function borrow propagation,
-control-flow joins, and vector operations (see Part III).
+control-flow joins, vector operations (see Part III), and enum variant
+packing/unpacking with pattern matching (see Part IV).
 
 ---
 
@@ -98,14 +109,18 @@ LeanMove/
 MoveLight programs are sequences of *blocks*, each containing a *statement*
 that ends with a terminal (`skip`, `jump`, `branch`, `ret`, `abort`).
 Non-terminal statements have the form `letBind site expr cont`, `writeRef`,
-`assign`, `release`, `unpack`, `call`, `vecUnpack`, `vecPushBack`, or
-`vecSwap`, where `cont` is the continuation statement within the same block.
+`assign`, `release`, `unpack`, `call`, `vecUnpack`, `vecPushBack`,
+`vecSwap`, or `unpackVariant`, where `cont` is the continuation statement
+within the same block. Terminal statements include `variantSwitch` (enum
+pattern matching) in addition to `skip`, `jump`, `branch`, `ret`, and
+`abort`.
 
-Types are either *basic* (`u64`, `bool`, `unit`, records, vectors) or
+Types are either *basic* (`u64`, `bool`, `unit`, records, vectors, enums) or
 *references* `ref τ r bk`, carrying a basic content type `τ`, an abstract
 reference `r : Aref`, and a borrowing kind `bk` (immutable or mutable).
 Vector types have the form `tvec T` where `T` is the element type (itself a
-`BasicMoveType`). Abstract references (`Aref`) are either `.root` (the local
+`BasicMoveType`). Enum types have the form `tenum name` where `name`
+identifies the enum definition in an `EnumEnv`. Abstract references (`Aref`) are either `.root` (the local
 variable root), `.refid n` (a placeholder used during type checking), or
 `.paramRef v` (tied to parameter `v`).
 
@@ -138,8 +153,9 @@ system) and **acceptable** (not preventable):
 | `outOfFuel` | No | Bounded interpreter limitation |
 | `aborted` | No | Well-typed `abort` statement or `skip` in callee |
 | `vectorError` | No | Index out of bounds, empty pop, length mismatch |
+| `variantMismatch` | No | Unpacking enum with wrong variant name |
 
-The predicate `RuntimeError.isAcceptable` marks the last four as acceptable.
+The predicate `RuntimeError.isAcceptable` marks the last five as acceptable.
 Type soundness rules out all non-acceptable errors.
 
 ### Relational typing (`Typing/TypeChecking.lean`)
@@ -209,8 +225,7 @@ theorem type_soundness (f : FunDef) (lenv : LabelEnv)
 In words: if a function is well-typed (`typecheck_fun`), every callee is
 safely typed (`FunTypeSafe`), and the runtime configuration satisfies the
 soundness assumptions, then execution never produces a non-acceptable error
-regardless of how many steps are taken. This rules out all 8 preventable
-error constructors. A backward-compatible corollary `type_soundness_no_danglingRef`
+regardless of how many steps are taken. This rules out all 8 preventable error constructors. A backward-compatible corollary `type_soundness_no_danglingRef`
 specialises to `danglingRef`.
 
 ### Algorithmic type checker (`Typing/Algorithmic/`)
@@ -276,8 +291,7 @@ The `#guard` confirms the program actually runs and terminates (the soundness
 theorem does not guarantee termination). The `type_soundness_dec_no_danglingRef`
 certificate uses the backward-compatible corollary to prove that *for any
 fuel bound*, the program never encounters a dangling reference. The general
-`type_soundness_dec` theorem actually rules out all 8 non-acceptable error
-types — the `danglingRef`-specific corollary is used in tests for
+`type_soundness_dec` theorem actually rules out all 8 non-acceptable error types — the `danglingRef`-specific corollary is used in tests for
 readability. Together, these demonstrate that the soundness statement is
 practically meaningful: it applies to concrete programs with concrete heaps
 and produces a machine-checked safety guarantee.
@@ -376,12 +390,12 @@ type_soundness
 **`SafeExecState`** defines safety: running states have a `WellTypedState`
 and `StackSafe` witness; halted states are safe; error states must satisfy
 `e.isAcceptable` (only `divisionByZero`, `outOfFuel`, `aborted`,
-`vectorError`). Any
+`vectorError`, `variantMismatch`). Any
 non-acceptable error contradicts safety.
 
 **Progress** (`Progress.lean`) proves `step_error_is_acceptable`: if a
 well-typed state steps to an error, that error is acceptable. This covers
-all 8 preventable error types (including all vector operations):
+all 8 preventable error types (including vector and enum operations):
 - `danglingRef`: contradicted by `rmap_live` (references map to valid heap locations)
 - `uninitializedVar`: contradicted by `var_consistent` (valid variables have values)
 - `uninitializedSite`: contradicted by `site_consistent` (typed sites have values)
@@ -395,8 +409,8 @@ all 8 preventable error types (including all vector operations):
 **Preservation** (`Preservation.lean`) is the heart of the proof: for each
 typing rule, when the interpreter takes a step, the resulting machine state
 admits a new `WellTypedState` (and `StackSafe` is maintained). The file
-contains one case proof per typing rule (~33 cases, including 8 for vector
-operations), plus inversion lemmas that extract hypotheses from each
+contains one case proof per typing rule (~37 cases, including 8 for vector
+and 4 for enum operations), plus inversion lemmas that extract hypotheses from each
 `typecheck_stmt` constructor.
 
 ### Regex-based path tracking (`Structures/Regex.lean`, `Types.lean`)
@@ -544,7 +558,7 @@ must show that the caller's `WellTypedState` can be reconstructed from
 
 ### Key preservation invariants (`WellTypedState`)
 
-The `WellTypedState` structure (29 fields) ties the abstract type world to
+The `WellTypedState` structure (30 fields) ties the abstract type world to
 the concrete machine state. The most important invariants are:
 
 **Value–type correspondence:**
@@ -818,7 +832,7 @@ location produced by `heap.alloc`.
 The vector extension adds 8 cases to each of the three main proof files:
 
 **Preservation** (`Preservation.lean`): 8 helper theorems, one per operation.
-Each reconstructs all 29 `WellTypedState` fields for the post-step machine.
+Each reconstructs all 30 `WellTypedState` fields for the post-step machine.
 The borrow operations (`vecImmBorrow`, `vecMutBorrow`) are the most complex
 — they mirror `preservation_borrowField` / `preservation_borrowMutField`,
 using `update_with_extension` with `[.vecElem]` and proving freshness of the
@@ -867,6 +881,279 @@ record unpacking.
    operations were needed — `update_with_extension rf s [.vecElem]` works
    identically to `update_with_extension rf s [.field f]`, inheriting all
    existing soundness lemmas for derivatives and path graph updates.
+
+---
+
+## Part IV — Enum Extension
+
+MoveLight includes an **enum extension** that models Move's `enum` types —
+tagged variants with named fields. Enums interact with the borrow checker:
+variant fields can be borrowed through references (both immutably and
+mutably), and `variant_switch` dispatches on the runtime variant tag.
+The extension is integrated into the type system and soundness proof,
+with a restriction: the current decidable soundness certificate covers
+enums with **at most one variant** per enum type.
+
+### Syntax
+
+Enum types use the `BasicMoveType` constructor `tenum name`, where `name`
+identifies the enum definition in an `EnumEnv`. At runtime, enum values have
+the form `Value.variant vname ename fields`, where `vname` is the variant
+name, `ename` is the enum type name, and `fields : List (Field × Value)`.
+
+**Enum definitions:**
+
+```lean
+structure EnumVariantDef where
+  fields : AssocMap Field BasicMoveType
+
+structure EnumDef where
+  name : Id
+  variants : AssocMap Id EnumVariantDef
+
+abbrev EnumEnv := AssocMap Id EnumDef
+```
+
+The `EnumEnv` maps enum type names to their definitions. Each `EnumDef`
+contains a map from variant names to `EnumVariantDef` (field type maps).
+
+**Expressions** (used in `letBind s expr cont`):
+
+| Constructor | Parameters | Result type |
+|---|---|---|
+| `packVariant enumName variantName fields` | field sites with matching types | `.basic (.tenum enumName)` |
+
+**Statements** (non-terminal, with continuation):
+
+| Constructor | Parameters | Effect |
+|---|---|---|
+| `unpackVariant variantName fields src cont` | enum value or reference site → field sites / borrows | distribute fields |
+
+**Statements** (terminal):
+
+| Constructor | Parameters | Effect |
+|---|---|---|
+| `variantSwitch src cases` | reference to enum → label per variant | branch to variant-specific handler |
+
+### Typing rules
+
+Enum typing rules follow the core MoveLight discipline: sites are consumed
+after use, `EnumEnv` is consulted to resolve field types, and fresh abstract
+references are allocated for reference-based unpacking.
+
+**`let_bind_packVariant`** — Pack field values into an enum variant:
+```
+enumEnv(enumName) = enumDef
+enumDef.variants(variantName) = variantDef
+siteEnv(a_i) = .basic T_i      for each (f_i, a_i) in fields
+variantDef.fields(f_i) = T_i    (field types match)
+all fields covered              (completeness)
+notIn(siteEnv, s)
+siteEnv' = deleteAll(siteEnv, map snd fields) + {s ↦ .basic (.tenum enumName)}
+─────────────────────────────────────────────────────────────────────────────────
+typecheck_stmt lenv env (letBind s (packVariant enumName variantName fields) cont) retTypes
+```
+No path environment changes — enum values are owned values, not references.
+
+**`unpackVariant_rule`** — Unpack an owned enum value into field sites:
+```
+siteEnv(src) = .basic (.tenum ename)
+enumEnv(ename) = enumDef
+enumDef.variants(variantName) = variantDef
+fields match variantDef
+siteEnv' = addFieldSites variantDef.fields (delete siteEnv src) fields
+─────────────────────────────────────────────────────────────────────
+typecheck_stmt lenv env (unpackVariant variantName fields src cont) retTypes
+```
+Reuses the existing `addFieldSites` helper from record unpacking.
+
+**`unpackVariant_ref_rule`** — Unpack a reference to an enum into field borrows:
+```
+siteEnv(src) = .ref (.tenum ename) r bk
+enumEnv(ename) = enumDef
+enumDef.variants(variantName) = variantDef
+fields match variantDef
+env' = addRefFieldSites r bk variantDef.fields fields {env with siteEnv := delete siteEnv src}
+─────────────────────────────────────────────────────────────────────────────────
+typecheck_stmt lenv env (unpackVariant variantName fields src cont) retTypes
+```
+`addRefFieldSites` allocates a fresh abstract reference for each field,
+recording paths from the parent reference through each field name. This
+mirrors `borrowField` / `borrowMutField` for records.
+
+**`variantSwitch_rule`** — Branch on the runtime variant tag:
+```
+siteEnv(src) = .ref (.tenum ename) r bk
+enumEnv(ename) = enumDef
+all variants covered: ∀ vname ∈ enumDef.variants, ∃ label, (vname, label) ∈ cases
+all labels well-typed: ∀ (vname, label) ∈ cases, lenv(label) subsumes env
+pathEnv' = delete_ref_node(pathEnv, r)
+─────────────────────────────────────────────────────────────────────────────────
+typecheck_stmt lenv env (variantSwitch src cases) retTypes
+```
+The enum reference is consumed after the switch. Each branch label must
+subsume the current environment (similar to `branch`).
+
+### Operational semantics
+
+At runtime, enum operations interact with the site store, heap, and
+control flow:
+
+| Operation | Reads | Writes | Error conditions |
+|---|---|---|---|
+| `packVariant` | field sites | site store (new variant value) | uninitialized field |
+| `unpackVariant` (owned) | src site (variant) | site store (field values) | variant name mismatch |
+| `unpackVariant` (ref) | heap (variant via ref) | heap (alloc each field), site store (field refs) | dangling ref, variant mismatch |
+| `variantSwitch` | heap (variant via ref) | (none) | dangling ref, variant not in cases |
+
+**Variant mismatch at runtime.** If `unpackVariant` expects variant `V1`
+but the runtime value is variant `V2`, the interpreter produces
+`variantMismatch`. This error is **acceptable** — the type system does not
+track which variant an enum value holds statically (only that it has the
+correct enum type).
+
+### Value typing
+
+The `HasType` relation includes a variant case:
+```lean
+HasType.variant : ∀ (vname ename : Id) (fields : List (Field × Value))
+    (fentries : AssocMap Field BasicMoveType),
+    enumVariantFields enumEnv ename vname = some fentries →
+    (∀ f, lookup fentries f ≠ none → fields.lookup f ≠ none) →
+    (∀ f bt v, lookup fentries f = some bt → fields.lookup f = some v →
+      HasType enumEnv v bt) →
+    HasType enumEnv (.variant vname ename fields) (.tenum ename)
+```
+
+A variant value has type `tenum ename` if (1) the variant exists in the
+`EnumEnv`, (2) all declared fields are present, and (3) each field value
+matches its declared type. Notably, `HasType` now takes an `EnumEnv`
+parameter (required for resolving variant field types) — this is a
+cross-cutting change affecting all `HasType` uses throughout the codebase.
+
+### The `enumEnv` parameter threading
+
+Adding `EnumEnv` to `HasType` is the most pervasive change in this
+extension. Every function and lemma that mentions `HasType` must now
+thread the `enumEnv` parameter. Key affected signatures include:
+
+- `WellTypedState`: the `enumEnv` is stored as `env.enumEnv` and
+  passed to all `HasType` occurrences in the 30 fields
+- `StackSafe`: frame-level `HasType` uses the env's `enumEnv`
+- `SoundnessAssumptions`: `checkDecidable` verifies that label
+  environment entries agree on `enumEnv` (`lenv_enumEnv_eq`)
+- `hasType_bool`: the decidable `HasType` check (does not yet handle
+  variant or vector values — returns `false` for these)
+
+### The `enum_field_compatibility` invariant
+
+The soundness proof requires a new `WellTypedState` field:
+```lean
+enum_field_compatibility : ∀ (fv1 fv2 : Value) (bt : BasicMoveType),
+  HasType env.enumEnv fv1 bt → HasType env.enumEnv fv2 bt →
+  variantCompatible fv1 fv2
+```
+
+where `variantCompatible v1 v2` asserts that if both values are variants
+of the same enum type, they have the same variant name. This invariant is
+needed by `readPath_HasType_transfer` and `typeAtPathV_HasType_determined`
+(used in `writeRef` preservation) to ensure that writing through a mutable
+reference preserves typing for all other references at the same heap
+location.
+
+For **single-variant enums**, `enum_field_compatibility` is trivially
+satisfied: any two values of the same enum type must have the same (only)
+variant name. The decidable check `checkEnumSingleVariant` verifies this
+precondition:
+```lean
+def checkEnumSingleVariant (enumEnv : EnumEnv) : Bool :=
+  enumEnv.entries.all fun (_, ed) => ed.variants.entries.length ≤ 1
+```
+
+### Soundness proof structure
+
+The enum extension adds 4 cases to each of the three main proof files:
+
+**Preservation** (`Preservation.lean`): 4 helper theorems —
+`preservation_packVariant`, `preservation_unpackVariant`,
+`preservation_unpackVariant_ref`, and `preservation_variantSwitch`. The
+owned pack/unpack cases mirror record pack/unpack. The reference unpack
+case mirrors `borrowField` (one fresh reference per field). The
+`variantSwitch` case mirrors `branch` — each target label must subsume
+the current environment, and the reference is consumed via
+`delete_ref_node`.
+
+**Progress** (`Progress.lean`): 4 cases in `step_error_is_acceptable`
+(variant mismatch is acceptable) and 4 cases in `step_danglingRef_source`
+(enum operations that access the heap cannot produce dangling-ref errors
+given `WellTypedState` invariants).
+
+**Weakening** (`Weakening.lean`): 4 cases in `typecheck_stmt_weaken`. Each
+shows that enum typing rules transfer through subsumption. The
+`unpackVariant_ref_rule` case requires showing that `addRefFieldSites`
+preserves subsumption invariants.
+
+### Parser and translator
+
+The enum extension includes a complete **parser** for Move IR enum
+syntax, translating `.mvir` files with enum definitions, variant packing,
+variant unpacking (both owned and reference), and `variant_switch`
+statements into MoveLight AST. Key components:
+
+- `parseEnumDef`: parses `enum Name has { V1 { fields }, V2 { fields } }`
+- `parsePackVariant`: translates `EnumName.VariantName { f: s, ... }`
+- `parseUnpackVariant`: translates `EnumName.VariantName { f: s } = src`
+  (both owned and reference patterns like `&mut EnumName.VariantName { ... }`)
+- `parseVariantSwitch`: translates `variant_switch EnumName (&src) { V1: l1, V2: l2 }`
+
+The translator produces a pair `(functions, enumEnv)` via
+`parseAndTranslateWithEnums`, where the `EnumEnv` is extracted from parsed
+module definitions.
+
+### Design decisions
+
+1. **`variantMismatch` is acceptable.** The type system tracks the enum
+   *type* but not which variant a value holds. Unpacking with the wrong
+   variant name is a runtime error analogous to `vectorError` for
+   out-of-bounds access.
+
+2. **Single-variant restriction for soundness.** The
+   `enum_field_compatibility` invariant requires that two values of the
+   same type have compatible variant structure. For multi-variant enums,
+   this can fail when two references at the same heap location point to
+   values with different variant names (different field domains). The
+   `checkEnumSingleVariant` restriction avoids this by ensuring each enum
+   type has at most one variant. Lifting this restriction requires
+   additional invariants (e.g., proving that mutable borrow exclusivity
+   prevents two live references from observing different variants at the
+   same location).
+
+3. **`EnumEnv` as explicit parameter.** Rather than embedding enum
+   definitions in the type itself (`BasicMoveType` carries only the enum
+   name), the `EnumEnv` is threaded through `HasType`, `WellTypedState`,
+   and `SoundnessAssumptions`. This mirrors Move's own architecture where
+   enum definitions are module-level and type references are by name.
+
+4. **Reuse of record machinery.** Enum variant fields use the same
+   `AssocMap Field BasicMoveType` representation as record fields, and
+   the typing rules reuse `addFieldSites` (owned unpack) and
+   `addRefFieldSites` (reference unpack). This minimises new code and
+   allows existing lemmas about field sites to apply directly.
+
+### Test coverage
+
+The test suite includes programs from the Move bytecode verifier's enum
+test suite:
+
+- **`enum_match`**: variant packing, `variant_switch` dispatch, field
+  extraction (runtime test with `#eval`/`#guard`)
+- **`enum_borrow_field_mutable`**: mutable field borrows through enum
+  references, freeze, multi-module examples (type-checking + soundness
+  certificate for single-block functions)
+- **`enum_two_mutable_unpacks`**: multiple mutable variant unpacks from
+  the same reference (type-checking + runtime test)
+- **`enum_variant_factor`**: parsing and translation of multi-variant
+  enum definitions
 
 ---
 

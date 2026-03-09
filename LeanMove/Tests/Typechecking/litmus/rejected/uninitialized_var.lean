@@ -91,8 +91,8 @@ Local variables start as `None` in the VarStore. When `copy(x)` executes,
 
 def foo_lenv := mkLabelEnv foo
 
-#eval check_fun foo foo_lenv
+#eval check_fun foo foo_lenv AssocMap.empty
 
-#guard !check_fun foo foo_lenv
+#guard !check_fun foo foo_lenv AssocMap.empty
 
 end LeanMove.Tests.UninitializedVar

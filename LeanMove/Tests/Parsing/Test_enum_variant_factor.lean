@@ -37,13 +37,7 @@ private def var_x : Var := ⟨"x"⟩
 private def var_y : Var := ⟨"y"⟩
 private def s (n : Nat) : Site := .site n
 
-private def xVariants : AssocMap Id (AssocMap Field BasicMoveType) :=
-  AssocMap.mk [
-    ("One", AssocMap.mk [(⟨"y"⟩, .u64), (⟨"x"⟩, .u64)]),
-    ("Empty", AssocMap.mk [])
-  ]
-
-private def xType : BasicMoveType := .tenum "X" xVariants
+private def xType : BasicMoveType := .tenum "o1.X"
 
 -- ----------------------------------------------------------------
 -- o1.f (index 0): copy+copy of same &mut ref

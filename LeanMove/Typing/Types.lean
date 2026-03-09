@@ -338,6 +338,7 @@ structure TypeEnv where
   varEnv  : VarEnv
   pathEnv : PathEnv
   funEnv  : FunEnv
+  enumEnv : EnumEnv
 
 /-- Propositional version: r doesn't appear as a ref in any VarEnv or SiteEnv entry,
     is fresh in PathEnv, and is not a variable reference. -/
@@ -383,7 +384,8 @@ def TypeEnv.equiv (env1 env2 : TypeEnv) : Prop :=
   VarEnvLookupCompatible env1.varEnv env2.varEnv ∧
   env1.pathEnv.refs = env2.pathEnv.refs ∧
   (∀ u v, u ∈ env1.pathEnv.refs → v ∈ env1.pathEnv.refs →
-    env1.pathEnv.paths (u, v) = env2.pathEnv.paths (u, v))
+    env1.pathEnv.paths (u, v) = env2.pathEnv.paths (u, v)) ∧
+  LookupEquiv env1.enumEnv env2.enumEnv
 
 /- ---------------------------------------------------- -/
 /-       Aref Substitution (for refid unification)     -/
@@ -447,7 +449,9 @@ def TypeEnv.subsumes (envL env : TypeEnv) : Prop :=
     -- Paths in env are included in envL (env ⊆ envL, after σ renaming)
     (∀ u v, u ∈ envL.pathEnv.refs → v ∈ envL.pathEnv.refs →
       ∀ path, interpret_regex (env.pathEnv.paths (σ u, σ v)) path →
-              interpret_regex (envL.pathEnv.paths (u, v)) path)
+              interpret_regex (envL.pathEnv.paths (u, v)) path) ∧
+    -- EnumEnv must match exactly (enum environments don't involve ref substitution)
+    LookupEquiv envL.enumEnv env.enumEnv
 
 /- ---------------------------------------------------- -/
 /-       Well-formedness of the environments            -/
@@ -458,6 +462,11 @@ structure WellFormedEnv (typeEnv : TypeEnv) where
   uniqueSites : uniqueKeys typeEnv.siteEnv
   -- The root is always present in the path environment
   rootPresent : Aref.root ∈ typeEnv.pathEnv.refs
+  -- Enum constructors are unique across all enums: no two different enums share the same variant name
+  enumConstructorsUnique : ∀ eid1 eid2 vname,
+    eid1 ≠ eid2 →
+    ∀ enum1 enum2 : EnumDef, AssocMap.lookup typeEnv.enumEnv eid1 = some enum1 → AssocMap.lookup typeEnv.enumEnv eid2 = some enum2 →
+    AssocMap.lookup enum1.variants vname = none ∨ AssocMap.lookup enum2.variants vname = none
   -- TODO: say that for all pairs in pathEnv there is either
   -- a variable in varEnv or a site in siteEnv
 

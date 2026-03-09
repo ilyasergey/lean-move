@@ -51,6 +51,6 @@ def parsed_test :=
 
 def test_lenv := mkLabelEnv parsed_test
 
-#guard !check_fun parsed_test test_lenv
+#guard !check_fun parsed_test test_lenv AssocMap.empty
 
 end LeanMove.Tests.Expressivity.VecMixedBorrow

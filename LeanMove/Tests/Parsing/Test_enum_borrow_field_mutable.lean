@@ -35,10 +35,7 @@ private def var_a : Var := ⟨"a"⟩
 private def var_x : Var := ⟨"x"⟩
 private def s (n : Nat) : Site := .site n
 
-private def eVariants : AssocMap Id (AssocMap Field BasicMoveType) :=
-  AssocMap.mk [("V", AssocMap.mk [(⟨"f0"⟩, .u64)])]
-
-private def eType : BasicMoveType := .tenum "E" eVariants
+private def eType : BasicMoveType := .tenum "M1.E"
 
 -- ----------------------------------------------------------------
 -- M1.bar: &mut unpackVariant with field "g" → return

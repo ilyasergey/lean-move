@@ -112,10 +112,10 @@ theorem write_check : check_fun_dec parsed_write write_lenvDec = true := by nati
 -- -           Relational Type Checking Theorems      --
 -- -----------------------------------------------------
 
-theorem borrow_welltyped : ∃ lenv, typecheck_fun parsed_borrow lenv :=
-  ⟨_, check_fun_dec_sound _ _ borrow_check⟩
+theorem borrow_welltyped : ∃ lenv, typecheck_fun parsed_borrow lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ borrow_check⟩
 
-theorem write_welltyped : ∃ lenv, typecheck_fun parsed_write lenv :=
-  ⟨_, check_fun_dec_sound _ _ write_check⟩
+theorem write_welltyped : ∃ lenv, typecheck_fun parsed_write lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ write_check⟩
 
 end LeanMove.Tests.Expressivity.MultipleMutableReturnValues

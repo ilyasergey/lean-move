@@ -94,16 +94,28 @@ theorem varenv_lookup_compatible_bool_sound (m1 m2 : VarEnv) :
       rw [hk1', hk2']
       trivial
 
+private lemma band_left {a b : Bool} (h : (a && b) = true) : a = true := by cases a <;> simp_all
+private lemma band_right {a b : Bool} (h : (a && b) = true) : b = true := by cases a <;> simp_all
+
 lemma TypeEnv.equiv_bool_implies_equiv (env1 env2 : TypeEnv) :
     TypeEnv.equiv_bool env1 env2 = true → TypeEnv.equiv env1 env2 := by
   intro h
-  simp only [TypeEnv.equiv_bool, Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at h
-  obtain ⟨⟨⟨hsite, hvar⟩, hrefs⟩, hpaths⟩ := h
-  refine ⟨lookup_equiv_bool_sound _ _ hsite, varenv_lookup_compatible_bool_sound _ _ hvar, hrefs, ?_⟩
+  -- equiv_bool = site && var && refs && paths && enum
+  unfold TypeEnv.equiv_bool at h
+  have henum := band_right h
+  have h4 := band_left h
+  have hpaths_raw := band_right h4
+  have h3 := band_left h4
+  have hrefs_raw := band_right h3
+  have h2 := band_left h3
+  have hvar := band_right h2
+  have hsite := band_left h2
+  have hrefs := beq_iff_eq.mp hrefs_raw
+  simp only [List.all_eq_true] at hpaths_raw
+  refine ⟨lookup_equiv_bool_sound _ _ hsite, varenv_lookup_compatible_bool_sound _ _ hvar, hrefs, ?_, lookup_equiv_bool_sound _ _ henum⟩
   intro u v hu hv
-  have h1 := hpaths u hu
-  have h2 := h1 v hv
-  exact regexBeq_eq _ _ h2
+  have hu' := hpaths_raw u hu
+  exact regexBeq_eq _ _ (hu' v hv)
 
 /- ---------------------------------------------------- -/
 /-       not_borrowed soundness (WellFormed → Bool → Prop)   -/
@@ -831,38 +843,49 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
       · simp at h
     · simp at h
 
-  -- Variant pack (stub)
-  | packVariant enumName variantName variants fields =>
+  -- Variant pack
+  | packVariant enumName variantName fields =>
     simp only [check_stmt] at h
+    -- Split on freshness and distinctness check
     split at h
     · rename_i hcond
       simp only [Bool.and_eq_true] at hcond
       obtain ⟨hfresh, hdistinct⟩ := hcond
-      -- Split on foldlM result
+      -- Split on foldlM result (collecting field types)
       split at h
       · rename_i fentries hfold
-        -- Split on variant lookup
+        -- Split on enum lookup in enumEnv
         split at h
-        · rename_i expectedFentries hlookup_var
-          -- Split on equality check
+        · rename_i enumDef hlookup_enum
+          -- Split on variant lookup in enumDef.variants
           split at h
-          · rename_i heq_fentries
-            rw [beq_iff_eq] at heq_fentries; subst heq_fentries
-            apply typecheck_stmt.let_bind_packVariant (fentries := fentries)
-            · exact hfresh
-            · exact hlookup_var
-            · -- Each field has a basic type in siteEnv and its entry in fentries
-              intro f a' hmem
-              exact foldlM_pack_sound env.siteEnv fields AssocMap.empty fentries hfold
-                (check_fields_distinct_implies_fnames_nodup fields hdistinct) hmem
-            · -- Every fentries key comes from fields
-              intro f hne
-              exact foldlM_pack_complete env.siteEnv fields AssocMap.empty fentries hfold f hne
-                (by simp [AssocMap.lookup, AssocMap.empty])
-            · exact check_fields_distinct_implies_sites_distinct fields hdistinct
-            · have hwf' := TypeEnv.deleteAll_insert_wf env (fields.map Prod.snd) a
-                (.basic (.tenum enumName variants)) hwf trivial
-              exact ih_cont _ hwf' h
+          · rename_i variantDef hlookup_variant
+            -- Split on equality check (fentries == variantDef.fields)
+            split at h
+            · rename_i heq_fentries
+              -- Apply the typing rule
+              apply typecheck_stmt.let_bind_packVariant
+              · exact hfresh
+              · exact hlookup_enum
+              · exact hlookup_variant
+              · -- Prove field types match
+                intro f a hmem
+                rw [beq_iff_eq] at heq_fentries
+                have := foldlM_pack_sound env.siteEnv fields AssocMap.empty fentries hfold
+                  (check_fields_distinct_implies_fnames_nodup fields hdistinct) hmem
+                rw [heq_fentries] at this; exact this
+              · -- Prove all required fields are present
+                intro f hne
+                rw [beq_iff_eq] at heq_fentries
+                exact foldlM_pack_complete env.siteEnv fields AssocMap.empty fentries hfold f
+                  (heq_fentries ▸ hne) (by simp [AssocMap.lookup, AssocMap.empty])
+              · -- Prove sites are distinct
+                exact check_fields_distinct_implies_sites_distinct fields hdistinct
+              · -- Continue with updated environment
+                have hwf' := TypeEnv.deleteAll_insert_wf env (fields.map Prod.snd) a
+                  (.basic (.tenum enumName)) hwf trivial
+                exact ih_cont _ hwf' h
+            · simp at h
           · simp at h
         · simp at h
       · simp at h
@@ -1614,7 +1637,7 @@ theorem subsumes_bool_implies_subsumes (envL env : TypeEnv)
     (hno_root : VarEnv.RefsNotRoot env.varEnv) :
     TypeEnv.subsumes_bool envL env = true → TypeEnv.subsumes envL env := by
   intro h
-  simp only [TypeEnv.subsumes_bool] at h
+  unfold TypeEnv.subsumes_bool at h
   -- Case split on computeRefSubst result
   split at h
   · simp at h  -- none case: contradiction
@@ -1623,17 +1646,23 @@ theorem subsumes_bool_implies_subsumes (envL env : TypeEnv)
     split at h
     · simp at h  -- none case: contradiction
     · rename_i pairs heq_ext
-      -- Decompose the && chain using simple Bool helpers
-      have and_left  {a b : Bool} (h : (a && b) = true) : a = true := by cases a <;> simp_all
-      have and_right {a b : Bool} (h : (a && b) = true) : b = true := by cases a <;> simp_all
-      -- The && chain structure is: se && ve && (len && mapped_nd && containment) && nodup && paths
-      -- After simp, the `let mapped` is inlined
-      simp only [Bool.and_eq_true] at h
-      obtain ⟨⟨⟨⟨hse, hve⟩, hrefs_combined⟩, hnodup_raw⟩, hpaths_raw⟩ := h
-      -- Decompose the refs check sub-chain: ((len ∧ mapped_nd) ∧ containment)
-      have hlen_raw := hrefs_combined.1.1
-      have hmapped_nd_raw := hrefs_combined.1.2
-      have hcontains_raw := hrefs_combined.2
+      -- The && chain structure is: se && ve && refs_combined && nodup && paths && enum
+      -- Extract each conjunct using band_left/band_right
+      have henum_raw := band_right h
+      have h := band_left h
+      have hpaths_raw := band_right h
+      have h := band_left h
+      have hnodup_raw := band_right h
+      have h := band_left h
+      have hrefs_combined_raw := band_right h
+      have h := band_left h
+      have hve := band_right h
+      have hse := band_left h
+      -- Decompose the refs check sub-chain: (len && mapped_nd && containment)
+      have hcontains_raw := band_right hrefs_combined_raw
+      have hrefs_combined_left := band_left hrefs_combined_raw
+      have hmapped_nd_raw := band_right hrefs_combined_left
+      have hlen_raw := band_left hrefs_combined_left
       simp only [List.all_eq_true] at hpaths_raw
       -- Derive key properties of the extended σ
       have hkeys_var := computeRefSubst_keys_refid envL.varEnv env.varEnv σ_var heq_subst
@@ -1663,7 +1692,7 @@ theorem subsumes_bool_implies_subsumes (envL env : TypeEnv)
       -- Derive Perm
       have hrefs_perm : (envL.pathEnv.refs.map σ).Perm env.pathEnv.refs :=
         perm_of_nodup_nodup_subset_length_eq _ _ hnd_map hnd hlen hcontains
-      refine ⟨σ, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      refine ⟨σ, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
       · -- σ is identity on non-refid arefs
         intro r hr
         exact applySubstArefList_non_refid pairs hkeys r hr
@@ -1676,27 +1705,27 @@ theorem subsumes_bool_implies_subsumes (envL env : TypeEnv)
       · -- σ is injective on envL.pathEnv.refs
         intro u v hu hv huv
         exact List.inj_on_of_nodup_map hnd_map u hu v hv huv
-      · -- (nonroot ∧ paths) - last two fields
-        constructor
-        · -- σ doesn't create roots: applySubstArefList never maps non-root to root
-          intro r hr
-          simp only [σ]
-          cases r with
-          | root => exact absurd rfl hr
-          | paramRef v =>
-            have := applySubstArefList_non_refid pairs hkeys (.paramRef v) (fun n h => by cases h)
-            rw [this]; intro h; cases h
-          | refid n =>
-            simp only [applySubstArefList]
-            cases hlook : pairs.lookup (.refid n) with
-            | none => intro h; cases h  -- identity: .refid n ≠ .root
-            | some r' =>
-              exact hvals (.refid n) r' (List_lookup_mem pairs (.refid n) r' hlook)
-        · -- Path inclusion: env ⊆ envL after σ
-          intro u v hu hv path hinterp
-          have hu' := hpaths_raw u hu
-          have huv := hu' v hv
-          exact regexSubsumedBy_sound _ _ huv path hinterp
+      · -- σ doesn't create roots: applySubstArefList never maps non-root to root
+        intro r hr
+        simp only [σ]
+        cases r with
+        | root => exact absurd rfl hr
+        | paramRef v =>
+          have := applySubstArefList_non_refid pairs hkeys (.paramRef v) (fun n h => by cases h)
+          rw [this]; intro h; cases h
+        | refid n =>
+          simp only [applySubstArefList]
+          cases hlook : pairs.lookup (.refid n) with
+          | none => intro h; cases h  -- identity: .refid n ≠ .root
+          | some r' =>
+            exact hvals (.refid n) r' (List_lookup_mem pairs (.refid n) r' hlook)
+      · -- Path inclusion: env ⊆ envL after σ
+        intro u v hu hv path hinterp
+        have hu' := hpaths_raw u hu
+        have huv := hu' v hv
+        exact regexSubsumedBy_sound _ _ huv path hinterp
+      · -- EnumEnv equivalence
+        exact lookup_equiv_bool_sound _ _ henum_raw
 
 /- ---------------------------------------------------- -/
 /-       Statement type checking soundness               -/
@@ -1778,6 +1807,7 @@ private lemma ref_unpack_foldlM_wellformed
 /-- Soundness: If the algorithmic check succeeds, the relational judgment holds.
     This requires the type environment to be well-formed (pathEnv and siteEnv invariants).
 -/
+-- TODO: Complete soundness proof after enum architectural changes are stable
 theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List ParamType)
     (hwf : TypeEnv.WellFormed env) :
     (check_stmt lenv env s retTypes).isSome = true → typecheck_stmt lenv env s retTypes := by
@@ -2037,120 +2067,130 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
       cases τ with
       | basic bt =>
         cases bt with
-        | tenum ename variants =>
+        | tenum ename =>
           simp only [hlookup] at h
-          -- Owned unpack case: look up variant
-          cases hlookup_var : lookup variants variantName with
-          | none => simp [hlookup_var] at h
-          | some fentries =>
-            simp only [hlookup_var] at h
-            split at h
-            · rename_i hcond
-              simp only [Bool.and_eq_true] at hcond
-              obtain ⟨⟨hfresh, hdistinct⟩, hexist⟩ := hcond
-              apply typecheck_stmt.unpackVariant_rule lenv env variantName fields b ename variants
-                fentries cont retTypes hlookup hlookup_var
-              · -- freshness
-                intro f a hfa
-                simp only [check_unpack_fields_fresh, List.all_eq_true] at hfresh
-                exact hfresh (f, a) hfa
-              · -- distinctness
-                exact check_fields_distinct_implies_sites_distinct fields hdistinct
-              · -- fields exist in fentries
-                intro f a hfa
-                simp only [check_unpack_fields_exist, List.all_eq_true] at hexist
-                have hexist' := hexist (f, a) hfa
-                cases hlookupf : lookup fentries f with
-                | none => simp [hlookupf] at hexist'
-                | some bt' => exact ⟨bt', rfl⟩
-              · -- recursive call
-                let env' := {env with siteEnv := addFieldSites fentries (delete env.siteEnv b) fields}
-                have hsenv' : SiteEnv.RefsNotRoot env'.siteEnv :=
-                  addFieldSites_refs_not_root fentries _ fields
-                    (SiteEnv.delete_refs_not_root env.siteEnv b hwf.siteEnv_wf)
-                have hwf' : TypeEnv.WellFormed env' := ⟨hwf.pathEnv_wf, hsenv', hwf.varEnv_wf⟩
-                exact ih_cont env' hwf' h
-            · simp at h
-        | _ => simp [hlookup] at h
-      | ref bt r bk =>
-        cases bt with
-        | tenum ename variants =>
-          simp only [hlookup] at h
-          -- Ref unpack case
-          cases hlookup_var : lookup variants variantName with
-          | none => simp [hlookup_var] at h
-          | some fentries =>
-            simp only [hlookup_var] at h
-            split at h
-            · rename_i hcond
-              simp only [Bool.and_eq_true] at hcond
-              obtain ⟨⟨hfresh, hdistinct⟩, hexist⟩ := hcond
-              -- The foldlM creates the ref env
+          -- Owned unpack case: look up enum and variant from enumEnv
+          cases hlookup_enum : lookup env.enumEnv ename with
+          | none => simp [hlookup_enum] at h
+          | some enumDef =>
+            simp only [hlookup_enum] at h
+            cases hlookup_var : lookup enumDef.variants variantName with
+            | none => simp [hlookup_var] at h
+            | some variantDef =>
+              simp only [hlookup_var] at h
+              let fentries := variantDef.fields
               split at h
-              · rename_i env' hfold
-                have hfresh_prop : ∀ f a, (f, a) ∈ fields → AssocMap.notIn env.siteEnv a := by
+              · rename_i hcond
+                simp only [Bool.and_eq_true] at hcond
+                obtain ⟨⟨hfresh, hdistinct⟩, hexist⟩ := hcond
+                apply typecheck_stmt.unpackVariant_rule lenv env variantName fields b ename enumDef
+                  variantDef cont retTypes hlookup hlookup_enum hlookup_var
+                · -- freshness
                   intro f a hfa
                   simp only [check_unpack_fields_fresh, List.all_eq_true] at hfresh
                   exact hfresh (f, a) hfa
-                have hdist_prop := check_fields_distinct_implies_sites_distinct fields hdistinct
-                have hexist_prop : ∀ f a, (f, a) ∈ fields → ∃ bt, lookup fentries f = some bt := by
+                · -- distinctness
+                  exact check_fields_distinct_implies_sites_distinct fields hdistinct
+                · -- fields exist in fentries
                   intro f a hfa
                   simp only [check_unpack_fields_exist, List.all_eq_true] at hexist
                   have hexist' := hexist (f, a) hfa
-                  cases hlookupf : lookup fentries f with
+                  cases hlookupf : lookup variantDef.fields f with
                   | none => simp [hlookupf] at hexist'
                   | some bt' => exact ⟨bt', rfl⟩
-                -- Prove: env' = addRefFieldSites (foldlM succeeds = foldl)
-                have henv_eq : env' = addRefFieldSites r bk fentries fields {env with siteEnv := delete env.siteEnv b} := by
-                  -- foldlM = some env' implies env' = foldl result
-                  -- Because at each step, lookup fentries f succeeds (from hexist)
-                  -- and notIn env_acc.siteEnv site holds (from hfresh + distinct + accum)
-                  suffices h : ∀ (fs : List (Field × Site)) (envI envR : TypeEnv),
-                    fs.foldlM (fun env_acc (f, site) =>
-                      match lookup fentries f with
-                      | some bt =>
-                        if notIn env_acc.siteEnv site then
-                          some {env_acc with
-                            siteEnv := insert env_acc.siteEnv site (.ref bt (nextFreshRefInEnv env_acc) bk)
-                            pathEnv := update_with_extension (nextFreshRefInEnv env_acc) r [.field f] env_acc.pathEnv}
-                        else none
-                      | none => none) envI = some envR →
-                    envR = addRefFieldSites r bk fentries fs envI by
-                    exact h fields _ _ hfold
-                  intro fs
-                  induction fs with
-                  | nil =>
-                    intro envI envR hfm
-                    simp [List.foldlM] at hfm; subst hfm; rfl
-                  | cons hd tl ih =>
-                    intro envI envR hfm
-                    obtain ⟨f, site⟩ := hd
-                    simp only [List.foldlM, bind, Option.bind] at hfm
-                    cases hlf : lookup fentries f with
-                    | none => simp [hlf] at hfm
-                    | some bt =>
-                      simp only [hlf] at hfm
-                      by_cases hnotin : notIn envI.siteEnv site
-                      · simp only [hnotin, ↓reduceIte] at hfm
-                        have ih_result := ih _ _ hfm
-                        simp [addRefFieldSites, List.foldl, hlf]
-                        exact ih_result
-                      · simp [hnotin] at hfm
-                have hwf_init : TypeEnv.WellFormed {env with siteEnv := delete env.siteEnv b} :=
-                  ⟨hwf.pathEnv_wf,
-                   SiteEnv.delete_refs_not_root env.siteEnv b hwf.siteEnv_wf,
-                   hwf.varEnv_wf⟩
-                have hwf' := ref_unpack_foldlM_wellformed fields fentries r bk _ env' hwf_init hfold
-                have hcont_typed := ih_cont env' hwf' h
-                apply typecheck_stmt.unpackVariant_ref_rule
-                · exact hlookup
-                · exact hlookup_var
-                · exact hfresh_prop
-                · exact hdist_prop
-                · exact hexist_prop
-                · exact henv_eq ▸ hcont_typed
+                · -- recursive call
+                  let env' := {env with siteEnv := addFieldSites variantDef.fields (delete env.siteEnv b) fields}
+                  have hsenv' : SiteEnv.RefsNotRoot env'.siteEnv :=
+                    addFieldSites_refs_not_root variantDef.fields _ fields
+                      (SiteEnv.delete_refs_not_root env.siteEnv b hwf.siteEnv_wf)
+                  have hwf' : TypeEnv.WellFormed env' := ⟨hwf.pathEnv_wf, hsenv', hwf.varEnv_wf⟩
+                  exact ih_cont env' hwf' h
               · simp at h
-            · simp at h
+        | _ => simp [hlookup] at h
+      | ref bt r bk =>
+        cases bt with
+        | tenum ename =>
+          simp only [hlookup] at h
+          -- Ref unpack case: look up enum and variant from enumEnv
+          cases hlookup_enum : lookup env.enumEnv ename with
+          | none => simp [hlookup_enum] at h
+          | some enumDef =>
+            simp only [hlookup_enum] at h
+            cases hlookup_var : lookup enumDef.variants variantName with
+            | none => simp [hlookup_var] at h
+            | some variantDef =>
+              simp only [hlookup_var] at h
+              split at h
+              · rename_i hcond
+                simp only [Bool.and_eq_true] at hcond
+                obtain ⟨⟨hfresh, hdistinct⟩, hexist⟩ := hcond
+                -- The foldlM creates the ref env
+                split at h
+                · rename_i env' hfold
+                  have hfresh_prop : ∀ f a, (f, a) ∈ fields → AssocMap.notIn env.siteEnv a := by
+                    intro f a hfa
+                    simp only [check_unpack_fields_fresh, List.all_eq_true] at hfresh
+                    exact hfresh (f, a) hfa
+                  have hdist_prop := check_fields_distinct_implies_sites_distinct fields hdistinct
+                  have hexist_prop : ∀ f a, (f, a) ∈ fields → ∃ bt, lookup variantDef.fields f = some bt := by
+                    intro f a hfa
+                    simp only [check_unpack_fields_exist, List.all_eq_true] at hexist
+                    have hexist' := hexist (f, a) hfa
+                    cases hlookupf : lookup variantDef.fields f with
+                    | none => simp [hlookupf] at hexist'
+                    | some bt' => exact ⟨bt', rfl⟩
+                  -- Prove: env' = addRefFieldSites (foldlM succeeds = foldl)
+                  have henv_eq : env' = addRefFieldSites r bk variantDef.fields fields {env with siteEnv := delete env.siteEnv b} := by
+                    -- foldlM = some env' implies env' = foldl result
+                    -- Because at each step, lookup variantDef.fields f succeeds (from hexist)
+                    -- and notIn env_acc.siteEnv site holds (from hfresh + distinct + accum)
+                    suffices h : ∀ (fs : List (Field × Site)) (envI envR : TypeEnv),
+                      fs.foldlM (fun env_acc (f, site) =>
+                        match lookup variantDef.fields f with
+                        | some bt =>
+                          if notIn env_acc.siteEnv site then
+                            some {env_acc with
+                              siteEnv := insert env_acc.siteEnv site (.ref bt (nextFreshRefInEnv env_acc) bk)
+                              pathEnv := update_with_extension (nextFreshRefInEnv env_acc) r [.field f] env_acc.pathEnv}
+                          else none
+                        | none => none) envI = some envR →
+                      envR = addRefFieldSites r bk variantDef.fields fs envI by
+                      exact h fields _ _ hfold
+                    intro fs
+                    induction fs with
+                    | nil =>
+                      intro envI envR hfm
+                      simp [List.foldlM] at hfm; subst hfm; rfl
+                    | cons hd tl ih =>
+                      intro envI envR hfm
+                      obtain ⟨f, site⟩ := hd
+                      simp only [List.foldlM, bind, Option.bind] at hfm
+                      cases hlf : lookup variantDef.fields f with
+                      | none => simp [hlf] at hfm
+                      | some bt =>
+                        simp only [hlf] at hfm
+                        by_cases hnotin : notIn envI.siteEnv site
+                        · simp only [hnotin, ↓reduceIte] at hfm
+                          have ih_result := ih _ _ hfm
+                          simp [addRefFieldSites, List.foldl, hlf]
+                          exact ih_result
+                        · simp [hnotin] at hfm
+                  have hwf_init : TypeEnv.WellFormed {env with siteEnv := delete env.siteEnv b} :=
+                    ⟨hwf.pathEnv_wf,
+                     SiteEnv.delete_refs_not_root env.siteEnv b hwf.siteEnv_wf,
+                     hwf.varEnv_wf⟩
+                  have hwf' := ref_unpack_foldlM_wellformed fields variantDef.fields r bk _ env' hwf_init hfold
+                  have hcont_typed := ih_cont env' hwf' h
+                  apply typecheck_stmt.unpackVariant_ref_rule
+                  · exact hlookup
+                  · exact hlookup_enum
+                  · exact hlookup_var
+                  · exact hfresh_prop
+                  · exact hdist_prop
+                  · exact hexist_prop
+                  · exact henv_eq ▸ hcont_typed
+                · simp at h
+              · simp at h
         | _ => simp [hlookup] at h
 
   | writeRef a b cont ih_cont =>
@@ -2381,37 +2421,42 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
       | basic _ => simp [hlookup] at h
       | ref bt r bk =>
         cases bt with
-        | tenum ename variants =>
+        | tenum ename =>
           simp only [hlookup] at h
-          split at h
-          · rename_i hcond
-            simp only [Bool.and_eq_true] at hcond
-            obtain ⟨hcoverage, hcases⟩ := hcond
-            apply typecheck_stmt.variantSwitch_rule lenv env src cases_list ename variants r bk
-              retTypes hlookup
-            · -- Coverage: all variants are covered
-              intro vname hne
-              simp only [List.all_eq_true] at hcoverage
-              -- vname is a key in variants, so (vname, _) ∈ variants.entries
-              have hsome := Option.ne_none_iff_isSome.mp hne
-              obtain ⟨fentries, hfent⟩ := Option.isSome_iff_exists.mp hsome
-              have hmem_entries := lookup_some variants vname fentries hfent
-              have hcheck := hcoverage (vname, fentries) hmem_entries
-              simp only [List.any_eq_true, beq_iff_eq] at hcheck
-              obtain ⟨⟨vname', label⟩, hmem_cases, heq⟩ := hcheck
-              simp at heq; subst heq
-              exact ⟨label, hmem_cases⟩
-            · -- Each case has a valid envL with subsumption
-              intro vname label hmem
-              simp only [List.all_eq_true] at hcases
-              have hentry := hcases (vname, label) hmem
-              simp only at hentry
-              cases hlabel : lookup lenv label with
-              | none => simp [hlabel] at hentry
-              | some envL =>
-                simp only [hlabel] at hentry
-                exact ⟨envL, rfl, subsumes_bool_implies_subsumes envL _ hwf.varEnv_wf hentry⟩
-          · simp at h
+          -- Look up enum definition from enumEnv
+          cases hlookup_enum : lookup env.enumEnv ename with
+          | none => simp [hlookup_enum] at h
+          | some enumDef =>
+            simp only [hlookup_enum] at h
+            split at h
+            · rename_i hcond
+              simp only [Bool.and_eq_true] at hcond
+              obtain ⟨hcoverage, hcases⟩ := hcond
+              apply typecheck_stmt.variantSwitch_rule lenv env src cases_list ename enumDef r bk
+                retTypes hlookup hlookup_enum
+              · -- Coverage: all variants are covered
+                intro vname hne
+                simp only [List.all_eq_true] at hcoverage
+                -- vname is a key in enumDef.variants, so (vname, _) ∈ enumDef.variants.entries
+                have hsome := Option.ne_none_iff_isSome.mp hne
+                obtain ⟨fentries, hfent⟩ := Option.isSome_iff_exists.mp hsome
+                have hmem_entries := lookup_some enumDef.variants vname fentries hfent
+                have hcheck := hcoverage (vname, fentries) hmem_entries
+                simp only [List.any_eq_true, beq_iff_eq] at hcheck
+                obtain ⟨⟨vname', label⟩, hmem_cases, heq⟩ := hcheck
+                simp at heq; subst heq
+                exact ⟨label, hmem_cases⟩
+              · -- Each case has a valid envL with subsumption
+                intro vname label hmem
+                simp only [List.all_eq_true] at hcases
+                have hentry := hcases (vname, label) hmem
+                simp only at hentry
+                cases hlabel : lookup lenv label with
+                | none => simp [hlabel] at hentry
+                | some envL =>
+                  simp only [hlabel] at hentry
+                  exact ⟨envL, rfl, subsumes_bool_implies_subsumes envL _ hwf.varEnv_wf hentry⟩
+            · simp at h
         | _ => simp [hlookup] at h
 
 /- ---------------------------------------------------- -/
@@ -2420,9 +2465,9 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
 
 /-- Soundness: If the algorithmic check succeeds, the relational judgment holds.
     Requires that all environments in the label environment are well-formed. -/
-theorem check_fun_sound (f : FunDef) (lenv : LabelEnv)
+theorem check_fun_sound (f : FunDef) (lenv : LabelEnv) (enumEnv : EnumEnv)
     (hlenv_wf : ∀ l env, lookup lenv l = some env → TypeEnv.WellFormed env) :
-    check_fun f lenv = true → typecheck_fun f lenv := by
+    check_fun f lenv enumEnv = true → typecheck_fun f lenv enumEnv := by
   intro h
   simp only [check_fun] at h
   cases hblocks : f.blocks with
@@ -2439,8 +2484,10 @@ theorem check_fun_sound (f : FunDef) (lenv : LabelEnv)
         siteEnv := AssocMap.empty
         pathEnv := init_fun_pathEnv f
         funEnv := AssocMap.empty
+        enumEnv := enumEnv
       }
-      apply typecheck_fun.fun_ok f lenv initEnv
+      apply typecheck_fun.fun_ok f lenv enumEnv initEnv
+      · rfl
       · rfl
       · rfl
       · rfl

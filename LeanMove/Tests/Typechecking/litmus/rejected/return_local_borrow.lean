@@ -89,6 +89,6 @@ def fn_return_local_borrow : FunDef := {
 def fn_return_local_borrow_lenv := mkLabelEnv fn_return_local_borrow
 
 -- The algorithmic checker rejects this
-#guard !check_fun fn_return_local_borrow fn_return_local_borrow_lenv
+#guard !check_fun fn_return_local_borrow fn_return_local_borrow_lenv AssocMap.empty
 
 end LeanMove.Tests.Litmus.ReturnLocalBorrow

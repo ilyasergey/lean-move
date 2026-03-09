@@ -56,7 +56,7 @@ mutual
     | .tunit => ".tunit"
     | .trecord m => s!".trecord {ppFieldMap m}"
     | .tvec inner => s!"vector<{ppBasicMoveType inner}>"
-    | .tenum name variants => s!"(.tenum \"{name}\" {ppVariantMap variants})"
+    | .tenum name => s!"(.tenum \"{name}\")"
 
   partial def ppFieldMap (m : AssocMap Field BasicMoveType) : String :=
     ppFieldEntries m.entries
@@ -119,7 +119,7 @@ def ppExprMacro : Expr → String
   | .vecImmBorrow src idx => s!"vec_imm_borrow({ppSite src}, {ppSite idx})"
   | .vecMutBorrow src idx => s!"vec_mut_borrow({ppSite src}, {ppSite idx})"
   | .vecPopBack src => s!"vec_pop_back({ppSite src})"
-  | .packVariant ename vname _variants fields =>
+  | .packVariant ename vname fields =>
     let fs := fields.map fun (f, s) => s!"({ppField f}, {ppSite s})"
     s!"packVariant(\"{ename}\", \"{vname}\", [{", ".intercalate fs}])"
 

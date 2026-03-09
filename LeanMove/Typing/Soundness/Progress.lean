@@ -177,7 +177,7 @@ theorem step_danglingRef_source (m : Machine) (loc : Loc) :
     | pack name fields =>
       exfalso; simp only [step, hs] at hstep
       revert hstep; split <;> (intro h; simp at h)
-    | packVariant _ _ _ _ =>
+    | packVariant _ _ _ =>
       exfalso; simp only [step, hs] at hstep
       revert hstep; split <;> (intro h; simp at h)
     | binop op a b =>
@@ -453,11 +453,11 @@ theorem no_danglingRef_progress (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     have hst := hwt.stmt_typed
     rw [hstmt] at hst
     cases hst with
-    | variantSwitch_rule _ _ _ ename variants r bk _ hsrc_type _ _ =>
-      have ⟨vv, hvv, hmatch⟩ := hwt.site_consistent src (.ref (.tenum ename variants) r bk) hsrc_type
+    | variantSwitch_rule _ _ _ ename enumDef r bk _ hsrc_type _ _ =>
+      have ⟨vv, hvv, hmatch⟩ := hwt.site_consistent src (.ref (.tenum ename) r bk) hsrc_type
       obtain ⟨loc', path', hveq, hrmap⟩ := hmatch
       subst hveq
-      have hr_tracked := hwt.siteEnv_refs_in_pathEnv src (.tenum ename variants) r bk hsrc_type
+      have hr_tracked := hwt.siteEnv_refs_in_pathEnv src (.tenum ename) r bk hsrc_type
       have hheap := hwt.rmap_live r loc' path' hr_tracked hrmap
       change lookup m.frame.siteStore src = some _ at hvv
       simp only [step, hstmt, readSite, hvv] at habs
@@ -480,20 +480,20 @@ theorem no_danglingRef_progress (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     have hst := hwt.stmt_typed
     rw [hstmt] at hst
     cases hst with
-    | unpackVariant_rule _ _ _ _ ename variants fentries _ _ hsrc_type _ _ _ _ _ =>
+    | unpackVariant_rule _ _ _ _ ename _enumDef _variantDef _ _ hsrc_type _ _ _ _ _ =>
       -- Owned unpack: src has basic type, step doesn't produce danglingRef for owned values
-      have ⟨vv, hvv, hmatch⟩ := hwt.site_consistent src (.basic (.tenum ename variants)) hsrc_type
+      have ⟨vv, hvv, hmatch⟩ := hwt.site_consistent src (.basic (.tenum ename)) hsrc_type
       change lookup m.frame.siteStore src = some _ at hvv
       -- vv has basic type tenum, so it must be a variant (not a ref)
       have ⟨_, _, hvvar⟩ := hmatch.variant_fields
       subst hvvar
       simp only [step, hstmt, readSite, hvv] at habs
       revert habs; split <;> (intro h; simp at h)
-    | unpackVariant_ref_rule _ _ _ _ ename variants fentries r bk _ _ hsrc_type _ _ _ _ _ =>
-      have ⟨vv, hvv, hmatch⟩ := hwt.site_consistent src (.ref (.tenum ename variants) r bk) hsrc_type
+    | unpackVariant_ref_rule _ _ _ _ ename _enumDef _variantDef r bk _ _ hsrc_type _ _ _ _ _ =>
+      have ⟨vv, hvv, hmatch⟩ := hwt.site_consistent src (.ref (.tenum ename) r bk) hsrc_type
       obtain ⟨loc', path', hveq, hrmap⟩ := hmatch
       subst hveq
-      have hr_tracked := hwt.siteEnv_refs_in_pathEnv src (.tenum ename variants) r bk hsrc_type
+      have hr_tracked := hwt.siteEnv_refs_in_pathEnv src (.tenum ename) r bk hsrc_type
       have hheap := hwt.rmap_live r loc' path' hr_tracked hrmap
       change lookup m.frame.siteStore src = some _ at hvv
       simp only [step, hstmt, readSite, hvv] at habs
@@ -570,38 +570,38 @@ private theorem readSite_some_of_typed {m : Machine} {env : TypeEnv}
   exact ⟨v, by simp [readSite]; exact hv⟩
 
 /-- If HasType v .tbool, then v is a boolean. -/
-private theorem HasType_tbool_is_bool {v : Value} :
-    HasType v .tbool → ∃ b, v = .bool b := by
+private theorem HasType_tbool_is_bool {enumEnv : EnumEnv} {v : Value} :
+    HasType enumEnv v .tbool → ∃ b, v = .bool b := by
   intro h; cases h with | bool b => exact ⟨b, rfl⟩
 
 /-- If HasType v .u64, then v is an integer. -/
-private theorem HasType_u64_is_int {v : Value} :
-    HasType v .u64 → ∃ n, v = .int n := by
+private theorem HasType_u64_is_int {enumEnv : EnumEnv} {v : Value} :
+    HasType enumEnv v .u64 → ∃ n, v = .int n := by
   intro h; cases h with | int n => exact ⟨n, rfl⟩
 
 /-- If HasType v (.trecord fentries), then v is a record. -/
-private theorem HasType_trecord_is_record {v : Value} {fentries : AssocMap Field BasicMoveType} :
-    HasType v (.trecord fentries) → ∃ fields, v = .record fields := by
+private theorem HasType_trecord_is_record {enumEnv : EnumEnv} {v : Value} {fentries : AssocMap Field BasicMoveType} :
+    HasType enumEnv v (.trecord fentries) → ∃ fields, v = .record fields := by
   intro h; cases h with | record fields _ _ _ _ => exact ⟨fields, rfl⟩
 
 /-- If ValueMatchesType v (.ref bt r bk) rmap, then v is a ref value. -/
-private theorem ValueMatchesType_ref_is_ref {v : Value} {bt : BasicMoveType}
+private theorem ValueMatchesType_ref_is_ref {enumEnv : EnumEnv} {v : Value} {bt : BasicMoveType}
     {r : Aref} {bk : BorrowingKind} {rmap : RefMap} :
-    ValueMatchesType v (.ref bt r bk) rmap → ∃ loc path, v = .ref loc path := by
+    ValueMatchesType enumEnv v (.ref bt r bk) rmap → ∃ loc path, v = .ref loc path := by
   intro h
   simp only [ValueMatchesType] at h
   obtain ⟨loc, path, hveq, _⟩ := h
   exact ⟨loc, path, hveq⟩
 
 /-- If ValueMatchesType v (.basic bt) rmap, then HasType v bt. -/
-private theorem ValueMatchesType_basic_is_hasType {v : Value} {bt : BasicMoveType} {rmap : RefMap} :
-    ValueMatchesType v (.basic bt) rmap → HasType v bt := by
+private theorem ValueMatchesType_basic_is_hasType {enumEnv : EnumEnv} {v : Value} {bt : BasicMoveType} {rmap : RefMap} :
+    ValueMatchesType enumEnv v (.basic bt) rmap → HasType enumEnv v bt := by
   intro h; exact h
 
 /-- A well-typed function has at least one block. -/
-private theorem typecheck_fun_blocks_ne_nil {fdef : FunDef} {lenv : LabelEnv} :
-    typecheck_fun fdef lenv → fdef.blocks ≠ [] := by
-  intro h; cases h with | fun_ok _ _ _ _ hne _ _ => exact hne
+private theorem typecheck_fun_blocks_ne_nil {fdef : FunDef} {lenv : LabelEnv} {enumEnv : EnumEnv} :
+    typecheck_fun fdef lenv enumEnv → fdef.blocks ≠ [] := by
+  intro h; cases h with | fun_ok _ _ _ _ _ hne _ _ => exact hne
 
 /-- If binop_type returns tbool for bool inputs, evalBinopBool always succeeds. -/
 private theorem evalBinopBool_some_of_binop_type_tbool {bop : Binop} {bt3 : BasicMoveType} :
@@ -801,7 +801,7 @@ private theorem filterMap_readSite_length (m : Machine) (l : List Site)
 theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
-    (hss : StackSafe m.stack m.frame.returnInfo m.heap retTypes)
+    (hss : StackSafe env.enumEnv m.stack m.frame.returnInfo m.heap retTypes)
     (e : RuntimeError)
     (hstep : step (.running m) = .error e) :
     e.isAcceptable := by
@@ -900,8 +900,8 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
           rw [hstack, hri] at hss
           simp only [StackSafe] at hss
           obtain ⟨_, _, _, _, hbig, _⟩ := hss
-          -- types_conform is the very last conjunct in hbig
-          have hconf_caller := hbig.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+          -- types_conform is the very last conjunct in hbig (after enumEnv equality)
+          have hconf_caller := hbig.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
           have hlen_sites := types_conform_length hconf
           have hlen_vals := collectSiteValues_length m.frame.siteStore sites vals hvals
           have hlen_ri := types_conform_length hconf_caller
@@ -1013,8 +1013,9 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
       simp only at hstep
       -- fdef.blocks.head? succeeds (from funEnv_typed -> typecheck_fun -> blocks ≠ [])
       have hfts := hwt.funEnv_typed fname fdef hfdef
-      obtain ⟨_, htf, _⟩ := hfts
-      have hne := typecheck_fun_blocks_ne_nil htf
+      have hne : fdef.blocks ≠ [] := by
+        have ⟨lenv', rest'⟩ := hfts
+        exact typecheck_fun_blocks_ne_nil rest'.1
       cases hblocks : fdef.blocks with
       | nil => exact absurd hblocks hne
       | cons b bs =>
@@ -1048,12 +1049,12 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     rw [hs] at hst
     simp only [step, hs] at hstep
     cases hst with
-    | unpackVariant_rule _ _ _ _ ename variants fentries _ _ hsrc_type _ _ _ _ hcont =>
-      have ⟨vv, hvv, hmatch⟩ := hwt.site_consistent src (.basic (.tenum ename variants)) hsrc_type
+    | unpackVariant_rule _ _ _ _ ename _enumDef _variantDef _ _ hsrc_type _ _ _ _ hcont =>
+      have ⟨vv, hvv, hmatch⟩ := hwt.site_consistent src (.basic (.tenum ename)) hsrc_type
       have hht := ValueMatchesType_basic_is_hasType hmatch
       -- v must be a variant value
       cases hht with
-      | variant vname fields_v _ _ _ hlookup_v _ _ _ =>
+      | variant vname fields_v _ _ _ _ _ _ =>
         change lookup m.frame.siteStore src = some _ at hvv
         simp only [readSite, hvv] at hstep
         -- variant mismatch produces variantMismatch (acceptable)
@@ -1064,15 +1065,15 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
         · -- variantMismatch is acceptable
           simp only [ExecState.error.injEq]
           intro heq; subst heq; simp
-    | unpackVariant_ref_rule _ _ _ _ ename variants fentries r bk _ _ hsrc_type _ _ _ _ hcont =>
+    | unpackVariant_ref_rule _ _ _ _ ename _enumDef _variantDef r bk _ _ hsrc_type _ _ _ _ hcont =>
       -- Ref unpack: src has ref type, runtime reads through ref
-      have ⟨vv, hvv, hmatch⟩ := hwt.site_consistent src (.ref (.tenum ename variants) r bk) hsrc_type
+      have ⟨vv, hvv, hmatch⟩ := hwt.site_consistent src (.ref (.tenum ename) r bk) hsrc_type
       obtain ⟨loc, path, hveq, hrmap⟩ := hmatch
       subst hveq
       change lookup m.frame.siteStore src = some _ at hvv
       simp only [readSite, hvv] at hstep
       -- vv = .ref loc path, so readRef through heap
-      have hr_tracked := hwt.siteEnv_refs_in_pathEnv src (.tenum ename variants) r bk hsrc_type
+      have hr_tracked := hwt.siteEnv_refs_in_pathEnv src (.tenum ename) r bk hsrc_type
       have hheap := hwt.rmap_live r loc path hr_tracked hrmap
       revert hstep; split
       · -- heapVal is variant, check variant name
@@ -1084,7 +1085,7 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
       · -- heapVal is not variant — contradiction with rmap_has_type
         rename_i hnotvar hread_eq
         exfalso
-        have ⟨v, hv, hht⟩ := hwt.rmap_has_type r (.tenum ename variants) loc path hrmap
+        have ⟨v, hv, hht⟩ := hwt.rmap_has_type r (.tenum ename) loc path hrmap
           (.inr ⟨src, bk, hsrc_type⟩)
         rw [hread_eq] at hv; simp only [Option.some.injEq] at hv; subst hv
         obtain ⟨vn, fs, heq⟩ := HasType.variant_fields hht
@@ -1100,35 +1101,38 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     rw [hs] at hst
     simp only [step, hs] at hstep
     cases hst with
-    | variantSwitch_rule _ _ _ ename variants r bk _ hsrc_type hcoverage hcases =>
-      have ⟨vv, hvv, hmatch⟩ := hwt.site_consistent src (.ref (.tenum ename variants) r bk) hsrc_type
+    | variantSwitch_rule _ _ _ ename enumDef r bk _ hsrc_type _henumLookup hcoverage hcases =>
+      have ⟨vv, hvv, hmatch⟩ := hwt.site_consistent src (.ref (.tenum ename) r bk) hsrc_type
       obtain ⟨loc, path, hveq, hrmap⟩ := hmatch
       subst hveq
       change lookup m.frame.siteStore src = some _ at hvv
       simp only [readSite, hvv] at hstep
-      have hr_tracked := hwt.siteEnv_refs_in_pathEnv src (.tenum ename variants) r bk hsrc_type
+      have hr_tracked := hwt.siteEnv_refs_in_pathEnv src (.tenum ename) r bk hsrc_type
       have hheap := hwt.rmap_live r loc path hr_tracked hrmap
       cases hr : m.heap.readRef loc path with
       | none => exact absurd hr hheap
       | some val =>
         rw [hr] at hstep
         -- rmap_has_type gives us the value and HasType
-        have ⟨hval, hread, hht⟩ := hwt.rmap_has_type r (.tenum ename variants) loc path hrmap
+        have ⟨hval, hread, hht⟩ := hwt.rmap_has_type r (.tenum ename) loc path hrmap
           (Or.inr ⟨src, bk, hsrc_type⟩)
         -- Connect: hread and hr both say readRef = some _, so hval = val
         have hveq : hval = val := Option.some.inj (hread.symm.trans hr)
         subst hveq
         -- val is now hval; cases on HasType reduces the match
         cases hht with
-        | variant vname vfields _ _ _ hlookup_v _ _ _ =>
+        | variant vname _ _ _ hlookup_v _ _ _ =>
           simp only [] at hstep
           -- cases.lookup vname:
           cases hcl : List.lookup vname cases with
           | none =>
             -- Coverage guarantees this variant is in cases
             exfalso
-            have hne : AssocMap.lookup variants vname ≠ none := by
-              rw [hlookup_v]; exact Option.some_ne_none _
+            have hne : AssocMap.lookup enumDef.variants vname ≠ none := by
+              simp only [enumVariantFields, _henumLookup] at hlookup_v
+              cases hv : AssocMap.lookup enumDef.variants vname with
+              | none => simp [hv] at hlookup_v
+              | some _ => simp
             obtain ⟨label', hmem'⟩ := hcoverage vname hne
             exact lookup_ne_none_of_mem hmem' hcl
           | some label =>
@@ -1320,10 +1324,10 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
         obtain ⟨vals, hvals⟩ := hcpf
         rw [hvals] at hstep; cases hstep
 
-    | packVariant enumName variantName _variants fieldSites =>
+    | packVariant enumName variantName fieldSites =>
       simp only [step, hs] at hstep
       cases hst with
-      | let_bind_packVariant _ _ _ _ _ _ _ _ _ _ hvariant hfields_typed hcoverage _ hcont =>
+      | @let_bind_packVariant _ _ _ _ _ _ _ _ _ _ _ _ hfields_typed _ _ hcont =>
         have hcpf := collectPackFields_some m.frame.siteStore fieldSites (by
           intro f s_site hmem
           have ⟨bt, hbt, _⟩ := hfields_typed f s_site hmem
@@ -1339,8 +1343,8 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
       next bt1 bt2 bt3 _ hbinop ha hb _ =>
         have ⟨va, hva, hma⟩ := hwt.site_consistent a (.basic bt1) ha
         have ⟨vb, hvb, hmb⟩ := hwt.site_consistent b (.basic bt2) hb
-        have hta : HasType va bt1 := ValueMatchesType_basic_is_hasType hma
-        have htb : HasType vb bt2 := ValueMatchesType_basic_is_hasType hmb
+        have hta : HasType env.enumEnv va bt1 := ValueMatchesType_basic_is_hasType hma
+        have htb : HasType env.enumEnv vb bt2 := ValueMatchesType_basic_is_hasType hmb
         change lookup m.frame.siteStore a = some va at hva
         change lookup m.frame.siteStore b = some vb at hvb
         simp only [readSite, hva, hvb] at hstep
@@ -1371,7 +1375,7 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
             cases op <;> simp [binop_type] at hbinop
           | trecord _ => cases op <;> simp [binop_type] at hbinop
           | tvec _ => cases op <;> simp [binop_type] at hbinop
-          | tenum _ _ => cases op <;> simp [binop_type] at hbinop
+          | tenum _ => cases op <;> simp [binop_type] at hbinop
         | u8 =>
           cases op <;> (cases bt2 <;> simp [binop_type] at hbinop)
         | tbool =>
@@ -1398,7 +1402,7 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
             subst hf
             cases op <;> simp [binop_type] at hbinop
           | tvec _ => cases op <;> simp [binop_type] at hbinop
-          | tenum _ _ => cases op <;> simp [binop_type] at hbinop
+          | tenum _ => cases op <;> simp [binop_type] at hbinop
         | tunit =>
           cases hta
           cases op <;> (cases bt2 <;> simp [binop_type] at hbinop)
@@ -1408,7 +1412,7 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
           cases op <;> (cases bt2 <;> simp [binop_type] at hbinop)
         | tvec _ =>
           cases op <;> (cases bt2 <;> simp [binop_type] at hbinop)
-        | tenum _ _ =>
+        | tenum _ =>
           cases op <;> (cases bt2 <;> simp [binop_type] at hbinop)
 
     -- ---- vecPack T elems ----

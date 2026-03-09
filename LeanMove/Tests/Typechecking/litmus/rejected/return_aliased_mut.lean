@@ -76,6 +76,6 @@ def fn_return_aliased : FunDef := {
 def fn_return_aliased_lenv := mkLabelEnv fn_return_aliased
 
 -- The algorithmic checker rejects this
-#guard !check_fun fn_return_aliased fn_return_aliased_lenv
+#guard !check_fun fn_return_aliased fn_return_aliased_lenv AssocMap.empty
 
 end LeanMove.Tests.Litmus.ReturnAliasedMut

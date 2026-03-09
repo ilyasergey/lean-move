@@ -762,7 +762,7 @@ lemma PathEnv.init_fun_wellformed (f : FunDef) :
     when the provided varEnv satisfies RefsNotRoot -/
 lemma TypeEnv.init_wellformed (varEnv : VarEnv) (funEnv : FunEnv)
     (hvarEnv : VarEnv.RefsNotRoot varEnv) :
-    TypeEnv.WellFormed { siteEnv := AssocMap.empty, varEnv := varEnv, pathEnv := PathEnv.init, funEnv := funEnv } := by
+    TypeEnv.WellFormed { siteEnv := AssocMap.empty, varEnv := varEnv, pathEnv := PathEnv.init, funEnv := funEnv, enumEnv := AssocMap.empty } := by
   constructor
   · exact PathEnv.init_wellformed
   · exact SiteEnv.empty_refs_not_root
@@ -772,7 +772,7 @@ lemma TypeEnv.init_wellformed (varEnv : VarEnv) (funEnv : FunEnv)
     when the provided varEnv satisfies RefsNotRoot. -/
 lemma TypeEnv.init_fun_wellformed (f : FunDef) (varEnv : VarEnv) (funEnv : FunEnv)
     (hvarEnv : VarEnv.RefsNotRoot varEnv) :
-    TypeEnv.WellFormed { siteEnv := AssocMap.empty, varEnv := varEnv, pathEnv := init_fun_pathEnv f, funEnv := funEnv } := by
+    TypeEnv.WellFormed { siteEnv := AssocMap.empty, varEnv := varEnv, pathEnv := init_fun_pathEnv f, funEnv := funEnv, enumEnv := AssocMap.empty } := by
   constructor
   · exact PathEnv.init_fun_wellformed f
   · exact SiteEnv.empty_refs_not_root
@@ -1705,7 +1705,7 @@ lemma update_with_extension_refs_bounded (z x : Aref) (path : List PathElement) 
 /- ---------------------------------------------------- -/
 
 lemma TypeEnv.equiv_refl (env : TypeEnv) : TypeEnv.equiv env env := by
-  exact ⟨LookupEquiv.refl _, VarEnvLookupCompatible.refl _, rfl, fun _ _ _ _ => rfl⟩
+  exact ⟨LookupEquiv.refl _, VarEnvLookupCompatible.refl _, rfl, fun _ _ _ _ => rfl, LookupEquiv.refl _⟩
 
 /- ---------------------------------------------------- -/
 /-       call_connect_inputs_outputs WellFormed          -/

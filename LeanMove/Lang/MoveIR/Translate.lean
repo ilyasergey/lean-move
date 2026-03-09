@@ -98,8 +98,8 @@ partial def resolveBasicType (structs : List ResolvedStruct)
     match structs.find? (fun s => s.name == shortName) with
     | some rs => rs.basicType
     | none =>
-      -- Try enum lookup
-      match enums.find? (fun e => e.name == shortName) with
+      -- Try enum lookup (enum names are module-qualified, so match suffix)
+      match enums.find? (fun e => e.name == shortName || e.name.endsWith ("." ++ shortName)) with
       | some re => re.basicType
       | none => .u64 -- fallback for unknown types
   | .vector inner => .tvec (resolveBasicType structs enums inner)
@@ -146,15 +146,17 @@ partial def resolveStructDefs (_moduleName : String) (defs : List MvirStructDef)
     | n + 1 => iterate (resolveOnce current) n
   iterate initial defs.length
 
-/-- Resolve enum definitions within a module. Called after struct resolution. -/
-partial def resolveEnumDefs (structs : List ResolvedStruct)
+/-- Resolve enum definitions within a module. Called after struct resolution.
+    Enum names are qualified with the module name to avoid cross-module collisions. -/
+partial def resolveEnumDefs (moduleName : String) (structs : List ResolvedStruct)
     (defs : List MvirEnumDef) : List ResolvedEnum :=
   defs.map fun ed =>
+    let qualifiedName := moduleName ++ "." ++ ed.name
     let variants := ed.variants.foldl (fun acc (vname, fields) =>
       let fieldMap := fields.foldl (fun fm f =>
         insert fm ⟨f.name⟩ (resolveBasicType structs [] f.type)) empty
       insert acc vname fieldMap) empty
-    { name := ed.name, basicType := .tenum ed.name variants, variants }
+    { name := qualifiedName, basicType := .tenum qualifiedName, variants }
 
 /- ====================================================== -/
 /-       Expression Flattening (ANF conversion)            -/
@@ -323,12 +325,10 @@ partial def flattenExpr (e : MvirExpr) : TransM FlatResult := do
       allBindings := allBindings ++ fr.bindings
       fieldSites := fieldSites ++ [(⟨fname⟩, fr.result)]
     let s ← freshSite
-    -- Look up the full enum type from resolved enums
-    let st ← get
-    let variants := match st.enums.find? (·.name == enumName) with
-      | some re => re.variants
-      | none => AssocMap.empty  -- fallback: shouldn't happen for well-formed input
-    pure { bindings := allBindings ++ [(s, .packVariant enumName variantName variants fieldSites)], result := s }
+    -- Qualify enum name with module name
+    let moduleName := (← get).moduleName
+    let qualifiedEnumName := moduleName ++ "." ++ enumName
+    pure { bindings := allBindings ++ [(s, .packVariant qualifiedEnumName variantName fieldSites)], result := s }
 
 /- ====================================================== -/
 /-       Statement Translation                             -/
@@ -574,7 +574,7 @@ def translateFunDef (mfun : MvirFunDef) : TransM FunDef := do
 def translateModule (mod : MvirModule) : TransM (List (String × FunDef)) := do
   -- Resolve struct definitions first, then enums (enums may reference structs)
   let resolvedStructs := resolveStructDefs mod.name mod.structs
-  let resolvedEnums := resolveEnumDefs resolvedStructs mod.enums
+  let resolvedEnums := resolveEnumDefs mod.name resolvedStructs mod.enums
   modify fun s => { s with structs := resolvedStructs, enums := resolvedEnums, moduleName := mod.name }
   -- Translate each function
   let mut result : List (String × FunDef) := []

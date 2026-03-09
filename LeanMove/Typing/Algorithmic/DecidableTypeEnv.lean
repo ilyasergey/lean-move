@@ -95,13 +95,15 @@ structure TypeEnvDec where
   varEnv  : VarEnv
   pathEnv : PathEnvDec
   funEnv  : FunEnv
+  enumEnv : EnumEnv := AssocMap.empty
 
 /-- Convert a decidable TypeEnv to the standard TypeEnv -/
 def TypeEnvDec.toTypeEnv (ted : TypeEnvDec) : TypeEnv :=
   { siteEnv := ted.siteEnv
     varEnv := ted.varEnv
     pathEnv := ted.pathEnv.toPathEnv
-    funEnv := ted.funEnv }
+    funEnv := ted.funEnv
+    enumEnv := ted.enumEnv }
 
 /-- Label environment with decidable type environments -/
 abbrev LabelEnvDec := AssocMap Label TypeEnvDec
@@ -116,17 +118,20 @@ def LabelEnvDec.toLabelEnv (led : LabelEnvDec) : LabelEnv :=
 
 /-- Construct the initial decidable TypeEnv for a function.
     Derives siteEnv (empty), varEnv (from params + locals), and pathEnv (from params). -/
-def mkInitEnvDec (f : FunDef) (funEnv : FunEnv := AssocMap.empty) : TypeEnvDec :=
+def mkInitEnvDec (f : FunDef) (funEnv : FunEnv := AssocMap.empty)
+    (enumEnv : EnumEnv := AssocMap.empty) : TypeEnvDec :=
   { siteEnv := AssocMap.empty
     varEnv := init_fun_varEnv f
     pathEnv := init_fun_pathEnvDec f.params
-    funEnv := funEnv }
+    funEnv := funEnv
+    enumEnv := enumEnv }
 
 /-- Construct a LabelEnvDec for a single-block function.
     Uses the first block's label as the entry point. -/
-def mkLabelEnvDec (f : FunDef) (funEnv : FunEnv := AssocMap.empty) : LabelEnvDec :=
+def mkLabelEnvDec (f : FunDef) (funEnv : FunEnv := AssocMap.empty)
+    (enumEnv : EnumEnv := AssocMap.empty) : LabelEnvDec :=
   match f.blocks with
-  | b :: _ => AssocMap.insert AssocMap.empty b.label (mkInitEnvDec f funEnv)
+  | b :: _ => AssocMap.insert AssocMap.empty b.label (mkInitEnvDec f funEnv enumEnv)
   | [] => AssocMap.empty
 
 /-- VarEnv where ALL variables (params + locals) are valid.
@@ -201,7 +206,8 @@ def applySubstEnvDec (σ : List (Aref × Aref)) (env : TypeEnvDec) : TypeEnvDec 
   { siteEnv := applySubstSiteEnvList σ env.siteEnv
     varEnv := applySubstVarEnvList σ env.varEnv
     pathEnv := applySubstPathEnvDec σ env.pathEnv
-    funEnv := env.funEnv }
+    funEnv := env.funEnv
+    enumEnv := env.enumEnv }
 
 /-- Collect refids that need freshening: only from valid (initialized) var entries
     and pathEnv. Invalid/uninitialized vars carry refids from the FunDef signature
@@ -478,35 +484,34 @@ theorem TypeEnvDec.wellFormed_bool_sound (ted : TypeEnvDec) :
 
 /-- Decidable type checking wrapper: checks well-formedness of all label environments,
     converts to standard types, and delegates to `check_fun`. -/
-def check_fun_dec (f : FunDef) (lenvDec : LabelEnvDec) : Bool :=
-  lenvDec.allWellFormed_bool && check_fun f lenvDec.toLabelEnv
+def check_fun_dec (f : FunDef) (lenvDec : LabelEnvDec) (enumEnv : EnumEnv := AssocMap.empty) : Bool :=
+  lenvDec.allWellFormed_bool && check_fun f lenvDec.toLabelEnv enumEnv
 
 /-- Soundness: if the decidable check succeeds, the relational judgment holds. -/
-theorem check_fun_dec_sound (f : FunDef) (lenvDec : LabelEnvDec) :
-    check_fun_dec f lenvDec = true → typecheck_fun f lenvDec.toLabelEnv := by
+theorem check_fun_dec_sound (f : FunDef) (lenvDec : LabelEnvDec)
+    (enumEnv : EnumEnv := AssocMap.empty) :
+    check_fun_dec f lenvDec enumEnv = true → typecheck_fun f lenvDec.toLabelEnv enumEnv := by
   intro h
   simp only [check_fun_dec, Bool.and_eq_true] at h
   obtain ⟨hwf_all, hcheck⟩ := h
-  apply check_fun_sound f lenvDec.toLabelEnv _ hcheck
+  apply check_fun_sound f lenvDec.toLabelEnv enumEnv _ hcheck
   -- Prove: ∀ l env, lookup toLabelEnv l = some env → TypeEnv.WellFormed env
   intro l env hlookup
-  -- Relate lookup in toLabelEnv to lookup in lenvDec
   simp only [LabelEnvDec.toLabelEnv, lookup_mapValues] at hlookup
-  -- hlookup : (lookup lenvDec l).map TypeEnvDec.toTypeEnv = some env
   cases hlenv : lookup lenvDec l with
   | none => simp [hlenv] at hlookup
   | some ted =>
     simp [hlenv, Option.map] at hlookup
     subst hlookup
-    -- ted is in lenvDec, so its wellFormed_bool is true
     simp only [LabelEnvDec.allWellFormed_bool, List.all_eq_true] at hwf_all
     have hmem := lookup_some lenvDec l ted hlenv
     exact TypeEnvDec.wellFormed_bool_sound ted (hwf_all (l, ted) hmem)
 
 /-- Extracts well-formedness from a successful check_fun_dec.
     If check_fun_dec succeeds, all label environments are well-formed. -/
-theorem check_fun_dec_lenv_wf (f : FunDef) (lenvDec : LabelEnvDec) :
-    check_fun_dec f lenvDec = true →
+theorem check_fun_dec_lenv_wf (f : FunDef) (lenvDec : LabelEnvDec)
+    {enumEnv : EnumEnv} :
+    check_fun_dec f lenvDec enumEnv = true →
     ∀ l env, lookup lenvDec.toLabelEnv l = some env → TypeEnv.WellFormed env := by
   intro h l env hlookup
   simp only [check_fun_dec, Bool.and_eq_true] at h
@@ -522,8 +527,9 @@ theorem check_fun_dec_lenv_wf (f : FunDef) (lenvDec : LabelEnvDec) :
     exact TypeEnvDec.wellFormed_bool_sound ted (hwf_all (l, ted) hmem)
 
 /-- Non-member paths property (from) from a successful check_fun_dec -/
-theorem check_fun_dec_lenv_non_member_from (f : FunDef) (lenvDec : LabelEnvDec) :
-    check_fun_dec f lenvDec = true →
+theorem check_fun_dec_lenv_non_member_from (f : FunDef) (lenvDec : LabelEnvDec)
+    {enumEnv : EnumEnv} :
+    check_fun_dec f lenvDec enumEnv = true →
     ∀ l env, lookup lenvDec.toLabelEnv l = some env →
     ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
     ¬interpret_regex (env.pathEnv.paths (u, v)) p := by
@@ -543,8 +549,9 @@ theorem check_fun_dec_lenv_non_member_from (f : FunDef) (lenvDec : LabelEnvDec) 
     exact PathEnvDec.toPathEnv_non_member_from ted.pathEnv hwf.1.1
 
 /-- Non-member paths property (to) from a successful check_fun_dec -/
-theorem check_fun_dec_lenv_non_member_to (f : FunDef) (lenvDec : LabelEnvDec) :
-    check_fun_dec f lenvDec = true →
+theorem check_fun_dec_lenv_non_member_to (f : FunDef) (lenvDec : LabelEnvDec)
+    {enumEnv : EnumEnv} :
+    check_fun_dec f lenvDec enumEnv = true →
     ∀ l env, lookup lenvDec.toLabelEnv l = some env →
     ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
     ¬interpret_regex (env.pathEnv.paths (u, v)) p := by
@@ -564,8 +571,9 @@ theorem check_fun_dec_lenv_non_member_to (f : FunDef) (lenvDec : LabelEnvDec) :
     exact PathEnvDec.toPathEnv_non_member_to ted.pathEnv hwf.1.1
 
 /-- Self-loops in toPathEnv are always ε, so they only accept p = [] -/
-theorem check_fun_dec_lenv_self_loop (f : FunDef) (lenvDec : LabelEnvDec) :
-    check_fun_dec f lenvDec = true →
+theorem check_fun_dec_lenv_self_loop (f : FunDef) (lenvDec : LabelEnvDec)
+    {enumEnv : EnumEnv} :
+    check_fun_dec f lenvDec enumEnv = true →
     ∀ l env, lookup lenvDec.toLabelEnv l = some env →
     ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [] := by
   intro _ l env hlookup u p hp
@@ -773,11 +781,11 @@ theorem checkFunEnvSigs_sound (led : LabelEnvDec) (funEnv : AssocMap Id FunDef)
 /-- Boolean check: every function in funEnv passes all checks needed for
     FunTypeSafe: type checking, well-formedness, empty siteEnv, lenv completeness,
     var refs tracked/unique, funEnv consistent, and funEnv signatures matching. -/
-def checkFunEnv (funEnv : AssocMap Id FunDef) (fte : FunTypingEnv) : Bool :=
+def checkFunEnv (funEnv : AssocMap Id FunDef) (fte : FunTypingEnv) (enumEnv : EnumEnv) : Bool :=
   funEnv.entries.all fun (fname, fdef) =>
     match lookup fte fname with
     | some lenvDec =>
-      check_fun_dec fdef lenvDec &&
+      check_fun_dec fdef lenvDec enumEnv &&
       lenvDec.entries.all (fun (_, ted) => ted.siteEnv.isEmpty) &&
       fdef.blocks.all (fun block => lenvDec.entries.any (fun (l, _) => l == block.label)) &&
       LabelEnvDec.allVarRefsTracked_bool lenvDec &&
@@ -800,7 +808,9 @@ def checkFunEnv (funEnv : AssocMap Id FunDef) (fte : FunTypingEnv) : Bool :=
          match lookup lenvDec block.label with
          | some ted => lookup_equiv_bool ted.varEnv (init_fun_varEnv fdef)
          | none => true
-       | none => true)
+       | none => true) &&
+      -- lenv_enumEnv_eq: all lenv entries have the correct enumEnv
+      lenvDec.entries.all (fun (_, ted) => ted.enumEnv == enumEnv)
     | none => false
 
 end LeanMove.Typing

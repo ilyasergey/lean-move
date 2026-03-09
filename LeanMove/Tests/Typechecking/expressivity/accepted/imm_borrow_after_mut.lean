@@ -89,10 +89,10 @@ theorem copy_and_freeze_check : check_fun_dec parsed_copy_and_freeze copy_and_fr
 -- -           Relational Type Checking Theorems      --
 -- -----------------------------------------------------
 
-theorem direct_welltyped : ∃ lenv, typecheck_fun parsed_direct lenv :=
-  ⟨_, check_fun_dec_sound _ _ direct_check⟩
+theorem direct_welltyped : ∃ lenv, typecheck_fun parsed_direct lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ direct_check⟩
 
-theorem copy_and_freeze_welltyped : ∃ lenv, typecheck_fun parsed_copy_and_freeze lenv :=
-  ⟨_, check_fun_dec_sound _ _ copy_and_freeze_check⟩
+theorem copy_and_freeze_welltyped : ∃ lenv, typecheck_fun parsed_copy_and_freeze lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ copy_and_freeze_check⟩
 
 end LeanMove.Tests.Expressivity.ImmBorrowAfterMut

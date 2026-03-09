@@ -74,13 +74,13 @@ theorem vec_mut_borrow_write_check :
   check_fun_dec parsed_vec_mut_borrow_write vec_mut_borrow_write_lenvDec = true := by native_decide
 
 -- Relational Type Checking (via Algorithmic Soundness)
-theorem vec_imm_borrow_read_welltyped : ∃ lenv, typecheck_fun parsed_vec_imm_borrow_read lenv :=
-  ⟨_, check_fun_dec_sound _ _ vec_imm_borrow_read_check⟩
+theorem vec_imm_borrow_read_welltyped : ∃ lenv, typecheck_fun parsed_vec_imm_borrow_read lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ vec_imm_borrow_read_check⟩
 
-theorem vec_multi_imm_borrow_welltyped : ∃ lenv, typecheck_fun parsed_vec_multi_imm_borrow lenv :=
-  ⟨_, check_fun_dec_sound _ _ vec_multi_imm_borrow_check⟩
+theorem vec_multi_imm_borrow_welltyped : ∃ lenv, typecheck_fun parsed_vec_multi_imm_borrow lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ vec_multi_imm_borrow_check⟩
 
-theorem vec_mut_borrow_write_welltyped : ∃ lenv, typecheck_fun parsed_vec_mut_borrow_write lenv :=
-  ⟨_, check_fun_dec_sound _ _ vec_mut_borrow_write_check⟩
+theorem vec_mut_borrow_write_welltyped : ∃ lenv, typecheck_fun parsed_vec_mut_borrow_write lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ vec_mut_borrow_write_check⟩
 
 end LeanMove.Tests.Expressivity.VecBorrowSequential

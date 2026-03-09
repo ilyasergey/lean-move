@@ -140,11 +140,11 @@ theorem wellTypedState_heap_alloc
   }
 
 /-- StackSafe is preserved under heap.alloc -/
-theorem stackSafe_heap_alloc (stack : List Frame) (ri : Option ReturnInfo)
+theorem stackSafe_heap_alloc (globalEnumEnv : EnumEnv) (stack : List Frame) (ri : Option ReturnInfo)
     (heap : Heap) (v : Value) {calleeRetTypes : List ParamType}
-    (hss : StackSafe stack ri heap calleeRetTypes)
+    (hss : StackSafe globalEnumEnv stack ri heap calleeRetTypes)
     (hlb : ∀ loc, heap.read loc ≠ none → loc < heap.nextLoc) :
-    StackSafe stack ri (heap.alloc v).1 calleeRetTypes := by
+    StackSafe globalEnumEnv stack ri (heap.alloc v).1 calleeRetTypes := by
   cases stack with
   | nil => simp [StackSafe]
   | cons callerFrame rest =>
@@ -153,13 +153,14 @@ theorem stackSafe_heap_alloc (stack : List Frame) (ri : Option ReturnInfo)
     | some ri =>
       unfold StackSafe at hss ⊢
       obtain ⟨cE, cL, cR, cM, hfields, hrest⟩ := hss
-      -- Extract TypeEnv.WellFormed separately to avoid rcases auto-destructuring the structure
-      have henv_wf : TypeEnv.WellFormed cE := hfields.1
+      -- Extract enumEnv equality and TypeEnv.WellFormed separately
+      have henum_eq : cE.enumEnv = globalEnumEnv := hfields.1
+      have henv_wf : TypeEnv.WellFormed cE := hfields.2.1
       obtain ⟨hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
         hlenv_vu, hlenv_fe, hlenv_lib, hhas_ri, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
         hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hrtm, hvar_con, hsite_con, hrmap_live, hrmap_paths_f,
-        hhlb, hvlb, hrmap_ht, hfe_sig, htc⟩ := hfields.2
-      refine ⟨cE, cL, cR, cM, ⟨henv_wf, hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
+        hhlb, hvlb, hrmap_ht, hfe_sig, htc⟩ := hfields.2.2
+      refine ⟨cE, cL, cR, cM, ⟨henum_eq, henv_wf, hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
         hlenv_vu, hlenv_fe, hlenv_lib, hhas_ri, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
         hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hrtm, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, htc⟩, ?_⟩
       · -- var_consistent
@@ -204,21 +205,22 @@ theorem stackSafe_heap_alloc (stack : List Frame) (ri : Option ReturnInfo)
         rw [heap_alloc_preserves_readRef heap v loc path hne]; exact ⟨val, hread, hht⟩
       · -- funEnv_sig_consistent
         exact hfe_sig
-      · exact stackSafe_heap_alloc rest callerFrame.returnInfo heap v hrest hlb
+      · exact stackSafe_heap_alloc globalEnumEnv rest callerFrame.returnInfo heap v hrest hlb
 
 /-- StackSafe is preserved under heap.writeRef -/
 theorem stackSafe_heap_writeRef
-    (enum_compat : ∀ (fv1 fv2 : Value) (bt : BasicMoveType), HasType fv1 bt → HasType fv2 bt → variantCompatible fv1 fv2)
+    (globalEnumEnv : EnumEnv)
+    (enum_compat : ∀ (fv1 fv2 : Value) (bt : BasicMoveType), HasType globalEnumEnv fv1 bt → HasType globalEnumEnv fv2 bt → variantCompatible fv1 fv2)
     (stack : List Frame) (ri : Option ReturnInfo)
     (heap heap' : Heap) (loc : Loc) (wpath : List Field)
     (vval v_leaf : Value) (τ : BasicMoveType)
     {calleeRetTypes : List ParamType}
-    (hss : StackSafe stack ri heap calleeRetTypes)
+    (hss : StackSafe globalEnumEnv stack ri heap calleeRetTypes)
     (hwr : heap.writeRef loc wpath vval = some heap')
     (hv_leaf_read : heap.readRef loc wpath = some v_leaf)
-    (hv_leaf_ht : HasType v_leaf τ)
-    (hmval : HasType vval τ) :
-    StackSafe stack ri heap' calleeRetTypes := by
+    (hv_leaf_ht : HasType globalEnumEnv v_leaf τ)
+    (hmval : HasType globalEnumEnv vval τ) :
+    StackSafe globalEnumEnv stack ri heap' calleeRetTypes := by
   cases stack with
   | nil => simp [StackSafe]
   | cons callerFrame rest =>
@@ -227,12 +229,17 @@ theorem stackSafe_heap_writeRef
     | some ri =>
       unfold StackSafe at hss ⊢
       obtain ⟨cE, cL, cR, cM, hfields, hrest⟩ := hss
-      -- Extract TypeEnv.WellFormed separately to avoid rcases auto-destructuring the structure
-      have henv_wf : TypeEnv.WellFormed cE := hfields.1
+      -- Extract enumEnv equality and TypeEnv.WellFormed separately
+      have henum_eq : cE.enumEnv = globalEnumEnv := hfields.1
+      have henv_wf : TypeEnv.WellFormed cE := hfields.2.1
       obtain ⟨hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
         hlenv_vu, hlenv_fe, hlenv_lib, hhas_ri, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
         hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hrtm, hvar_con, hsite_con, hrmap_live, hrmap_paths_f,
-        hhlb, hvlb, hrmap_ht, hfe_sig, htc⟩ := hfields.2
+        hhlb, hvlb, hrmap_ht, hfe_sig, htc⟩ := hfields.2.2
+      -- Instantiate enum hypotheses with cE.enumEnv via henum_eq
+      have enum_compat_cE : ∀ (fv1 fv2 : Value) (bt : BasicMoveType), HasType cE.enumEnv fv1 bt → HasType cE.enumEnv fv2 bt → variantCompatible fv1 fv2 := henum_eq ▸ enum_compat
+      have hv_leaf_ht_cE : HasType cE.enumEnv v_leaf τ := henum_eq ▸ hv_leaf_ht
+      have hmval_cE : HasType cE.enumEnv vval τ := henum_eq ▸ hmval
       -- Extract base value and writePath facts for field maintenance
       have hv_leaf_read' := hv_leaf_read
       have hwr' := hwr
@@ -251,7 +258,7 @@ theorem stackSafe_heap_writeRef
             exact heap_write_preserves_read heap loc loc' newRoot (Ne.symm hne)
           have hread_loc : heap'.read loc = some newRoot := by
             rw [← hwr']; simp [Heap.write, Heap.read, lookup_insert_same]
-          refine ⟨cE, cL, cR, cM, ⟨henv_wf, hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
+          refine ⟨cE, cL, cR, cM, ⟨henum_eq, henv_wf, hstmt, hblocks, hlenv_se, hlenv_wf, hlenv_vt,
             hlenv_vu, hlenv_fe, hlenv_lib, hhas_ri, hfe_typed, hve_refs, hse_refs, hlru, hrmap_root, hno_paths_root,
             hroot_coh, hpfnm, hptnm, hsle, hiso_unmapped, hrru, hrtm, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, htc⟩, ?_⟩
           · -- var_consistent
@@ -274,7 +281,7 @@ theorem stackSafe_heap_writeRef
                       intro bt_leaf htapV
                       obtain ⟨u, hru, hhu⟩ := HasType_typeAtPathV v_x bt_x wpath bt_leaf hmatch_x htapV
                       rw [hv_leaf_read'] at hru; simp only [Option.some.injEq] at hru; subst hru
-                      exact HasType_transfer hhu hv_leaf_ht hmval)
+                      exact HasType_transfer hhu hv_leaf_ht_cE hmval_cE)
                 | ref bt_ref r_ref bk_ref =>
                   exfalso
                   dsimp only [ValueMatchesType] at hmatch_x
@@ -283,8 +290,8 @@ theorem stackSafe_heap_writeRef
                   cases wpath with
                   | cons f rest => simp [writePath] at hwp
                   | nil =>
-                    simp [readPath] at hv_leaf_read'; rw [← hv_leaf_read'] at hv_leaf_ht
-                    exact HasType_not_ref loc' path' τ hv_leaf_ht
+                    simp [readPath] at hv_leaf_read'; rw [← hv_leaf_read'] at hv_leaf_ht_cE
+                    exact HasType_not_ref loc' path' τ hv_leaf_ht_cE
               · exact ⟨loc_x, v_x, hvarStore, by rw [hread_diff loc_x hloc]; exact hread_x, hmatch_x⟩
             | invalidVar => exact hvc
           · -- site_consistent
@@ -303,8 +310,8 @@ theorem stackSafe_heap_writeRef
                     simp only [Heap.readRef, bind, Option.bind, hbase] at hlive
                     rw [← hsuffix, readPath_append] at hlive
                     simp only [hv_leaf_read', Option.bind] at hlive
-                    exact readPath_HasType_transfer enum_compat v_leaf vval τ
-                      (sf :: srest) hv_leaf_ht hmval (enum_compat v_leaf vval τ hv_leaf_ht hmval) hlive)
+                    exact readPath_HasType_transfer enum_compat_cE v_leaf vval τ
+                      (sf :: srest) hv_leaf_ht_cE hmval_cE (enum_compat_cE v_leaf vval τ hv_leaf_ht_cE hmval_cE) hlive)
             · simp only [Heap.readRef, bind, Option.bind] at hlive ⊢
               rw [hread_diff loc' (Ne.symm hloc)]
               exact hlive
@@ -335,8 +342,8 @@ theorem stackSafe_heap_writeRef
                         simp only [Heap.readRef, bind, Option.bind, hbase] at hne
                         rw [← hsuffix, readPath_append] at hne
                         simp only [hv_leaf_read', Option.bind] at hne
-                        exact readPath_HasType_transfer enum_compat v_leaf vval τ
-                          (sf :: srest) hv_leaf_ht hmval (enum_compat v_leaf vval τ hv_leaf_ht hmval) hne)
+                        exact readPath_HasType_transfer enum_compat_cE v_leaf vval τ
+                          (sf :: srest) hv_leaf_ht_cE hmval_cE (enum_compat_cE v_leaf vval τ hv_leaf_ht_cE hmval_cE) hne)
                 · simp only [Heap.readRef, bind, Option.bind] at hne ⊢
                   rw [hread_diff loc2 (Ne.symm hloc2)]
                   exact hne
@@ -354,8 +361,8 @@ theorem stackSafe_heap_writeRef
               simp only [Heap.readRef, bind, Option.bind, hbase] at hread_old
               obtain ⟨vnew, hread_vnew, hht_vnew⟩ := writePath_preserves_readPath_HasType
                 baseVal wpath path' vval newRoot v_leaf v_old τ bt
-                hwp hread_old hht_old hv_leaf_read' hv_leaf_ht hmval
-                (fun suffix _ => typeAtPathV_HasType_determined enum_compat vval v_leaf τ suffix hmval hv_leaf_ht (enum_compat vval v_leaf τ hmval hv_leaf_ht))
+                hwp hread_old hht_old hv_leaf_read' hv_leaf_ht_cE hmval_cE
+                (fun suffix _ => typeAtPathV_HasType_determined enum_compat_cE vval v_leaf τ suffix hmval_cE hv_leaf_ht_cE (enum_compat_cE vval v_leaf τ hmval_cE hv_leaf_ht_cE))
               exact ⟨vnew, by simp [Heap.readRef, bind, Option.bind, hread_loc, hread_vnew], hht_vnew⟩
             · refine ⟨v_old, ?_, hht_old⟩
               simp only [Heap.readRef, bind, Option.bind] at hread_old ⊢
@@ -363,7 +370,7 @@ theorem stackSafe_heap_writeRef
               exact hread_old
           · -- funEnv_sig_consistent
             exact hfe_sig
-          · exact stackSafe_heap_writeRef enum_compat rest callerFrame.returnInfo heap heap' loc wpath
+          · exact stackSafe_heap_writeRef globalEnumEnv enum_compat rest callerFrame.returnInfo heap heap' loc wpath
               vval v_leaf τ hrest hwr hv_leaf_read hv_leaf_ht hmval
 
 -- ============================================================
@@ -430,8 +437,8 @@ theorem types_conform_site_has_type (siteEnv : SiteEnv) (sites : List Site)
           exact ih pts htc_tail hs'
 
 /-- A ref value cannot have a basic HasType -/
-theorem HasType_not_ref_basic (loc : Loc) (path : List Field) (bt : BasicMoveType) :
-    ¬HasType (.ref loc path) bt := by
+theorem HasType_not_ref_basic {enumEnv : EnumEnv} (loc : Loc) (path : List Field) (bt : BasicMoveType) :
+    ¬HasType enumEnv (Value.ref loc path) bt := by
   intro h; cases h
 
 /-- bindReturnValues preserves lookups for sites not in the result list -/
@@ -458,6 +465,7 @@ theorem bindReturnValues_preserves (siteStore : SiteStore) (sites : List Site)
     If .ref loc path ∈ vals (collected from callee's siteStore) and the callee
     is well-typed, then heap.readRef loc path ≠ none. -/
 theorem returned_ref_is_live
+    {enumEnv : EnumEnv}
     (siteEnv : SiteEnv) (siteStore : SiteStore) (rmap : RefMap) (heap : Heap)
     (sites : List Site) (retTypes : List ParamType) (vals : List Value)
     (loc : Loc) (path : List Field)
@@ -465,7 +473,7 @@ theorem returned_ref_is_live
     (hcsv : collectSiteValues siteStore sites = some vals)
     (htc : types_conform siteEnv sites retTypes)
     (hsc : ∀ s τ, lookup siteEnv s = some τ →
-      ∃ v, lookup siteStore s = some v ∧ ValueMatchesType v τ rmap)
+      ∃ v, lookup siteStore s = some v ∧ ValueMatchesType enumEnv v τ rmap)
     (hse_refs : ∀ s bt r bk, lookup siteEnv s = some (.ref bt r bk) → r ∈ pe_refs)
     (hrl : ∀ r loc path, r ∈ pe_refs → rmap.map r = some (loc, path) → heap.readRef loc path ≠ none)
     (hv : Value.ref loc path ∈ vals) :
@@ -485,6 +493,7 @@ theorem returned_ref_is_live
     Bridges callee's types_conform + site_consistent with caller's types_conform
     to show that returned values match caller's result site types. -/
 theorem derive_returnValsWellTyped
+    {enumEnv : EnumEnv}
     (calleeSiteEnv callerSiteEnv : SiteEnv)
     (calleeSites callerSites : List Site)
     (retTypes : List ParamType)
@@ -494,11 +503,11 @@ theorem derive_returnValsWellTyped
     (htc_caller : types_conform callerSiteEnv callerSites retTypes)
     (hcsv : collectSiteValues siteStore calleeSites = some vals)
     (hsc : ∀ s τ, lookup calleeSiteEnv s = some τ →
-      ∃ v, lookup siteStore s = some v ∧ ValueMatchesType v τ rmap)
+      ∃ v, lookup siteStore s = some v ∧ ValueMatchesType enumEnv v τ rmap)
     (hrt : ∀ r bt loc path, rmap.map r = some (loc, path) →
       (∃ s bk, lookup calleeSiteEnv s = some (.ref bt r bk)) →
-      ∃ v, heap.readRef loc path = some v ∧ HasType v bt) :
-    ReturnValsWellTyped vals callerSites callerSiteEnv heap := by
+      ∃ v, heap.readRef loc path = some v ∧ HasType enumEnv v bt) :
+    ReturnValsWellTyped enumEnv vals callerSites callerSiteEnv heap := by
   induction retTypes generalizing calleeSites callerSites vals with
   | nil =>
     cases calleeSites with
@@ -594,21 +603,22 @@ private theorem ewr_step_ref (rmap : RefMap) (siteEnv : SiteEnv)
     and ReturnValsWellTyped holds, then the heap has a readable well-typed value
     at the mapped location. Returns the base type from the siteEnv. -/
 theorem extendWithReturns_new_mapping_type
+    {enumEnv : EnumEnv}
     (rmap : RefMap) (siteEnv : SiteEnv)
     (sites : List Site) (vals : List Value) (heap : Heap)
     (r : Aref) (loc : Loc) (path : List Field)
     (hrmap : (RefMap.extendWithReturns rmap siteEnv sites vals).map r = some (loc, path))
     (hold : rmap.map r = none)
-    (hrvt : ReturnValsWellTyped vals sites siteEnv heap) :
+    (hrvt : ReturnValsWellTyped enumEnv vals sites siteEnv heap) :
     ∃ bt bk s, s ∈ sites ∧ lookup siteEnv s = some (.ref bt r bk) ∧
-      ∃ v, heap.readRef loc path = some v ∧ HasType v bt := by
+      ∃ v, heap.readRef loc path = some v ∧ HasType enumEnv v bt := by
   -- Prove a stronger version: either rmap already maps r, or some site provided the mapping
   suffices hsuf : ∀ (rmap : RefMap) (vals : List Value),
       (RefMap.extendWithReturns rmap siteEnv sites vals).map r = some (loc, path) →
-      ReturnValsWellTyped vals sites siteEnv heap →
+      ReturnValsWellTyped enumEnv vals sites siteEnv heap →
       rmap.map r = some (loc, path) ∨
       ∃ bt bk s, s ∈ sites ∧ lookup siteEnv s = some (.ref bt r bk) ∧
-        ∃ v, heap.readRef loc path = some v ∧ HasType v bt by
+        ∃ v, heap.readRef loc path = some v ∧ HasType enumEnv v bt by
     rcases hsuf rmap vals hrmap hrvt with h | h
     · rw [hold] at h; exact absurd h (by simp)
     · exact h
@@ -691,9 +701,10 @@ theorem RefMap.extendWithReturns_ne_none (rmap : RefMap) (siteEnv : SiteEnv)
 /-- If a result site has a ref type mapping abstract ref r, and ReturnValsWellTyped holds,
     then extendWithReturns maps r (r is non-none in the result). -/
 theorem RefMap.extendWithReturns_maps_result_ref
+    {enumEnv : EnumEnv}
     (rmap : RefMap) (siteEnv : SiteEnv)
     (sites : List Site) (vals : List Value) (heap : Heap) (r : Aref)
-    (hrvt : ReturnValsWellTyped vals sites siteEnv heap)
+    (hrvt : ReturnValsWellTyped enumEnv vals sites siteEnv heap)
     (s : Site) (bt : BasicMoveType) (bk : BorrowingKind)
     (hs : s ∈ sites) (hse : lookup siteEnv s = some (.ref bt r bk)) :
     (RefMap.extendWithReturns rmap siteEnv sites vals).map r ≠ none := by
@@ -746,17 +757,18 @@ theorem RefMap.extendWithReturns_maps_result_ref
     For each result site s with type τ in siteEnv, produces a value in newSiteStore
     that matches the type under the extended rmap. -/
 theorem returnVals_site_consistent
+    {enumEnv : EnumEnv}
     (rmap : RefMap) (siteStore : SiteStore) (siteEnv : SiteEnv)
     (sites : List Site) (vals : List Value) (heap : Heap) (newSiteStore : SiteStore)
     (hbrv : bindReturnValues siteStore sites vals = some newSiteStore)
-    (hrvt : ReturnValsWellTyped vals sites siteEnv heap)
+    (hrvt : ReturnValsWellTyped enumEnv vals sites siteEnv heap)
     (huniq : ∀ s₁ ∈ sites, ∀ s₂ ∈ sites, s₁ ≠ s₂ →
       ∀ bt₁ bt₂ r bk₁ bk₂,
       lookup siteEnv s₁ = some (.ref bt₁ r bk₁) →
       lookup siteEnv s₂ = some (.ref bt₂ r bk₂) → False) :
     ∀ s ∈ sites, ∀ τ, lookup siteEnv s = some τ →
       ∃ v, lookup newSiteStore s = some v ∧
-           ValueMatchesType v τ (RefMap.extendWithReturns rmap siteEnv sites vals) := by
+           ValueMatchesType enumEnv v τ (RefMap.extendWithReturns rmap siteEnv sites vals) := by
   induction sites generalizing vals rmap siteStore with
   | nil => intro s hs; simp at hs
   | cons s' ss ih =>
@@ -848,13 +860,13 @@ theorem returnVals_site_consistent
 
 /-- StackSafe is preserved through allocArgs (a sequence of heap.alloc calls).
     By induction on the params/args list, using stackSafe_heap_alloc at each step. -/
-theorem stackSafe_allocArgs (stack : List Frame) (ri : Option ReturnInfo)
+theorem stackSafe_allocArgs (globalEnumEnv : EnumEnv) (stack : List Frame) (ri : Option ReturnInfo)
     (heap : Heap) (params : List (Var × MoveType)) (args : List Value)
     (heap' : Heap) (vs : VarStore) {calleeRetTypes : List ParamType}
-    (hss : StackSafe stack ri heap calleeRetTypes)
+    (hss : StackSafe globalEnumEnv stack ri heap calleeRetTypes)
     (hlb : ∀ loc, heap.read loc ≠ none → loc < heap.nextLoc)
     (halloc : allocArgs heap params args = some (heap', vs)) :
-    StackSafe stack ri heap' calleeRetTypes := by
+    StackSafe globalEnumEnv stack ri heap' calleeRetTypes := by
   induction params generalizing heap args heap' vs with
   | nil =>
     cases args with
@@ -878,7 +890,7 @@ theorem stackSafe_allocArgs (stack : List Frame) (ri : Option ReturnInfo)
         simp only [Option.some.injEq, Prod.mk.injEq] at halloc
         rw [halloc.1.symm]
         exact ih (heap.alloc a).1 as' h'' vs''
-          (stackSafe_heap_alloc stack ri heap a hss hlb)
+          (stackSafe_heap_alloc globalEnumEnv stack ri heap a hss hlb)
           (heap_loc_bound_after_alloc heap a hlb)
           hrec
 
