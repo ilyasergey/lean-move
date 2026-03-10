@@ -28,7 +28,10 @@ core calculus of the Move intermediate representation — and proved it
 - We demonstrate this end-to-end on programs drawn from the **Move bytecode
   verifier's own test suite**: each program is type-checked, executed on a
   concrete heap, and certified free of all preventable errors — all within
-  a single `lake build`.
+  a single `lake build`. The test suite includes **86 test files** across
+  four categories: parsing, type checking (litmus + expressivity),
+  rejected-program checks, and runtime soundness certificates (see
+  [Test suite overview](#test-suite-overview) for details).
 
 ### Limitations and scope
 
@@ -298,6 +301,143 @@ The test suite covers programs with borrowing, mutable references, field
 access, function calls, control-flow joins, loops, packing/unpacking records,
 and aliasing patterns — all drawn from the Move bytecode verifier's own test
 suite.
+
+### Test suite overview
+
+The test suite contains **86 test files** organised across four directories,
+covering parsing, type checking, rejection, and runtime soundness. Each
+test category serves a different role in establishing confidence in the
+formalisation.
+
+#### Parsing tests (`Tests/Parsing/`, 35 files)
+
+These verify that the MVIR parser and translator produce MoveLight ASTs
+that are alpha-equivalent to hand-written reference definitions (modulo
+site and label renaming). They exercise the full pipeline: `.mvir` source
+→ parser → translator → `FunDef`. Key groups:
+
+| Group | Files | What they test |
+|---|---|---|
+| Borrow/reference | 12 | `alias_writes`, `imm_borrow_after_mut`, `extension_after_call`, `subtree_writes_release`, `simple_dangling`, etc. |
+| Vectors | 8 | `vec_basic_ops`, `vec_borrow_sequential`, `vec_dangling_borrow`, `vec_double_borrow`, etc. |
+| Enums | 13 | `enum_match`, `enum_valid_ref_unpack`, `enum_borrow_field_mutable`, `enum_variant_factor`, etc. |
+| Utility | 2 | `TestUtils.lean` (alpha-equivalence helpers), `Test_PrettyPrint.lean` |
+
+Each parsing test uses `#guard alphaEquiv parsedFunDef handWrittenFunDef`
+to verify that the parser output matches the expected AST. This catches
+bugs in the parser/translator without requiring type checking.
+
+#### Type-checking litmus tests (`Tests/Typechecking/litmus/`, 14 files)
+
+Small, focused programs that test individual type-checking features.
+Divided into accepted (4) and rejected (10):
+
+**Accepted** (pass `check_fun_dec` + have soundness certificates in
+`AllTests.lean`):
+
+| Test | Move feature | Key theorem |
+|---|---|---|
+| `borrow_in_loop_fixed_ok` | Borrow released before loop back-edge | `borrow_loop_foo_no_danglingRef` |
+| `deref_borrow_field_ok` | Field dereference through module calls (`M.new`, `M.t`) | `deref_borrow_M_new_no_danglingRef`, `deref_borrow_foo_no_danglingRef`, `deref_borrow_M_t_no_danglingRef` |
+| `call_rule_ok` | Function calls with reference outputs | `basic_return_no_danglingRef`, `read_call_output_no_danglingRef` |
+| `return_param_ref_ok` | Returning reference parameters | `fn_return_basic_no_danglingRef`, `fn_return_param_ref_no_danglingRef`, `fn_return_two_no_danglingRef` |
+
+**Rejected** (fail `check_fun_dec`, confirmed by `#guard !check_fun`):
+
+| Test | Why rejected | Runtime error (if any) |
+|---|---|---|
+| `borrow_in_loop` | Borrow alive across loop back-edge | — |
+| `dangling_ref` | Write invalidates field path | `danglingRef` |
+| `use_after_move` | Ownership violation | `uninitializedVar` |
+| `uninitialized_var` | Read before assignment | `uninitializedVar` |
+| `deref_non_ref` | Dereference of non-reference value | `typeMismatch` |
+| `unpack_non_record` | Unpack non-record value | `typeMismatch` |
+| `borrow_field_non_ref` | Borrow field from owned value (not ref) | `typeMismatch` |
+| `return_local_borrow` | Return borrow of local variable | — |
+| `return_aliased_mut` | Return aliased mutable reference | — |
+| `return_mut_with_outstanding_borrow` | Return mutable with active sub-borrow | — |
+
+For the runtime-error tests, `AllTests.lean` contains `#guard` checks
+that confirm the expected error is produced (e.g.,
+`(run 200 ...) matches .error (.danglingRef _)`).
+
+#### Expressivity tests (`Tests/Typechecking/expressivity/`, 33 files)
+
+Complex programs drawn from the Move bytecode verifier's test suite.
+These demonstrate that the type checker handles realistic borrow patterns:
+
+**Accepted** (21 files, each with `check_fun_dec = true` and most with
+soundness certificates):
+
+| Test | Features exercised | Functions |
+|---|---|---|
+| `alias_writes` | Multiple borrows of same variable, aliased writes | 4 variants: `borrow_local_twice`, `_reverse`, `_and_copy_ref`, `_reverse` |
+| `alias_write_after_join` | Aliased writes after conditional branch | `t(bool)` |
+| `extension_after_call` | Reference extension through function calls | `fn_borrow`, `fn_write` |
+| `extension_writes_after_join` | Extension writes after branch join | `t(bool, &mut S, &mut S)` |
+| `imm_borrow_after_mut` | Freeze after mutable borrow | `direct`, `copy_and_freeze` |
+| `multible_mutable_return_values` | Multiple mutable returns | `borrow`, `write` |
+| `mutable_borrows_are_not_unique` | Mutable borrows on different fields | `fields`, `fields_write` |
+| `subtree_writes_release` | Nested records, complex path graphs | `t(bool, &mut nested_record)` (7-node path graph) |
+| `vec_basic_ops` | Pack, len, push, pop, swap, unpack | 7 functions |
+| `vec_borrow_sequential` | Sequential element borrows | `vec_imm_borrow_read`, `vec_mut_borrow_write` |
+| `vec_mut_then_imm_borrow` | Mutable then immutable element borrow | — |
+| `enum_match` | Variant switch dispatch (3 variants, 5 blocks) | `t0()` |
+| `enum_borrow_field_mutable` | Mutable field borrow through enum ref | `M2.baz` |
+| `enum_valid_ref_unpack` | Valid mutable and immutable variant unpacks | `h`, `f`, `g`, `k`, `k1` |
+| `enum_two_mutable_unpacks` | Two mutable variant unpacks | `fn(&mut Self.Foo)` |
+| `enum_double_unpack` | Double unpacking patterns | — |
+| `enum_valid_unpack_loop` | Variant unpacks in loops | — |
+| `enum_variant_factor` | Variant factoring / consolidation | — |
+| `enum_factor_invalid` | Edge case: accepted despite name | — |
+| `enum_imm_borrow_on_mut_invalid` | Edge case: accepted at type-check level | — |
+| `enum_imm_borrow_on_mut_trivial_invalid` | Edge case: trivial variant | — |
+
+**Rejected** (12 files, each with `#guard !check_fun`):
+
+| Test | Why rejected |
+|---|---|
+| `simple_dangling` (4 functions) | `check_outbound_bool` detects dangling paths after field/call borrows |
+| `imm_borrow_after_mut_call_invalid` | Immutable borrow after mutable call |
+| `imm_borrow_after_mut_fields_invalid` | Immutable borrow after mutable field access |
+| `mutable_borrows_are_not_unique_calls_invalid` | Mutable borrows through function calls violate exclusivity |
+| `vec_dangling_borrow` (3 functions) | Element borrows prevent push/pop/write |
+| `vec_double_borrow` | Two simultaneous element borrows |
+| `vec_mixed_borrow` | Mixed immutable/mutable element borrows |
+| `vec_move_after_borrow` | Move vector while element is borrowed |
+| `vec_pop_after_borrow` | Pop after element borrow |
+| `enum_invalid_ref_unpack` | Reference unpack with borrow violation |
+| `enum_invalid_ref_unpack_loop` | Invalid unpack in loop |
+| `enum_borrow_owned` | Attempt to borrow owned enum variant |
+
+#### Runtime soundness certificates (`Tests/Runtime/AllTests.lean`)
+
+This single file ties everything together. For each accepted test, it
+provides:
+
+1. A `#guard` confirming that `run N (initState f ...)` halts (the program
+   actually terminates).
+2. A `theorem ... := type_soundness_dec_no_danglingRef f lenvDec ...
+   (by rfl)` (or `(by native_decide)`) proving that execution never
+   produces a preventable error.
+
+For rejected tests, it provides `#eval` and `#guard` confirming that the
+expected runtime error occurs.
+
+**Soundness certificates by feature:**
+
+| Feature | Tests with certificates | Functions proved safe |
+|---|---|---|
+| Core borrowing | 4 litmus + 8 expressivity | 24 functions |
+| Vectors | 7 from `vec_basic_ops` + 2 borrow | 9 functions |
+| Enums | `enum_borrow_field_mutable`, `enum_match` | 2 functions (including 3-variant enum) |
+| Function calls/returns | `call_rule_ok`, `return_param_ref_ok`, `deref_borrow_field_ok` | 9 functions |
+| Loops | `borrow_in_loop_fixed_ok` | 1 function |
+
+The `enum_match` test is notable: it proves `enum_match_no_danglingRef`
+for a program with a 3-variant enum (`Threes { One{pos0:u64}, Two{},
+Three{pos0:u64} }`), demonstrating that multi-variant enum soundness
+works end-to-end with a decidable certificate.
 
 ### Test environment construction (`DecidableTypeEnv.lean`)
 
