@@ -8,7 +8,7 @@ example, (b) what MoveLight AST extension would be needed, and (c) rough effort 
 
 | Feature | In examples? | MoveLight extension needed | Effort |
 |---------|-------------|---------------------------|--------|
-| **Vector types** (`vector<T>`) | Yes (`simple_dangling.mvir`) | Add `BasicMoveType.vector : BasicMoveType → BasicMoveType` | Medium |
+| **Vector types** (`vector<T>`) | Yes | Supported: `BasicMoveType.tvec` with 8 operations | Done |
 | **Type parameters / generics** | No | Add type variables to `MoveType`, polymorphic `FunDef` | Large |
 | **Address type** | No | Add `BasicMoveType.address` | Small |
 | **Signer type** | No | Add `BasicMoveType.signer` | Small |
@@ -18,7 +18,7 @@ example, (b) what MoveLight AST extension would be needed, and (c) rough effort 
 
 | Feature | In examples? | MoveLight extension needed | Effort |
 |---------|-------------|---------------------------|--------|
-| **Vector operations** (`vec_pack_0`, `vec_mut_borrow`, `vec_len`, `vec_push_back`, etc.) | Yes (`simple_dangling.mvir`) | Add `Expr.vecOp` or encode as built-in calls | Medium |
+| **Vector operations** (`vec_pack_0`, `vec_mut_borrow`, `vec_len`, `vec_push_back`, etc.) | Yes | Supported: 8 vector operations with full soundness proof | Done |
 | **Unary operators** (`!`, `not`) | No | Add `Expr.unop : Unop → Site → Expr` | Small |
 | **Bitwise binary ops** (`&`, `\|`, `^`, `<<`, `>>`) | No | Add variants to `Binop` | Small |
 | **Logical operators** (`&&`, `\|\|`) | No | Add `Binop.and`, `Binop.or` | Small |
@@ -31,14 +31,14 @@ example, (b) what MoveLight AST extension would be needed, and (c) rough effort 
 |---------|-------------|---------------------------|--------|
 | **`assert(cond, code)`** | No | Add `Stmt.assert : Site → Site → Stmt` | Small |
 | **`jump_if_false(cond) L`** | No | Already supported via `branch` with swapped labels | Small |
-| **`variant_switch`** | No | Add `Stmt.variantSwitch` (requires enum support) | Large |
+| **`variant_switch`** | Yes | Supported: `Stmt.variantSwitch` | Done |
 
 ## 4. Definitions
 
 | Feature | In examples? | MoveLight extension needed | Effort |
 |---------|-------------|---------------------------|--------|
 | **Constants** | No | Add `ConstDef` and constant expression evaluation | Medium |
-| **Enums / variants** | No | Add `BasicMoveType.enum`, variant pack/unpack, switch | Large |
+| **Enums / variants** | Yes | Supported: `BasicMoveType.tenum`, `packVariant`, `unpackVariant`, `variantSwitch` | Done |
 | **Native functions** | No | Add `FunBody.native` marker | Small |
 | **Native structs** | No | Add `StructDef.native` marker | Small |
 

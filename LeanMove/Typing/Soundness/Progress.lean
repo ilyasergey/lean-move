@@ -179,11 +179,15 @@ theorem step_danglingRef_source (m : Machine) (loc : Loc) :
       revert hstep; split <;> (intro h; simp at h)
     | packVariant _ _ _ =>
       exfalso; simp only [step, hs] at hstep
-      revert hstep; split <;> (intro h; simp at h)
+      revert hstep; split
+      · intro h; cases h
+      · split
+        · intro h; cases h
+        · intro h; cases h
     | binop op a b =>
       exfalso; simp only [step, hs] at hstep
       revert hstep; split <;> try split <;> try split
-      all_goals (intro h; simp at h)
+      all_goals (intro h; cases h)
     | vecPack _ _ =>
       exfalso; simp only [step, hs] at hstep
       revert hstep; split <;> (intro h; simp at h)
@@ -1121,7 +1125,7 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
         subst hveq
         -- val is now hval; cases on HasType reduces the match
         cases hht with
-        | variant vname _ _ _ hlookup_v _ _ _ =>
+        | variant vname _ _ _ _ _ _ _ hvv =>
           simp only [] at hstep
           -- cases.lookup vname:
           cases hcl : List.lookup vname cases with
@@ -1129,10 +1133,10 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
             -- Coverage guarantees this variant is in cases
             exfalso
             have hne : AssocMap.lookup enumDef.variants vname ≠ none := by
-              simp only [enumVariantFields, _henumLookup] at hlookup_v
+              simp only [enumVariantFields, _henumLookup] at hvv
               cases hv : AssocMap.lookup enumDef.variants vname with
-              | none => simp [hv] at hlookup_v
-              | some _ => simp
+              | none => simp [hv] at hvv
+              | some _ => exact Option.some_ne_none _
             obtain ⟨label', hmem'⟩ := hcoverage vname hne
             exact lookup_ne_none_of_mem hmem' hcl
           | some label =>
@@ -1260,7 +1264,7 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
       | borrowMut x =>
         simp only [step, hs] at hstep
         cases hst
-        next _ _ _ _ _ _ hvar _ _ =>
+        case let_bind_borrowMut τ ms r hle hnotIn hfresh hvar hcont =>
           have ⟨loc, hloc⟩ := getVarLoc_some_of_validVar hwt hvar
           rw [hloc] at hstep; cases hstep
 
@@ -1327,14 +1331,16 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     | packVariant enumName variantName fieldSites =>
       simp only [step, hs] at hstep
       cases hst with
-      | @let_bind_packVariant _ _ _ _ _ _ _ _ _ _ _ _ hfields_typed _ _ hcont =>
+      | @let_bind_packVariant _ _ _ _ _ _ _ _ _ _ henumLookup _ hfields_typed _ _ hcont =>
         have hcpf := collectPackFields_some m.frame.siteStore fieldSites (by
           intro f s_site hmem
           have ⟨bt, hbt, _⟩ := hfields_typed f s_site hmem
           have ⟨v, hv, _⟩ := hwt.site_consistent s_site (.basic bt) hbt
           exact ⟨v, hv⟩)
         obtain ⟨vals, hvals⟩ := hcpf
-        rw [hvals] at hstep; cases hstep
+        have heec := hwt.enumEnv_consistent
+        rw [hvals, heec, henumLookup] at hstep
+        cases hstep
 
     | binop op a b =>
       simp only [step, hs] at hstep

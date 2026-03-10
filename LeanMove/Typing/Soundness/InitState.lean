@@ -309,43 +309,6 @@ def checkArgsCompatible (params : List (Var × MoveType)) (args : List Value) (h
 -- Part 11b': Soundness Assumptions
 -- ============================================================
 
-/-- Check that `prefix_` is a proper prefix of `list` (same elements, strictly shorter). -/
-def isProperListPrefix [DecidableEq α] (prefix_ : List α) (list : List α) : Bool :=
-  prefix_.length < list.length && decide (list.take prefix_.length = prefix_)
-
-/-- If `isProperListPrefix` returns false and `list = prefix_ ++ suffix`, then `suffix = []`. -/
-theorem not_isProperListPrefix_no_extension [DecidableEq α] (prefix_ list : List α)
-    (h : isProperListPrefix prefix_ list = false) (suffix : List α)
-    (heq : list = prefix_ ++ suffix) : suffix = [] := by
-  unfold isProperListPrefix at h
-  rw [Bool.and_eq_false_iff] at h
-  subst heq
-  rcases h with h | h
-  · simp [List.length_append] at h
-    cases suffix with
-    | nil => rfl
-    | cons _ _ => simp at h
-  · rw [decide_eq_false_iff_not] at h
-    simp at h
-
-/-- Decidable check: no mutable borrow of enum-containing type has a path extension
-    by a different ref-typed param at the same heap location. -/
-def checkParamEnumNoExtension (params : List (Var × MoveType)) (args : List Value) : Bool :=
-  let entries := params.zip args
-  entries.all fun ((_, τ1), v1) =>
-    match τ1, v1 with
-    | .ref bt1 r1 .siteBorrowMut, .ref loc1 path1 =>
-      if bt1.containsEnum then
-        entries.all fun ((_, τ2), v2) =>
-          match τ2, v2 with
-          | .ref _ r2 _, .ref loc2 path2 =>
-            if decide (r1 ≠ r2) && decide (loc1 = loc2) then
-              !isProperListPrefix path1 path2
-            else true
-          | _, _ => true
-      else true
-    | _, _ => true
-
 /-- Semantic prerequisites for type soundness that are not captured by the
     relational type-checking judgment `typecheck_fun`.
 
@@ -476,13 +439,36 @@ structure SoundnessAssumptions (f : FunDef) (lenv : LabelEnv) (enumEnv : EnumEnv
       `blockEnv.enumEnv` to equal the global `enumEnv`. -/
   lenv_enumEnv_eq : ∀ l env, lookup lenv l = some env → env.enumEnv = enumEnv
 
-  /-- Mutable borrows of enum-containing types have no extending refs at the same
-      heap location among the initial arguments. -/
-  param_enum_no_extension : ∀ x1 x2 bt1 bt2 r1 r2 bk2 loc path suffix,
-    ((x1, .ref bt1 r1 .siteBorrowMut), Value.ref loc path) ∈ f.params.zip args →
-    bt1.containsEnum = true →
-    ((x2, .ref bt2 r2 bk2), Value.ref loc (path ++ suffix)) ∈ f.params.zip args →
-    r1 ≠ r2 → suffix ≠ [] → False
+  /-- Enum definitions have no qualified field name collisions.
+      Required for flat encoding: guarantees allEnumFieldTypes produces unique keys. -/
+  enum_qualified_nodup : ∀ ename enumDef,
+    lookup enumEnv ename = some enumDef →
+    ((allEnumFieldTypes enumDef).map Prod.fst).Nodup
+
+  /-- Enum names are unique in the enum environment.
+      Required for defaultValue_HasType: ensures consistent lookups in sublists. -/
+  enum_names_nodup : (enumEnv.entries.map Prod.fst).Nodup
+
+  /-- Variant names within each enum are unique.
+      Required for buildFlatVariantFields_HasType. -/
+  enum_variant_nodup : ∀ ename (ed : EnumDef),
+    enumEnv.lookup ename = some ed →
+    (ed.variants.entries.map Prod.fst).Nodup
+
+  /-- Field names within each enum variant are unique.
+      Required for buildFlatVariantFields_HasType: converts membership to lookup. -/
+  enum_fields_nodup : ∀ ename (ed : EnumDef) vn (vd : EnumVariantDef),
+    enumEnv.lookup ename = some ed →
+    (vn, vd) ∈ ed.variants.entries →
+    (vd.fields.entries.map Prod.fst).Nodup
+
+  /-- Default values for enum field types are well-typed.
+      Required for packVariant (buildFlatVariantFields uses defaultValue for inactive fields). -/
+  defaultValues_typed : ∀ ename (ed : EnumDef) vn (vd : EnumVariantDef) f bt,
+    enumEnv.lookup ename = some ed →
+    (vn, vd) ∈ ed.variants.entries →
+    (f, bt) ∈ vd.fields.entries →
+    HasType enumEnv (defaultValue enumEnv.entries bt) bt
 
 def SoundnessAssumptions.checkDecidable (f : FunDef) (lenvDec : LabelEnvDec)
     (enumEnv : EnumEnv) (funEnv : AssocMap Id FunDef) (fte : FunTypingEnv)
@@ -527,10 +513,25 @@ def SoundnessAssumptions.checkDecidable (f : FunDef) (lenvDec : LabelEnvDec)
   lenvDec.entries.all (fun (l, _) => f.blocks.any (fun b => b.label == l)) &&
   -- lenv_enumEnv_eq: all lenv entries have enumEnv matching the global one
   lenvDec.entries.all (fun (_, ted) => ted.enumEnv == enumEnv) &&
-  -- param_enum_no_extension: no mutable enum borrow has extending ref at same location
-  checkParamEnumNoExtension f.params args &&
   -- args_length: argument count matches parameter count
-  decide (f.params.length = args.length)
+  decide (f.params.length = args.length) &&
+  -- enum_qualified_nodup: no qualified field name collisions in enum definitions
+  enumEnv.entries.all (fun (_, enumDef) =>
+    decide (((allEnumFieldTypes enumDef).map Prod.fst).Nodup)) &&
+  -- enum_names_nodup: enum names are unique
+  decide ((enumEnv.entries.map Prod.fst).Nodup) &&
+  -- enum_variant_nodup: variant names within each enum are unique
+  enumEnv.entries.all (fun (_, enumDef) =>
+    decide ((enumDef.variants.entries.map Prod.fst).Nodup)) &&
+  -- enum_fields_nodup: field names within each enum variant are unique
+  enumEnv.entries.all (fun (_, enumDef) =>
+    enumDef.variants.entries.all (fun (_, variantDef) =>
+      decide ((variantDef.fields.entries.map Prod.fst).Nodup))) &&
+  -- defaultValues_typed: default values for all enum field types are well-typed
+  enumEnv.entries.all (fun (_, enumDef) =>
+    enumDef.variants.entries.all (fun (_, variantDef) =>
+      variantDef.fields.entries.all (fun (_, bt) =>
+        hasType_bool (defaultValue enumEnv.entries bt) bt)))
 
 /-- Soundness: if checkFunEnv succeeds, every function in funEnv satisfies FunTypeSafe. -/
 theorem checkFunEnv_sound (funEnv : AssocMap Id FunDef) (fte : FunTypingEnv) (enumEnv : EnumEnv) :
@@ -635,15 +636,17 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     (heap : Heap) (args : List Value)
     (hcheck : SoundnessAssumptions.checkDecidable f lenvDec enumEnv funEnv fte heap args = true) :
     SoundnessAssumptions f lenvDec.toLabelEnv enumEnv funEnv heap args where
-  -- checkDecidable has 19 conjuncts (18 &&):
+  -- checkDecidable has 23 conjuncts (22 &&):
   -- 1:check_fun_dec 2:checkFunEnv 3:checkArgsCompatible 4:param_refs_distinct
   -- 5:param_refs_not_root 6:heap_wf 7:lenv_empty_sites 8:lenv_complete
   -- 9:allWellFormed_bool 10:allVarRefsTracked_bool 11:allVarRefsUnique_bool
   -- 12:params_nodup 13:entry_varEnv_exact 14:checkFunEnvConsistent 15:checkFunEnvSigs
-  -- 16:lenv_labels_in_blocks 17:lenv_enumEnv_eq 18:checkEnumSingleVariant 19:args_length
+  -- 16:lenv_labels_in_blocks 17:lenv_enumEnv_eq 18:args_length
+  -- 19:enum_qualified_nodup 20:enum_names_nodup 21:enum_variant_nodup
+  -- 22:enum_fields_nodup 23:defaultValues_typed
   lenv_wf := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hcfd, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hcfd, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     -- check_fun_dec_lenv_wf expects check_fun_dec f lenvDec (default enumEnv)
     -- but hcfd has check_fun_dec f lenvDec enumEnv = true.
     -- Since check_fun_dec = allWellFormed_bool && check_fun, extract allWellFormed_bool.
@@ -660,19 +663,19 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
   lenv_var_tracked := by
     unfold checkDecidable at hcheck
     simp only [Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hvrt⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hvrt⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     exact lenvDec_var_tracked lenvDec hvrt
   lenv_var_unique := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hvru⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hvru⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     exact lenvDec_var_unique lenvDec hvru
   lenv_funEnv_consistent := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨_, hfec⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hfec⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     exact LabelEnvDec.checkFunEnvConsistent_sound lenvDec hfec
   args_compatible := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hac⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hac⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     simp only [checkArgsCompatible, List.all_eq_true] at hac
     intro x τ v hmem
     have hentry := hac ((x, τ), v) hmem
@@ -690,11 +693,11 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
           exact ⟨loc, path, rfl, val, hr, hasType_bool_sound enumEnv _ _ hentry⟩
   param_refs_distinct := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hd⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hd⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     exact decide_eq_true_eq.mp hd
   param_refs_not_root := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hnr⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hnr⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     simp only [List.all_eq_true] at hnr
     intro x bt r bk hmem
     have := hnr (x, .ref bt r bk) hmem
@@ -704,11 +707,11 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     | paramRef _ => exact Aref.noConfusion
   params_nodup := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨_, hnd⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hnd⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     exact decide_eq_true_eq.mp hnd
   entry_varEnv_exact := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨⟨_, heve⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, heve⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     intro block env hhead hlookup
     obtain ⟨ted, hted, rfl⟩ := toLabelEnv_lookup_some lenvDec block.label env hlookup
     show LookupEquiv ted.varEnv (init_fun_varEnv f)
@@ -716,7 +719,7 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     revert heve; rw [hhead]; dsimp; rw [hted]; exact id
   lenv_paths_from_non_member := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hwf⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hwf⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     intro l env hlookup
     obtain ⟨ted, hted, rfl⟩ := toLabelEnv_lookup_some lenvDec l env hlookup
     simp only [LabelEnvDec.allWellFormed_bool, List.all_eq_true] at hwf
@@ -725,7 +728,7 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     exact PathEnvDec.toPathEnv_non_member_from ted.pathEnv hwf_ted.1.1
   lenv_paths_to_non_member := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hwf⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hwf⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     intro l env hlookup
     obtain ⟨ted, hted, rfl⟩ := toLabelEnv_lookup_some lenvDec l env hlookup
     simp only [LabelEnvDec.allWellFormed_bool, List.all_eq_true] at hwf
@@ -740,7 +743,7 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     exact hp
   heap_wf := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hh⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hh⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     simp only [List.all_eq_true] at hh
     intro loc hread
     unfold Heap.read at hread
@@ -750,7 +753,7 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
       exact decide_eq_true_eq.mp (hh (loc, v) (lookup_some heap.store loc v hlookup))
   lenv_empty_sites := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hs⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hs⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     simp only [List.all_eq_true] at hs
     intro l env hlookup s
     obtain ⟨ted, hted, rfl⟩ := toLabelEnv_lookup_some lenvDec l env hlookup
@@ -763,7 +766,7 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     simp only [AssocMap.lookup, hempty, List.lookup]
   lenv_complete := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hc⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hc⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     simp only [List.all_eq_true] at hc
     intro block hmem
     have hany := hc block hmem
@@ -774,11 +777,11 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
       rw [show lookup lenvDec block.label = some ted from hted]; rfl⟩
   funEnv_sig := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨⟨_, hsigs⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨_, hsigs⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     exact checkFunEnvSigs_sound lenvDec funEnv hsigs
   lenv_labels_in_blocks := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨⟨_, hlib⟩, _⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨_, hlib⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     simp only [List.all_eq_true] at hlib
     intro L env hlookup
     obtain ⟨ted, hted, rfl⟩ := toLabelEnv_lookup_some lenvDec L env hlookup
@@ -788,7 +791,7 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     exact ⟨block, hmem, by simp only [BEq.beq, decide_eq_true_eq] at hbeq; exact hbeq⟩
   lenv_enumEnv_eq := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨⟨_, hlee⟩, _⟩, _⟩ := hcheck
+    obtain ⟨⟨⟨⟨⟨⟨⟨_, hlee⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hcheck
     simp only [List.all_eq_true] at hlee
     intro l env hlookup
     obtain ⟨ted, hted, rfl⟩ := toLabelEnv_lookup_some lenvDec l env hlookup
@@ -796,21 +799,39 @@ theorem SoundnessAssumptions.of_check (f : FunDef) (lenvDec : LabelEnvDec)
     simp only [beq_iff_eq] at hchk
     simp only [TypeEnvDec.toTypeEnv]
     exact hchk
-  param_enum_no_extension := by
-    simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    obtain ⟨⟨_, hpene⟩, _⟩ := hcheck
-    intro x1 x2 bt1 bt2 r1 r2 bk2 loc path suffix hmem1 hce hmem2 hne hsuf
-    simp only [checkParamEnumNoExtension, List.all_eq_true] at hpene
-    have h1 := hpene _ hmem1
-    simp only [hce, ite_true, List.all_eq_true] at h1
-    have h2 := h1 _ hmem2
-    dsimp only at h2
-    simp only [decide_true, Bool.and_true, decide_eq_true hne, ite_true,
-      Bool.not_eq_true'] at h2
-    exact hsuf (not_isProperListPrefix_no_extension path (path ++ suffix) h2 suffix rfl)
   args_length := by
     simp only [checkDecidable, Bool.and_eq_true] at hcheck
-    exact decide_eq_true_eq.mp hcheck.2
+    exact decide_eq_true_eq.mp hcheck.1.1.1.1.1.2
+  enum_qualified_nodup := by
+    simp only [checkDecidable, Bool.and_eq_true] at hcheck
+    have heqnd := hcheck.1.1.1.1.2
+    simp only [List.all_eq_true] at heqnd
+    intro ename enumDef hlookup
+    exact of_decide_eq_true (heqnd (ename, enumDef) (lookup_some enumEnv ename enumDef hlookup))
+  enum_names_nodup := by
+    simp only [checkDecidable, Bool.and_eq_true] at hcheck
+    exact decide_eq_true_eq.mp hcheck.1.1.1.2
+  enum_variant_nodup := by
+    simp only [checkDecidable, Bool.and_eq_true] at hcheck
+    have hevnd := hcheck.1.1.2
+    simp only [List.all_eq_true] at hevnd
+    intro ename ed hlookup
+    exact of_decide_eq_true (hevnd (ename, ed) (lookup_some enumEnv ename ed hlookup))
+  enum_fields_nodup := by
+    simp only [checkDecidable, Bool.and_eq_true] at hcheck
+    have hefnd := hcheck.1.2
+    simp only [List.all_eq_true] at hefnd
+    intro ename ed vn vd hlookup hmem
+    have h1 := hefnd (ename, ed) (lookup_some enumEnv ename ed hlookup)
+    exact of_decide_eq_true (h1 (vn, vd) hmem)
+  defaultValues_typed := by
+    simp only [checkDecidable, Bool.and_eq_true] at hcheck
+    have hdvt := hcheck.2
+    simp only [List.all_eq_true] at hdvt
+    intro ename ed vn vd f bt hlookup hmem hfmem
+    have h1 := hdvt (ename, ed) (lookup_some enumEnv ename ed hlookup)
+    have h2 := h1 (vn, vd) hmem
+    exact hasType_bool_sound enumEnv _ _ (h2 (f, bt) hfmem)
 
 -- ============================================================
 -- Part 11c: allocArgs_param_has_type + initState_safe
@@ -900,12 +921,15 @@ private theorem HasType_of_lookupEquiv {ee1 ee2 : EnumEnv} (hle : LookupEquiv ee
     exact HasType.record fields fentries hcover1 hcover2 (fun f bt v hl hf => ih_fields f bt v hl hf)
   | vec elems elemTy hmem ih_elems =>
     exact HasType.vec elems elemTy (fun v hv => ih_elems v hv)
-  | variant vname ename fields fentries hlookup hcover1 hcover2 hfields ih_fields =>
-    have hlookup' : enumVariantFields ee2 ename vname = some fentries := by
-      unfold enumVariantFields at hlookup ⊢
-      rw [hle ename] at hlookup; exact hlookup
-    exact HasType.variant vname ename fields fentries hlookup' hcover1 hcover2
-      (fun f bt v hl hf => ih_fields f bt v hl hf)
+  | variant vname ename fields fentries haqf hcover1 hcover2 hfields hvv ih_fields =>
+    have haqf' : allEnumQualifiedFieldTypes ee2 ename = some fentries := by
+      unfold allEnumQualifiedFieldTypes at haqf ⊢
+      rw [hle ename] at haqf; exact haqf
+    have hvv' : enumVariantFields ee2 ename vname ≠ none := by
+      unfold enumVariantFields at hvv ⊢
+      rw [hle ename] at hvv; exact hvv
+    exact HasType.variant vname ename fields fentries haqf' hcover1 hcover2
+      (fun f bt v hl hf => ih_fields f bt v hl hf) hvv'
 
 /-- The initial state of a well-typed function is safe.
     Requires that the function type-checks. If initState produces a .running state,
@@ -915,7 +939,7 @@ theorem initState_safe (f : FunDef) (lenv : LabelEnv) (enumEnv : EnumEnv) (funEn
     (htyped : typecheck_fun f lenv enumEnv)
     (hfunEnv : ∀ fname fdef, lookup funEnv fname = some fdef → FunTypeSafe fdef funEnv enumEnv)
     (ha : SoundnessAssumptions f lenv enumEnv funEnv heap args) :
-    SafeExecState (initState f funEnv args heap) := by
+    SafeExecState (initState f funEnv args (heap := heap) (enumEnv := enumEnv)) := by
   -- Invert typecheck_fun
   obtain ⟨initEnv, hvarEnv, hsiteEnv, hpathEnv, henumEnv, hblocks_ne, hentry_equiv, hblocks_typed⟩ :=
     htyped
@@ -1088,6 +1112,22 @@ theorem initState_safe (f : FunDef) (lenv : LabelEnv) (enumEnv : EnumEnv) (funEn
       · -- WellTypedState
         exact {
           env_wf := hblockEnv_wf
+          enumEnv_consistent :=
+            (ha.lenv_enumEnv_eq entryLabel blockEnv hlookup).symm
+          enum_qualified_nodup := by
+            rw [ha.lenv_enumEnv_eq entryLabel blockEnv hlookup]; exact ha.enum_qualified_nodup
+          enum_names_nodup := by
+            rw [ha.lenv_enumEnv_eq entryLabel blockEnv hlookup]; exact ha.enum_names_nodup
+          enum_variant_nodup := by
+            rw [ha.lenv_enumEnv_eq entryLabel blockEnv hlookup]
+            intro ename ed he; exact ha.enum_variant_nodup ename ed he
+          enum_fields_nodup := by
+            rw [ha.lenv_enumEnv_eq entryLabel blockEnv hlookup]
+            intro ename ed vn vd he hvn; exact ha.enum_fields_nodup ename ed vn vd he hvn
+          defaultValues_typed := by
+            rw [ha.lenv_enumEnv_eq entryLabel blockEnv hlookup]
+            intro ename ed vn vd f bt hlookup_enum hvn hf
+            exact ha.defaultValues_typed ename ed vn vd f bt hlookup_enum hvn hf
           stmt_typed := htyped_entry
           var_consistent := by
             intro x isv τ ms hlookup_var
@@ -1304,23 +1344,6 @@ theorem initState_safe (f : FunDef) (lenv : LabelEnv) (enumEnv : EnumEnv) (funEn
             · rw [addLocals_preserves_lookup paramVarStore f.locals y hlocal] at hvar
               exact allocArgs_varStore_locs_bound heap f.params args heap'
                 paramVarStore hallocArgs y loc_y hvar
-          enum_mutable_no_extension := by
-            intro r bt loc path hr hce hb hrmap r' hr' hne suffix hsuf
-            rcases hb with ⟨s, hs⟩ | ⟨x, ms, hx⟩
-            · rw [hsiteEnv_empty s] at hs; cases hs
-            · intro hrmap'
-              obtain ⟨x2, bt2, bk2, hmem2⟩ := hrmap_mem r' loc (path ++ suffix) hrmap'
-              have ⟨_, hparam⟩ := hvar_init_exact x (.ref bt r .siteBorrowMut) ms hx
-              obtain ⟨v, hmem1⟩ := hmem_zip_of_param x (.ref bt r .siteBorrowMut) hparam
-              have hcompat := ha.args_compatible x (.ref bt r .siteBorrowMut) v hmem1
-              obtain ⟨loc', path', hveq, _⟩ := hcompat
-              subst hveq
-              have hrmap1 := hrmap_of_param x bt r .siteBorrowMut loc' path' hmem1
-              rw [hrmap] at hrmap1
-              simp only [Option.some.injEq, Prod.mk.injEq] at hrmap1
-              obtain ⟨rfl, rfl⟩ := hrmap1
-              exact ha.param_enum_no_extension x x2 bt bt2 r r' bk2 loc path suffix
-                hmem1 hce hmem2 hne.symm hsuf
         }
       · -- StackSafe [] none heap' = True
         simp only [StackSafe]

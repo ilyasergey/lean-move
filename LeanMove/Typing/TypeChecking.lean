@@ -109,6 +109,7 @@ def addFieldSites (fentries : AssocMap Field BasicMoveType) (se : AssocMap Site 
 -- and inserts a borrow site while extending the pathEnv.
 def addRefFieldSites (r : Aref) (bk : BorrowingKind)
     (fentries : AssocMap Field BasicMoveType)
+    (qualify : Field → Field)
     (fields : List (Field × Site)) (env : TypeEnv) : TypeEnv :=
   fields.foldl (fun env' (f_s : Field × Site) =>
     let (f, site) := f_s
@@ -117,7 +118,7 @@ def addRefFieldSites (r : Aref) (bk : BorrowingKind)
       let rf := nextFreshRefInEnv env'
       {env' with
         siteEnv := insert env'.siteEnv site (.ref bt rf bk)
-        pathEnv := update_with_extension rf r [.field f] env'.pathEnv}
+        pathEnv := update_with_extension rf r [.field (qualify f)] env'.pathEnv}
     | none => env') env
 
 -- Helper for vecUnpack: adds basic T sites for each element
@@ -421,13 +422,10 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
   | let_bind_borrowMut : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) x τ ms (r : Aref) cont retTypes,
       LE.le .mutable ms →
       lookup env.varEnv x = some (.validVar, .basic τ, ms) →
-      (BasicMoveType.containsEnum τ → not_borrowed x env) →
       notIn env.siteEnv a →
       freshRefInEnv r env →
       typecheck_stmt lenv
-        {env with varEnv := if BasicMoveType.containsEnum τ then update env.varEnv x (.invalidVar, .basic τ, ms)
-                             else env.varEnv
-                  siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowMut)
+        {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowMut)
                   pathEnv := update_with_epsilon r r env.pathEnv |>
                              update_with_extension r .root [.root_to_var x]}
         cont retTypes →
@@ -531,7 +529,6 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
   | var_assign_valid : ∀ (lenv : LabelEnv) (env : TypeEnv) x a ax τ ms (r : Aref) cont retTypes,
       LE.le .mutable ms →
       lookup env.varEnv x = some (.validVar, .basic τ, ms) →
-      (BasicMoveType.containsEnum τ → not_borrowed x env) →
       lookup env.siteEnv a = some (.basic τ) →
       notIn env.siteEnv ax →
       freshRefInEnv r env →
@@ -788,7 +785,7 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
       (∀ a₁ a₂, (∃ f₁ f₂, (f₁, a₁) ∈ fields ∧ (f₂, a₂) ∈ fields ∧ f₁ ≠ f₂) → a₁ ≠ a₂) →
       (∀ (f : Field) (a : Site), (f, a) ∈ fields → ∃ bt, AssocMap.lookup variantDef.fields f = some bt) →
       typecheck_stmt lenv
-        (addRefFieldSites r bk variantDef.fields fields {env with siteEnv := delete env.siteEnv b})
+        (addRefFieldSites r bk variantDef.fields (LeanMove.Lang.MoveLight.qualifyField variantName) fields {env with siteEnv := delete env.siteEnv b})
         cont retTypes →
       typecheck_stmt lenv env (.unpackVariant variantName fields b cont) retTypes
 

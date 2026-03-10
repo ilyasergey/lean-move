@@ -312,3 +312,141 @@ theorem List.inj_on_of_nodup_map {α β : Type} {f : α → β} {l : List α}
         exact absurd (hfxy.symm ▸ List.mem_map_of_mem (f := f) hx') hnotmem
       | tail _ hy' =>
         exact ih htl_nodup x hx' y hy' hfxy
+
+/-! ## Lookup on appended lists -/
+
+/-- Lookup on append: if found in xs, found in xs ++ ys. -/
+theorem lookup_append_left {α β : Type} [BEq α] (xs ys : List (α × β)) (k : α) (v : β)
+    (h : xs.lookup k = some v) : (xs ++ ys).lookup k = some v := by
+  induction xs with
+  | nil => contradiction
+  | cons hd tl ih =>
+    obtain ⟨a, b⟩ := hd
+    simp only [List.cons_append, List.lookup] at h ⊢
+    cases heq : (k == a) with
+    | false => simp only [heq] at h ⊢; exact ih h
+    | true => simp only [heq] at h ⊢; exact h
+
+/-- Lookup on append: if not found in xs, delegates to ys. -/
+theorem lookup_append_right {α β : Type} [BEq α] (xs ys : List (α × β)) (k : α)
+    (h : xs.lookup k = none) : (xs ++ ys).lookup k = ys.lookup k := by
+  induction xs with
+  | nil => simp
+  | cons hd tl ih =>
+    obtain ⟨a, b⟩ := hd
+    simp only [List.cons_append, List.lookup] at h ⊢
+    cases heq : (k == a) with
+    | false => simp only [heq] at h ⊢; exact ih h
+    | true => simp only [heq] at h; exact absurd h (by simp)
+
+/-! ## Lookup transfer for mapped lists -/
+
+/-- For two maps over the same base list with the same key function,
+    if one has a non-none lookup, so does the other. -/
+theorem list_map_lookup_transfer {α β : Type} {V1 V2 : Type} [BEq α]
+    {base : List (α × β)}
+    {key : α → β → α} {val1 : α → β → V1} {val2 : α → β → V2} {k : α}
+    (h : (base.map fun (a, b) => (key a b, val1 a b)).lookup k ≠ none) :
+    (base.map fun (a, b) => (key a b, val2 a b)).lookup k ≠ none := by
+  induction base with
+  | nil => simp at h
+  | cons hd tl ih =>
+    obtain ⟨x, y⟩ := hd
+    simp only [List.map, List.lookup] at h ⊢
+    cases heq : (k == key x y) with
+    | false => simp only [heq] at h ⊢; exact ih h
+    | true => simp only [heq] at h ⊢; exact Option.some_ne_none _
+
+/-- For two maps over the same base with the same key function,
+    successful lookups correspond to the same base element. -/
+theorem list_map_lookup_pair {α β : Type} {V1 V2 : Type} [BEq α] [LawfulBEq α]
+    {base : List (α × β)}
+    {key : α → β → α} {val1 : α → β → V1} {val2 : α → β → V2} {k : α}
+    {v1 : V1} {v2 : V2}
+    (h1 : (base.map fun (a, b) => (key a b, val1 a b)).lookup k = some v1)
+    (h2 : (base.map fun (a, b) => (key a b, val2 a b)).lookup k = some v2) :
+    ∃ a b, (a, b) ∈ base ∧ key a b = k ∧ v1 = val1 a b ∧ v2 = val2 a b := by
+  induction base with
+  | nil => simp at h1
+  | cons hd tl ih =>
+    obtain ⟨x, y⟩ := hd
+    simp only [List.map, List.lookup] at h1 h2
+    cases heq : (k == key x y) with
+    | false =>
+      simp only [heq] at h1 h2
+      obtain ⟨a', b', hmem, hk, hv1, hv2⟩ := ih h1 h2
+      exact ⟨a', b', .tail _ hmem, hk, hv1, hv2⟩
+    | true =>
+      simp only [heq, Option.some.injEq] at h1 h2
+      exact ⟨x, y, .head _, (eq_of_beq heq).symm, h1.symm, h2.symm⟩
+
+/-- Domain matching for flatMap of maps with the same key function. -/
+theorem flatMap_map_lookup_transfer {α β γ δ : Type} {V1 V2 : Type} [BEq α]
+    {outer : List (γ × δ)} {inner : γ → δ → List (α × β)}
+    {key : γ → δ → α → β → α}
+    {val1 : γ → δ → α → β → V1} {val2 : γ → δ → α → β → V2} {k : α}
+    (h : (outer.flatMap fun (c, d) =>
+      (inner c d).map fun (a, b) => (key c d a b, val1 c d a b)).lookup k ≠ none) :
+    (outer.flatMap fun (c, d) =>
+      (inner c d).map fun (a, b) => (key c d a b, val2 c d a b)).lookup k ≠ none := by
+  induction outer with
+  | nil => simp at h
+  | cons hd tl ih =>
+    obtain ⟨c, d⟩ := hd
+    simp only [List.flatMap_cons] at h ⊢
+    cases hleft : ((inner c d).map fun (a, b) => (key c d a b, val1 c d a b)).lookup k with
+    | some v =>
+      have hne : ((inner c d).map fun (a, b) => (key c d a b, val2 c d a b)).lookup k ≠ none :=
+        list_map_lookup_transfer (by rw [hleft]; exact Option.some_ne_none _)
+      obtain ⟨v2, hv2⟩ := Option.ne_none_iff_exists'.mp hne
+      rw [lookup_append_left _ _ _ _ hv2]; exact Option.some_ne_none _
+    | none =>
+      rw [lookup_append_right _ _ _ hleft] at h
+      cases hleft2 : ((inner c d).map fun (a, b) => (key c d a b, val2 c d a b)).lookup k with
+      | none => rw [lookup_append_right _ _ _ hleft2]; exact ih h
+      | some v' =>
+        exfalso
+        have hne2 : ((inner c d).map fun (a, b) => (key c d a b, val2 c d a b)).lookup k ≠ none := by
+          rw [hleft2]; exact Option.some_ne_none _
+        exact (list_map_lookup_transfer hne2) (by rw [hleft])
+
+/-- Lookup correspondence for flatMap of maps with the same key function. -/
+theorem flatMap_map_lookup_pair {α β γ δ : Type} {V1 V2 : Type} [BEq α] [LawfulBEq α]
+    {outer : List (γ × δ)} {inner : γ → δ → List (α × β)}
+    {key : γ → δ → α → β → α}
+    {val1 : γ → δ → α → β → V1} {val2 : γ → δ → α → β → V2} {k : α}
+    {v1 : V1} {v2 : V2}
+    (h1 : (outer.flatMap fun (c, d) =>
+      (inner c d).map fun (a, b) => (key c d a b, val1 c d a b)).lookup k = some v1)
+    (h2 : (outer.flatMap fun (c, d) =>
+      (inner c d).map fun (a, b) => (key c d a b, val2 c d a b)).lookup k = some v2) :
+    ∃ c d a b, (c, d) ∈ outer ∧ (a, b) ∈ inner c d ∧
+      key c d a b = k ∧ v1 = val1 c d a b ∧ v2 = val2 c d a b := by
+  induction outer with
+  | nil => simp at h1
+  | cons hd tl ih =>
+    obtain ⟨c, d⟩ := hd
+    simp only [List.flatMap_cons] at h1 h2
+    cases hleft1 : ((inner c d).map fun (a, b) => (key c d a b, val1 c d a b)).lookup k with
+    | some v =>
+      have h1' : v1 = v := by
+        rw [lookup_append_left _ _ _ _ hleft1] at h1; exact Option.some.inj h1.symm
+      have hne : ((inner c d).map fun (a, b) => (key c d a b, val2 c d a b)).lookup k ≠ none :=
+        list_map_lookup_transfer (by rw [hleft1]; exact Option.some_ne_none _)
+      obtain ⟨v2', hv2'⟩ := Option.ne_none_iff_exists'.mp hne
+      have h2' : v2 = v2' := by
+        rw [lookup_append_left _ _ _ _ hv2'] at h2; exact Option.some.inj h2.symm
+      obtain ⟨a, b, hmem, hk, hv1e, hv2e⟩ := list_map_lookup_pair (h1' ▸ hleft1) (h2' ▸ hv2')
+      exact ⟨c, d, a, b, .head _, hmem, hk, h1' ▸ hv1e, h2' ▸ hv2e⟩
+    | none =>
+      cases hleft2 : ((inner c d).map fun (a, b) => (key c d a b, val2 c d a b)).lookup k with
+      | some v' =>
+        exfalso
+        have hne2 : ((inner c d).map fun (a, b) => (key c d a b, val2 c d a b)).lookup k ≠ none := by
+          rw [hleft2]; exact Option.some_ne_none _
+        exact (list_map_lookup_transfer hne2) (by rw [hleft1])
+      | none =>
+        rw [lookup_append_right _ _ _ hleft1] at h1
+        rw [lookup_append_right _ _ _ hleft2] at h2
+        obtain ⟨c', d', a, b, hmem, hinner, hk, hv1, hv2⟩ := ih h1 h2
+        exact ⟨c', d', a, b, .tail _ hmem, hinner, hk, hv1, hv2⟩

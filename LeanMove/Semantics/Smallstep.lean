@@ -73,6 +73,86 @@ where
 instance : BEq Value := ⟨Value.beq⟩
 
 -- ============================================================
+-- Flat Enum Encoding: Default Values
+-- ============================================================
+
+-- Generate a default value for a basic type.
+-- Terminates by lexicographic order (sizeOf eeEntries, sizeOf bt):
+-- - `.trecord`: same eeEntries, structurally smaller field types
+-- - `.tenum`: looks up in eeEntries, recurses with strictly shorter suffix
+-- Requires topological ordering of EnumEnv (later enums reference earlier).
+mutual
+  def defaultValue (eeEntries : List (Id × EnumDef)) (bt : BasicMoveType) : Value :=
+    match bt with
+    | .u64 => .int 0
+    | .u8 => .int 0
+    | .tbool => .bool false
+    | .tunit => .unit
+    | .trecord ⟨fentries⟩ => .record (defaultValueEntries eeEntries fentries)
+    | .tvec fbt => .vec fbt []
+    | .tenum ename => defaultValueEnum eeEntries ename
+  termination_by (sizeOf eeEntries, sizeOf bt)
+  decreasing_by all_goals simp_wf ; omega
+
+  def defaultValueEntries (eeEntries : List (Id × EnumDef))
+      (entries : List (Field × BasicMoveType)) : List (Field × Value) :=
+    match entries with
+    | [] => []
+    | (f, bt) :: rest =>
+      (f, defaultValue eeEntries bt) :: defaultValueEntries eeEntries rest
+  termination_by (sizeOf eeEntries, sizeOf entries)
+  decreasing_by all_goals simp_wf ; omega
+
+  def defaultValueEnum (eeEntries : List (Id × EnumDef)) (ename : Id) : Value :=
+    match eeEntries with
+    | [] => .unit
+    | (name, enumDef) :: rest =>
+      if name == ename then
+        match enumDef.variants.entries.head? with
+        | some (vname, _) =>
+          .variant vname ename (defaultValueAllFields rest enumDef.variants.entries)
+        | none => .unit
+      else defaultValueEnum rest ename
+  termination_by (sizeOf eeEntries, 0)
+  decreasing_by all_goals simp_wf ; omega
+
+  def defaultValueAllFields (eeEntries : List (Id × EnumDef))
+      (variants : List (Id × EnumVariantDef)) : List (Field × Value) :=
+    match variants with
+    | [] => []
+    | (vname, ⟨_, ⟨fentries⟩⟩) :: rest =>
+      defaultValueVariantFields eeEntries vname fentries
+        ++ defaultValueAllFields eeEntries rest
+  termination_by (sizeOf eeEntries, sizeOf variants)
+  decreasing_by all_goals simp_wf ; omega
+
+  def defaultValueVariantFields (eeEntries : List (Id × EnumDef)) (vname : Id)
+      (fields : List (Field × BasicMoveType)) : List (Field × Value) :=
+    match fields with
+    | [] => []
+    | (f, bt) :: rest =>
+      (MoveLight.qualifyField vname f, defaultValue eeEntries bt)
+        :: defaultValueVariantFields eeEntries vname rest
+  termination_by (sizeOf eeEntries, sizeOf fields)
+  decreasing_by all_goals simp_wf ; omega
+end
+
+/-- Build flat variant fields: all variants' fields with qualified names.
+    Active variant uses the provided field values; inactive variants use defaults. -/
+def buildFlatVariantFields (eeEntries : List (Id × EnumDef)) (enumDef : EnumDef)
+    (activeVariant : Id) (activeFields : List (Field × Value))
+    : List (Field × Value) :=
+  enumDef.variants.entries.flatMap fun (vname, vdef) =>
+    vdef.fields.entries.map fun (f, bt) =>
+      let qf := MoveLight.qualifyField vname f
+      if vname == activeVariant then
+        match activeFields.lookup f with
+        | some v => (qf, v)
+        | none => (qf, defaultValue eeEntries bt)
+      else
+        (qf, defaultValue eeEntries bt)
+
+-- ============================================================
 -- Heap (Global Memory)
 -- ============================================================
 
@@ -211,6 +291,7 @@ structure Machine where
   frame : Frame
   stack : List Frame
   heap  : Heap
+  enumEnv : EnumEnv := AssocMap.empty
 deriving Repr
 
 /-- Overall execution state -/
@@ -370,6 +451,7 @@ def step (state : ExecState) : ExecState :=
                 frame := { callerFrame with siteStore := newSiteStore, stmt := ri.callerStmt }
                 stack := rest
                 heap := m.heap
+                enumEnv := m.enumEnv
               }
 
     -- --------------------------------------------------------
@@ -383,6 +465,7 @@ def step (state : ExecState) : ExecState :=
           frame := { f with stmt := block.body, siteStore := AssocMap.empty }
           stack := m.stack
           heap := m.heap
+          enumEnv := m.enumEnv
         }
 
     -- --------------------------------------------------------
@@ -399,6 +482,7 @@ def step (state : ExecState) : ExecState :=
             frame := { f with stmt := block.body, siteStore := AssocMap.empty }
             stack := m.stack
             heap := m.heap
+            enumEnv := m.enumEnv
           }
       | some (.bool false) =>
         match findBlock f.blocks l2 with
@@ -408,6 +492,7 @@ def step (state : ExecState) : ExecState :=
             frame := { f with stmt := block.body, siteStore := AssocMap.empty }
             stack := m.stack
             heap := m.heap
+            enumEnv := m.enumEnv
           }
       | some _ => .error (.typeMismatch "branch condition is not a bool")
 
@@ -431,6 +516,7 @@ def step (state : ExecState) : ExecState :=
           }
           stack := m.stack
           heap := m.heap
+          enumEnv := m.enumEnv
         }
 
       -- Variable usage (copy/move/borrowImm/borrowMut)
@@ -447,6 +533,7 @@ def step (state : ExecState) : ExecState :=
               }
               stack := m.stack
               heap := m.heap
+              enumEnv := m.enumEnv
             }
 
         | .move x =>
@@ -461,6 +548,7 @@ def step (state : ExecState) : ExecState :=
               }
               stack := m.stack
               heap := m.heap
+              enumEnv := m.enumEnv
             }
 
         | .borrowImm x =>
@@ -474,6 +562,7 @@ def step (state : ExecState) : ExecState :=
               }
               stack := m.stack
               heap := m.heap
+              enumEnv := m.enumEnv
             }
 
         | .borrowMut x =>
@@ -487,6 +576,7 @@ def step (state : ExecState) : ExecState :=
               }
               stack := m.stack
               heap := m.heap
+              enumEnv := m.enumEnv
             }
 
       -- Borrow field (immutable): extend reference with field
@@ -501,6 +591,7 @@ def step (state : ExecState) : ExecState :=
             }
             stack := m.stack
             heap := m.heap
+            enumEnv := m.enumEnv
           }
         | some _ => .error (.typeMismatch "borrowField on non-ref")
 
@@ -516,6 +607,7 @@ def step (state : ExecState) : ExecState :=
             }
             stack := m.stack
             heap := m.heap
+            enumEnv := m.enumEnv
           }
         | some _ => .error (.typeMismatch "borrowMutField on non-ref")
 
@@ -534,6 +626,7 @@ def step (state : ExecState) : ExecState :=
               }
               stack := m.stack
               heap := m.heap
+              enumEnv := m.enumEnv
             }
         | some _ => .error (.typeMismatch "readRef on non-ref")
 
@@ -549,6 +642,7 @@ def step (state : ExecState) : ExecState :=
             }
             stack := m.stack
             heap := m.heap
+            enumEnv := m.enumEnv
           }
 
       -- Pack: create a record value from field sites
@@ -563,6 +657,7 @@ def step (state : ExecState) : ExecState :=
             }
             stack := m.stack
             heap := m.heap
+            enumEnv := m.enumEnv
           }
 
       -- Pack enum variant
@@ -570,14 +665,22 @@ def step (state : ExecState) : ExecState :=
         match collectPackFields f.siteStore fieldSites with
         | none => .error (.uninitializedSite (.site 0))
         | some fieldVals =>
-          .running {
-            frame := { f with
-              siteStore := AssocMap.insert f.siteStore s (.variant variantName enumName fieldVals)
-              stmt := cont
+          -- Look up enum definition to build flat fields
+          match m.enumEnv.lookup enumName with
+          | none => .error (.typeMismatch s!"packVariant: unknown enum {enumName}")
+          | some enumDef =>
+            let flatFields := buildFlatVariantFields m.enumEnv.entries enumDef
+                                variantName fieldVals
+            .running {
+              frame := { f with
+                siteStore := AssocMap.insert f.siteStore s
+                  (.variant variantName enumName flatFields)
+                stmt := cont
+              }
+              stack := m.stack
+              heap := m.heap
+              enumEnv := m.enumEnv
             }
-            stack := m.stack
-            heap := m.heap
-          }
 
       -- Binary operation
       | .binop op a b =>
@@ -593,6 +696,7 @@ def step (state : ExecState) : ExecState :=
               }
               stack := m.stack
               heap := m.heap
+              enumEnv := m.enumEnv
             }
         | some (.bool ba), some (.bool bb) =>
           match evalBinopBool op ba bb with
@@ -604,6 +708,7 @@ def step (state : ExecState) : ExecState :=
               }
               stack := m.stack
               heap := m.heap
+              enumEnv := m.enumEnv
             }
           | none => .error (.typeMismatch "invalid bool binop")
         | some _, some _ => .error (.typeMismatch "binop type mismatch")
@@ -618,7 +723,8 @@ def step (state : ExecState) : ExecState :=
               siteStore := AssocMap.insert f.siteStore s (.vec T vals)
               stmt := cont }
             stack := m.stack
-            heap := m.heap }
+            heap := m.heap
+            enumEnv := m.enumEnv }
         else .error (.uninitializedSite (.site 0))
 
       | .vecLen src =>
@@ -631,7 +737,8 @@ def step (state : ExecState) : ExecState :=
                 siteStore := AssocMap.insert f.siteStore s (.int elems.length)
                 stmt := cont }
               stack := m.stack
-              heap := m.heap }
+              heap := m.heap
+              enumEnv := m.enumEnv }
           | some _ => .error (.typeMismatch "vecLen on non-vector")
           | none => .error (.danglingRef loc)
         | some _ => .error (.typeMismatch "vecLen on non-ref")
@@ -650,7 +757,8 @@ def step (state : ExecState) : ExecState :=
                   siteStore := AssocMap.insert f.siteStore s (.ref elemLoc [])
                   stmt := cont }
                 stack := m.stack
-                heap := heap' }
+                heap := heap'
+                enumEnv := m.enumEnv }
             else .error .vectorError
           | _ => .error (.typeMismatch "vecImmBorrow: not a vector")
         | some (.ref _ _), _ => .error (.typeMismatch "vecImmBorrow: idx not int")
@@ -669,7 +777,8 @@ def step (state : ExecState) : ExecState :=
                   siteStore := AssocMap.insert f.siteStore s (.ref elemLoc [])
                   stmt := cont }
                 stack := m.stack
-                heap := heap' }
+                heap := heap'
+                enumEnv := m.enumEnv }
             else .error .vectorError
           | _ => .error (.typeMismatch "vecMutBorrow: not a vector")
         | some (.ref _ _), _ => .error (.typeMismatch "vecMutBorrow: idx not int")
@@ -689,7 +798,8 @@ def step (state : ExecState) : ExecState :=
                     siteStore := AssocMap.insert f.siteStore s lastVal
                     stmt := cont }
                   stack := m.stack
-                  heap := heap' }
+                  heap := heap'
+                  enumEnv := m.enumEnv }
               | none => .error (.danglingRef loc)
             | _, none => .error .vectorError  -- empty vector
           | some _ => .error (.typeMismatch "vecPopBack on non-vector")
@@ -714,6 +824,7 @@ def step (state : ExecState) : ExecState :=
           frame := { f with siteStore := newSiteStore, stmt := cont }
           stack := m.stack
           heap := m.heap
+          enumEnv := m.enumEnv
         }
       | some _ => .error (.typeMismatch "unpack on non-record")
 
@@ -732,6 +843,7 @@ def step (state : ExecState) : ExecState :=
           }
           stack := m.stack
           heap := heap'
+          enumEnv := m.enumEnv
         }
 
     -- --------------------------------------------------------
@@ -747,6 +859,7 @@ def step (state : ExecState) : ExecState :=
             frame := { f with stmt := cont }
             stack := m.stack
             heap := heap'
+            enumEnv := m.enumEnv
           }
       | some _, _ => .error (.typeMismatch "writeRef dst is not a ref")
       | none, _ => .error (.uninitializedSite dst)
@@ -760,6 +873,7 @@ def step (state : ExecState) : ExecState :=
         frame := { f with stmt := cont }
         stack := m.stack
         heap := m.heap
+        enumEnv := m.enumEnv
       }
 
     -- --------------------------------------------------------
@@ -797,6 +911,7 @@ def step (state : ExecState) : ExecState :=
                 frame := calleeFrame
                 stack := callerFrame :: m.stack
                 heap := heap'
+                enumEnv := m.enumEnv
               }
 
     -- --------------------------------------------------------
@@ -811,7 +926,8 @@ def step (state : ExecState) : ExecState :=
           .running {
             frame := { f with siteStore := newSiteStore, stmt := cont }
             stack := m.stack
-            heap := m.heap }
+            heap := m.heap
+            enumEnv := m.enumEnv }
         else .error .vectorError  -- length mismatch
       | some _ => .error (.typeMismatch "vecUnpack on non-vector")
       | none => .error (.uninitializedSite src)
@@ -826,7 +942,8 @@ def step (state : ExecState) : ExecState :=
             .running {
               frame := { f with stmt := cont, siteStore := f.siteStore }
               stack := m.stack
-              heap := heap' }
+              heap := heap'
+              enumEnv := m.enumEnv }
           | none => .error (.danglingRef loc)
         | some _ => .error (.typeMismatch "vecPushBack on non-vector")
         | none => .error (.danglingRef loc)
@@ -848,7 +965,8 @@ def step (state : ExecState) : ExecState :=
                 .running {
                   frame := { f with stmt := cont, siteStore := f.siteStore }
                   stack := m.stack
-                  heap := heap' }
+                  heap := heap'
+                  enumEnv := m.enumEnv }
               | none => .error (.danglingRef loc)
             else .error .vectorError
           else .error .vectorError
@@ -864,8 +982,10 @@ def step (state : ExecState) : ExecState :=
       | none => .error (.uninitializedSite src)
       | some (.variant actualVariant _ recFields) =>
         if actualVariant == expectedVariant then
+          -- Use qualified field names to look up in flat record
           let newSiteStore := fieldSites.foldl (fun ss (field, site) =>
-            match recFields.lookup field with
+            let qf := MoveLight.qualifyField expectedVariant field
+            match recFields.lookup qf with
             | some v => AssocMap.insert ss site v
             | none => ss
           ) f.siteStore
@@ -873,19 +993,23 @@ def step (state : ExecState) : ExecState :=
             frame := { f with siteStore := newSiteStore, stmt := cont }
             stack := m.stack
             heap := m.heap
+            enumEnv := m.enumEnv
           }
         else .error .variantMismatch
       | some (.ref loc path) =>
         match m.heap.readRef loc path with
         | some (.variant actualVariant _ _recFields) =>
           if actualVariant == expectedVariant then
+            -- Use qualified field names for path extension
             let newSiteStore := fieldSites.foldl (fun ss (field, site) =>
-              AssocMap.insert ss site (.ref loc (path ++ [field]))
+              let qf := MoveLight.qualifyField expectedVariant field
+              AssocMap.insert ss site (.ref loc (path ++ [qf]))
             ) f.siteStore
             .running {
               frame := { f with siteStore := newSiteStore, stmt := cont }
               stack := m.stack
               heap := m.heap
+              enumEnv := m.enumEnv
             }
           else .error .variantMismatch
         | some _ => .error (.typeMismatch "unpackVariant ref: target not a variant")
@@ -910,6 +1034,7 @@ def step (state : ExecState) : ExecState :=
                 frame := { f with stmt := block.body }
                 stack := m.stack
                 heap := m.heap
+                enumEnv := m.enumEnv
               }
             | none => .error (.unknownLabel label)
           | none => .error (.typeMismatch s!"variant {variantName} not in switch cases")
@@ -935,7 +1060,8 @@ def run (fuel : Nat) (state : ExecState) : ExecState :=
 
 /-- Create the initial execution state for running a function -/
 def initState (funDef : FunDef) (funEnv : AssocMap Id FunDef)
-              (args : List Value) (heap : Heap := Heap.empty) : ExecState :=
+              (args : List Value) (heap : Heap := Heap.empty)
+              (enumEnv : EnumEnv := AssocMap.empty) : ExecState :=
   -- Allocate parameters on heap
   match allocArgs heap funDef.params args with
   | none => .error (.arityMismatch "initState: argument count mismatch")
@@ -957,6 +1083,7 @@ def initState (funDef : FunDef) (funEnv : AssocMap Id FunDef)
         }
         stack := []
         heap := heap'
+        enumEnv := enumEnv
       }
 
 -- ============================================================

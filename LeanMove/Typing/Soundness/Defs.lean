@@ -62,16 +62,17 @@ inductive HasType (enumEnv : EnumEnv) : Value → BasicMoveType → Prop where
       HasType enumEnv (.vec elemTy elems) (.tvec elemTy)
   | variant : ∀ (vname ename : Id) (fields : List (Field × Value))
       (fentries : AssocMap Field BasicMoveType),
-      enumVariantFields enumEnv ename vname = some fentries →
+      allEnumQualifiedFieldTypes enumEnv ename = some fentries →
       (∀ f, lookup fentries f ≠ none → fields.lookup f ≠ none) →
       (∀ f, fields.lookup f ≠ none → lookup fentries f ≠ none) →
       (∀ f bt v, lookup fentries f = some bt → fields.lookup f = some v → HasType enumEnv v bt) →
+      enumVariantFields enumEnv ename vname ≠ none →
       HasType enumEnv (.variant vname ename fields) (.tenum ename)
 
 /-- HasType transfers across enum environments that agree on all lookups. -/
 theorem HasType_enumEnv_transfer {ee1 ee2 : EnumEnv} {v : Value} {bt : BasicMoveType}
     (h : HasType ee1 v bt)
-    (heq : ∀ en vn, enumVariantFields ee1 en vn = enumVariantFields ee2 en vn) :
+    (heq : ∀ en, ee1.lookup en = ee2.lookup en) :
     HasType ee2 v bt := by
   induction h with
   | int n => exact .int n
@@ -82,16 +83,49 @@ theorem HasType_enumEnv_transfer {ee1 ee2 : EnumEnv} {v : Value} {bt : BasicMove
     exact .record fields fentries h1 h2 (fun f bt v hlookup hfield => ih f bt v hlookup hfield)
   | vec elems elemTy _ ih =>
     exact .vec elems elemTy (fun v hv => ih v hv)
-  | variant vname ename fields fentries hevf h1 h2 h3 ih =>
-    exact .variant vname ename fields fentries (heq ename vname ▸ hevf) h1 h2
-      (fun f bt v hlookup hfield => ih f bt v hlookup hfield)
+  | variant vname ename fields fentries haqf hdom hrev htyped hvv ih =>
+    have haqf2 : allEnumQualifiedFieldTypes ee2 ename = some fentries := by
+      unfold allEnumQualifiedFieldTypes at haqf ⊢; rw [← heq]; exact haqf
+    have hvv2 : enumVariantFields ee2 ename vname ≠ none := by
+      unfold enumVariantFields at hvv ⊢; rw [← heq]; exact hvv
+    exact .variant vname ename fields fentries haqf2 hdom hrev
+      (fun f bt v hlookup hfield => ih f bt v hlookup hfield) hvv2
+
+/-- HasType weakens: if every enum found in ee1 is also found (same def) in ee2,
+    then HasType transfers from ee1 to ee2. -/
+theorem HasType_enumEnv_weaken {ee1 ee2 : EnumEnv} {v : Value} {bt : BasicMoveType}
+    (h : HasType ee1 v bt)
+    (hext : ∀ en ed, ee1.lookup en = some ed → ee2.lookup en = some ed) :
+    HasType ee2 v bt := by
+  induction h with
+  | int n => exact .int n
+  | int_u8 n => exact .int_u8 n
+  | bool b => exact .bool b
+  | unit => exact .unit
+  | record fields fentries h1 h2 h3 ih =>
+    exact .record fields fentries h1 h2 (fun f bt v hlookup hfield => ih f bt v hlookup hfield)
+  | vec elems elemTy _ ih =>
+    exact .vec elems elemTy (fun v hv => ih v hv)
+  | variant vname ename fields fentries haqf hdom hrev htyped hvv ih =>
+    have haqf2 : allEnumQualifiedFieldTypes ee2 ename = some fentries := by
+      unfold allEnumQualifiedFieldTypes at haqf ⊢
+      cases hee1 : ee1.lookup ename with
+      | none => simp [hee1] at haqf
+      | some ed => rw [hext ename ed hee1]; simp [hee1] at haqf; simp; exact haqf
+    have hvv2 : enumVariantFields ee2 ename vname ≠ none := by
+      unfold enumVariantFields at hvv ⊢
+      cases hee1 : ee1.lookup ename with
+      | none => simp [hee1] at hvv
+      | some ed => rw [hext ename ed hee1]; simp [hee1] at hvv; simp; exact hvv
+    exact .variant vname ename fields fentries haqf2 hdom hrev
+      (fun f bt v hlookup hfield => ih f bt v hlookup hfield) hvv2
 
 /-- If a value has enum type, it must be a variant. -/
 theorem HasType.variant_fields {enumEnv : EnumEnv} {v : Value}
     {ename : Id} :
     HasType enumEnv v (.tenum ename) → ∃ vname fields, v = .variant vname ename fields := by
   intro h; cases h with
-  | variant vname _ _ _ _ _ _ _ => exact ⟨vname, _, rfl⟩
+  | variant vname _ _ _ _ _ _ _ _ => exact ⟨vname, _, rfl⟩
 
 /-- If a value has record type, it must be a record. -/
 theorem HasType.record_fields {enumEnv : EnumEnv} {v : Value} {fentries : AssocMap Field BasicMoveType} :
@@ -587,6 +621,41 @@ structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
   -- 1. TypeEnv is well-formed
   env_wf : TypeEnv.WellFormed env
 
+  -- 1b. Machine's enumEnv matches TypeEnv's enumEnv
+  enumEnv_consistent : m.enumEnv = env.enumEnv
+
+  -- 1c. Enum definitions have no qualified field name collisions
+  --     (needed for flat encoding: qualifyField produces unique keys)
+  enum_qualified_nodup : ∀ ename enumDef,
+    lookup env.enumEnv ename = some enumDef →
+    ((allEnumFieldTypes enumDef).map Prod.fst).Nodup
+
+  -- 1d. Enum names are unique in the enum environment
+  --     (needed for defaultValue_HasType: ensures consistent lookups in sublists)
+  enum_names_nodup : (env.enumEnv.entries.map Prod.fst).Nodup
+
+  -- 1e. Variant names within each enum are unique.
+  --     Required for buildFlatVariantFields_HasType: connects membership to lookup.
+  enum_variant_nodup : ∀ ename (ed : EnumDef),
+    env.enumEnv.lookup ename = some ed →
+    (ed.variants.entries.map Prod.fst).Nodup
+
+  -- 1f. Field names within each enum variant are unique.
+  --     Required for buildFlatVariantFields_HasType: converts membership to lookup.
+  enum_fields_nodup : ∀ ename (ed : EnumDef) vn (vd : EnumVariantDef),
+    env.enumEnv.lookup ename = some ed →
+    (vn, vd) ∈ ed.variants.entries →
+    (vd.fields.entries.map Prod.fst).Nodup
+
+  -- 1g. Default values for enum field types are well-typed.
+  --     Required for packVariant: buildFlatVariantFields uses defaultValue for inactive fields.
+  --     Invariant because enumEnv never changes during execution.
+  defaultValues_typed : ∀ ename (ed : EnumDef) vn (vd : EnumVariantDef) f bt,
+    env.enumEnv.lookup ename = some ed →
+    (vn, vd) ∈ ed.variants.entries →
+    (f, bt) ∈ vd.fields.entries →
+    HasType env.enumEnv (defaultValue m.enumEnv.entries bt) bt
+
   -- 2. Current statement type-checks in the given environment
   stmt_typed : typecheck_stmt lenv env m.frame.stmt retTypes
 
@@ -730,45 +799,6 @@ structure WellTypedState (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
 
   -- 26. All varStore locations are within heap bounds
   varStore_locs_bound : ∀ y loc, lookup m.frame.varStore y = some (some loc) → loc < m.heap.nextLoc
-
-  -- 27. Enum mutable no-extension: if a mutable borrow r of an enum-containing type
-  --     is tracked at heap location (loc, path), no other tracked ref maps to
-  --     (loc, path ++ suffix) for any non-empty suffix. This is weaker than location
-  --     exclusivity (sibling field borrows CAN share loc), but sufficient for writeRef:
-  --     the suffix case in writeRef needs exactly this to derive a contradiction.
-  enum_mutable_no_extension : ∀ r bt loc path,
-    r ∈ env.pathEnv.refs →
-    bt.containsEnum = true →
-    ((∃ s, lookup env.siteEnv s = some (.ref bt r .siteBorrowMut)) ∨
-     (∃ x ms, lookup env.varEnv x = some (.validVar, .ref bt r .siteBorrowMut, ms))) →
-    rmap.map r = some (loc, path) →
-    ∀ r', r' ∈ env.pathEnv.refs → r' ≠ r → ∀ suffix,
-      suffix ≠ [] →
-      rmap.map r' ≠ some (loc, path ++ suffix)
-
-/-- Transfer enum_mutable_no_extension when borrow sources are sub-maps,
-    pathEnv.refs is a subset, and rmap is unchanged. -/
-theorem enum_mutable_no_extension_transfer
-    {m : Machine} {env : TypeEnv} {lenv : LabelEnv} {retTypes : List ParamType} {rmap : RefMap}
-    (hwt : WellTypedState m env lenv retTypes rmap)
-    (env' : TypeEnv)
-    (hborrow : ∀ r bt,
-      ((∃ s, lookup env'.siteEnv s = some (.ref bt r .siteBorrowMut)) ∨
-       (∃ x ms, lookup env'.varEnv x = some (.validVar, .ref bt r .siteBorrowMut, ms))) →
-      ((∃ s, lookup env.siteEnv s = some (.ref bt r .siteBorrowMut)) ∨
-       (∃ x ms, lookup env.varEnv x = some (.validVar, .ref bt r .siteBorrowMut, ms))))
-    (hrefs_sub : ∀ r, r ∈ env'.pathEnv.refs → r ∈ env.pathEnv.refs) :
-    ∀ r bt loc path,
-      r ∈ env'.pathEnv.refs →
-      bt.containsEnum = true →
-      ((∃ s, lookup env'.siteEnv s = some (.ref bt r .siteBorrowMut)) ∨
-       (∃ x ms, lookup env'.varEnv x = some (.validVar, .ref bt r .siteBorrowMut, ms))) →
-      rmap.map r = some (loc, path) →
-      ∀ r', r' ∈ env'.pathEnv.refs → r' ≠ r → ∀ suffix,
-        suffix ≠ [] →
-        rmap.map r' ≠ some (loc, path ++ suffix) := by
-  intro r bt loc path hr hce hb hrmap r' hr' hne suffix hsuf
-  exact hwt.enum_mutable_no_extension r bt loc path (hrefs_sub r hr) hce (hborrow r bt hb) hrmap r' (hrefs_sub r' hr') hne suffix hsuf
 
 /-- Return values are well-typed: each value matches its corresponding site type.
     For ref types, also requires heap readability (needed for rmap_live and rmap_has_type). -/
@@ -1119,7 +1149,7 @@ theorem writePath_preserves_HasType {enumEnv : EnumEnv}
     | vec _ _ => simp [writePath] at hwrite
     | variant vname _ fields =>
       cases hht with
-      | variant _ _ _ fentries hlookup_v hdom hdom_rev htyped =>
+      | variant _ _ _ fentries hlookup_v hdom hdom_rev htyped hvv =>
         simp only [writePath] at hwrite
         cases hf : fields.lookup f with
         | none => simp [hf] at hwrite
@@ -1332,8 +1362,8 @@ def typeAtPathV (enumEnv : EnumEnv) : Value → BasicMoveType → List Field →
     match fields.lookup f, lookup fentries f with
     | some v', some bt' => typeAtPathV enumEnv v' bt' rest
     | _, _ => none
-  | .variant vname _ fields, .tenum _ename, f :: rest =>
-    match enumVariantFields enumEnv _ename vname with
+  | .variant _vname _ fields, .tenum _ename, f :: rest =>
+    match allEnumQualifiedFieldTypes enumEnv _ename with
     | some fentries =>
       match fields.lookup f, lookup fentries f with
       | some v', some bt' => typeAtPathV enumEnv v' bt' rest
@@ -1380,7 +1410,7 @@ theorem HasType_typeAtPath {enumEnv : EnumEnv} (v : Value) (bt : BasicMoveType) 
     | variant _ _ _ =>
       -- typeAtPath (.tenum ...) (f :: rest) = none, contradicting htap
       cases hht with
-      | variant _ _ _ _ _ _ _ _ => simp [typeAtPath] at htap
+      | variant _ _ _ _ _ _ _ _ _ => simp [typeAtPath] at htap
 
 /-- Value-guided HasType_typeAtPath: if typeAtPathV v bt path = some bt_leaf,
     then readPath v path succeeds and the sub-value has type bt_leaf. -/
@@ -1419,7 +1449,7 @@ theorem HasType_typeAtPathV {enumEnv : EnumEnv} (v : Value) (bt : BasicMoveType)
     | vec _ _ => cases hht with | vec => simp [typeAtPathV] at htap
     | variant vname _ fields =>
       cases hht with
-      | variant _ _ _ fentries hlookup_var hdom hdom_rev htyped =>
+      | variant _ _ _ fentries hlookup_var hdom hdom_rev htyped _ =>
         simp only [typeAtPathV, hlookup_var] at htap
         cases hfl : fields.lookup f with
         | none => simp [hfl] at htap
@@ -1464,7 +1494,7 @@ theorem typeAtPath_implies_typeAtPathV {enumEnv : EnumEnv} (v : Value) (bt : Bas
     | unit => cases hht with | unit => simp [typeAtPath] at htap
     | ref l p => cases hht
     | vec _ _ => cases hht with | vec => simp [typeAtPath] at htap
-    | variant _ _ _ => cases hht with | variant _ _ _ _ _ _ _ _ => simp [typeAtPath] at htap
+    | variant _ _ _ => cases hht with | variant _ _ _ _ _ _ _ _ _ => simp [typeAtPath] at htap
 
 /-- writePath preserves HasType using typeAtPath to determine the leaf type.
     This avoids the universal quantification over bt_sub in the compat condition. -/
@@ -1535,7 +1565,7 @@ theorem writePath_preserves_HasType_typed {enumEnv : EnumEnv}
     | vec _ _ => simp [writePath] at hwrite
     | variant _ _ _ =>
       cases hht with
-      | variant _ _ _ _ _ _ _ _ => simp [typeAtPath] at htap
+      | variant _ _ _ _ _ _ _ _ _ => simp [typeAtPath] at htap
 
 -- ============================================================
 -- Part 10: Additional HasType lemmas for writeRef preservation
@@ -1580,7 +1610,7 @@ theorem readPath_ne_none_implies_typeAtPathV {enumEnv : EnumEnv}
     | vec _ _ => cases hht with | vec => simp [readPath] at hread
     | variant vname _ fields =>
       cases hht with
-      | variant _ _ _ fentries hlookup_var hdom hdom_rev htyped =>
+      | variant _ _ _ fentries hlookup_var hdom hdom_rev htyped _ =>
         simp only [readPath] at hread
         cases hfl : fields.lookup f with
         | none => simp [hfl] at hread
@@ -1641,13 +1671,11 @@ lemma variantCompatible_record_fields {enumEnv : EnumEnv}
 /-- readPath transfers between two values of the same type: if v1 has type bt
     and readPath v1 path ≠ none, then for any v2 with HasType v2 bt,
     readPath v2 path ≠ none.
-    Works for records (domain consistency) and basic/vector types (vacuously true).
-    For enum types: works when both values have the same variant name. -/
+    Works for all types including enums (flat encoding: all variants share
+    the same qualified field types via allEnumQualifiedFieldTypes). -/
 theorem readPath_HasType_transfer {enumEnv : EnumEnv}
-    (enum_compat : ∀ (fv1 fv2 : Value) (bt : BasicMoveType), HasType enumEnv fv1 bt → HasType enumEnv fv2 bt → variantCompatible fv1 fv2)
     (v1 v2 : Value) (bt : BasicMoveType) (path : List Field)
     (h1 : HasType enumEnv v1 bt) (h2 : HasType enumEnv v2 bt)
-    (hcompat : variantCompatible v1 v2)
     (hread : readPath v1 path ≠ none) :
     readPath v2 path ≠ none := by
   induction path generalizing v1 v2 bt with
@@ -1676,44 +1704,34 @@ theorem readPath_HasType_transfer {enumEnv : EnumEnv}
             | none => exact absurd hf2 hf2_ne
             | some fv2 =>
               simp only []
-              exact ih fv1 fv2 bt_f (htyped1 f bt_f fv1 hfe hf1) (htyped2 f bt_f fv2 hfe hf2) (variantCompatible_record_fields enum_compat fv1 fv2 bt_f (htyped1 f bt_f fv1 hfe hf1) (htyped2 f bt_f fv2 hfe hf2)) hread
-    | variant vname1 _ fields1 fentries1 hlookup1 hdom1 hrev1 htyped1 =>
+              exact ih fv1 fv2 bt_f (htyped1 f bt_f fv1 hfe hf1) (htyped2 f bt_f fv2 hfe hf2) hread
+    | variant _ _ fields1 fentries1 hlookup1 hdom1 hrev1 htyped1 _ =>
       cases h2 with
-      | variant vname2 _ fields2 fentries2 hlookup2 hdom2 hrev2 htyped2 =>
+      | variant _ _ fields2 fentries2 hlookup2 hdom2 hrev2 htyped2 _ =>
+        -- Flat encoding: fentries1 = fentries2 (both from allEnumQualifiedFieldTypes ename)
+        have hfe_eq : fentries1 = fentries2 := Option.some.inj (hlookup1.symm.trans hlookup2)
+        subst hfe_eq
         simp only [readPath] at hread ⊢
         cases hf1 : fields1.lookup f with
         | none => simp [hf1] at hread
         | some fv1 =>
           simp only [hf1] at hread
-          -- Both variants are in the same enum type.
-          -- If vname1 = vname2, then fentries1 = fentries2 and domains match.
-          -- If vname1 ≠ vname2, the transfer may fail (different fields).
-          -- In practice, the borrow checker prevents this case from arising
-          -- at writeRef time (check_outbound ensures no sub-borrows exist).
-          by_cases hvn : vname1 = vname2
-          · subst hvn
-            rw [hlookup1] at hlookup2; simp only [Option.some.injEq] at hlookup2; subst hlookup2
-            have hfe_ne := hrev1 f (by rw [hf1]; exact Option.some_ne_none _)
-            cases hfe : lookup fentries1 f with
-            | none => exact absurd hfe hfe_ne
-            | some bt_f =>
-              have hf2_ne := hdom2 f (by rw [hfe]; exact Option.some_ne_none _)
-              cases hf2 : fields2.lookup f with
-              | none => exact absurd hf2 hf2_ne
-              | some fv2 =>
-                exact ih fv1 fv2 bt_f (htyped1 f bt_f fv1 hfe hf1) (htyped2 f bt_f fv2 hfe hf2) (variantCompatible_record_fields enum_compat fv1 fv2 bt_f (htyped1 f bt_f fv1 hfe hf1) (htyped2 f bt_f fv2 hfe hf2)) hread
-          · -- Different variant names: contradicts variant compatibility
-            simp only [variantCompatible] at hcompat
-            exact absurd hcompat hvn
+          have hfe_ne := hrev1 f (by rw [hf1]; exact Option.some_ne_none _)
+          cases hfe : lookup fentries1 f with
+          | none => exact absurd hfe hfe_ne
+          | some bt_f =>
+            have hf2_ne := hdom2 f (by rw [hfe]; exact Option.some_ne_none _)
+            cases hf2 : fields2.lookup f with
+            | none => exact absurd hf2 hf2_ne
+            | some fv2 =>
+              exact ih fv1 fv2 bt_f (htyped1 f bt_f fv1 hfe hf1) (htyped2 f bt_f fv2 hfe hf2) hread
 
 /-- typeAtPathV is determined by the type for values of the same type:
     if both v1 and v2 have HasType bt, then typeAtPathV v1 bt path = typeAtPathV v2 bt path.
     Dual of readPath_HasType_transfer — ensures hcompat for writePath_preserves_readPath_HasType. -/
 theorem typeAtPathV_HasType_determined {enumEnv : EnumEnv}
-    (enum_compat : ∀ (fv1 fv2 : Value) (bt : BasicMoveType), HasType enumEnv fv1 bt → HasType enumEnv fv2 bt → variantCompatible fv1 fv2)
     (v1 v2 : Value) (bt : BasicMoveType) (path : List Field)
-    (h1 : HasType enumEnv v1 bt) (h2 : HasType enumEnv v2 bt)
-    (hcompat : variantCompatible v1 v2) :
+    (h1 : HasType enumEnv v1 bt) (h2 : HasType enumEnv v2 bt) :
     typeAtPathV enumEnv v1 bt path = typeAtPathV enumEnv v2 bt path := by
   induction path generalizing v1 v2 bt with
   | nil => simp [typeAtPathV]
@@ -1750,41 +1768,37 @@ theorem typeAtPathV_HasType_determined {enumEnv : EnumEnv}
             | none => exact absurd hf2 hf2_ne
             | some fv2 =>
               simp only []
-              exact ih fv1 fv2 bt_f (htyped1 f bt_f fv1 hfe hf1) (htyped2 f bt_f fv2 hfe hf2) (variantCompatible_record_fields enum_compat fv1 fv2 bt_f (htyped1 f bt_f fv1 hfe hf1) (htyped2 f bt_f fv2 hfe hf2))
-    | variant vname1 _ fields1 fentries1 hlookup1 hdom1 hrev1 htyped1 =>
+              exact ih fv1 fv2 bt_f (htyped1 f bt_f fv1 hfe hf1) (htyped2 f bt_f fv2 hfe hf2)
+    | variant _ _ fields1 fentries1 hlookup1 hdom1 hrev1 htyped1 _ =>
       cases h2 with
-      | variant vname2 _ fields2 fentries2 hlookup2 hdom2 hrev2 htyped2 =>
-        simp only [typeAtPathV]
-        by_cases hvn : vname1 = vname2
-        · subst hvn
-          rw [hlookup1] at hlookup2; simp only [Option.some.injEq] at hlookup2; subst hlookup2
-          simp only [hlookup1]
-          cases hf1 : fields1.lookup f with
+      | variant _ _ fields2 fentries2 hlookup2 hdom2 hrev2 htyped2 _ =>
+        -- Flat encoding: fentries1 = fentries2
+        have hfe_eq : fentries1 = fentries2 := Option.some.inj (hlookup1.symm.trans hlookup2)
+        subst hfe_eq
+        simp only [typeAtPathV, hlookup1]
+        cases hf1 : fields1.lookup f with
+        | none =>
+          cases hfe : lookup fentries1 f with
           | none =>
-            cases hfe : lookup fentries1 f with
-            | none =>
-              cases hf2 : fields2.lookup f with
-              | none => rfl
-              | some fv2 =>
-                have := hrev2 f (by rw [hf2]; exact Option.some_ne_none _)
-                exact absurd hfe this
-            | some bt_f =>
-              have := hdom1 f (by rw [hfe]; exact Option.some_ne_none _)
-              exact absurd hf1 this
-          | some fv1 =>
-            have hfe_ne := hrev1 f (by rw [hf1]; exact Option.some_ne_none _)
-            cases hfe : lookup fentries1 f with
-            | none => exact absurd hfe hfe_ne
-            | some bt_f =>
-              have hf2_ne := hdom2 f (by rw [hfe]; exact Option.some_ne_none _)
-              cases hf2 : fields2.lookup f with
-              | none => exact absurd hf2 hf2_ne
-              | some fv2 =>
-                simp
-                exact ih fv1 fv2 bt_f (htyped1 f bt_f fv1 hfe hf1) (htyped2 f bt_f fv2 hfe hf2) (variantCompatible_record_fields enum_compat fv1 fv2 bt_f (htyped1 f bt_f fv1 hfe hf1) (htyped2 f bt_f fv2 hfe hf2))
-        · -- Different variant case: contradicts variant compatibility
-          simp only [variantCompatible] at hcompat
-          exact absurd hcompat hvn
+            cases hf2 : fields2.lookup f with
+            | none => rfl
+            | some fv2 =>
+              have := hrev2 f (by rw [hf2]; exact Option.some_ne_none _)
+              exact absurd hfe this
+          | some bt_f =>
+            have := hdom1 f (by rw [hfe]; exact Option.some_ne_none _)
+            exact absurd hf1 this
+        | some fv1 =>
+          have hfe_ne := hrev1 f (by rw [hf1]; exact Option.some_ne_none _)
+          cases hfe : lookup fentries1 f with
+          | none => exact absurd hfe hfe_ne
+          | some bt_f =>
+            have hf2_ne := hdom2 f (by rw [hfe]; exact Option.some_ne_none _)
+            cases hf2 : fields2.lookup f with
+            | none => exact absurd hf2 hf2_ne
+            | some fv2 =>
+              simp
+              exact ih fv1 fv2 bt_f (htyped1 f bt_f fv1 hfe hf1) (htyped2 f bt_f fv2 hfe hf2)
 
 /-- If containsEnumEntries is false and a field looks up to bt_f, then containsEnum bt_f = false. -/
 private theorem containsEnumEntries_false_lookup
@@ -1817,7 +1831,7 @@ private theorem HasType_no_enum_not_variant {enumEnv : EnumEnv} {v : Value} {bt 
   | unit => intro _ _ _ h; cases h
   | record => intro _ _ _ h; cases h
   | vec => intro _ _ _ h; cases h
-  | variant _ _ _ _ _ _ _ _ => rw [BasicMoveType.containsEnum_tenum] at hne; cases hne
+  | variant _ _ _ _ _ _ _ _ _ => rw [BasicMoveType.containsEnum_tenum] at hne; cases hne
 
 /-- readPath_HasType_transfer for non-enum types: no variantCompatible hypothesis needed. -/
 theorem readPath_HasType_transfer_no_enum {enumEnv : EnumEnv}
@@ -1856,7 +1870,7 @@ theorem readPath_HasType_transfer_no_enum {enumEnv : EnumEnv}
                 containsEnumEntries_false_lookup fentries.entries f bt_f
                   (by rw [BasicMoveType.containsEnum_trecord] at hne; exact hne) (by unfold AssocMap.lookup at hfe; exact hfe)
               exact ih fv1 fv2 bt_f hne_f (htyped1 f bt_f fv1 hfe hf1) (htyped2 f bt_f fv2 hfe hf2) hread
-    | variant _ _ _ _ _ _ _ _ => rw [BasicMoveType.containsEnum_tenum] at hne; cases hne
+    | variant _ _ _ _ _ _ _ _ _ => rw [BasicMoveType.containsEnum_tenum] at hne; cases hne
 
 /-- typeAtPathV_HasType_determined for non-enum types: no variantCompatible hypothesis needed. -/
 theorem typeAtPathV_HasType_determined_no_enum {enumEnv : EnumEnv}
@@ -1903,7 +1917,7 @@ theorem typeAtPathV_HasType_determined_no_enum {enumEnv : EnumEnv}
                 containsEnumEntries_false_lookup fentries.entries f bt_f
                   (by rw [BasicMoveType.containsEnum_trecord] at hne; exact hne) (by unfold AssocMap.lookup at hfe; exact hfe)
               exact ih fv1 fv2 bt_f hne_f (htyped1 f bt_f fv1 hfe hf1) (htyped2 f bt_f fv2 hfe hf2)
-    | variant _ _ _ _ _ _ _ _ => rw [BasicMoveType.containsEnum_tenum] at hne; cases hne
+    | variant _ _ _ _ _ _ _ _ _ => rw [BasicMoveType.containsEnum_tenum] at hne; cases hne
 
 /-- Type transfer: if v1 has both bt1 and bt2, and v2 has bt2, then v2 has bt1.
     This is the key lemma for writeRef preservation: the written value `vval`
@@ -1955,10 +1969,10 @@ theorem HasType_transfer {enumEnv : EnumEnv} {v1 v2 : Value} {bt1 bt2 : BasicMov
     -- Value.vec carries elemTy, so cases on h2 forces bt2 = .tvec elemTy = bt1
     cases h2 with
     | vec _ _ _ => exact h3
-  | variant _ _ _ _ _ _ _ _ =>
+  | variant _ _ _ _ _ _ _ _ _ =>
     -- With BasicMoveType embedded in Value.variant, HasType forces bt2 = bt1
     cases h2 with
-    | variant _ _ _ _ _ _ _ _ => exact h3
+    | variant _ _ _ _ _ _ _ _ _ => exact h3
 
 /-- Value-guided writePath_preserves_HasType: uses typeAtPathV for constructor-qualified lookup.
     Works for both records and enum variants. -/
@@ -2019,7 +2033,7 @@ theorem writePath_preserves_HasType_generalV {enumEnv : EnumEnv}
     | vec _ _ => simp [writePath] at hwrite
     | variant vname ename fields =>
       cases hht with
-      | variant _ _ _ fentries hlookup_var hdom hdom_rev htyped =>
+      | variant _ _ _ fentries hlookup_var hdom hdom_rev htyped hvv =>
         simp only [writePath] at hwrite
         cases hfl : fields.lookup f with
         | none => simp [hfl] at hwrite

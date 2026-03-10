@@ -67,11 +67,17 @@ theorem wellTypedState_heap_alloc
     (frame : Frame) (stack : List Frame) (heap : Heap)
     (env : TypeEnv) (lenv : LabelEnv) (retTypes : List ParamType) (rmap : RefMap)
     (v : Value)
-    (hwt : WellTypedState ⟨frame, stack, heap⟩ env lenv retTypes rmap) :
-    WellTypedState ⟨frame, stack, (heap.alloc v).1⟩ env lenv retTypes rmap := by
+    (hwt : WellTypedState ⟨frame, stack, heap, enumEnv⟩ env lenv retTypes rmap) :
+    WellTypedState ⟨frame, stack, (heap.alloc v).1, enumEnv⟩ env lenv retTypes rmap := by
   have hlb := hwt.heap_loc_bound
   exact {
     env_wf := hwt.env_wf
+    enumEnv_consistent := hwt.enumEnv_consistent
+    enum_qualified_nodup := hwt.enum_qualified_nodup
+    enum_names_nodup := hwt.enum_names_nodup
+    enum_variant_nodup := hwt.enum_variant_nodup
+    enum_fields_nodup := hwt.enum_fields_nodup
+    defaultValues_typed := hwt.defaultValues_typed
     stmt_typed := hwt.stmt_typed
     var_consistent := by
       intro x isv τ ms hvar
@@ -136,7 +142,6 @@ theorem wellTypedState_heap_alloc
       show loc_y < (heap.alloc v).1.nextLoc
       simp only [Heap.alloc]
       exact Nat.lt_trans hlt (Nat.lt_succ_of_le (Nat.le_refl _))
-    enum_mutable_no_extension := hwt.enum_mutable_no_extension
   }
 
 /-- StackSafe is preserved under heap.alloc -/

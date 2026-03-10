@@ -451,14 +451,9 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
       match lookup env.varEnv x with
       | some (.validVar, .basic τ, ms) =>
         -- Check mutable and site fresh; use nextFreshRefInEnv to ensure ref is fresh
-        -- If type contains enum, also check not_borrowed and invalidate variable
-        if ms == .mutable && notIn env.siteEnv a &&
-           (!BasicMoveType.containsEnum τ || not_borrowed_bool x env) then
+        if ms == .mutable && notIn env.siteEnv a then
           let r := nextFreshRefInEnv env
-          let env' := {env with varEnv := if BasicMoveType.containsEnum τ then
-                                            update env.varEnv x (.invalidVar, .basic τ, ms)
-                                          else env.varEnv
-                                siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowMut)
+          let env' := {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowMut)
                                 pathEnv := update_with_epsilon r r env.pathEnv |>
                                            update_with_extension r .root [.root_to_var x]}
           check_stmt lenv env' cont retTypes
@@ -651,7 +646,7 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
   | .assign x a cont =>
     match lookup env.varEnv x with
     | some (.validVar, .basic τ, ms) =>
-      if ms == .mutable && (!BasicMoveType.containsEnum τ || not_borrowed_bool x env) then
+      if ms == .mutable then
         match lookup env.siteEnv a with
         | some (.basic τ') =>
           if τ == τ' then
@@ -793,7 +788,7 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
                   let rf := nextFreshRefInEnv env'
                   some {env' with
                     siteEnv := insert env'.siteEnv site (.ref bt rf bk)
-                    pathEnv := update_with_extension rf r [.field f] env'.pathEnv}
+                    pathEnv := update_with_extension rf r [.field (MoveLight.qualifyField variantName f)] env'.pathEnv}
                 else none
               | none => none
             ) envInit with

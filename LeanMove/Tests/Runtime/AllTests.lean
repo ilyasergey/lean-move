@@ -739,7 +739,7 @@ private def bazHeap : Heap × Loc :=
 -- Type soundness: M2.baz never produces a danglingRef error
 set_option maxRecDepth 4096 in
 private theorem enum_M2_baz_no_danglingRef :
-    ∀ n loc, run n (initState parsed_M2_baz AssocMap.empty [.ref bazHeap.2 []] bazHeap.1) ≠ .error (.danglingRef loc) :=
+    ∀ n loc, run n (initState parsed_M2_baz AssocMap.empty [.ref bazHeap.2 []] bazHeap.1 (enumEnv := enumEnv)) ≠ .error (.danglingRef loc) :=
   type_soundness_dec_no_danglingRef parsed_M2_baz M2_baz_lenvDec enumEnv empty empty [.ref bazHeap.2 []] bazHeap.1 (by native_decide)
 
 end
@@ -751,10 +751,16 @@ end
 section
 open LeanMove.Tests.Expressivity.EnumMatch
 
-#eval run 200 (initState parsed_t0 AssocMap.empty [])
+#eval run 200 (initState parsed_t0 AssocMap.empty [] (enumEnv := enumEnv))
 
-#guard (run 200 (initState parsed_t0 AssocMap.empty [])).getHaltedValues ==
+#guard (run 200 (initState parsed_t0 AssocMap.empty [] (enumEnv := enumEnv))).getHaltedValues ==
   some [.int 0]
+
+-- Decidable type soundness for a multi-variant enum (3 variants: One, Two, Three)
+set_option maxRecDepth 4096 in
+private theorem enum_match_no_danglingRef :
+    ∀ n loc, run n (initState parsed_t0 AssocMap.empty [] (enumEnv := enumEnv)) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef parsed_t0 t0_lenvDec enumEnv empty empty [] Heap.empty (by native_decide)
 
 end
 

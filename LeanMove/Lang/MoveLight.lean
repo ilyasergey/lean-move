@@ -45,6 +45,14 @@ structure Field where
   id: String
 deriving Repr, DecidableEq, Inhabited, Hashable
 
+/-- Qualify a field name with a variant name: "Variant.field" -/
+def qualifyField (variantName : Id) (f : Field) : Field :=
+  ⟨variantName ++ "." ++ f.id⟩
+
+/-- Qualify all field names in an AssocMap with a variant name. -/
+def qualifyFieldMap {α : Type} (variantName : Id) (m : AssocMap Field α) : AssocMap Field α :=
+  ⟨m.entries.map fun (f, v) => (qualifyField variantName f, v)⟩
+
 inductive BasicMoveType where
   | u64   -- Unsigned 64-bit integer
   | u8    -- Unsigned 8-bit integer
@@ -494,6 +502,24 @@ def enumVariantFields (enumEnv : EnumEnv) (ename vname : Id) : Option (AssocMap 
   | some enumDef => match enumDef.variants.lookup vname with
     | some variantDef => some variantDef.fields
     | none => none
+  | none => none
+
+/- ---------------------------------------------------- -/
+/-       Flat Enum Encoding: Field Qualification         -/
+/- ---------------------------------------------------- -/
+
+/-- Collect all qualified field names and types for an enum definition.
+    Each field becomes "VariantName.fieldName". -/
+def allEnumFieldTypes (enumDef : EnumDef) : List (Field × BasicMoveType) :=
+  enumDef.variants.entries.flatMap fun (vname, vdef) =>
+    vdef.fields.entries.map fun (f, bt) =>
+      (qualifyField vname f, bt)
+
+/-- Look up all qualified field types for an enum by name.
+    Returns an AssocMap with all variants' fields using qualified names. -/
+def allEnumQualifiedFieldTypes (enumEnv : EnumEnv) (ename : Id) : Option (AssocMap Field BasicMoveType) :=
+  match enumEnv.lookup ename with
+  | some enumDef => some ⟨allEnumFieldTypes enumDef⟩
   | none => none
 
 -- Function definition

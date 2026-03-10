@@ -1856,7 +1856,6 @@ private theorem weaken_let_bind_borrowMut
     (cont : Stmt) (retTypes : List ParamType)
     (hle : LE.le .mutable ms)
     (hlookup : lookup envL.varEnv x_var = some (.validVar, .basic τ, ms))
-    (hnotBorrowed : BasicMoveType.containsEnum τ → not_borrowed x_var envL)
     (hnotIn : notIn envL.siteEnv a)
     (hfresh : freshRefInEnv r envL)
     (hsub : TypeEnv.subsumes envL env)
@@ -1872,9 +1871,7 @@ private theorem weaken_let_bind_borrowMut
     (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
     (hroot : Aref.root ∈ envL.pathEnv.refs)
     (ih : WeakenIH lenv
-        {envL with varEnv := if BasicMoveType.containsEnum τ then update envL.varEnv x_var (.invalidVar, .basic τ, ms)
-                              else envL.varEnv
-                   siteEnv := insert envL.siteEnv a (.ref τ r .siteBorrowMut)
+        {envL with siteEnv := insert envL.siteEnv a (.ref τ r .siteBorrowMut)
                    pathEnv := update_with_epsilon r r envL.pathEnv |>
                               update_with_extension r .root [.root_to_var x_var]}
         cont retTypes) :
@@ -1901,53 +1898,18 @@ private theorem weaken_let_bind_borrowMut
         (update_with_epsilon r r envL.pathEnv)).refs = r :: envL.pathEnv.refs := by
     rw [uwe_absorbs_epsilon r .root _ envL.pathEnv hr_fresh_pe (Ne.symm hr_ne_root),
         uwe_refs_fresh r .root _ envL.pathEnv hr_fresh_pe]
-  -- Helper: valid ref lookup in conditional varEnv implies lookup in original varEnv
-  have hlook_cond_to_orig : ∀ x' bt' s' bk' ms',
-      lookup (if BasicMoveType.containsEnum τ then update envL.varEnv x_var (.invalidVar, .basic τ, ms)
-              else envL.varEnv) x' = some (.validVar, .ref bt' s' bk', ms') →
-      lookup envL.varEnv x' = some (.validVar, .ref bt' s' bk', ms') := by
-    intro x' bt' s' bk' ms' h
-    split at h
-    · -- containsEnum = true: update envL.varEnv x_var (.invalidVar, .basic τ, ms)
-      change lookup (insert envL.varEnv x_var (.invalidVar, .basic τ, ms)) x' = _ at h
-      by_cases hx : x' = x_var
-      · subst hx; rw [lookup_insert_same] at h; simp at h
-      · rwa [lookup_insert_ne _ _ _ _ hx] at h
-    · exact h
-  -- Helper: VarEnvSubstEquiv for conditional varEnv
-  have hve_cond : VarEnvSubstEquiv σ
-      (if BasicMoveType.containsEnum τ then update envL.varEnv x_var (.invalidVar, .basic τ, ms) else envL.varEnv)
-      (if BasicMoveType.containsEnum τ then update env.varEnv x_var (.invalidVar, .basic τ, ms) else env.varEnv) := by
-    split
-    · have := VarEnvSubstEquiv_update_invalid σ _ _ x_var (.basic τ) ms hve
-      simp only [applySubstMoveType] at this; exact this
-    · exact hve
-  -- Helper: VarEnv.RefsNotRoot for conditional varEnvs
-  have hve_wfL_cond : VarEnv.RefsNotRoot
-      (if BasicMoveType.containsEnum τ then update envL.varEnv x_var (.invalidVar, .basic τ, ms) else envL.varEnv) := by
-    split
-    · exact VarEnv.update_refs_not_root envL.varEnv x_var _ hwfL.varEnv_wf (by trivial)
-    · exact hwfL.varEnv_wf
-  have hve_wfE_cond : VarEnv.RefsNotRoot
-      (if BasicMoveType.containsEnum τ then update env.varEnv x_var (.invalidVar, .basic τ, ms) else env.varEnv) := by
-    split
-    · exact VarEnv.update_refs_not_root env.varEnv x_var _ hwfE.varEnv_wf (by trivial)
-    · exact hwfE.varEnv_wf
   apply typecheck_stmt.let_bind_borrowMut lenv env _ _ _ _ r' _ _
-    hle hlook_env
-    (fun hce => not_borrowed_weaken σ _ env _ (hnotBorrowed hce) hpaths hid hrefs hroot)
-    (SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn)
-    hr'_fresh_prop
+    hle hlook_env (SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn) hr'_fresh_prop
   apply ih
   · -- subsumes
     rw [uwe_absorbs_epsilon r .root _ envL.pathEnv hr_fresh_pe (Ne.symm hr_ne_root),
         uwe_absorbs_epsilon r' .root _ env.pathEnv hr'_fresh_pe (Ne.symm hr'_not_root)]
     refine ⟨extendSubst σ r r',
       extendSubst_id σ r r' hid hr_refid,
-      VarEnvSubstEquiv_extend σ r r' _ _ hve_cond
+      VarEnvSubstEquiv_extend σ r r' _ _ hve
         (fun x' bt' s' bk' ms' hlook' =>
           Ne.symm (freshRefInEnv_ne_varEnv_ref r _ x' .validVar bt' s' bk' ms' hfresh
-            (hlook_cond_to_orig x' bt' s' bk' ms' hlook'))),
+            hlook')),
       SiteEnvSubstEquiv_extend_insert_ref σ r r' _ _ _ _ _ hse
         (fun k bt ref bk hlook' =>
           Ne.symm (freshRefInEnv_ne_siteEnv_ref r _ k bt ref bk hfresh hlook')),
@@ -1969,13 +1931,13 @@ private theorem weaken_let_bind_borrowMut
             (update_with_epsilon_wellformed r r envL.pathEnv hwfL.pathEnv_wf hr_ne_root)
             hr_ne_root,
            SiteEnv.insert_refs_not_root _ _ _ hwfL.siteEnv_wf hr_ne_root,
-           hve_wfL_cond⟩
+           hwfL.varEnv_wf⟩
   · exact ⟨update_with_extension_wellformed r' .root [.root_to_var x_var]
             (update_with_epsilon r' r' env.pathEnv)
             (update_with_epsilon_wellformed r' r' env.pathEnv hwfE.pathEnv_wf hr'_not_root)
             hr'_not_root,
            SiteEnv.insert_refs_not_root _ _ _ hwfE.siteEnv_wf hr'_not_root,
-           hve_wfE_cond⟩
+           hwfE.varEnv_wf⟩
   · intro s' bt ref bk hlook_s'
     simp only [h_compound_refs]
     by_cases hs' : s' = a
@@ -1987,34 +1949,12 @@ private theorem weaken_let_bind_borrowMut
       exact .tail _ (hsite_tracked _ _ _ _ hlook_s')
   · intro x' bt ref bk ms' hlook_x'
     simp only [h_compound_refs]
-    exact .tail _ (hvar_tracked _ _ _ _ _ (hlook_cond_to_orig x' bt ref bk ms' hlook_x'))
-  · -- RefsUnique for conditional varEnv
-    have huniq_cond : RefsUnique
-        (if BasicMoveType.containsEnum τ then update envL.varEnv x_var (.invalidVar, .basic τ, ms) else envL.varEnv)
-        envL.siteEnv := by
-      split
-      · intro ref; refine ⟨fun x' bt' bk' ms' s bt bk hlook_x' hlook_s => ?_,
-            (huniq ref).2.1,
-            fun x' y bt' bt'' bk' bk'' ms' ms'' hne hlook_x' hlook_y => ?_⟩
-        · change lookup (insert envL.varEnv x_var (.invalidVar, .basic τ, ms)) x' = _ at hlook_x'
-          by_cases hx : x' = x_var
-          · subst hx; rw [lookup_insert_same] at hlook_x'; simp at hlook_x'
-          · rw [lookup_insert_ne _ _ _ _ hx] at hlook_x'
-            exact (huniq ref).1 x' bt' bk' ms' s bt bk hlook_x' hlook_s
-        · change lookup (insert envL.varEnv x_var (.invalidVar, .basic τ, ms)) x' = _ at hlook_x'
-          change lookup (insert envL.varEnv x_var (.invalidVar, .basic τ, ms)) y = _ at hlook_y
-          by_cases hx : x' = x_var
-          · subst hx; rw [lookup_insert_same] at hlook_x'; simp at hlook_x'
-          · by_cases hy : y = x_var
-            · subst hy; rw [lookup_insert_same] at hlook_y; simp at hlook_y
-            · rw [lookup_insert_ne _ _ _ _ hx] at hlook_x'
-              rw [lookup_insert_ne _ _ _ _ hy] at hlook_y
-              exact (huniq ref).2.2 x' y bt' bt'' bk' bk'' ms' ms'' hne hlook_x' hlook_y
-      · exact huniq
-    exact RefsUnique_insert_fresh_ref _ _ _ _ _ _ huniq_cond
+    exact .tail _ (hvar_tracked _ _ _ _ _ hlook_x')
+  · -- RefsUnique
+    exact RefsUnique_insert_fresh_ref _ _ _ _ _ _ huniq
       (fun x' bt' ref bk' ms' hlook' =>
         Ne.symm (freshRefInEnv_ne_varEnv_ref r _ x' .validVar bt' ref bk' ms' hfresh
-          (hlook_cond_to_orig x' bt' ref bk' ms' hlook')))
+          hlook'))
       (fun s' bt' ref bk' hlook' =>
         Ne.symm (freshRefInEnv_ne_siteEnv_ref r _ s' bt' ref bk' hfresh hlook'))
   · exact update_with_extension_paths_to_non_member r' .root [.root_to_var x_var] _
@@ -2436,7 +2376,6 @@ private theorem weaken_var_assign_valid
     (cont : Stmt) (retTypes : List ParamType)
     (hms : LE.le .mutable ms)
     (hlook_x : lookup envL.varEnv x = some (.validVar, .basic τ, ms))
-    (hnotBorrowed : BasicMoveType.containsEnum τ → not_borrowed x envL)
     (hlook_a : lookup envL.siteEnv a = some (.basic τ))
     (hnotIn : notIn envL.siteEnv ax)
     (hfresh : freshRefInEnv r envL)
@@ -2475,9 +2414,7 @@ private theorem weaken_var_assign_valid
   have hr''_not_paramRef := nextFreshRefInEnv_not_paramRef env
   -- Apply var_assign_valid rule for env with r''
   apply typecheck_stmt.var_assign_valid lenv env _ _ ax τ _ r'' _ _
-    hms hlook_x_env
-    (fun hce => not_borrowed_weaken σ _ env _ (hnotBorrowed hce) hpaths hid hrefs hroot)
-    hlook_a_env
+    hms hlook_x_env hlook_a_env
     (SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn)
     hr''_fresh_prop
   -- IH: need subsumes for modified envs
@@ -7310,8 +7247,8 @@ private lemma weaken_ret (lenv : LabelEnv) (envL env : TypeEnv) (as : List Site)
 
 /-- addRefFieldSites doesn't change varEnv -/
 theorem addRefFieldSites_varEnv_eq (r : Aref) (bk : BorrowingKind)
-    (fentries : AssocMap Field BasicMoveType) (fields : List (Field × Site)) (env : TypeEnv) :
-    (addRefFieldSites r bk fentries fields env).varEnv = env.varEnv := by
+    (fentries : AssocMap Field BasicMoveType) (qualify : Field → Field) (fields : List (Field × Site)) (env : TypeEnv) :
+    (addRefFieldSites r bk fentries qualify fields env).varEnv = env.varEnv := by
   unfold addRefFieldSites
   induction fields generalizing env with
   | nil => rfl
@@ -7323,8 +7260,8 @@ theorem addRefFieldSites_varEnv_eq (r : Aref) (bk : BorrowingKind)
 
 /-- addRefFieldSites doesn't change funEnv -/
 theorem addRefFieldSites_funEnv_eq (r : Aref) (bk : BorrowingKind)
-    (fentries : AssocMap Field BasicMoveType) (fields : List (Field × Site)) (env : TypeEnv) :
-    (addRefFieldSites r bk fentries fields env).funEnv = env.funEnv := by
+    (fentries : AssocMap Field BasicMoveType) (qualify : Field → Field) (fields : List (Field × Site)) (env : TypeEnv) :
+    (addRefFieldSites r bk fentries qualify fields env).funEnv = env.funEnv := by
   unfold addRefFieldSites
   induction fields generalizing env with
   | nil => rfl
@@ -7335,8 +7272,8 @@ theorem addRefFieldSites_funEnv_eq (r : Aref) (bk : BorrowingKind)
     | some bt => exact ih _
 
 theorem addRefFieldSites_enumEnv_eq (r : Aref) (bk : BorrowingKind)
-    (fentries : AssocMap Field BasicMoveType) (fields : List (Field × Site)) (env : TypeEnv) :
-    (addRefFieldSites r bk fentries fields env).enumEnv = env.enumEnv := by
+    (fentries : AssocMap Field BasicMoveType) (qualify : Field → Field) (fields : List (Field × Site)) (env : TypeEnv) :
+    (addRefFieldSites r bk fentries qualify fields env).enumEnv = env.enumEnv := by
   unfold addRefFieldSites
   induction fields generalizing env with
   | nil => rfl
@@ -7348,9 +7285,9 @@ theorem addRefFieldSites_enumEnv_eq (r : Aref) (bk : BorrowingKind)
 
 /-- All refs in env.pathEnv.refs remain in (addRefFieldSites r bk fentries fields env).pathEnv.refs -/
 theorem addRefFieldSites_refs_subset (r : Aref) (bk : BorrowingKind)
-    (fentries : AssocMap Field BasicMoveType) (fields : List (Field × Site)) (env : TypeEnv)
+    (fentries : AssocMap Field BasicMoveType) (qualify : Field → Field) (fields : List (Field × Site)) (env : TypeEnv)
     (u : Aref) (hu : u ∈ env.pathEnv.refs) :
-    u ∈ (addRefFieldSites r bk fentries fields env).pathEnv.refs := by
+    u ∈ (addRefFieldSites r bk fentries qualify fields env).pathEnv.refs := by
   unfold addRefFieldSites
   induction fields generalizing env with
   | nil => exact hu
@@ -7366,9 +7303,9 @@ theorem addRefFieldSites_refs_subset (r : Aref) (bk : BorrowingKind)
 
 /-- PathEnv.WellFormed preserved by addRefFieldSites -/
 theorem addRefFieldSites_pathEnv_wf (r : Aref) (bk : BorrowingKind)
-    (fentries : AssocMap Field BasicMoveType) (fields : List (Field × Site)) (env : TypeEnv)
+    (fentries : AssocMap Field BasicMoveType) (qualify : Field → Field) (fields : List (Field × Site)) (env : TypeEnv)
     (hwf : PathEnv.WellFormed env.pathEnv) :
-    PathEnv.WellFormed (addRefFieldSites r bk fentries fields env).pathEnv := by
+    PathEnv.WellFormed (addRefFieldSites r bk fentries qualify fields env).pathEnv := by
   unfold addRefFieldSites
   induction fields generalizing env with
   | nil => exact hwf
@@ -7382,9 +7319,9 @@ theorem addRefFieldSites_pathEnv_wf (r : Aref) (bk : BorrowingKind)
 
 /-- SiteEnv.RefsNotRoot preserved by addRefFieldSites -/
 theorem addRefFieldSites_siteEnv_wf (r : Aref) (bk : BorrowingKind)
-    (fentries : AssocMap Field BasicMoveType) (fields : List (Field × Site)) (env : TypeEnv)
+    (fentries : AssocMap Field BasicMoveType) (qualify : Field → Field) (fields : List (Field × Site)) (env : TypeEnv)
     (hwf : SiteEnv.RefsNotRoot env.siteEnv) :
-    SiteEnv.RefsNotRoot (addRefFieldSites r bk fentries fields env).siteEnv := by
+    SiteEnv.RefsNotRoot (addRefFieldSites r bk fentries qualify fields env).siteEnv := by
   unfold addRefFieldSites
   induction fields generalizing env with
   | nil => exact hwf
@@ -7398,11 +7335,11 @@ theorem addRefFieldSites_siteEnv_wf (r : Aref) (bk : BorrowingKind)
 
 /-- site_tracked: refs in siteEnv entries are tracked in pathEnv.refs after addRefFieldSites -/
 theorem addRefFieldSites_site_tracked (r : Aref) (bk : BorrowingKind)
-    (fentries : AssocMap Field BasicMoveType) (fields : List (Field × Site)) (env : TypeEnv)
+    (fentries : AssocMap Field BasicMoveType) (qualify : Field → Field) (fields : List (Field × Site)) (env : TypeEnv)
     (hst : ∀ s bt' r' bk', lookup env.siteEnv s = some (.ref bt' r' bk') → r' ∈ env.pathEnv.refs)
     (hr_mem : r ∈ env.pathEnv.refs) :
-    ∀ s bt' r' bk', lookup (addRefFieldSites r bk fentries fields env).siteEnv s = some (.ref bt' r' bk') →
-      r' ∈ (addRefFieldSites r bk fentries fields env).pathEnv.refs := by
+    ∀ s bt' r' bk', lookup (addRefFieldSites r bk fentries qualify fields env).siteEnv s = some (.ref bt' r' bk') →
+      r' ∈ (addRefFieldSites r bk fentries qualify fields env).pathEnv.refs := by
   unfold addRefFieldSites
   induction fields generalizing env with
   | nil => exact hst
@@ -7427,20 +7364,20 @@ theorem addRefFieldSites_site_tracked (r : Aref) (bk : BorrowingKind)
 
 /-- var_tracked: refs in varEnv entries are tracked after addRefFieldSites (varEnv unchanged, refs grow) -/
 theorem addRefFieldSites_var_tracked (r : Aref) (bk : BorrowingKind)
-    (fentries : AssocMap Field BasicMoveType) (fields : List (Field × Site)) (env : TypeEnv)
+    (fentries : AssocMap Field BasicMoveType) (qualify : Field → Field) (fields : List (Field × Site)) (env : TypeEnv)
     (hvt : ∀ x bt' r' bk' ms, lookup env.varEnv x = some (.validVar, .ref bt' r' bk', ms) → r' ∈ env.pathEnv.refs) :
-    ∀ x bt' r' bk' ms, lookup (addRefFieldSites r bk fentries fields env).varEnv x = some (.validVar, .ref bt' r' bk', ms) →
-      r' ∈ (addRefFieldSites r bk fentries fields env).pathEnv.refs := by
+    ∀ x bt' r' bk' ms, lookup (addRefFieldSites r bk fentries qualify fields env).varEnv x = some (.validVar, .ref bt' r' bk', ms) →
+      r' ∈ (addRefFieldSites r bk fentries qualify fields env).pathEnv.refs := by
   intro x bt' r' bk' ms hlook
   rw [addRefFieldSites_varEnv_eq] at hlook
-  exact addRefFieldSites_refs_subset r bk fentries fields env _ (hvt x bt' r' bk' ms hlook)
+  exact addRefFieldSites_refs_subset r bk fentries qualify fields env _ (hvt x bt' r' bk' ms hlook)
 
 /-- RefsUnique preserved by addRefFieldSites -/
 theorem addRefFieldSites_RefsUnique (r : Aref) (bk : BorrowingKind)
-    (fentries : AssocMap Field BasicMoveType) (fields : List (Field × Site)) (env : TypeEnv)
+    (fentries : AssocMap Field BasicMoveType) (qualify : Field → Field) (fields : List (Field × Site)) (env : TypeEnv)
     (huniq : RefsUnique env.varEnv env.siteEnv) :
-    RefsUnique (addRefFieldSites r bk fentries fields env).varEnv
-              (addRefFieldSites r bk fentries fields env).siteEnv := by
+    RefsUnique (addRefFieldSites r bk fentries qualify fields env).varEnv
+              (addRefFieldSites r bk fentries qualify fields env).siteEnv := by
   unfold addRefFieldSites
   induction fields generalizing env with
   | nil => exact huniq
@@ -7458,12 +7395,12 @@ theorem addRefFieldSites_RefsUnique (r : Aref) (bk : BorrowingKind)
 
 /-- paths_to_non_member preserved by addRefFieldSites -/
 theorem addRefFieldSites_paths_to_nm (r : Aref) (bk : BorrowingKind)
-    (fentries : AssocMap Field BasicMoveType) (fields : List (Field × Site)) (env : TypeEnv)
+    (fentries : AssocMap Field BasicMoveType) (qualify : Field → Field) (fields : List (Field × Site)) (env : TypeEnv)
     (hpaths_to_nm : ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
       ¬interpret_regex (env.pathEnv.paths (u, v)) p)
     (hr_mem : r ∈ env.pathEnv.refs) :
-    ∀ u v p, v ∉ (addRefFieldSites r bk fentries fields env).pathEnv.refs → v ≠ .root → u ≠ v →
-      ¬interpret_regex ((addRefFieldSites r bk fentries fields env).pathEnv.paths (u, v)) p := by
+    ∀ u v p, v ∉ (addRefFieldSites r bk fentries qualify fields env).pathEnv.refs → v ≠ .root → u ≠ v →
+      ¬interpret_regex ((addRefFieldSites r bk fentries qualify fields env).pathEnv.paths (u, v)) p := by
   unfold addRefFieldSites
   induction fields generalizing env with
   | nil => exact hpaths_to_nm
@@ -7480,12 +7417,12 @@ theorem addRefFieldSites_paths_to_nm (r : Aref) (bk : BorrowingKind)
 
 /-- paths_from_non_member preserved by addRefFieldSites -/
 theorem addRefFieldSites_paths_from_nm (r : Aref) (bk : BorrowingKind)
-    (fentries : AssocMap Field BasicMoveType) (fields : List (Field × Site)) (env : TypeEnv)
+    (fentries : AssocMap Field BasicMoveType) (qualify : Field → Field) (fields : List (Field × Site)) (env : TypeEnv)
     (hpaths_from_nm : ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
       ¬interpret_regex (env.pathEnv.paths (u, v)) p)
     (hr_mem : r ∈ env.pathEnv.refs) :
-    ∀ u v p, u ∉ (addRefFieldSites r bk fentries fields env).pathEnv.refs → u ≠ .root → u ≠ v →
-      ¬interpret_regex ((addRefFieldSites r bk fentries fields env).pathEnv.paths (u, v)) p := by
+    ∀ u v p, u ∉ (addRefFieldSites r bk fentries qualify fields env).pathEnv.refs → u ≠ .root → u ≠ v →
+      ¬interpret_regex ((addRefFieldSites r bk fentries qualify fields env).pathEnv.paths (u, v)) p := by
   unfold addRefFieldSites
   induction fields generalizing env with
   | nil => exact hpaths_from_nm
@@ -7502,9 +7439,9 @@ theorem addRefFieldSites_paths_from_nm (r : Aref) (bk : BorrowingKind)
 
 /-- self_loop_only_empty preserved by addRefFieldSites -/
 theorem addRefFieldSites_self_loop_only_empty (r : Aref) (bk : BorrowingKind)
-    (fentries : AssocMap Field BasicMoveType) (fields : List (Field × Site)) (env : TypeEnv)
+    (fentries : AssocMap Field BasicMoveType) (qualify : Field → Field) (fields : List (Field × Site)) (env : TypeEnv)
     (hself : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = []) :
-    ∀ u p, interpret_regex ((addRefFieldSites r bk fentries fields env).pathEnv.paths (u, u)) p → p = [] := by
+    ∀ u p, interpret_regex ((addRefFieldSites r bk fentries qualify fields env).pathEnv.paths (u, u)) p → p = [] := by
   unfold addRefFieldSites
   induction fields generalizing env with
   | nil => exact hself
@@ -7518,10 +7455,10 @@ theorem addRefFieldSites_self_loop_only_empty (r : Aref) (bk : BorrowingKind)
 
 /-- root stays in refs after addRefFieldSites -/
 theorem addRefFieldSites_root_in_refs (r : Aref) (bk : BorrowingKind)
-    (fentries : AssocMap Field BasicMoveType) (fields : List (Field × Site)) (env : TypeEnv)
+    (fentries : AssocMap Field BasicMoveType) (qualify : Field → Field) (fields : List (Field × Site)) (env : TypeEnv)
     (hroot : Aref.root ∈ env.pathEnv.refs) :
-    Aref.root ∈ (addRefFieldSites r bk fentries fields env).pathEnv.refs :=
-  addRefFieldSites_refs_subset r bk fentries fields env _ hroot
+    Aref.root ∈ (addRefFieldSites r bk fentries qualify fields env).pathEnv.refs :=
+  addRefFieldSites_refs_subset r bk fentries qualify fields env _ hroot
 
 /-- Main subsumption lemma: addRefFieldSites preserves subsumption with extended σ.
     Given subsumption between envL and env via σ, and rL tracked in envL with σ rL = rE,
@@ -7529,7 +7466,7 @@ theorem addRefFieldSites_root_in_refs (r : Aref) (bk : BorrowingKind)
     addRefFieldSites rE bk fentries fields env via some σ'. -/
 private theorem addRefFieldSites_subsumes
     (σ : Aref → Aref) (rL rE : Aref) (bk : BorrowingKind)
-    (fentries : AssocMap Field BasicMoveType) (fields : List (Field × Site))
+    (fentries : AssocMap Field BasicMoveType) (qualify : Field → Field) (fields : List (Field × Site))
     (envL env : TypeEnv)
     (hid : ∀ r, (∀ n, r ≠ .refid n) → σ r = r)
     (hve : VarEnvSubstEquiv σ envL.varEnv env.varEnv)
@@ -7545,8 +7482,8 @@ private theorem addRefFieldSites_subsumes
     (hsite_tracked : ∀ s bt r bk, lookup envL.siteEnv s = some (.ref bt r bk) → r ∈ envL.pathEnv.refs)
     (hvar_tracked : ∀ x bt r bk ms, lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) → r ∈ envL.pathEnv.refs)
     (henum_equiv : LookupEquiv envL.enumEnv env.enumEnv) :
-    TypeEnv.subsumes (addRefFieldSites rL bk fentries fields envL)
-                     (addRefFieldSites rE bk fentries fields env) := by
+    TypeEnv.subsumes (addRefFieldSites rL bk fentries qualify fields envL)
+                     (addRefFieldSites rE bk fentries qualify fields env) := by
   unfold addRefFieldSites
   induction fields generalizing envL env σ with
   | nil => exact ⟨σ, hid, hve, hse, hrefs, hinj_σ, hnonroot, hpaths_σ, henum_equiv⟩
@@ -7594,7 +7531,7 @@ private theorem addRefFieldSites_subsumes
       · exact extendSubst_nonroot σ _ _ hnonroot hrfE_not_root
       · -- path inclusion: need to convert σ rL → rE
         intro u v hu hv path hinterp
-        have h := path_inclusion_update_with_extension σ _ _ _ _ rL [.field hd.1]
+        have h := path_inclusion_update_with_extension σ _ _ _ _ rL [.field (qualify hd.1)]
           hpaths_σ hrfL_fresh_pe hrfE_not_mapped hrL_mem u v hu hv path
         rw [hσ_rL] at h
         exact h hinterp
@@ -7758,7 +7695,7 @@ private theorem weaken_unpackVariant_ref_rule
     (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
     (hroot : Aref.root ∈ envL.pathEnv.refs)
     (ih : WeakenIH lenv
-        (addRefFieldSites r bk variantDef.fields fields {envL with siteEnv := delete envL.siteEnv b})
+        (addRefFieldSites r bk variantDef.fields (qualifyField variantName) fields {envL with siteEnv := delete envL.siteEnv b})
         cont retTypes) :
     typecheck_stmt lenv env (.unpackVariant variantName fields b cont) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj_σ, hnonroot, hpaths_σ, henum_equiv⟩ := hsub
@@ -7775,30 +7712,30 @@ private theorem weaken_unpackVariant_ref_rule
     have hσr_mem : σ r ∈ env.pathEnv.refs :=
       hrefs.mem_iff.mp (List.mem_map.mpr ⟨r, hr_mem, rfl⟩)
     apply ih
-    · exact addRefFieldSites_subsumes σ r (σ r) bk variantDef.fields fields
+    · exact addRefFieldSites_subsumes σ r (σ r) bk variantDef.fields (qualifyField variantName) fields
         {envL with siteEnv := delete envL.siteEnv b}
         {env with siteEnv := delete env.siteEnv b}
         hid hve (SiteEnvSubstEquiv_delete σ _ _ _ hse)
         hrefs hinj_σ hnonroot hpaths_σ rfl hr_mem
         (site_tracked_delete _ _ _ hsite_tracked) hvar_tracked henum_equiv
     · rw [addRefFieldSites_funEnv_eq, addRefFieldSites_funEnv_eq]; exact hfuneq
-    · exact ⟨addRefFieldSites_pathEnv_wf _ _ _ _ _ hwfL.pathEnv_wf,
-             addRefFieldSites_siteEnv_wf _ _ _ _ _
+    · exact ⟨addRefFieldSites_pathEnv_wf _ _ _ _ _ _ hwfL.pathEnv_wf,
+             addRefFieldSites_siteEnv_wf _ _ _ _ _ _
                (SiteEnv.delete_refs_not_root _ _ hwfL.siteEnv_wf),
              by rw [addRefFieldSites_varEnv_eq]; exact hwfL.varEnv_wf⟩
-    · exact ⟨addRefFieldSites_pathEnv_wf _ _ _ _ _ hwfE.pathEnv_wf,
-             addRefFieldSites_siteEnv_wf _ _ _ _ _
+    · exact ⟨addRefFieldSites_pathEnv_wf _ _ _ _ _ _ hwfE.pathEnv_wf,
+             addRefFieldSites_siteEnv_wf _ _ _ _ _ _
                (SiteEnv.delete_refs_not_root _ _ hwfE.siteEnv_wf),
              by rw [addRefFieldSites_varEnv_eq]; exact hwfE.varEnv_wf⟩
-    · exact addRefFieldSites_site_tracked _ _ _ _ _
+    · exact addRefFieldSites_site_tracked _ _ _ _ _ _
         (site_tracked_delete _ _ _ hsite_tracked) hr_mem
-    · exact addRefFieldSites_var_tracked _ _ _ _ _ hvar_tracked
-    · exact addRefFieldSites_RefsUnique _ _ _ _ _
+    · exact addRefFieldSites_var_tracked _ _ _ _ _ _ hvar_tracked
+    · exact addRefFieldSites_RefsUnique _ _ _ _ _ _
         (RefsUnique_delete_site _ _ _ huniq)
-    · exact addRefFieldSites_paths_to_nm _ _ _ _ _ hpaths_to_nm hσr_mem
-    · exact addRefFieldSites_paths_from_nm _ _ _ _ _ hpaths_from_nm hσr_mem
-    · exact addRefFieldSites_self_loop_only_empty _ _ _ _ _ hself_loop_only_empty
-    · exact addRefFieldSites_root_in_refs _ _ _ _ _ hroot
+    · exact addRefFieldSites_paths_to_nm _ _ _ _ _ _ hpaths_to_nm hσr_mem
+    · exact addRefFieldSites_paths_from_nm _ _ _ _ _ _ hpaths_from_nm hσr_mem
+    · exact addRefFieldSites_self_loop_only_empty _ _ _ _ _ _ hself_loop_only_empty
+    · exact addRefFieldSites_root_in_refs _ _ _ _ _ _ hroot
 
 private theorem weaken_variantSwitch_rule
     (lenv : LabelEnv) (envL env : TypeEnv)
@@ -7987,10 +7924,9 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
       hlookup hnotIn hfresh
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
-  | let_bind_borrowMut envL a x_var _ _ r _ _ hle hlookup hnotBorrowed hnotIn hfresh _ ih =>
+  | let_bind_borrowMut envL a x_var _ _ r _ _ hle hlookup hnotIn hfresh _ ih =>
     exact weaken_let_bind_borrowMut lenv envL env a x_var _ _ r _ _
-      hle hlookup hnotBorrowed hnotIn hfresh
-      hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
+      hle hlookup hnotIn hfresh hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   | let_bind_borrowField envL a af f _ _ _ _ s rf _ _ hlookup_a hbt hlookup_f hnotIn hfresh _ ih =>
     exact weaken_let_bind_borrowField lenv envL env a af f _ _ _ _ s rf _ _
@@ -8007,9 +7943,9 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
       hlook hnotIn hfresh
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
-  | var_assign_valid envL x a ax τ ms r _ _ hms hlook_x hnotBorrowed hlook_a hnotIn hfresh _ ih =>
+  | var_assign_valid envL x a ax τ ms r _ _ hms hlook_x hlook_a hnotIn hfresh _ ih =>
     exact weaken_var_assign_valid lenv envL env x a ax τ ms r _ _
-      hms hlook_x hnotBorrowed hlook_a hnotIn hfresh
+      hms hlook_x hlook_a hnotIn hfresh
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   | var_assign_valid_ref _ _ _ _ _ _ _ _ _ _ hle hlook_x hlook_a _ ih =>

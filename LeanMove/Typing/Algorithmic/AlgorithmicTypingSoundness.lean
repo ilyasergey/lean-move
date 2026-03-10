@@ -635,34 +635,21 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
           split at h
           · rename_i hcond
             simp only [Bool.and_eq_true, beq_iff_eq] at hcond
-            obtain ⟨⟨hms, hnotIn⟩, hnotbor⟩ := hcond
+            obtain ⟨hms, hnotIn⟩ := hcond
             let r := nextFreshRefInEnv env
             apply typecheck_stmt.let_bind_borrowMut (τ := τ) (ms := ms) (r := r)
             · simp only [hms, LE.le, Mut.le]
             · simp only [hlookup]
-            · -- containsEnum → not_borrowed
-              intro hce
-              simp only [hce, Bool.not_true, Bool.false_or] at hnotbor
-              exact not_borrowed_bool_sound x env hwf.pathEnv_wf hnotbor
             · exact hnotIn
             · exact nextFreshRefInEnv_fresh_prop env
             · have hr_not_root : r ≠ Aref.root := nextFreshRefInEnv_not_root env
               have hpe' := update_with_extension_wellformed r .root [.root_to_var x] _
                 (update_with_epsilon_wellformed r r env.pathEnv hwf.pathEnv_wf hr_not_root) hr_not_root
-              have hτ : match (MoveType.ref τ r .siteBorrowMut) with | .ref _ r' _ => r' ≠ Aref.root | .basic _ => True :=
-                nextFreshRefInEnv_not_root env
-              have hve' : VarEnv.RefsNotRoot
-                  (if BasicMoveType.containsEnum τ then update env.varEnv x (.invalidVar, .basic τ, ms) else env.varEnv) := by
-                split
-                · exact VarEnv.update_refs_not_root env.varEnv x _ hwf.varEnv_wf (by trivial)
-                · exact hwf.varEnv_wf
               have hwf' : TypeEnv.WellFormed
-                  {env with varEnv := if BasicMoveType.containsEnum τ then update env.varEnv x (.invalidVar, .basic τ, ms)
-                                      else env.varEnv
-                            siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowMut)
+                  {env with siteEnv := insert env.siteEnv a (.ref τ r .siteBorrowMut)
                             pathEnv := update_with_epsilon r r env.pathEnv |>
                                        update_with_extension r .root [.root_to_var x]} :=
-                ⟨hpe', SiteEnv.insert_refs_not_root env.siteEnv a _ hwf.siteEnv_wf hr_not_root, hve'⟩
+                ⟨hpe', SiteEnv.insert_refs_not_root env.siteEnv a _ hwf.siteEnv_wf hr_not_root, hwf.varEnv_wf⟩
               exact ih_cont _ hwf' h
           · simp at h
         | (.validVar, .ref _ _ _, _) => simp at h
@@ -1786,6 +1773,7 @@ private lemma ref_unpack_foldlM_wellformed
     (fields : List (Field × Site))
     (fentries : AssocMap Field BasicMoveType)
     (r : Aref) (bk : BorrowingKind) (envInit env' : TypeEnv)
+    (qualify : Field → Field)
     (hwf : TypeEnv.WellFormed envInit)
     (hfold : fields.foldlM (fun env_acc (f, site) =>
       match lookup fentries f with
@@ -1794,7 +1782,7 @@ private lemma ref_unpack_foldlM_wellformed
           let rf := nextFreshRefInEnv env_acc
           some {env_acc with
             siteEnv := insert env_acc.siteEnv site (.ref bt rf bk)
-            pathEnv := update_with_extension rf r [.field f] env_acc.pathEnv}
+            pathEnv := update_with_extension rf r [.field (qualify f)] env_acc.pathEnv}
         else none
       | none => none
     ) envInit = some env') :
@@ -1959,16 +1947,9 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
                   have ha_type : lookup env.siteEnv a = some (.basic τ) := by
                     rw [hτ_eq]; exact hlookup_a
                   apply typecheck_stmt.var_assign_valid (τ := τ) (ms := ms) (r := r) (ax := ax)
-                  · simp only [Bool.and_eq_true, beq_iff_eq] at hms
-                    obtain ⟨hms_mut, hnotbor⟩ := hms
-                    simp only [hms_mut, LE.le, Mut.le]
+                  · simp only [beq_iff_eq] at hms
+                    simp only [hms, LE.le, Mut.le]
                   · exact hlookup
-                  · -- containsEnum → not_borrowed
-                    simp only [Bool.and_eq_true, beq_iff_eq] at hms
-                    obtain ⟨_, hnotbor⟩ := hms
-                    intro hce
-                    simp only [hce, Bool.not_true, Bool.false_or] at hnotbor
-                    exact not_borrowed_bool_sound x env hwf.pathEnv_wf hnotbor
                   · exact ha_type
                   · exact hfresh_ax
                   · exact nextFreshRefInEnv_fresh_prop env
@@ -2163,7 +2144,7 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
                     | none => simp [hlookupf] at hexist'
                     | some bt' => exact ⟨bt', rfl⟩
                   -- Prove: env' = addRefFieldSites (foldlM succeeds = foldl)
-                  have henv_eq : env' = addRefFieldSites r bk variantDef.fields fields {env with siteEnv := delete env.siteEnv b} := by
+                  have henv_eq : env' = addRefFieldSites r bk variantDef.fields fields {env with siteEnv := delete env.siteEnv b} (qualify := MoveLight.qualifyField variantName) := by
                     -- foldlM = some env' implies env' = foldl result
                     -- Because at each step, lookup variantDef.fields f succeeds (from hexist)
                     -- and notIn env_acc.siteEnv site holds (from hfresh + distinct + accum)
@@ -2174,10 +2155,10 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
                           if notIn env_acc.siteEnv site then
                             some {env_acc with
                               siteEnv := insert env_acc.siteEnv site (.ref bt (nextFreshRefInEnv env_acc) bk)
-                              pathEnv := update_with_extension (nextFreshRefInEnv env_acc) r [.field f] env_acc.pathEnv}
+                              pathEnv := update_with_extension (nextFreshRefInEnv env_acc) r [.field (MoveLight.qualifyField variantName f)] env_acc.pathEnv}
                           else none
                         | none => none) envI = some envR →
-                      envR = addRefFieldSites r bk variantDef.fields fs envI by
+                      envR = addRefFieldSites r bk variantDef.fields (MoveLight.qualifyField variantName) fs envI by
                       exact h fields _ _ hfold
                     intro fs
                     induction fs with
@@ -2202,7 +2183,7 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
                     ⟨hwf.pathEnv_wf,
                      SiteEnv.delete_refs_not_root env.siteEnv b hwf.siteEnv_wf,
                      hwf.varEnv_wf⟩
-                  have hwf' := ref_unpack_foldlM_wellformed fields variantDef.fields r bk _ env' hwf_init hfold
+                  have hwf' := ref_unpack_foldlM_wellformed fields variantDef.fields r bk _ env' (MoveLight.qualifyField variantName) hwf_init hfold
                   have hcont_typed := ih_cont env' hwf' h
                   apply typecheck_stmt.unpackVariant_ref_rule
                   · exact hlookup

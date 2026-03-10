@@ -36,7 +36,7 @@ private def parsedFuns :=
   | Except.ok (funs, _) => funs
   | Except.error _ => []
 
-private def enumEnv : EnumEnv :=
+def enumEnv : EnumEnv :=
   match (parseAndTranslateWithEnums enumMatchMvir : Except String _) with
   | Except.ok (_, ee) => ee
   | Except.error _ => AssocMap.empty
