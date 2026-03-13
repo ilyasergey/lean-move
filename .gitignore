@@ -1,3 +1,5 @@
 /.lake
+/.claude
 .DS_Store
+*.zip
 
