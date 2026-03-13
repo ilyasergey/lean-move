@@ -8,6 +8,7 @@ zip-anon:
 	rm -rf $(ANON_DIR)
 	git archive --prefix=$(PROJECT)/ HEAD | tar -x -C /tmp
 	mv /tmp/$(PROJECT) $(ANON_DIR)
+	rm -f $(ANON_DIR)/Makefile
 	find $(ANON_DIR) -name '*.lean' -exec sed -i '' \
 		-e 's/Copyright Ilya Sergey/Copyright (anonymised)/g' \
 		-e 's/as discussed with Todd/as discussed/g' {} +
