@@ -1,7 +1,19 @@
 PROJECT = lean-move
+ANON_DIR = /tmp/$(PROJECT)-anon
 
 zip:
 	git archive --format=zip --prefix=$(PROJECT)/ -o $(PROJECT).zip HEAD
 
+zip-anon:
+	rm -rf $(ANON_DIR)
+	git archive --prefix=$(PROJECT)/ HEAD | tar -x -C /tmp
+	mv /tmp/$(PROJECT) $(ANON_DIR)
+	find $(ANON_DIR) -name '*.lean' -exec sed -i '' \
+		-e 's/Copyright Ilya Sergey/Copyright (anonymised)/g' \
+		-e 's/as discussed with Todd/as discussed/g' {} +
+	cd /tmp && zip -rq $(PROJECT)-anon.zip $(PROJECT)-anon
+	mv /tmp/$(PROJECT)-anon.zip ./$(PROJECT)-anon.zip
+	rm -rf $(ANON_DIR)
+
 clean:
-	rm -f $(PROJECT).zip
+	rm -f $(PROJECT).zip $(PROJECT)-anon.zip
