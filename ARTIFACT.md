@@ -138,22 +138,25 @@ Per the AE guidelines, here is the list of the paper's significant claims and
 the artifact evidence for each. Names are fully qualified under namespace
 `LeanMove.Typing.TypeSoundness` unless noted.
 
-| # | Paper claim | Location in paper | Evidence in artifact |
+Line numbers index the Lean sources at the artifact's `HEAD` (the `.lean`
+files are unchanged across the documentation commits, so the anchors are stable).
+
+| # | Paper claim | Location in paper | Evidence in artifact (`file:line`) |
 |---|-------------|-------------------|----------------------|
-| 1 | **Type soundness** (no preventable runtime error) | Thm 3.1, §3.4 | `type_soundness` — [`Typing/TypeSoundness.lean`](LeanMove/Typing/TypeSoundness.lean) (`type_soundness_no_danglingRef` specialises to dangling refs) |
-| 2 | Soundness = **progress + preservation**; preservation is one lemma per typing rule | §3.4 | `preservation` — [`Typing/Soundness/Preservation.lean`](LeanMove/Typing/Soundness/Preservation.lean); progress in [`Progress.lean`](LeanMove/Typing/Soundness/Progress.lean) |
-| 3 | **Weakening** (Lemma 3.2): `E₁ ⊒ E₂ ∧ ⊢ s` ⇒ `⊢ s` under `E₂` | Lemma 3.2, §3.4 | `typecheck_stmt_weaken` — [`Typing/Soundness/Weakening.lean`](LeanMove/Typing/Soundness/Weakening.lean) |
-| 4 | **Regex path transfer** (Lemma 3.3) | Lemma 3.3, §3.4 | `HasType_transfer`, `readPath_HasType_transfer` — [`Typing/Soundness/Defs.lean`](LeanMove/Typing/Soundness/Defs.lean) |
-| 5 | Algorithmic checker is **sound w.r.t. the relational spec** | §5.2 | `check_stmt_sound` — [`Typing/Algorithmic/AlgorithmicTypingSoundness.lean`](LeanMove/Typing/Algorithmic/AlgorithmicTypingSoundness.lean) |
-| 6 | `WellTypedState` invariant has **29 clauses** (35 with enums) | §3.4, §4.2 | `structure WellTypedState` — [`Typing/Soundness/Defs.lean`](LeanMove/Typing/Soundness/Defs.lean) |
-| 7 | `SoundnessAssumptions` bundles preconditions; collapsed into a **decidable** check | §5.2 | `SoundnessAssumptions`, `type_soundness_dec` — [`Defs.lean`](LeanMove/Typing/Soundness/Defs.lean), [`TypeSoundness.lean`](LeanMove/Typing/TypeSoundness.lean) |
+| 1 | **Type soundness** (no preventable runtime error) | Thm 3.1, §3.4 | `type_soundness` — [`TypeSoundness.lean:55`](LeanMove/Typing/TypeSoundness.lean#L55); dangling-ref form `type_soundness_no_danglingRef` — [`:68`](LeanMove/Typing/TypeSoundness.lean#L68) |
+| 2 | Soundness = **progress + preservation** | §3.4 | `preservation` — [`Preservation.lean:11086`](LeanMove/Typing/Soundness/Preservation.lean#L11086); progress — [`Progress.lean:436`](LeanMove/Typing/Soundness/Progress.lean#L436) |
+| 3 | **Weakening** (Lemma 3.2): `E₁ ⊒ E₂ ∧ ⊢ s` ⇒ `⊢ s` under `E₂` | Lemma 3.2, §3.4 | `typecheck_stmt_weaken` — [`Weakening.lean:7801`](LeanMove/Typing/Soundness/Weakening.lean#L7801) |
+| 4 | **Regex path transfer** (Lemma 3.3) | Lemma 3.3, §3.4 | `HasType_transfer` — [`Defs.lean:1927`](LeanMove/Typing/Soundness/Defs.lean#L1927); `readPath_HasType_transfer` — [`:1676`](LeanMove/Typing/Soundness/Defs.lean#L1676) |
+| 5 | Algorithmic checker is **sound w.r.t. the relational spec** | §5.2 | `check_stmt_sound` — [`AlgorithmicTypingSoundness.lean:1814`](LeanMove/Typing/Algorithmic/AlgorithmicTypingSoundness.lean#L1814) |
+| 6 | `WellTypedState` invariant has **29 clauses** (35 with enums) | §3.4, §4.2 | `WellTypedState` — [`Defs.lean:619`](LeanMove/Typing/Soundness/Defs.lean#L619) |
+| 7 | `SoundnessAssumptions` bundles preconditions; collapsed into a **decidable** check | §5.2 | `SoundnessAssumptions` — [`InitState.lean:324`](LeanMove/Typing/Soundness/InitState.lean#L324); `…checkDecidable` — [`:473`](LeanMove/Typing/Soundness/InitState.lean#L473); `type_soundness_dec` — [`TypeSoundness.lean:83`](LeanMove/Typing/TypeSoundness.lean#L83) |
 | 8 | **Non-vacuity:** per-execution kernel-checked safety certificates | §5.2 | 31 `type_soundness_dec` instantiations — [`Tests/Runtime/AllTests.lean`](LeanMove/Tests/Runtime/AllTests.lean) |
-| 9 | Regex ops (`δ`, emptiness, `⊆ {ε}`, disjointness) verified against language semantics | §3.2, §3.5 | [`Structures/Regex.lean`](LeanMove/Structures/Regex.lean) |
-| 10 | Decidable, polynomial regex checks (no language-equivalence) | §3.5 | `Structures/Regex.lean`; algorithmic checker [`Algorithmic/AlgorithmicTypeChecking.lean`](LeanMove/Typing/Algorithmic/AlgorithmicTypeChecking.lean) |
+| 9 | Regex ops (`δ`, emptiness, `⊆ {ε}`) verified against language semantics | §3.2, §3.5 | `deriv` [`Regex.lean:65`](LeanMove/Structures/Regex.lean#L65), `only_matches_empty` (`⊆{ε}`) [`:288`](LeanMove/Structures/Regex.lean#L288), `is_empty` [`:273`](LeanMove/Structures/Regex.lean#L273), `has_nonempty_match` [`:318`](LeanMove/Structures/Regex.lean#L318); `check_outbound` — [`Types.lean:180`](LeanMove/Typing/Types.lean#L180) |
+| 10 | Decidable, polynomial regex checks (no language-equivalence) | §3.5 | `check_stmt` (single forward pass) — [`AlgorithmicTypeChecking.lean:375`](LeanMove/Typing/Algorithmic/AlgorithmicTypeChecking.lean#L375); regex ops as in claim 9 |
 | 11 | **Conformance** with the production checker on transpiled tests | §5.2 | accepted/rejected suites under [`Tests/Typechecking/`](LeanMove/Tests/Typechecking/) (33 expressivity + 14 litmus), built by `lake build examples` |
 | 12 | **Parser/translator** correctness via alpha-equivalence | §5.2 | 35 tests under [`Tests/Parsing/`](LeanMove/Tests/Parsing/), `.mvir` sources under [`Tests/MVIR/`](LeanMove/Tests/MVIR/), `lake build parsing` |
-| 13 | **Vector** extension, zero new sorrys | §4.1 | rules in [`Typing/TypeChecking.lean`](LeanMove/Typing/TypeChecking.lean); `vec_*` tests; `.vecElem` path element |
-| 14 | **Enum** extension via flat encoding; +6 invariant clauses | §4.2 | enum rules + flat encoding in [`Semantics/Smallstep.lean`](LeanMove/Semantics/Smallstep.lean); `enum_*` tests |
+| 13 | **Vector** extension, zero new sorrys | §4.1 | rules `let_bind_vecMutBorrow` [`TypeChecking.lean:688`](LeanMove/Typing/TypeChecking.lean#L688), `vecPushBack_rule` [`:714`](LeanMove/Typing/TypeChecking.lean#L714); `.vecElem` — [`Types.lean:131`](LeanMove/Typing/Types.lean#L131) |
+| 14 | **Enum** extension via flat encoding; +6 invariant clauses | §4.2 | rules `let_bind_packVariant` [`TypeChecking.lean:743`](LeanMove/Typing/TypeChecking.lean#L743), `unpackVariant_rule` [`:761`](LeanMove/Typing/TypeChecking.lean#L761); flat encoding in [`Semantics/Smallstep.lean`](LeanMove/Semantics/Smallstep.lean) |
 | 15 | Whole development is `sorry`/`axiom`-free | §5.1 | §2 Step 4 and §3 Step 2 above |
 | 16 | LOC / commit-timeline figures (Table 1, Fig 17) | §5.1 | reproducible from the repo — see §7 |
 
@@ -165,15 +168,15 @@ the artifact evidence for each. Names are fully qualified under namespace
 
 ## 5. Paper-to-artifact correspondence (definitions and figures)
 
-| Paper | Artifact |
+| Paper | Artifact (`file:line`) |
 |-------|----------|
-| MoveLight syntax (Fig. 8) | `Expr`, `Stmt`, `MoveType`, `Aref` in [`Lang/MoveLight.lean`](LeanMove/Lang/MoveLight.lean) |
-| Typing rules (Figs. 9, 10) | `typecheck_stmt` (relational) in [`Typing/TypeChecking.lean`](LeanMove/Typing/TypeChecking.lean) |
-| Algorithmic checker | `check_stmt` in [`Typing/Algorithmic/AlgorithmicTypeChecking.lean`](LeanMove/Typing/Algorithmic/AlgorithmicTypeChecking.lean) |
-| Path environment Π, `extend`, node removal, transitive closure | [`Structures/PathMap.lean`](LeanMove/Structures/PathMap.lean) |
-| `check_outbound`, derivative `δ`, emptiness, `⊆ {ε}` | [`Structures/Regex.lean`](LeanMove/Structures/Regex.lean) |
-| Small-step semantics (Fig. 11), runtime errors (Fig. 12) | [`Semantics/Smallstep.lean`](LeanMove/Semantics/Smallstep.lean) |
-| Vector rules (Fig. 14), enum rules (Fig. 16) | [`Typing/TypeChecking.lean`](LeanMove/Typing/TypeChecking.lean) |
+| MoveLight syntax (Fig. 8) | `Expr` [`MoveLight.lean:406`](LeanMove/Lang/MoveLight.lean#L406), `Stmt` [`:428`](LeanMove/Lang/MoveLight.lean#L428), `MoveType` [`:278`](LeanMove/Lang/MoveLight.lean#L278), `Aref` [`:265`](LeanMove/Lang/MoveLight.lean#L265) |
+| Typing rules (Figs. 9, 10) | `typecheck_stmt` (relational inductive) — [`TypeChecking.lean:321`](LeanMove/Typing/TypeChecking.lean#L321) |
+| Algorithmic checker | `check_stmt` — [`AlgorithmicTypeChecking.lean:375`](LeanMove/Typing/Algorithmic/AlgorithmicTypeChecking.lean#L375) |
+| Path environment Π: `extend`, node removal, transitive closure | [`Structures/PathMap.lean`](LeanMove/Structures/PathMap.lean) |
+| `check_outbound`; derivative `δ`; emptiness; `⊆ {ε}` | `check_outbound` [`Types.lean:180`](LeanMove/Typing/Types.lean#L180); `deriv` [`Regex.lean:65`](LeanMove/Structures/Regex.lean#L65); `only_matches_empty` [`:288`](LeanMove/Structures/Regex.lean#L288) |
+| Small-step semantics (Fig. 11), runtime errors (Fig. 12) | `step` [`Smallstep.lean:415`](LeanMove/Semantics/Smallstep.lean#L415); `RuntimeError` [`:264`](LeanMove/Semantics/Smallstep.lean#L264) |
+| Vector rules (Fig. 14), enum rules (Fig. 16) | in `typecheck_stmt`: vectors [`TypeChecking.lean:688`](LeanMove/Typing/TypeChecking.lean#L688), enums [`:743`](LeanMove/Typing/TypeChecking.lean#L743) |
 
 See [`metatheory.md`](metatheory.md) for the full prose walkthrough, the
 project layout, and the limitations.
