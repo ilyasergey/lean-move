@@ -109,24 +109,19 @@ Build targets (all built by the default `lake build`):
 | `lake build runtime` | runtime conformance + the 31 per-execution `type_soundness_dec` certificates |
 
 **Step 2 — Verify the soundness proof is complete and axiom-clean.** This is the
-decisive check for a mechanised-proof artifact. Confirm the top-level soundness
-theorem depends on *no* `sorry` and only on the three standard Lean/mathlib
-axioms:
+decisive check for a mechanised-proof artifact. The committed script
+[`scripts/AxiomCheck.lean`](scripts/AxiomCheck.lean) prints the axiom
+dependencies of the soundness theorems; run it (after the build above):
 
 ```bash
-cat > /tmp/AxiomCheck.lean <<'EOF'
-import LeanMove.Typing.TypeSoundness
-open LeanMove.Typing.TypeSoundness
-#print axioms type_soundness
-#print axioms type_soundness_dec
-EOF
-lake env lean /tmp/AxiomCheck.lean
+lake env lean scripts/AxiomCheck.lean
 ```
 
 Expected output (order may vary), for **both** theorems:
 
 ```
-'type_soundness' depends on axioms: [propext, Classical.choice, Quot.sound]
+'LeanMove.Typing.TypeSoundness.type_soundness' depends on axioms: [propext, Classical.choice, Quot.sound]
+'LeanMove.Typing.TypeSoundness.type_soundness_dec' depends on axioms: [propext, Classical.choice, Quot.sound]
 ```
 
 The absence of `sorryAx` confirms the proof has no holes. (`propext`,
