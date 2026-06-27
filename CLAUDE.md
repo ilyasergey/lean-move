@@ -252,7 +252,7 @@ These practices are what kept the assistant productive; follow them.
   proof push are fine; squash only if asked.
 - **Anonymity**: this artefact is anonymous. Do not add author names,
   affiliations, emails, or repository URLs to source or docs. The artefact build
-  (`make zip-anon`) additionally scrubs identifying strings from `.lean` files.
+  (`make artefact`) additionally scrubs identifying strings from `.lean` files.
 - **Tests are part of the spec.** When changing a typing rule, update the
   accepted/rejected expressivity and litmus tests and the alpha-equivalence
   parser tests; a rule change that breaks conformance with the production checker
