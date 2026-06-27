@@ -250,9 +250,12 @@ These practices are what kept the assistant productive; follow them.
   e.g. "Prove preservation_writeRef (sorry-free)", "Fix reversed
   update_with_extension args in assign rule". Snapshot commits during a long
   proof push are fine; squash only if asked.
-- **Anonymity**: this artefact is anonymous. Do not add author names,
-  affiliations, emails, or repository URLs to source or docs. The artefact build
-  (`make artefact`) additionally scrubs identifying strings from `.lean` files.
+- **Anonymity (double-blind paper supplement)**: the supplement submitted with
+  the double-blind paper must be anonymous — do not add author names,
+  affiliations, emails, or repository URLs to source or docs. The anonymised
+  build (`make artefact-anon`) scrubs identifying strings from `.lean`/`.md`/`.mvir`
+  files. (The OOPSLA Artifact Evaluation is single-blind, so the AE archive
+  produced by `make artefact` is not anonymised.)
 - **Tests are part of the spec.** When changing a typing rule, update the
   accepted/rejected expressivity and litmus tests and the alpha-equivalence
   parser tests; a rule change that breaks conformance with the production checker

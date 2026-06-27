@@ -218,7 +218,7 @@ case, then thread it uniformly through the lemmas. Start from
 [`CLAUDE.md`](CLAUDE.md) (architecture + conventions + Lean-4 pitfalls) and
 [`metatheory.md`](metatheory.md), then read the relevant `Soundness/` file.
 [`PROMPTS.md`](PROMPTS.md) records how the development was driven, phase by
-phase, anchored to commits.
+phase.
 
 **Reproducing Table 1 (LOC) and the test counts** from the repository:
 
