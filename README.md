@@ -5,6 +5,32 @@ An experimental formalisation of Move borrow checker in Lean.
 See **[metatheory.md](metatheory.md)** for a detailed overview of the
 type system, soundness statement, proof architecture, and key invariants.
 
+## AI-assisted development
+
+This formalisation was developed with an AI coding assistant. Two documents
+record how that collaboration was steered, accompanying the paper's
+*AI-Assisted Mechanisation* section:
+
+- **[CLAUDE.md](CLAUDE.md)** — the project configuration supplied to the
+  assistant: build commands, repository layout, the proof architecture
+  (`WellTypedState` invariant, weakening, decidable soundness certificates),
+  the working conventions that made the collaboration productive, and the Lean 4
+  pitfalls encountered.
+- **[PROMPTS.md](PROMPTS.md)** — a set of representative prompts from the
+  development, organised by phase (encoding → algorithmic checker → soundness →
+  testing → vectors → enums) and anchored to the commits they produced.
+
+How to use them:
+
+- *To reproduce the proofs*, you do not need either file — `lake build` checks
+  everything (see below). They document *process*, not build steps.
+- *To understand or extend the proofs*, read `CLAUDE.md` first for the
+  architecture and conventions, then `metatheory.md` for the technical detail.
+- *To see how the AI was directed*, read `PROMPTS.md`; each block links to the
+  dates and commits it corresponds to, so it can be cross-checked against
+  `git log`. (The prompts are representative and reconstructed from the git
+  history and working notes; the raw session transcripts were not retained.)
+
 ## Dependencies
 
 * `mathlib4-v4.27.0`
