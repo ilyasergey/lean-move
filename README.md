@@ -5,6 +5,13 @@ An experimental formalisation of Move borrow checker in Lean.
 See **[metatheory.md](metatheory.md)** for a detailed overview of the
 type system, soundness statement, proof architecture, and key invariants.
 
+> **Artifact evaluators:** start with **[ARTIFACT.md](ARTIFACT.md)** — the
+> evaluation guide (requirements, kick-the-tires, full build, and the
+> claims-to-code mapping). Requested badges are listed in
+> **[STATUS.md](STATUS.md)**. The project is licensed under Apache-2.0
+> (**[LICENSE](LICENSE)**). `make build` fetches the mathlib cache and
+> re-checks every proof.
+
 ## AI-assisted development
 
 This formalisation was developed with an AI coding assistant. Two documents
