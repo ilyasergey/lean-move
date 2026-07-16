@@ -1,0 +1,8 @@
+# Pin the Rust toolchain so the benchmark builds deterministically and against a
+# version that supports edition 2024 (which requires Rust >= 1.85). This is the
+# exact toolchain the full build + run were validated with; rustup reads this
+# file and auto-installs the toolchain if it is missing. Placing it at the
+# benchmark/ root means rustup picks it up for both run.sh and corroborate.sh
+# (which invoke cargo from here) and for manual builds in the crate subdirectory.
+[toolchain]
+channel = "1.96.0"

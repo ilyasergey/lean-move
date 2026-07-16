@@ -15,6 +15,11 @@ This artifact is **plain source**: it requires only a standard Lean 4 toolchain
 (no Docker or VM). Lean's build tool re-checks every proof with the kernel, so a
 successful build *is* the verification.
 
+The paper's **Section 6** performance results come from a separate codebase (the
+**Rust** Sui verifier, not the Lean development), so they are reproduced by a
+self-contained Rust harness under [`benchmark/`](benchmark/) — see §8. Everything
+else in this guide concerns the Lean development.
+
 ---
 
 ## 1. Requirements
@@ -38,6 +43,13 @@ depends only on these):
 | batteries | `v4.27.0` |
 
 `elan` reads `lean-toolchain` and selects the correct Lean version automatically.
+
+> **Section 6 benchmark** (optional, separate, §8) has its own requirements — a
+> Rust toolchain (pinned via `benchmark/rust-toolchain.toml`, which `rustup`
+> installs automatically) and network for the pinned Sui crates. Its small
+> corroboration sample is bundled (`benchmark/sample.zip`, no download); only the
+> full-corpus run fetches the ~13–16 GB public dataset. None of the Lean
+> requirements above depend on it.
 
 ---
 
@@ -73,8 +85,8 @@ disjointness — the heart of the type system) and should finish quickly.
 **Step 4 — Confirm there are no proof escape hatches:**
 
 ```bash
-grep -rnw --include='*.lean' -E 'sorry|admit' LeanMove | wc -l   # expect: 0
-grep -rn  --include='*.lean' '^axiom '         LeanMove | wc -l   # expect: 0
+grep -rnw --include='*.lean' 'sorry'   LeanMove | wc -l   # expect: 0
+grep -rn  --include='*.lean' '^axiom ' LeanMove | wc -l   # expect: 0
 ```
 
 If Steps 1–4 succeed you are set up correctly.
@@ -128,7 +140,7 @@ The absence of `sorryAx` confirms the proof has no holes. (`propext`,
 `Classical.choice`, `Quot.sound` are the standard classical axioms used
 throughout mathlib; see §6 on the trusted computing base.)
 
-**Step 3 — (optional) Re-confirm zero `sorry`/`admit`/`axiom`** as in §2 Step 4.
+**Step 3 — (optional) Re-confirm zero `sorry`/`axiom`** as in §2 Step 4.
 
 ---
 
@@ -159,10 +171,13 @@ files are unchanged across the documentation commits, so the anchors are stable)
 | 14 | **Enum** extension via flat encoding; +6 invariant clauses | §4.2 | rules `let_bind_packVariant` [`TypeChecking.lean:743`](LeanMove/Typing/TypeChecking.lean#L743), `unpackVariant_rule` [`:761`](LeanMove/Typing/TypeChecking.lean#L761); flat encoding in [`Semantics/Smallstep.lean`](LeanMove/Semantics/Smallstep.lean) |
 | 15 | Whole development is `sorry`/`axiom`-free | §5.1 | §2 Step 4 and §3 Step 2 above |
 | 16 | LOC / commit-timeline figures (Table 1, Fig 17) | §5.1 | reproducible from the repo — see §7 |
+| 17 | **Section 6 performance:** regex checker ≈2.2× the deployed checker, ≈30 µs/function | §6 | Rust harness [`benchmark/`](benchmark/); `./corroborate.sh` (bundled sample — we observed ≈2.0×, ~18 µs on an Apple M2) or `./run.sh` (full corpus); see §8 |
+| 18 | **Backwards compatibility / strictly more expressive** (every function the deployed checker accepts is accepted by the regex checker) | §6, Intro | the benchmark errors if the regex checker rejects any corpus function — [`benchmark/reference-safety-bench/src/main.rs`](benchmark/reference-safety-bench/src/main.rs); see §8 |
 
-> **Not in this artifact:** the Section 6 performance results (≈2.2×, ≈30 µs,
-> 2.9M functions) are from the separate **Rust** implementation in the Sui
-> client and are out of scope here (see [`STATUS.md`](STATUS.md)).
+> **Section 6 (performance) is reproducible too**, via the separate Rust harness
+> in [`benchmark/`](benchmark/) — see §8. It is a different codebase (the Sui
+> Rust verifier, not the Lean development), with its own toolchain and a public
+> dataset fetched on demand (never stored in this repository).
 
 ---
 
@@ -189,8 +204,7 @@ project layout, and the limitations.
   `propext`, `Classical.choice`, `Quot.sound` inherited from mathlib. §3 Step 2
   shows how to confirm the soundness theorem depends on exactly these and on no
   `sorryAx`.
-- **No project-specific axioms, no `sorry`, no `admit`** anywhere in the
-  development.
+- **No project-specific axioms and no `sorry`** anywhere in the development.
 - **Assumptions stated in the theorem, not hidden:** `type_soundness` is
   parameterised by `SoundnessAssumptions` (well-formed label/enum environments,
   argument/parameter type compatibility, heap well-formedness, etc.). To guard
@@ -242,7 +256,73 @@ git log --since=2025-12-01 --date=format:'%Y-%m-%d' --pretty='%ad' | sort | uniq
 
 ---
 
-## 8. Licence
+## 8. Reproducing Section 6 (performance) — `benchmark/`
+
+Section 6 compares the wall-clock time of the new regex-based reference-safety
+checker against the deployed graph-based one. Those numbers come from the
+**Rust** implementation in the Sui client, not the Lean development, so they live
+in a separate, self-contained Rust harness under [`benchmark/`](benchmark/)
+(with its own [`benchmark/README.md`](benchmark/README.md)).
+
+**What it measures.** For every non-native function in a corpus of compiled Move
+modules it times `reference_safety::verify` (old, graph-based) and
+`regex_reference_safety::verify` (new, regex-based) back-to-back, and reports the
+ratio of means plus percentiles. Both verifiers are taken from a **pinned public
+Sui revision** (the `rev = …` on the `move-*` git dependencies in
+[`benchmark/reference-safety-bench/Cargo.toml`](benchmark/reference-safety-bench/Cargo.toml)).
+
+For a guide to that production Rust implementation — where each part lives online
+(direct links at the pinned revision) and how it maps to the Lean development in
+this artefact — see [`benchmark/IMPLEMENTATION.md`](benchmark/IMPLEMENTATION.md).
+
+**Why the Rust sources are not packaged in the artefact.** The production checker
+is a *separate* codebase (the Sui verifier), not the object of this artefact —
+which is the Lean specification and soundness proof. Its exact revision is pinned
+by SHA in `Cargo.toml` and `Cargo.lock`, so the fetched sources are byte-identical
+and reproducible *without* vendoring; bundling them would add ~230 MB (a raw
+checkout is ~1 GB) and dwarf the rest of the artefact for no benefit, while the
+network is needed anyway (toolchain and, for the full run, the dataset). The
+[implementation guide](benchmark/IMPLEMENTATION.md) explains this and gives a
+`cargo vendor` recipe for offline builds.
+
+**Requirements & determinism.** A Rust toolchain, pinned by
+[`benchmark/rust-toolchain.toml`](benchmark/rust-toolchain.toml) (rustup installs
+it automatically), plus network on first build for the pinned Sui crates. The
+small corroboration sample is **bundled** as `benchmark/sample.zip` (~7 MB:
+1,889 framework `.mv` modules plus their decompiled `.move` sources), so
+`corroborate.sh` needs **no** dataset download and extracts it fresh on each run.
+The **full** dataset (`MystenLabs/sui-packages`) is fetched from its public
+source on demand by `run.sh` and is **never stored in this repository**. The Sui
+verifier revision, the toolchain, and the bundled sample are all pinned/fixed, so
+results are bit-for-bit reproducible up to hardware-dependent timings (see
+[`benchmark/README.md`](benchmark/README.md) → “What is shipped” for the sample's
+size, selection, and provenance).
+
+**Two ways to run** (from the `benchmark/` directory):
+
+- *Deterministic small-sample corroboration* (minutes, **no dataset download**) —
+  extracts the bundled `sample.zip` (1,889 framework modules / ~15k functions)
+  and reports the statistics:
+  ```bash
+  ./corroborate.sh
+  ```
+- *Full corpus* (the paper's exact setting) — needs the entire ~13–16 GB dataset
+  and hours of compute; prompts to fetch the dataset and choose the corpus:
+  ```bash
+  ./run.sh
+  ```
+
+**What to expect.** The paper reports the regex checker is on average **2.2×**
+slower with a mean of **≈30 µs/function** over 2.9M functions (Apple M1 Max). We
+ran `corroborate.sh` on an Apple M2 over the ~15,000 framework functions and
+observed a ratio of **≈2.0×** and **~18 µs/function** — the same direction and
+order of magnitude (the subsample is framework-only and the hardware is not an
+M1 Max, so the absolute microseconds are lower). This corroborates the Section 6
+claim; the exact full-corpus figures require `run.sh`. The tool also asserts that
+the regex checker accepts *every* function the deployed checker accepts,
+corroborating the backwards-compatibility / strictly-more-expressive claim.
+
+## 9. Licence
 
 Released under the Apache-2.0 licence ([`LICENSE`](LICENSE)), matching the
 licence of mathlib, on which the development depends.

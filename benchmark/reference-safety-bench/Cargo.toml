@@ -1,0 +1,23 @@
+[package]
+name = "reference-safety-bench"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+rayon = "1"
+walkdir = "2"
+
+move-binary-format = { git = "https://github.com/MystenLabs/sui/", rev = "ab36f2fea373075f42ffb158aaf37b66e4b68fc6" }
+move-vm-config = { git = "https://github.com/MystenLabs/sui/", rev = "ab36f2fea373075f42ffb158aaf37b66e4b68fc6" }
+move-bytecode-verifier = { git = "https://github.com/MystenLabs/sui/", rev = "ab36f2fea373075f42ffb158aaf37b66e4b68fc6" }
+move-bytecode-verifier-meter = { git = "https://github.com/MystenLabs/sui/", rev = "ab36f2fea373075f42ffb158aaf37b66e4b68fc6" }
+
+# Timings from a debug build are meaningless; the binary also guards against it
+# at runtime (see src/main.rs). Keep release optimization explicit.
+[profile.release]
+opt-level = 3
+lto = "thin"

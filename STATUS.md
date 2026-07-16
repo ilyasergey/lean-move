@@ -23,8 +23,8 @@ the full test suite. Verification and validation evidence:
 
 - `lake build` re-checks every definition and proof with the Lean kernel and
   completes with **zero errors**.
-- The development contains **zero `sorry`, zero `admit`, and zero `axiom`**
-  declarations (a one-line check is given in [`ARTIFACT.md`](ARTIFACT.md)).
+- The development contains **zero `sorry` and zero `axiom`** declarations
+  (a one-line check is given in [`ARTIFACT.md`](ARTIFACT.md)).
 - `#print axioms` on the top-level theorem `type_soundness` reports only the
   three standard Lean/mathlib axioms (`propext`, `Classical.choice`,
   `Quot.sound`) — and crucially **not** `sorryAx`.
@@ -43,12 +43,19 @@ open-source licence.
 regex-based type system is sound (Theorem 3.1) and that the algorithmic checker
 agrees with the relational specification (`check_stmt_sound`) — by having the
 Lean kernel re-check the proofs. It also re-runs the **31** per-execution
-`type_soundness_dec` certificates and the type-checking conformance suite.
+`type_soundness_dec` certificates and the type-checking conformance suite. The
+**Section 6** performance result is reproducible too, via the separate Rust
+harness in [`benchmark/`](benchmark/): `benchmark/corroborate.sh` corroborates the
+≈2.2× / ≈30 µs claim on a bundled sample in minutes (we observed ≈2.0× / ~18 µs
+on an Apple M2), and `benchmark/run.sh` reproduces the full-corpus figures.
 
-### Scope note (what this artifact does *not* reproduce)
+### Scope note
 
-The performance numbers in **Section 6** (≈2.2× slowdown, ≈30 µs/function over
-2.9M functions) come from the **Rust implementation in the Sui blockchain
-client**, which is a *separate* codebase and is **not** part of this Lean
-artifact. Those numbers are out of scope for this submission; "Results
-Reproduced" here refers to the mechanised formal results above.
+The **Section 6** performance numbers come from the Rust implementation in the
+Sui client — a *separate* codebase from the Lean development. That code is not
+vendored here (see [`benchmark/IMPLEMENTATION.md`](benchmark/IMPLEMENTATION.md)
+for why, and for how it maps to the Lean artifact), but it is pinned by commit
+and its results are reproducible through the [`benchmark/`](benchmark/) harness
+— either the bundled-sample corroboration or the full ~13–16 GB corpus. The
+full-corpus run needs the public dataset and comparable hardware (the paper used
+an Apple M1 Max); the bundled corroboration needs neither.

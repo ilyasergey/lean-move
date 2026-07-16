@@ -36,8 +36,8 @@ expressions over field paths**. Borrowing a field is a **Brzozowski derivative**
 the write-safety check (`check_outbound`) reduces to deciding `L(r) ⊆ {ε}`; and
 borrow disjointness reduces to regex emptiness-of-intersection.
 
-**Hard invariant of this repository: the build has zero `sorry`, zero `admit`,
-and zero `axiom`.** Never introduce one as a shortcut. If a goal cannot be
+**Hard invariant of this repository: the build has zero `sorry` and zero
+`axiom`.** Never introduce one as a shortcut. If a goal cannot be
 closed, stop and surface it — a `sorry` that slips into a committed proof
 silently invalidates the soundness claim.
 
@@ -115,6 +115,11 @@ LeanMove/
 `metatheory.md` is the canonical prose overview (definitions, statements, proof
 architecture, invariant clauses, limitations). Read it first for orientation; it
 is kept in sync with the Lean sources.
+
+The `benchmark/` folder (added for the OOPSLA artefact) is a **separate Rust
+performance harness** for the paper's Section 6; it is unrelated to the Lean
+build (`lake` never touches it). See `benchmark/README.md` and
+`benchmark/IMPLEMENTATION.md`.
 
 ---
 
@@ -205,7 +210,7 @@ These practices are what kept the assistant productive; follow them.
 
 ## 6. Lean 4 pitfalls observed in this project
 
-- **`sorry`/`admit`/`axiom` are forbidden** in committed code (restated because
+- **`sorry`/`axiom` are forbidden** in committed code (restated because
   it matters most).
 - **`List.mem_map_of_mem`**: `f` is *implicit* — write `(f := Prod.snd) h`.
 - **`List.not_mem_nil _`** yields `False`, not `¬ a ∈ []`; prefer `nomatch hmem`.

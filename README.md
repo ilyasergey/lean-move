@@ -10,7 +10,10 @@ type system, soundness statement, proof architecture, and key invariants.
 > claims-to-code mapping). Requested badges are listed in
 > **[STATUS.md](STATUS.md)**. The project is licensed under Apache-2.0
 > (**[LICENSE](LICENSE)**). `make build` fetches the mathlib cache and
-> re-checks every proof.
+> re-checks every proof. The paper's Section 6 performance benchmark (Rust,
+> separate) lives in **[benchmark/](benchmark/)** — see ARTIFACT.md §8 and
+> **[benchmark/IMPLEMENTATION.md](benchmark/IMPLEMENTATION.md)** (a guide to the
+> production Rust checker and how it maps to this Lean development).
 
 ## AI-assisted development
 
