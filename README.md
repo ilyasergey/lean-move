@@ -1,5 +1,10 @@
 ## Lean-Move
 
+An experimental formalisation of Move borrow checker in Lean.
+
+See **[metatheory.md](metatheory.md)** for a detailed overview of the
+type system, soundness statement, proof architecture, and key invariants.
+
 > ## 📄 OOPSLA 2026 artefact
 >
 > This repository is the Lean development behind the OOPSLA 2026 paper
@@ -21,13 +26,6 @@ make eval                      # kernel-check the Lean proofs + corroborate the 
 
 Then read **ARTIFACT.md** on that branch for the full evaluation guide —
 requirements, kick-the-tires, the claims-to-code mapping, and the Rust benchmark.
-
----
-
-An experimental formalisation of Move borrow checker in Lean.
-
-See **[metatheory.md](metatheory.md)** for a detailed overview of the
-type system, soundness statement, proof architecture, and key invariants.
 
 ## AI-assisted development
 
