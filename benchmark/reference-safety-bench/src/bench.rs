@@ -1,3 +1,6 @@
+// Copyright (c) Todd Nowacki
+// SPDX-License-Identifier: Apache-2.0
+
 //! Times the old (graph-based) and new (regex-based) reference-safety analyses
 //! in isolation, per function, using production-identical per-function setup.
 

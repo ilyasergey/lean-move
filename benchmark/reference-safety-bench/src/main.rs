@@ -1,3 +1,6 @@
+// Copyright (c) Todd Nowacki
+// SPDX-License-Identifier: Apache-2.0
+
 //! Times the old (graph-based) vs new (regex-based) reference-safety analyses
 //! for every function in a corpus of compiled Move modules, and reports the
 //! ratio plus summary statistics.

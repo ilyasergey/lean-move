@@ -1,3 +1,6 @@
+// Copyright (c) Todd Nowacki
+// SPDX-License-Identifier: Apache-2.0
+
 //! Summary statistics for a set of per-function timings, reported in microseconds.
 
 pub struct Summary {

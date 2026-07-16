@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) Todd Nowacki
+# SPDX-License-Identifier: Apache-2.0
+#
 # Reproduce the borrow-checker performance numbers comparing the regex-based
 # reference-safety checker against the deployed (graph-based) one.
 set -euo pipefail
