@@ -14,6 +14,11 @@ type system, soundness statement, proof architecture, and key invariants.
 > separate) lives in **[benchmark/](benchmark/)** — see ARTIFACT.md §8 and
 > **[benchmark/IMPLEMENTATION.md](benchmark/IMPLEMENTATION.md)** (a guide to the
 > production Rust checker and how it maps to this Lean development).
+>
+> **One-command evaluation** (from the repo root): **`make eval`** checks
+> *everything* — the Lean proofs and the Section 6 benchmark. **`make eval-lean`**
+> runs the Lean half (build + axiom-clean check); **`make eval-rust`** runs the
+> Rust benchmark corroboration on the bundled sample.
 
 ## AI-assisted development
 

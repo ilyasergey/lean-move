@@ -22,6 +22,20 @@ else in this guide concerns the Lean development.
 
 ---
 
+## Quick start — one-command evaluation
+
+From the repository root:
+
+| Command | What it does |
+|---------|--------------|
+| `make eval` | **Evaluate everything** — build and kernel-check the Lean proofs (with the axiom-clean check) *and* corroborate the Section 6 benchmark. |
+| `make eval-lean` | The **Lean** half only: `lake exe cache get && lake build`, then the `#print axioms` check (§2–§3). |
+| `make eval-rust` | The **Rust** half only (paper §6): build the benchmark and corroborate it on the bundled sample — no dataset download (§8). |
+
+Requirements and a step-by-step walkthrough follow (Lean: §1–§3; benchmark: §8).
+
+---
+
 ## 1. Requirements
 
 - **OS:** Linux (x86-64) or macOS (x86-64 or Apple Silicon). Windows via WSL2
@@ -89,7 +103,18 @@ grep -rnw --include='*.lean' 'sorry'   LeanMove | wc -l   # expect: 0
 grep -rn  --include='*.lean' '^axiom ' LeanMove | wc -l   # expect: 0
 ```
 
-If Steps 1–4 succeed you are set up correctly.
+**Step 5 — Corroborate the Section 6 benchmark** (~2–3 min; full detail in §8):
+
+```bash
+make eval-rust        # builds the Rust benchmark and runs it on the bundled sample
+```
+
+This needs a Rust toolchain (auto-installed via `benchmark/rust-toolchain.toml`)
+and network for the pinned Sui crates on first build; it downloads **no** dataset.
+Expect a ratio ≈2× and tens of µs per function.
+
+If Steps 1–5 succeed you are set up correctly. `make eval` runs the whole
+evaluation — Lean proofs and benchmark — in one command.
 
 ---
 

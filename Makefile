@@ -2,13 +2,30 @@ PROJECT  = lean-move
 ARTEFACT = $(PROJECT)-artefact
 ANONDIR  = /tmp/$(ARTEFACT)-anon
 
-.PHONY: build artefact artefact-anon clean
+.PHONY: build eval eval-lean eval-rust artefact artefact-anon clean
 
 # Build and kernel-check the whole development from scratch.
 # Fetches the prebuilt mathlib cache first, then re-checks every proof.
 build:
 	lake exe cache get
 	lake build
+
+# One-command evaluation of the whole artefact: the Lean proofs AND the paper's
+# Section 6 performance benchmark.
+eval: eval-lean eval-rust
+
+# Lean only: fetch the mathlib cache, kernel-recheck every proof, then print the
+# axiom dependencies of the soundness theorems — expect only
+# [propext, Classical.choice, Quot.sound] and, crucially, NO sorryAx.
+eval-lean:
+	lake exe cache get
+	lake build
+	lake env lean scripts/AxiomCheck.lean
+
+# Rust only (paper Section 6): build the benchmark and corroborate the
+# performance claim on the bundled sample (no dataset download).
+eval-rust:
+	cd benchmark && ./corroborate.sh
 
 # Artefact archive for OOPSLA Artifact Evaluation. The AE is single-blind
 # (reviewers see the authors), so this archive is NOT anonymised — it keeps real
