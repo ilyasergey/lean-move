@@ -2,23 +2,36 @@
 
 **Paper #1171 — *Tracking Borrows with Regular Expressions* (OOPSLA 2026)**
 
-This is the evaluation guide for the **LeanMove** artifact: the complete Lean 4
-mechanisation of the regex-based Move borrow checker described in the paper —
-the language, regular-expression library, small-step operational semantics, the
-relational and algorithmic type systems, the machine-checked type-soundness
-proof, the MoveIR parser/translator, and the conformance test suite.
+This artefact has **two independent parts**, matching the two kinds of claim in
+the paper:
 
-Requested badges and their justification are in [`STATUS.md`](STATUS.md).
-A prose overview of the metatheory is in [`metatheory.md`](metatheory.md).
+1. **The Lean development** — the bulk of the artefact (guide §2–§7). It is the
+   complete Lean 4 mechanisation of the regex-based Move borrow checker: the
+   language, regular-expression library, small-step operational semantics, the
+   relational and algorithmic type systems, the machine-checked **type-soundness
+   proof**, the MoveIR parser/translator, and the conformance test suite. It is
+   **plain source** needing only a Lean toolchain (no Docker/VM); because Lean's
+   build re-checks every proof with the kernel, a successful build *is* the
+   verification. This part substantiates the paper's **formal** claims —
+   soundness, algorithmic-checker soundness, decidable certificates (Secs. 2–5).
 
-This artifact is **plain source**: it requires only a standard Lean 4 toolchain
-(no Docker or VM). Lean's build tool re-checks every proof with the kernel, so a
-successful build *is* the verification.
+2. **The Rust benchmark** — `benchmark/` (guide §8). A self-contained harness
+   that substantiates the paper's **Section 6 performance** claim. Those numbers
+   come from a *different* codebase — the production Move verifier in the Sui
+   client, written in **Rust** — not from the Lean development. The harness times
+   the deployed (graph-based) against the new (regex-based) checker, built against
+   a pinned public Sui revision, and has its own Rust toolchain and dataset.
 
-The paper's **Section 6** performance results come from a separate codebase (the
-**Rust** Sui verifier, not the Lean development), so they are reproduced by a
-self-contained Rust harness under [`benchmark/`](benchmark/) — see §8. Everything
-else in this guide concerns the Lean development.
+The two parts are **independent** — separate toolchains, no shared code — and
+share only the *design*: the Lean side proves that design sound; the Rust side is
+a production implementation of it, whose performance the benchmark measures. The
+artefact does **not** prove the two equivalent; see
+[`benchmark/IMPLEMENTATION.md`](benchmark/IMPLEMENTATION.md) for the part-by-part
+mapping and the deliberate divergences. You can evaluate either part on its own;
+`make eval` runs both (see the Quick start below).
+
+Requested badges and their justification are in [`STATUS.md`](STATUS.md); a prose
+overview of the metatheory is in [`metatheory.md`](metatheory.md).
 
 ---
 
@@ -36,41 +49,47 @@ Requirements and a step-by-step walkthrough follow (Lean: §1–§3; benchmark: 
 
 ---
 
-## 1. Requirements
+## 1. Requirements (Lean and Rust)
 
-- **OS:** Linux (x86-64) or macOS (x86-64 or Apple Silicon). Windows via WSL2
+The artefact has two independent parts with separate toolchains — the **Lean**
+development (§2–§7) and the **Rust** Section 6 benchmark (§8). Either can be
+evaluated on its own; `make eval` runs both.
+
+**Common.**
+- **OS:** Linux (x86-64) or macOS (x86-64 or Apple Silicon); Windows via WSL2
   should also work.
+- **No special hardware**, no GPU, no telemetry. Network is used only to install
+  toolchains and fetch pinned dependencies/caches (per part, below) — never
+  during proof-checking.
+
+**Lean development (§2–§7).**
+- **Toolchain:** `elan`, which reads `lean-toolchain` and installs the pinned
+  Lean automatically. Pinned versions (declared in `lean-toolchain` /
+  `lakefile.lean`; the proof depends only on these):
+
+  | Component | Version |
+  |-----------|---------|
+  | Lean 4    | `leanprover/lean4:v4.27.0` |
+  | mathlib4  | `v4.27.0` |
+  | batteries | `v4.27.0` |
+
 - **Disk:** ≈ 8–10 GB (the mathlib build cache dominates).
-- **RAM:** 8 GB minimum; 16 GB recommended — the two large proof files
-  (`Preservation.lean`, `Weakening.lean`) are memory-intensive to elaborate.
-- **Network:** needed *once* — for Lean, to install the toolchain and download
-  the prebuilt mathlib cache (no network is used at proof-checking time); and for
-  the Section 6 benchmark (§8), to install the Rust toolchain and fetch the
-  pinned Sui crates on first build. The bundled benchmark corroboration downloads
-  no dataset.
-- **No special hardware**, no GPU, no telemetry, no network calls during the build.
+- **RAM:** 8 GB minimum, 16 GB recommended (the large `Preservation.lean` /
+  `Weakening.lean` are memory-intensive to elaborate).
+- **Network:** once, to install `elan` and download the prebuilt mathlib cache.
 
-**Pinned versions** (declared in `lean-toolchain` and `lakefile.lean`; the proof
-depends only on these):
-
-| Component | Version |
-|-----------|---------|
-| Lean 4    | `leanprover/lean4:v4.27.0` |
-| mathlib4  | `v4.27.0` |
-| batteries | `v4.27.0` |
-
-`elan` reads `lean-toolchain` and selects the correct Lean version automatically.
-
-> **Section 6 benchmark** (optional, separate, §8) has its own requirements — a
-> Rust toolchain (pinned via `benchmark/rust-toolchain.toml`, which `rustup`
-> installs automatically) and network for the pinned Sui crates. Its small
-> corroboration sample is bundled (`benchmark/sample.zip`, no download); only the
-> full-corpus run fetches the ~13–16 GB public dataset. None of the Lean
-> requirements above depend on it.
+**Rust benchmark — paper Section 6 (§8).**
+- **Toolchain:** a Rust toolchain pinned by `benchmark/rust-toolchain.toml`
+  (edition 2024 → Rust ≥ 1.85); `rustup` installs it automatically.
+- **Network:** once on first build, to fetch the pinned Sui crates.
+- **Data:** the corroboration sample is **bundled** (`benchmark/sample.zip`,
+  ~7 MB) — no download. Only the optional full-corpus run (`run.sh`) fetches the
+  ~13–16 GB public dataset.
+- **Disk:** a few GB for the Rust build; ~13–16 GB more only for the full corpus.
 
 ---
 
-## 2. Getting Started (kick-the-tires, ≈30 min)
+## 2. Getting started with the Lean development (kick-the-tires, ≈30 min)
 
 The goal of this phase is only to confirm the toolchain is set up and the project
 compiles — not to build the whole proof yet.
@@ -121,7 +140,10 @@ evaluation — Lean proofs and benchmark — in one command.
 
 ---
 
-## 3. Full Evaluation (≈ up to 1 hour of mostly-unattended build)
+## 3. Full evaluation of the Lean development (≈ up to 1 hour, mostly unattended)
+
+This section is the **Lean** half of a full evaluation; the **Rust** Section 6
+benchmark is §8, and `make eval` runs both in one command.
 
 **Step 1 — Build everything.** This re-checks the entire development — every
 definition, every typing rule, the algorithmic checker and its soundness bridge,
@@ -172,7 +194,7 @@ throughout mathlib; see §6 on the trusted computing base.)
 
 ---
 
-## 4. Significant claims and where to check them
+## 4. Significant claims and where to check them (Lean and Rust)
 
 Per the AE guidelines, here is the list of the paper's significant claims and
 the artifact evidence for each. Names are fully qualified under namespace
@@ -209,7 +231,7 @@ files are unchanged across the documentation commits, so the anchors are stable)
 
 ---
 
-## 5. Paper-to-artifact correspondence (definitions and figures)
+## 5. Paper-to-artifact correspondence — Lean development (definitions and figures)
 
 | Paper | Artifact (`file:line`) |
 |-------|----------|
@@ -226,7 +248,7 @@ project layout, and the limitations.
 
 ---
 
-## 6. Trusted computing base, axioms, and assumptions
+## 6. Trusted computing base, axioms, and assumptions (Lean development)
 
 - **TCB:** the Lean 4 kernel (v4.27.0) plus the three standard classical axioms
   `propext`, `Classical.choice`, `Quot.sound` inherited from mathlib. §3 Step 2
@@ -252,7 +274,7 @@ inference bug can only reject valid programs, never accept unsafe ones).
 
 ---
 
-## 7. Reusability and reproducing the quantitative figures
+## 7. Reusability and reproducing the quantitative figures (Lean development)
 
 **Extending the development.** The vector (§4.1) and enum (§4.2) extensions are
 worked examples of the standard recipe: add a path element / type-compatibility
@@ -284,7 +306,7 @@ git log --since=2025-12-01 --date=format:'%Y-%m-%d' --pretty='%ad' | sort | uniq
 
 ---
 
-## 8. Reproducing Section 6 (performance) — `benchmark/`
+## 8. Reproducing Section 6 (performance) — the Rust benchmark (`benchmark/`)
 
 Section 6 compares the wall-clock time of the new regex-based reference-safety
 checker against the deployed graph-based one. Those numbers come from the
