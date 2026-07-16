@@ -43,8 +43,11 @@ Requirements and a step-by-step walkthrough follow (Lean: §1–§3; benchmark: 
 - **Disk:** ≈ 8–10 GB (the mathlib build cache dominates).
 - **RAM:** 8 GB minimum; 16 GB recommended — the two large proof files
   (`Preservation.lean`, `Weakening.lean`) are memory-intensive to elaborate.
-- **Network:** needed *once*, to install the toolchain and download the
-  prebuilt mathlib cache. No network is used at proof-checking time.
+- **Network:** needed *once* — for Lean, to install the toolchain and download
+  the prebuilt mathlib cache (no network is used at proof-checking time); and for
+  the Section 6 benchmark (§8), to install the Rust toolchain and fetch the
+  pinned Sui crates on first build. The bundled benchmark corroboration downloads
+  no dataset.
 - **No special hardware**, no GPU, no telemetry, no network calls during the build.
 
 **Pinned versions** (declared in `lean-toolchain` and `lakefile.lean`; the proof
