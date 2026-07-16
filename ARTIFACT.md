@@ -1,19 +1,19 @@
 # Artifact Evaluation Guide
 
-**Paper #1171 — *Tracking Borrows with Regular Expressions* (OOPSLA 2026)**
+Artefact for the OOPSLA 2026 paper *Tracking Borrows with Regular Expressions*.
 
 This artefact has **two independent parts**, matching the two kinds of claim in
 the paper:
 
 1. **The Lean development** — the bulk of the artefact (guide §2–§7). It is the
    complete Lean 4 mechanisation of the regex-based Move borrow checker: the
-   language, regular-expression library, small-step operational semantics, the
-   relational and algorithmic type systems, the machine-checked **type-soundness
+   language, regular expression library, small-step operational semantics, the
+   relational and algorithmic type systems, the machine-checked **type soundness
    proof**, the MoveIR parser/translator, and the conformance test suite. It is
    **plain source** needing only a Lean toolchain (no Docker/VM); because Lean's
    build re-checks every proof with the kernel, a successful build *is* the
    verification. This part substantiates the paper's **formal** claims —
-   soundness, algorithmic-checker soundness, decidable certificates (Secs. 2–5).
+   soundness, algorithmic checker soundness, decidable certificates (Secs. 2–5).
 
 2. **The Rust benchmark** — `benchmark/` (guide §8). A self-contained harness
    that substantiates the paper's **Section 6 performance** claim. Those numbers
@@ -83,7 +83,7 @@ evaluated on its own; `make eval` runs both.
   (edition 2024 → Rust ≥ 1.85); `rustup` installs it automatically.
 - **Network:** once on first build, to fetch the pinned Sui crates.
 - **Data:** the corroboration sample is **bundled** (`benchmark/sample.zip`,
-  ~7 MB) — no download. Only the optional full-corpus run (`run.sh`) fetches the
+  ~7 MB) — no download. Only the optional full corpus run (`run.sh`) fetches the
   ~13–16 GB public dataset.
 - **Disk:** a few GB for the Rust build; ~13–16 GB more only for the full corpus.
 
@@ -165,7 +165,7 @@ Build targets (all built by the default `lake build`):
 |--------|----------------|
 | `lake build core` | the core library: language, regex, semantics, both type systems, **all soundness proofs** |
 | `lake build litmus` | small accepted/rejected litmus programs |
-| `lake build expressivity` | programs transpiled from the Move bytecode-verifier reference-safety suite |
+| `lake build expressivity` | programs transpiled from the Move bytecode verifier reference safety suite |
 | `lake build examples` | litmus + expressivity together |
 | `lake build parsing` | parser alpha-equivalence tests |
 | `lake build runtime` | runtime conformance + the 31 per-execution `type_soundness_dec` certificates |
@@ -269,7 +269,7 @@ The formalisation omits, by design: generics (the checker runs on
 monomorphised code), abilities (`copy`/`drop`, orthogonal to borrowing), global
 storage, references stored *inside* records (forbidden by current Move), and the
 abstract interpreter that *infers* label environments (the artifact follows a
-translation-validation architecture: it *checks* given environments, so an
+translation validation architecture: it *checks* given environments, so an
 inference bug can only reject valid programs, never accept unsafe ones).
 
 ---
@@ -277,7 +277,7 @@ inference bug can only reject valid programs, never accept unsafe ones).
 ## 7. Reusability and reproducing the quantitative figures (Lean development)
 
 **Extending the development.** The vector (§4.1) and enum (§4.2) extensions are
-worked examples of the standard recipe: add a path element / type-compatibility
+worked examples of the standard recipe: add a path element / type compatibility
 case, then thread it uniformly through the lemmas. Start from
 [`CLAUDE.md`](CLAUDE.md) (architecture + conventions + Lean-4 pitfalls) and
 [`metatheory.md`](metatheory.md), then read the relevant `Soundness/` file.
@@ -289,7 +289,7 @@ phase.
 ```bash
 # non-blank lines per major component (approximation of Table 1)
 find LeanMove -name '*.lean' | xargs wc -l | sort -rn | head
-# test-suite sizes
+# test suite sizes
 ls LeanMove/Tests/Typechecking/expressivity/accepted/*.lean | wc -l   # 21
 ls LeanMove/Tests/Typechecking/expressivity/rejected/*.lean | wc -l   # 12
 ls LeanMove/Tests/Typechecking/litmus/{accepted,rejected}/*.lean | wc -l   # 14
@@ -308,7 +308,7 @@ git log --since=2025-12-01 --date=format:'%Y-%m-%d' --pretty='%ad' | sort | uniq
 
 ## 8. Reproducing Section 6 (performance) — the Rust benchmark (`benchmark/`)
 
-Section 6 compares the wall-clock time of the new regex-based reference-safety
+Section 6 compares the wall-clock time of the new regex-based reference safety
 checker against the deployed graph-based one. Those numbers come from the
 **Rust** implementation in the Sui client, not the Lean development, so they live
 in a separate, self-contained Rust harness under [`benchmark/`](benchmark/)
@@ -350,7 +350,7 @@ size, selection, and provenance).
 
 **Two ways to run** (from the `benchmark/` directory):
 
-- *Deterministic small-sample corroboration* (minutes, **no dataset download**) —
+- *Deterministic small sample corroboration* (minutes, **no dataset download**) —
   extracts the bundled `sample.zip` (1,889 framework modules / ~15k functions)
   and reports the statistics:
   ```bash
@@ -368,7 +368,7 @@ ran `corroborate.sh` on an Apple M2 over the ~15,000 framework functions and
 observed a ratio of **≈2.0×** and **~18 µs/function** — the same direction and
 order of magnitude (the subsample is framework-only and the hardware is not an
 M1 Max, so the absolute microseconds are lower). This corroborates the Section 6
-claim; the exact full-corpus figures require `run.sh`. The tool also asserts that
+claim; the exact full corpus figures require `run.sh`. The tool also asserts that
 the regex checker accepts *every* function the deployed checker accepts,
 corroborating the backwards-compatibility / strictly-more-expressive claim.
 

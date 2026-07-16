@@ -57,15 +57,15 @@ How to use them:
 ```bash
 lake build
 ```
-Builds the core library, all type-checking examples, and runtime tests
-(including type-soundness certificates).
+Builds the core library, all type checking examples, and runtime tests
+(including type soundness certificates).
 
 ### Build core library only
 ```bash
 lake build core
 ```
 
-### Build type-checking examples
+### Build type checking examples
 ```bash
 lake build examples    # all examples
 lake build litmus       # basic litmus tests only
@@ -76,7 +76,7 @@ lake build expressivity # expressivity tests only
 - `LeanMove/Tests/Typechecking/expressivity/` — transpiled from the
   [Move bytecode verifier tests](https://github.com/tnowacki/sui/tree/example-tests/external-crates/move/crates/bytecode-verifier-transactional-tests/tests/reference_safety/expressivity)
 - `LeanMove/Tests/MVIR/` — Move IR source files (`.mvir`) shared across
-  parsing and type-checking tests
+  parsing and type checking tests
 
 ### Build runtime tests only
 ```bash

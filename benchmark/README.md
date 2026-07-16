@@ -1,14 +1,14 @@
-# Borrow-checker performance benchmark
+# Borrow checker performance benchmark
 
-Reproduces the wall-time performance of the new regex-based reference-safety checker vs the deployed (graph-based) approach.
+Reproduces the wall-time performance of the new regex-based reference safety checker vs the deployed (graph-based) approach.
 
-The tool times both reference-safety analyses per Move function, in isolation, over the corpus of published Sui packages, and reports the ratio of the means plus richer statistics (median, p90/p95/p99, min, max, std dev, total).
+The tool times both reference safety analyses per Move function, in isolation, over the corpus of published Sui packages, and reports the ratio of the means plus richer statistics (median, p90/p95/p99, min, max, std dev, total).
 
 ## What it measures
 
 For each non-native function it times:
 
-- **old**: `move_bytecode_verifier::reference_safety::verify` (deployed, borrow-graph based), and
+- **old**: `move_bytecode_verifier::reference_safety::verify` (deployed, borrow graph based), and
 - **new**: `move_bytecode_verifier::regex_reference_safety::verify` (regex based).
 
 Both run back-to-back on the same thread per function. Timing uses nanosecond resolution internally and is reported in microseconds.
@@ -20,7 +20,7 @@ This folder is self-contained. It contains:
 - **The benchmarking tool** — a small Rust crate under `reference-safety-bench/`
   (`src/main.rs`, `bench.rs`, `stats.rs`), with its dependencies pinned in
   `Cargo.lock` and the Rust toolchain pinned in `rust-toolchain.toml`. The two
-  reference-safety analyses it times are **not** vendored here: they are pulled,
+  reference safety analyses it times are **not** vendored here: they are pulled,
   at a pinned revision, from the public `MystenLabs/sui` repository (the `move-*`
   git dependencies in `reference-safety-bench/Cargo.toml`), which is where both
   the deployed (`reference_safety`) and the new (`regex_reference_safety`)
@@ -66,7 +66,7 @@ This folder is self-contained. It contains:
 - Network access on first build, to fetch the pinned Sui crates (both scripts).
 - For the **full** run (`run.sh`) only: the `MystenLabs/sui-packages` dataset,
   fetched from its public source — roughly **13–16 GB** (as of 15 July 2026). The
-  small-sample corroboration (`corroborate.sh`) needs **no** dataset download; it
+  small sample corroboration (`corroborate.sh`) needs **no** dataset download; it
   uses the bundled `sample.zip`.
 
 ## Run
@@ -90,7 +90,7 @@ cargo build --release --manifest-path reference-safety-bench/Cargo.toml
 ./reference-safety-bench/target/release/reference-safety-bench <TARGET_DIR> --jobs <N>
 ```
 
-## Deterministic small-sample corroboration
+## Deterministic small sample corroboration
 
 The full run above needs the entire ~13–16 GB dataset and hours of compute. For a
 quick, **self-contained** check that needs **no dataset download**:
@@ -107,7 +107,7 @@ the Sui verifier revision under test is pinned in
 `reference-safety-bench/Cargo.toml`. Only the absolute timings vary with hardware.
 
 On an Apple M2 the sample gives a ratio of **≈2.0×** and a mean regex time of
-**≈18 µs/function**, corroborating the paper's full-corpus figures of **2.2×**
+**≈18 µs/function**, corroborating the paper's full corpus figures of **2.2×**
 and **≈30 µs** (the subsample is framework-only and the hardware is not an
 M1 Max, so the absolute microseconds are lower). Exact numbers vary by hardware;
 the complete figures require `./run.sh` over the whole dataset.

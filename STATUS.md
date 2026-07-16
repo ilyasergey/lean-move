@@ -1,6 +1,6 @@
 # Artifact status — requested badges
 
-This artifact accompanies OOPSLA 2026 paper **#1171**, *Tracking Borrows with
+This artifact accompanies the OOPSLA 2026 paper *Tracking Borrows with
 Regular Expressions*. We apply for all four badges:
 
 - **Artifact Available**
@@ -43,11 +43,11 @@ open-source licence.
 regex-based type system is sound (Theorem 3.1) and that the algorithmic checker
 agrees with the relational specification (`check_stmt_sound`) — by having the
 Lean kernel re-check the proofs. It also re-runs the **31** per-execution
-`type_soundness_dec` certificates and the type-checking conformance suite. The
+`type_soundness_dec` certificates and the type checking conformance suite. The
 **Section 6** performance result is reproducible too, via the separate Rust
 harness in [`benchmark/`](benchmark/): `benchmark/corroborate.sh` corroborates the
 ≈2.2× / ≈30 µs claim on a bundled sample in minutes (we observed ≈2.0× / ~18 µs
-on an Apple M2), and `benchmark/run.sh` reproduces the full-corpus figures.
+on an Apple M2), and `benchmark/run.sh` reproduces the full corpus figures.
 
 ### Scope note
 
@@ -57,5 +57,5 @@ vendored here (see [`benchmark/IMPLEMENTATION.md`](benchmark/IMPLEMENTATION.md)
 for why, and for how it maps to the Lean artifact), but it is pinned by commit
 and its results are reproducible through the [`benchmark/`](benchmark/) harness
 — either the bundled-sample corroboration or the full ~13–16 GB corpus. The
-full-corpus run needs the public dataset and comparable hardware (the paper used
+full corpus run needs the public dataset and comparable hardware (the paper used
 an Apple M1 Max); the bundled corroboration needs neither.

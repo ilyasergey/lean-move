@@ -7,7 +7,7 @@ Lean 4 with machine-checked proofs.
 
 ## TL;DR
 
-We built a **regex-based reference-safety type checker** for MoveLight — a
+We built a **regex-based reference safety type checker** for MoveLight — a
 core calculus of the Move intermediate representation — and proved it
 **sound** with respect to a runnable small-step semantics, all in Lean 4.
 
@@ -31,7 +31,7 @@ core calculus of the Move intermediate representation — and proved it
   a single `lake build`. The test suite includes **86 test files** across
   four categories: parsing, type checking (litmus + expressivity),
   rejected-program checks, and runtime soundness certificates (see
-  [Test suite overview](#test-suite-overview) for details).
+  [Test suite overview](#test suite-overview) for details).
 
 ### Limitations and scope
 
@@ -52,9 +52,9 @@ The formalisation does **not** cover:
   they must be provided as part of the label environment.
 These restrictions keep the core calculus small enough for complete
 machine-checked soundness proofs while still capturing the essence of
-Move's reference-safety discipline — aliased mutable borrows, field
+Move's reference safety discipline — aliased mutable borrows, field
 borrows, freeze, release, cross-function borrow propagation,
-control-flow joins, vector operations (see Part III), and enum variant
+control flow joins, vector operations (see Part III), and enum variant
 packing/unpacking with pattern matching (see Part IV).
 
 ---
@@ -99,7 +99,7 @@ LeanMove/
     │   ├── litmus/                Basic accepted / rejected examples
     │   └── expressivity/          Transpiled Move bytecode verifier tests
     └── Runtime/
-        └── AllTests.lean          Runtime tests + type-soundness certificates
+        └── AllTests.lean          Runtime tests + type soundness certificates
 ```
 
 ### Language (`Lang/MoveLight.lean`)
@@ -196,14 +196,14 @@ path elements, enabling finite representation of unbounded loop iterations.
   mutable returns have only trivial outbound paths, (4) no aliasing between
   mutable returns and other returns.
 
-**Subsumption** (`TypeEnv.subsumes`) mediates control-flow joins. It asserts
+**Subsumption** (`TypeEnv.subsumes`) mediates control flow joins. It asserts
 the existence of a substitution `σ : Aref → Aref` (identity on non-`.refid`
 refs) such that variable/site environments agree modulo `σ`, refs are a
 permutation, `σ` is injective, and path inclusion holds (every path in the
 target environment is also a path in the source, modulo `σ`).
 
 **Function typing** (`typecheck_fun`) checks that every block type-checks
-against its label-environment entry, the entry block matches the initialised
+against its label environment entry, the entry block matches the initialised
 environment, and every pair of consecutive label entries is consistent
 (equivalence at join points).
 
@@ -257,7 +257,7 @@ theorem type_soundness_dec (f : FunDef) (lenvDec : LabelEnvDec)
 The single boolean `checkDecidable` combines:
 1. `check_fun_dec` — algorithmic type checking of the function
 2. `checkFunEnv` — all callees are well-typed (12 checks per function,
-   including label-environment-to-blocks consistency)
+   including label environment-to-blocks consistency)
 3. Argument/heap/parameter well-formedness (decidable by construction)
 
 Because `checkDecidable` returns `Bool`, the proof obligation `(by rfl)`
@@ -298,7 +298,7 @@ practically meaningful: it applies to concrete programs with concrete heaps
 and produces a machine-checked safety guarantee.
 
 The test suite covers programs with borrowing, mutable references, field
-access, function calls, control-flow joins, loops, packing/unpacking records,
+access, function calls, control flow joins, loops, packing/unpacking records,
 and aliasing patterns — all drawn from the Move bytecode verifier's own test
 suite.
 
@@ -329,7 +329,7 @@ bugs in the parser/translator without requiring type checking.
 
 #### Type-checking litmus tests (`Tests/Typechecking/litmus/`, 14 files)
 
-Small, focused programs that test individual type-checking features.
+Small, focused programs that test individual type checking features.
 Divided into accepted (4) and rejected (10):
 
 **Accepted** (pass `check_fun_dec` + have soundness certificates in
@@ -441,11 +441,11 @@ works end-to-end with a decidable certificate.
 
 ### Test environment construction (`DecidableTypeEnv.lean`)
 
-Writing type-checking tests requires constructing `LabelEnvDec` values that
+Writing type checking tests requires constructing `LabelEnvDec` values that
 the algorithmic checker can verify by `rfl` reduction. For single-block
 functions this is straightforward — `mkLabelEnvDec f` derives the initial
 decidable environment from the function's parameters and locals. For
-multi-block programs with control-flow joins (branches, loops), the label
+multi-block programs with control flow joins (branches, loops), the label
 environment must include entries for each block with the correct path graph,
 which involves abstract references (`Aref`) that the checker assigns
 dynamically.
@@ -470,7 +470,7 @@ provide two mechanisms:
 2. **`extendRefSubst`** (`AlgorithmicTypeChecking.lean`): during subsumption
    checking, after the initial substitution σ is computed from valid
    variables, `extendRefSubst` uses backtracking search (`findRefExtension`)
-   to pair remaining unmapped label-environment refids with unmatched checker
+   to pair remaining unmapped label environment refids with unmatched checker
    refids. The pairing is validated by `regexSubsumedBy` path checks, making
    it order-independent — the test environment's refid ordering need not match
    the checker's.
@@ -503,7 +503,7 @@ well-formed program entry point:
   identity.
 - **`heap_wf`**: all readable heap locations are within bounds. This holds
   trivially for a freshly allocated heap.
-- **Label-environment properties** (`lenv_wf`, `lenv_var_tracked`,
+- **Label environment properties** (`lenv_wf`, `lenv_var_tracked`,
   `lenv_var_unique`, etc.): well-formedness of the label environment provided
   by the type checker. These are established by `check_fun_dec` and verified
   by `checkFunEnv`.
@@ -628,7 +628,7 @@ Brzozowski derivatives.
 
 ### Weakening and subsumption (`Weakening.lean`)
 
-At control-flow joins (`jump`, `branch`), the current environment `env` may
+At control flow joins (`jump`, `branch`), the current environment `env` may
 differ from the label environment `envL` — for instance, different branches
 may have allocated different abstract references. The typing rules require
 `TypeEnv.subsumes envL env`, meaning `envL` is *at least as restrictive* as
@@ -740,8 +740,8 @@ the concrete machine state. The most important invariants are:
 
 **Stack and environment:**
 - `blocks_typed`: every block in the current function type-checks against its
-  label-environment entry.
-- `lenv_var_tracked` / `lenv_var_unique`: label-environment entries maintain
+  label environment entry.
+- `lenv_var_tracked` / `lenv_var_unique`: label environment entries maintain
   the same reference-tracking invariants as the current environment. This is
   necessary for `typecheck_stmt_weaken` to fire at jump/branch sites.
 - `funEnv_typed`: every function in the function environment satisfies
@@ -773,7 +773,7 @@ the concrete machine state. The most important invariants are:
 These invariants are established once by `initState_safe` and then maintained
 inductively by each preservation case. The interplay between reference
 tracking, path graph well-formedness, and the reference map is what makes the
-Move borrow-checking discipline sound: the type system's abstract graph
+Move borrow checking discipline sound: the type system's abstract graph
 faithfully reflects the concrete heap's reference structure at every step.
 
 ---
@@ -1378,10 +1378,10 @@ test suite:
   never produces a preventable error — the key demonstration that
   multi-variant enum soundness works end-to-end.
 - **`enum_borrow_field_mutable`**: mutable field borrows through enum
-  references, freeze, multi-module examples (type-checking + soundness
+  references, freeze, multi-module examples (type checking + soundness
   certificate for single-block functions)
 - **`enum_two_mutable_unpacks`**: multiple mutable variant unpacks from
-  the same reference (type-checking + runtime test)
+  the same reference (type checking + runtime test)
 - **`enum_variant_factor`**: parsing and translation of multi-variant
   enum definitions
 

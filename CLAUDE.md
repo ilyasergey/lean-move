@@ -20,20 +20,20 @@ LeanMove is a fully mechanised reference implementation, in Lean 4, of a
 regex-based borrow checker for **MoveLight** — an ANF calculus that captures the
 essence of Move IR (MoveIR). It contains:
 
-- the language, regular-expression library, and small-step operational semantics;
+- the language, regular expression library, and small-step operational semantics;
 - a **relational** type system (the declarative specification) and an
   **algorithmic** (executable, Boolean) type checker proven sound with respect
   to it;
-- a machine-checked **type-soundness** proof (progress + preservation) ruling out
+- a machine-checked **type soundness** proof (progress + preservation) ruling out
   all *preventable* runtime errors (dangling references, use-after-move, write
-  type-mismatch, etc.);
+  type mismatch, etc.);
 - a **parser/translator** from MoveIR text to MoveLight ASTs and a conformance
   test suite drawn from the production Move compiler's own tests;
 - **decidable per-execution soundness certificates** (`type_soundness_dec`).
 
 The core idea: reachability between abstract references is tracked by **regular
 expressions over field paths**. Borrowing a field is a **Brzozowski derivative**;
-the write-safety check (`check_outbound`) reduces to deciding `L(r) ⊆ {ε}`; and
+the write safety check (`check_outbound`) reduces to deciding `L(r) ⊆ {ε}`; and
 borrow disjointness reduces to regex emptiness-of-intersection.
 
 **Hard invariant of this repository: the build has zero `sorry` and zero
@@ -53,7 +53,7 @@ Toolchain (pinned in `lean-toolchain` / `lakefile.lean`):
 ```bash
 lake build              # everything: core library + all tests + soundness certificates
 lake build core         # core library only (language, type system, proofs) — fastest inner loop
-lake build examples     # all type-checking examples
+lake build examples     # all type checking examples
 lake build litmus       # basic accepted/rejected litmus tests
 lake build expressivity # tests transpiled from the Move bytecode verifier suite
 lake build runtime      # runtime tests + per-execution type_soundness_dec certificates
@@ -79,7 +79,7 @@ Guidance for the assistant:
 LeanMove/
   Lang/
     MoveLight.lean              core syntax + types (Expr, Stmt, MoveType, Aref)
-    Macros.lean                 concrete-syntax macros (the ;; StmtBuilder, regex notation)
+    Macros.lean                 concrete syntax macros (the ;; StmtBuilder, regex notation)
     PrettyPrint.lean
     MoveIR/                     MoveIR.lean, Syntax.lean, Parser.lean, Translate.lean, PrettyPrint.lean
   Semantics/
@@ -99,7 +99,7 @@ LeanMove/
     Soundness/
       Defs.lean                 WellTypedState invariant, ValueMatchesType, SoundnessAssumptions
       Progress.lean
-      Preservation.lean         the bulk: one lemma per typing-rule case
+      Preservation.lean         the bulk: one lemma per typing rule case
       Weakening.lean            subsumption / reference substitution σ threaded everywhere
       InitState.lean            initial-state safety, type_soundness_dec
       SafeExec.lean, StackSafeUtils.lean
@@ -139,13 +139,13 @@ build (`lake` never touches it). See `benchmark/README.md` and
     injectivity of `μ`, path–heap coherence, heap typing, borrow safety,
     structural freshness/root conditions).
   - With the enum extension it grows to **35 clauses** (enum-environment
-    consistency, name/field uniqueness, default-value well-typedness).
-  - Preservation is **one named lemma per typing-rule case (41 cases)**; each
+    consistency, name/field uniqueness, default value well-typedness).
+  - Preservation is **one named lemma per typing rule case (41 cases)**; each
     re-establishes *every* clause of the invariant.
 
 - **Weakening is the other load-bearing lemma.** `E₁ ⊒ E₂` (subsumption) means
   there is a bijective reference substitution `σ` with
-  `L(paths(σ ρ, σ ρ')) ⊆ L(paths(ρ, ρ'))` for all pairs. Used at control-flow
+  `L(paths(σ ρ, σ ρ')) ⊆ L(paths(ρ, ρ'))` for all pairs. Used at control flow
   joins and calls. The **direction of inclusion matters and is the single most
   common source of mistakes** (see §5).
 
@@ -196,7 +196,7 @@ These practices are what kept the assistant productive; follow them.
    early.
 
 6. **Propagate uniformly for extensions.** Adding a feature (a path element, a
-   value/type-compatibility case) means threading the *same* pattern through
+   value/type compatibility case) means threading the *same* pattern through
    every existing lemma. Do it mechanically and consistently rather than
    re-deriving each site.
 
@@ -228,7 +228,7 @@ These practices are what kept the assistant productive; follow them.
   takes `hne` as *lookup-key ≠ insert-key*.
 - **`native_decide` fails on `TypeEnv`** — it has a function-valued field
   (`paths`), so `DecidableEq` cannot be synthesised. For concrete
-  label-environment lookups use `rfl` (the kernel compares only string keys).
+  label environment lookups use `rfl` (the kernel compares only string keys).
 - **`rw` through struct projections / `update`** fails (no syntactic match).
   Pattern: bind a hypothesis with the explicit type using definitional equality,
   then `rw` on that — `have h' : lookup (insert m x v) y = some r := h; rw [lookup_insert_same] at h'`.

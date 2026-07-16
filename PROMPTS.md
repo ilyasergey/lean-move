@@ -47,17 +47,17 @@ The assistant encoded them in Lean and built the surrounding infrastructure.
 *(Dec 18, 2025 — jump/branch rules; basic blocks + `LabelEnv`; return rule checks
 no locals are borrowed; `typecheck_fun`; freeze consumes the old reference.)*
 
-> Add concrete-syntax macros so the test programs read like the MoveLight in the
+> Add concrete syntax macros so the test programs read like the MoveLight in the
 > paper, and add regex notation with Brzozowski derivatives so I can write path
 > expressions directly.
 
 *(Jan 8, 2026 — AST macros and regex/derivative notation.)*
 
 > Transpile this batch of programs from the Move bytecode verifier's
-> reference-safety expressivity tests into MoveLight ASTs, and embed the original
+> reference safety expressivity tests into MoveLight ASTs, and embed the original
 > MoveIR source as a comment in each example file.
 
-*(Jan 21, 2026 — expressivity examples transpiled from the Move bytecode-verifier suite.)*
+*(Jan 21, 2026 — expressivity examples transpiled from the Move bytecode verifier suite.)*
 
 ---
 
@@ -81,11 +81,11 @@ no locals are borrowed; `typecheck_fun`; freeze consumes the old reference.)*
 This was the main effort. The pattern throughout: state the invariant, attempt a
 case, discover a missing clause, strengthen the invariant, repeat.
 
-> Set up the type-soundness scaffold: small-step semantics with a fuel counter,
+> Set up the type soundness scaffold: small-step semantics with a fuel counter,
 > the classification of runtime errors into *preventable* and *acceptable*, and
 > the regex-soundness lemmas (emptiness, `⊆ {ε}`, disjointness) we will need.
 
-*(Feb 12 — small-step semantics; type-soundness scaffold.)*
+*(Feb 12 — small-step semantics; type soundness scaffold.)*
 
 > **Decompose the preservation statement into one named lemma per statement
 > kind.** *(verbatim — quoted in the paper.)* Give each lemma an explicit
@@ -127,7 +127,7 @@ assign cases; borrowImm.)*
 > created independently**; give a counterexample or name the missing invariant
 > clause. Don't try to prove it as stated.
 
-The resolution was to use the **regex path-transfer lemma** instead: since the
+The resolution was to use the **regex path transfer lemma** instead: since the
 old and new values at the written location share a type, all existing field
 paths remain navigable regardless of how the references were created.
 
@@ -150,7 +150,7 @@ fixed, and the case then went through.
 
 > Prove the weakening lemma `E₁ ⊒ E₂ ∧ Λ; E₁ ⊢ s : T → Λ; E₂ ⊢ s : T`. Define
 > subsumption via a bijective reference substitution `σ` with
-> `L(paths(σ ρ, σ ρ')) ⊆ L(paths(ρ, ρ'))`. Build it as one lemma per typing-rule
+> `L(paths(σ ρ, σ ρ')) ⊆ L(paths(ρ, ρ'))`. Build it as one lemma per typing rule
 > case, exactly like preservation, and thread `σ` through every environment
 > component.
 
@@ -201,7 +201,7 @@ preservation_call: eliminate all sorrys"; "Eliminate last sorry".)*
 
 > Write a parser and translator from MoveIR text to MoveLight ASTs, and replace
 > the inline AST strings in the tests with `include_str` of `.mvir` files so the
-> same source feeds both parsing and type-checking tests.
+> same source feeds both parsing and type checking tests.
 
 > Add alpha-equivalence tests: parse each `.mvir` file and check the result is
 > alpha-equivalent to a hand-written reference AST.
@@ -218,7 +218,7 @@ The last clause was the third design-level bug — the return writability check
 was over-broad. (It caused false rejections only; no deployed program was
 affected, and the fix was confirmed with the Move team.)
 
-*(Feb 22 — parser + pretty-printer; alpha-equivalence tests; test-environment
+*(Feb 22 — parser + pretty-printer; alpha-equivalence tests; test environment
 simplification; "rule out all 8 preventable runtime errors"; "Consume call input
 sites from siteEnv; refine ret writability check".)*
 
@@ -232,11 +232,11 @@ sites from siteEnv; refine ret writability check".)*
 > `.vecElem`); `vec_push_back`/`pop_back`/`swap` require `check_outbound` like
 > `write-ref` and then remove all element references from the path environment.
 
-> Thread `.vecElem` through the value/type-compatibility relation and every
+> Thread `.vecElem` through the value/type compatibility relation and every
 > existing soundness lemma, applying the same pattern at each site, then close
 > the vector preservation cases with zero sorrys.
 
-*(Mar 3–4 — vector phases 1–9; rejection tests from the Sui bytecode-verifier
+*(Mar 3–4 — vector phases 1–9; rejection tests from the Sui bytecode verifier
 suite; "Complete type soundness proof for vector extension (zero sorrys)".)*
 
 ---
@@ -245,12 +245,12 @@ suite; "Complete type soundness proof for vector extension (zero sorrys)".)*
 
 > Add non-recursive enums: `pack_variant`, `unpack_variant` (checks the
 > constructor at runtime), and `variant_switch` (dispatch, reusing the `T-Jump`
-> subsumption per arm). Stub the type-checker cases first, then the semantics.
+> subsumption per arm). Stub the type checker cases first, then the semantics.
 
 ### A design decision the assistant could not find on its own
 
 > Encoding enum values so that only the active variant's fields are present
-> **breaks the path-transfer lemma** — after a write that changes the active
+> **breaks the path transfer lemma** — after a write that changes the active
 > variant, paths into the old variant's fields become unnavigable. Your
 > nested-`Option` proposal doesn't fix this. Use a **flat encoding**: represent
 > an enum as a tagged record carrying *all* variants' fields under qualified
@@ -260,7 +260,7 @@ suite; "Complete type soundness proof for vector extension (zero sorrys)".)*
 
 > Add the six new `WellTypedState` clauses the flat encoding needs (enum-env
 > consistency, name/variant/field uniqueness, qualified-field uniqueness,
-> default-value well-typedness) and thread `enumEnv` consistency through all 35
+> default value well-typedness) and thread `enumEnv` consistency through all 35
 > invariant reconstructions.
 
 *(Mar 5–10 — enum stubs; work-in-progress; complete enum support; enum invariant
@@ -273,10 +273,10 @@ certificate".)*
 
 > Add a Makefile target that archives the committed tree and, for the
 > double-blind paper supplement, drops the Makefile itself and `sed`-scrubs
-> identifying strings from the source; exclude the working-notes directory from
+> identifying strings from the source; exclude the working notes directory from
 > the archive.
 
-*(Mar 13–15 — Makefile and archive targets; working-notes directory removed.)*
+*(Mar 13–15 — Makefile and archive targets; working notes directory removed.)*
 
 ---
 
