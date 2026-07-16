@@ -2,4 +2,5 @@
 /.claude
 .DS_Store
 *.zip
+benchmark/
 
