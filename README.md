@@ -1,5 +1,29 @@
 ## Lean-Move
 
+> ## 📄 OOPSLA 2026 artefact
+>
+> This repository is the Lean development behind the OOPSLA 2026 paper
+> **_Tracking Borrows with Regular Expressions_**, which describes this
+> regex-based borrow checker for Move and its AI-assisted mechanisation in Lean.
+>
+> **➡️ The evaluated artefact is on the
+> [`oopsla26-artefact`](https://github.com/ilyasergey/lean-move/tree/oopsla26-artefact)
+> branch** — it adds the artefact-evaluation guide (`ARTIFACT.md`), an Apache-2.0
+> licence, and the paper's Section 6 performance benchmark (`benchmark/`), on top
+> of the machine-checked soundness proof, executable checker, and conformance tests.
+
+**To get the artefact and reproduce it:**
+
+```bash
+git switch oopsla26-artefact   # switch to the artefact branch
+make eval                      # kernel-check the Lean proofs + corroborate the Section 6 benchmark
+```
+
+Then read **ARTIFACT.md** on that branch for the full evaluation guide —
+requirements, kick-the-tires, the claims-to-code mapping, and the Rust benchmark.
+
+---
+
 An experimental formalisation of Move borrow checker in Lean.
 
 See **[metatheory.md](metatheory.md)** for a detailed overview of the
