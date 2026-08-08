@@ -13,7 +13,7 @@ Regular Expressions*. We apply for all four badges:
 **Available.** The artifact is released under the Apache-2.0 licence (see
 [`LICENSE`](LICENSE)) and is archived at a permanent, publicly accessible
 location on Zenodo, DOI:
-[10.5281/zenodo.1234567](https://doi.org/10.5281/zenodo.1234567).
+[10.5281/zenodo.21850968](https://doi.org/10.5281/zenodo.21850968).
 
 **Functional.** The artifact is *documented, consistent, complete, and
 exercisable*. It is the complete Lean 4 development described in the paper:
