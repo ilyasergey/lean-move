@@ -1,0 +1,56 @@
+// The six comparison instructions: Eq, Neq, Lt, Gt, Le, Ge.
+//
+// Regression test for the translator: `!=`, `>`, `<=` and `>=` all parse, and
+// each must map to its own opcode. They previously fell through a `_ => add`
+// fallback and were silently mistranslated to integer addition.
+
+//# publish
+module 0x50.Comparisons {
+
+    eq(a: u64, b: u64): bool {
+    label b0:
+        return copy(a) == copy(b);
+    }
+
+    neq(a: u64, b: u64): bool {
+    label b0:
+        return copy(a) != copy(b);
+    }
+
+    lt(a: u64, b: u64): bool {
+    label b0:
+        return copy(a) < copy(b);
+    }
+
+    gt(a: u64, b: u64): bool {
+    label b0:
+        return copy(a) > copy(b);
+    }
+
+    le(a: u64, b: u64): bool {
+    label b0:
+        return copy(a) <= copy(b);
+    }
+
+    ge(a: u64, b: u64): bool {
+    label b0:
+        return copy(a) >= copy(b);
+    }
+
+    // `Neq` is defined at every comparable type, `bool` included.
+    neq_bool(a: bool, b: bool): bool {
+    label b0:
+        return copy(a) != copy(b);
+    }
+
+    // A comparison in branch position: the result must be a `bool` for the
+    // `jump_if` to typecheck at all.
+    ge_branch(a: u64, b: u64): u64 {
+    label b0:
+        jump_if (copy(a) >= copy(b)) b2;
+    label b1:
+        return copy(b);
+    label b2:
+        return copy(a);
+    }
+}

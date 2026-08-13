@@ -32,10 +32,10 @@ lean_lib «litmus» where
   srcDir := "LeanMove/Tests/Typechecking/litmus"
   roots := #[`accepted.borrow_in_loop_fixed_ok, `accepted.deref_borrow_field_ok,
              `accepted.call_rule_ok, `accepted.return_param_ref_ok,
-             `accepted.boolean_ops_ok,
+             `accepted.boolean_ops_ok, `accepted.comparison_ops_ok,
              `rejected.borrow_in_loop, `rejected.return_local_borrow,
              `rejected.return_aliased_mut, `rejected.return_mut_with_outstanding_borrow,
-             `rejected.boolean_ops_on_int]
+             `rejected.boolean_ops_on_int, `rejected.comparison_ops_on_bool]
 
 -- Build target for expressivity examples
 -- Build with: lake build expressivity
@@ -68,11 +68,11 @@ lean_lib «examples» where
   srcDir := "LeanMove/Tests/Typechecking"
   roots := #[`litmus.accepted.borrow_in_loop_fixed_ok, `litmus.accepted.deref_borrow_field_ok,
              `litmus.accepted.call_rule_ok, `litmus.accepted.return_param_ref_ok,
-             `litmus.accepted.boolean_ops_ok,
+             `litmus.accepted.boolean_ops_ok, `litmus.accepted.comparison_ops_ok,
              `litmus.rejected.borrow_in_loop, `litmus.rejected.return_local_borrow,
              `litmus.rejected.return_aliased_mut,
              `litmus.rejected.return_mut_with_outstanding_borrow,
-             `litmus.rejected.boolean_ops_on_int,
+             `litmus.rejected.boolean_ops_on_int, `litmus.rejected.comparison_ops_on_bool,
              `expressivity.accepted.alias_write_after_join, `expressivity.accepted.alias_writes,
              `expressivity.accepted.extension_after_call, `expressivity.accepted.extension_writes_after_join,
              `expressivity.accepted.imm_borrow_after_mut, `expressivity.accepted.multible_mutable_return_values,

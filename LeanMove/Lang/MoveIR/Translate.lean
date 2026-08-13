@@ -172,6 +172,35 @@ deriving Repr, Inhabited
 def wrapBindings (bindings : List (Site × Expr)) (cont : Stmt) : Stmt :=
   bindings.foldr (fun (s, e) acc => .letBind s e acc) cont
 
+/-- Map a concrete-syntax binary operator onto its MoveLight `Binop`. -/
+def translateBinop : String → Option Binop
+  | "+"  => some .add
+  | "-"  => some .sub
+  | "*"  => some .mul
+  | "/"  => some .div
+  | "%"  => some .mod
+  | "==" => some .eq
+  | "!=" => some .neq
+  | "<"  => some .lt
+  | ">"  => some .gt
+  | "<=" => some .le
+  | ">=" => some .ge
+  | "&&" => some .and
+  | "||" => some .or
+  | _    => none
+
+/-- Map a concrete-syntax unary operator onto its MoveLight `Unop`. -/
+def translateUnop : String → Option Unop
+  | "!" => some .not
+  | _   => none
+
+-- Every operator the concrete syntax admits must have a MoveLight opcode.
+-- These guards are what stops the two tables drifting apart: before the
+-- Neq/Gt/Le/Ge opcodes existed, `!=`, `>=`, `<=` and `>` parsed happily and were
+-- then silently mistranslated to `add`.
+#guard binaryOperators.all fun op => (translateBinop op).isSome
+#guard unaryOperators.all fun op => (translateUnop op).isSome
+
 /-- Flatten a MVIR expression into ANF bindings -/
 partial def flattenExpr (e : MvirExpr) : TransM FlatResult := do
   let structs := (← get).structs
@@ -242,28 +271,16 @@ partial def flattenExpr (e : MvirExpr) : TransM FlatResult := do
     let lhsR ← flattenExpr lhs
     let rhsR ← flattenExpr rhs
     let s ← freshSite
-    let binopKind := match op with
-      | "+" => Binop.add
-      | "-" => Binop.sub
-      | "*" => Binop.mul
-      | "/" => Binop.div
-      | "%" => Binop.mod
-      | "==" => Binop.eq
-      | "<" => Binop.lt
-      | "&&" => Binop.and
-      | "||" => Binop.or
-      -- FIXME: `!=`, `>=`, `<=` and `>` parse but have no MoveLight Binop, so they
-      -- fall through to `add` here and are silently mistranslated. Adding the
-      -- Neq/Ge/Le/Gt opcodes would remove this fallback.
-      | _ => Binop.add -- fallback
+    -- `TransM` has no failure channel, so an unrecognised operator has to yield
+    -- *some* `Binop`. `translateBinop` is total over every operator string the
+    -- parser can produce (see `translateBinop_total`), so the `getD` never fires.
+    let binopKind := (translateBinop op).getD .add
     pure { bindings := lhsR.bindings ++ rhsR.bindings ++
            [(s, .binop binopKind lhsR.result rhsR.result)], result := s }
   | .unop op operand =>
     let operandR ← flattenExpr operand
     let s ← freshSite
-    let unopKind := match op with
-      | "!" => Unop.not
-      | _ => Unop.not -- only `!` is produced by the parser
+    let unopKind := (translateUnop op).getD .not
     pure { bindings := operandR.bindings ++ [(s, .unop unopKind operandR.result)],
            result := s }
   | .vecOp opName ty args =>

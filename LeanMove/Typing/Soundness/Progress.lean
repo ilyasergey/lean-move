@@ -616,13 +616,9 @@ private theorem evalBinopBool_some_of_binop_type_tbool {bop : Binop} {bt3 : Basi
     binop_type bop .tbool .tbool = some bt3 →
     ∀ ba bb, ∃ v, evalBinopBool bop ba bb = some v := by
   intro hbt
-  cases bop <;> simp [binop_type] at hbt <;> intro ba bb
-  · -- eq
-    exact ⟨.bool (ba == bb), rfl⟩
-  · -- and
-    exact ⟨.bool (ba && bb), rfl⟩
-  · -- or
-    exact ⟨.bool (ba || bb), rfl⟩
+  -- Only `eq`, `neq`, `and` and `or` are typed at `tbool`; `simp` kills the rest,
+  -- and each survivor evaluates by `rfl`.
+  cases bop <;> simp [binop_type] at hbt <;> exact fun ba bb => ⟨_, rfl⟩
 
 /-- If unop_type returns tbool for a bool input, evalUnop always succeeds. -/
 private theorem evalUnop_some_of_unop_type_tbool {uop : Unop} {bt2 : BasicMoveType} :

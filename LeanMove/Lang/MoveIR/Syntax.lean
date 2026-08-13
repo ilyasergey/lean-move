@@ -54,6 +54,21 @@ inductive MvirExpr where
   | vecOp : String → MvirType → List MvirExpr → MvirExpr      -- op<T>(args)
 deriving Repr, Inhabited
 
+/-- The binary operator spellings the concrete syntax admits, longest-first so
+    that `parseBinOp`'s ordered alternatives do not commit to a prefix (`>` must
+    not shadow `>=`).
+
+    This is the single source of truth shared by the parser and the translator:
+    `Translate.translateBinop` is checked total over this list, so an operator
+    cannot be added to the concrete syntax without also being given a MoveLight
+    `Binop`. Note `*` is deliberately absent — in MVIR it is the prefix
+    dereference operator. -/
+def binaryOperators : List String :=
+  ["==", "!=", "&&", "||", ">=", "<=", ">", "<", "+", "-", "/", "%"]
+
+/-- The unary operator spellings the concrete syntax admits. -/
+def unaryOperators : List String := ["!"]
+
 /-- MVIR statements -/
 inductive MvirStmt where
   | assign : List String → MvirExpr → MvirStmt                -- x = e; or x, y = e;

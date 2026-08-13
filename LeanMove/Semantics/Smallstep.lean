@@ -354,7 +354,11 @@ def evalBinop : Binop → Nat → Nat → Option Value
   | .mod, _, 0 => none
   | .mod, a, b => some (.int (a % b))
   | .eq, a, b => some (.bool (a == b))
+  | .neq, a, b => some (.bool (a != b))
   | .lt, a, b => some (.bool (a < b))
+  | .gt, a, b => some (.bool (a > b))
+  | .le, a, b => some (.bool (a ≤ b))
+  | .ge, a, b => some (.bool (a ≥ b))
   -- `and`/`or` are the boolean opcodes: they have no integer instantiation
   -- (Move's integer conjunction/disjunction are the separate BitAnd/BitOr opcodes).
   | .and, _, _ => none
@@ -363,6 +367,7 @@ def evalBinop : Binop → Nat → Nat → Option Value
 /-- Evaluate a binary operation on booleans -/
 def evalBinopBool : Binop → Bool → Bool → Option Value
   | .eq, a, b => some (.bool (a == b))
+  | .neq, a, b => some (.bool (a != b))
   | .and, a, b => some (.bool (a && b))
   | .or, a, b => some (.bool (a || b))
   | _, _, _ => none

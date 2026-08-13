@@ -322,19 +322,9 @@ partial def parseUnaryExpr : Parser MvirExpr := do
 
 /-- Try to parse a binary operator. Returns the operator string if found. -/
 partial def parseBinOp : Parser (Option String) :=
-  (attempt (do keyword "=="; pure (some "=="))) <|>
-  (attempt (do keyword "!="; pure (some "!="))) <|>
-  (attempt (do keyword "&&"; pure (some "&&"))) <|>
-  (attempt (do keyword "||"; pure (some "||"))) <|>
-  (attempt (do keyword ">="; pure (some ">="))) <|>
-  (attempt (do keyword "<="; pure (some "<="))) <|>
-  (attempt (do keyword ">"; pure (some ">"))) <|>
-  (attempt (do keyword "<"; pure (some "<"))) <|>
-  (attempt (do keyword "+"; pure (some "+"))) <|>
-  (attempt (do keyword "-"; pure (some "-"))) <|>
-  (attempt (do keyword "/"; pure (some "/"))) <|>
-  (attempt (do keyword "%"; pure (some "%"))) <|>
-  pure none
+  binaryOperators.foldr
+    (fun op rest => (attempt (do keyword op; pure (some op))) <|> rest)
+    (pure none)
 
 /-- Parse a full expression: unary expression optionally followed by a binary operator -/
 partial def parseExpr : Parser MvirExpr := do

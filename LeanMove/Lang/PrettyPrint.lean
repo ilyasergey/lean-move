@@ -91,7 +91,11 @@ def ppBinop : Binop → String
   | .div => "/"
   | .mod => "%"
   | .eq => "=="
+  | .neq => "!="
   | .lt => "<"
+  | .gt => ">"
+  | .le => "<="
+  | .ge => ">="
   | .and => "&&"
   | .or => "||"
 

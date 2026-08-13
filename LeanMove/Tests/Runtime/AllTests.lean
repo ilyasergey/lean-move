@@ -54,6 +54,8 @@ import LeanMove.Tests.Typechecking.expressivity.rejected.vec_dangling_borrow
 import LeanMove.Tests.Typechecking.expressivity.accepted.enum_two_mutable_unpacks
 import LeanMove.Tests.Typechecking.expressivity.accepted.enum_borrow_field_mutable
 import LeanMove.Tests.Typechecking.expressivity.accepted.enum_match
+import LeanMove.Tests.Typechecking.litmus.accepted.boolean_ops_ok
+import LeanMove.Tests.Typechecking.litmus.accepted.comparison_ops_ok
 
 /-!
 # Runtime Tests for MoveLight Interpreter
@@ -778,5 +780,73 @@ private def fooHeap : Heap × Loc :=
 #eval run 200 (initState parsed_fn AssocMap.empty [.ref fooHeap.2 []] fooHeap.1)
 
 #guard (run 200 (initState parsed_fn AssocMap.empty [.ref fooHeap.2 []] fooHeap.1)).isHalted
+
+end
+
+-- ============================================================
+-- B1. boolean_ops_ok — runtime (And, Or, Not)
+--     Exercises evalBinopBool and evalUnop, which the typechecking
+--     litmus tests only type and never execute.
+-- ============================================================
+section
+open LeanMove.Tests.Litmus.BooleanOpsOk
+
+-- !((a == b) && (a < b)) || (a == b): the conjunction is unsatisfiable, so the
+-- negation — and hence the disjunction — holds for every a, b.
+#guard (run 100 (initState fn_and_or_not AssocMap.empty [.int 2, .int 7])).getHaltedValues ==
+  some [.bool true]
+#guard (run 100 (initState fn_and_or_not AssocMap.empty [.int 3, .int 3])).getHaltedValues ==
+  some [.bool true]
+
+-- !!(a == b)
+#guard (run 100 (initState fn_double_negation AssocMap.empty [.int 2, .int 7])).getHaltedValues ==
+  some [.bool false]
+#guard (run 100 (initState fn_double_negation AssocMap.empty [.int 3, .int 3])).getHaltedValues ==
+  some [.bool true]
+
+private theorem boolean_ops_no_danglingRef :
+    ∀ n loc, run n (initState fn_and_or_not empty [.int 2, .int 7]) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_and_or_not fn_and_or_not_lenvDec empty empty empty
+    [.int 2, .int 7] Heap.empty (by native_decide)
+
+end
+
+-- ============================================================
+-- B2. comparison_ops_ok — runtime (Neq, Gt, Le, Ge)
+--     Exercises the new evalBinop rows.
+-- ============================================================
+section
+open LeanMove.Tests.Litmus.ComparisonOpsOk
+
+-- (a != b && a > b) || (a <= b) && (a >= b)
+-- a = 2, b = 7: (T && F) || T = T, then T && F = false
+#guard (run 100 (initState fn_comparisons AssocMap.empty [.int 2, .int 7])).getHaltedValues ==
+  some [.bool false]
+-- a = 7, b = 2: (T && T) || F = T, then T && T = true
+#guard (run 100 (initState fn_comparisons AssocMap.empty [.int 7, .int 2])).getHaltedValues ==
+  some [.bool true]
+
+-- Neq at bool
+#guard (run 100 (initState fn_neq_bool AssocMap.empty [.bool true, .bool false])).getHaltedValues ==
+  some [.bool true]
+#guard (run 100 (initState fn_neq_bool AssocMap.empty [.bool true, .bool true])).getHaltedValues ==
+  some [.bool false]
+
+-- Ge in branch position: takes b2 (returns a) when a >= b, b1 (returns b) otherwise
+#guard (run 100 (initState fn_ge_branch AssocMap.empty [.int 5, .int 3])).getHaltedValues ==
+  some [.int 5]
+#guard (run 100 (initState fn_ge_branch AssocMap.empty [.int 2, .int 7])).getHaltedValues ==
+  some [.int 7]
+
+private theorem comparison_ops_no_danglingRef :
+    ∀ n loc, run n (initState fn_comparisons empty [.int 2, .int 7]) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_comparisons fn_comparisons_lenvDec empty empty empty
+    [.int 2, .int 7] Heap.empty (by native_decide)
+
+set_option maxRecDepth 4096 in
+private theorem ge_branch_no_danglingRef :
+    ∀ n loc, run n (initState fn_ge_branch empty [.int 5, .int 3]) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_ge_branch fn_ge_branch_lenvDec empty empty empty
+    [.int 5, .int 3] Heap.empty (by native_decide)
 
 end

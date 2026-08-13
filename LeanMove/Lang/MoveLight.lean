@@ -398,7 +398,11 @@ inductive Binop where
   | div
   | mod
   | eq
+  | neq   -- Move bytecode `Neq`; like `Eq`, defined at every comparable type
   | lt
+  | gt
+  | le
+  | ge
   | and   -- Move bytecode `And` (boolean conjunction, not `BitAnd`)
   | or    -- Move bytecode `Or` (boolean disjunction, not `BitOr`)
 deriving Repr, DecidableEq, Inhabited, Hashable

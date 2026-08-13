@@ -116,7 +116,11 @@ def ppBinop : Binop → String
   | .div => ".div"
   | .mod => ".mod"
   | .eq => ".eq"
+  | .neq => ".neq"
   | .lt => ".lt"
+  | .gt => ".gt"
+  | .le => ".le"
+  | .ge => ".ge"
   | .and => ".and"
   | .or => ".or"
 

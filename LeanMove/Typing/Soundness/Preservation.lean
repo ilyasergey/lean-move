@@ -2613,22 +2613,28 @@ private lemma evalBinop_has_type (enumEnv : EnumEnv) (op : Binop) (bt1 bt2 bt3 :
     (hbt : binop_type op bt1 bt2 = some bt3)
     (heval : evalBinop op na nb = some result) :
     HasType enumEnv result bt3 := by
+  -- `binop_type` pins `bt3` down from the operator, so case on the operator and
+  -- then read the result type straight off `evalBinop`.
+  -- Note: no alternative below may use a nested `by`, since an unsolved goal
+  -- inside one is *reported* rather than failing the enclosing `first`/`try`.
   cases op <;> simp only [binop_type] at hbt <;>
     (try (cases bt1 <;> cases bt2 <;> simp at hbt)) <;>
     subst hbt <;>
-    simp only [evalBinop, Option.some.injEq] at heval <;>
-    -- `and`/`or` have no integer instantiation: evalBinop returns none, contradicting heval
-    (try (exact absurd heval (by simp [evalBinop]))) <;>
-    (try subst heval) <;>
+    simp only [evalBinop] at heval <;>
     first
-    | exact HasType.int _
-    | exact HasType.bool _
-    | (-- div/mod: heval has a match on nb
+    -- `and`/`or` have no integer instantiation: `evalBinop` returned `none`
+    | exact Option.noConfusion heval
+    -- add/sub/mul
+    | (simp only [Option.some.injEq] at heval; subst heval; exact HasType.int _)
+    -- the comparisons eq/neq/lt/gt/le/ge, all of which yield `tbool`
+    | (simp only [Option.some.injEq] at heval; subst heval; exact HasType.bool _)
+    | (-- div/mod: heval still has a match on the divisor
        cases nb with
        | zero => simp at heval
        | succ n =>
-         simp only [Option.some.injEq] at heval
-         subst heval; exact HasType.int _)
+         -- `simp` substitutes `result` and may already discharge the goal
+         simp at heval
+         all_goals (subst heval; exact HasType.int _))
 
 private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)

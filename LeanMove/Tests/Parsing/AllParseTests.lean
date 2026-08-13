@@ -38,6 +38,7 @@ import LeanMove.Tests.Parsing.Test_enum_valid_unpack_loop
 import LeanMove.Tests.Parsing.Test_enum_imm_borrow_on_mut_invalid
 import LeanMove.Tests.Parsing.Test_enum_invalid_ref_unpack_loop
 import LeanMove.Tests.Parsing.Test_enum_borrow_owned
+import LeanMove.Tests.Parsing.Test_comparison_ops
 
 /-! ## All Parse Tests
 

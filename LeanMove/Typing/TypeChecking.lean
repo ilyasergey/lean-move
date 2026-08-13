@@ -68,8 +68,14 @@ def binop_type (bop : Binop) (τ1 τ2 : BasicMoveType) : Option BasicMoveType :=
   | (.div, .u64, .u64) => some .u64
   | (.mod, .u64, .u64) => some .u64
   | (.lt,  .u64, .u64) => some .tbool
+  | (.gt,  .u64, .u64) => some .tbool
+  | (.le,  .u64, .u64) => some .tbool
+  | (.ge,  .u64, .u64) => some .tbool
   | (.eq, .u64, .u64) =>  some .tbool
   | (.eq, .tbool, .tbool) => some .tbool
+  -- `neq` is defined wherever `eq` is: the bytecode `Neq` accepts any droppable type.
+  | (.neq, .u64, .u64) => some .tbool
+  | (.neq, .tbool, .tbool) => some .tbool
   | (.and, .tbool, .tbool) => some .tbool
   | (.or, .tbool, .tbool) => some .tbool
   | _ => none
