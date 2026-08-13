@@ -40,7 +40,7 @@ abbrev Loc := Nat
 
 /-- Runtime values -/
 inductive Value where
-  | int : Nat → Value
+  | int : Nat → IntType → Value
   | bool : Bool → Value
   | unit : Value
   | record : List (Field × Value) → Value
@@ -51,7 +51,7 @@ deriving Repr, Inhabited
 
 /-- Boolean equality for Values -/
 def Value.beq : Value → Value → Bool
-  | .int n1, .int n2 => n1 == n2
+  | .int n1 w1, .int n2 w2 => n1 == n2 && w1 == w2
   | .bool b1, .bool b2 => b1 == b2
   | .unit, .unit => true
   | .record fs1, .record fs2 => beqFields fs1 fs2
@@ -84,8 +84,7 @@ instance : BEq Value := ⟨Value.beq⟩
 mutual
   def defaultValue (eeEntries : List (Id × EnumDef)) (bt : BasicMoveType) : Value :=
     match bt with
-    | .u64 => .int 0
-    | .u8 => .int 0
+    | .int w => .int 0 w
     | .tbool => .bool false
     | .tunit => .unit
     | .trecord ⟨fentries⟩ => .record (defaultValueEntries eeEntries fentries)
@@ -344,25 +343,27 @@ def findBlock (blocks : List Block) (label : Label) : Option Block :=
 -- Helper: Binary operations
 -- ============================================================
 
-/-- Evaluate a binary operation -/
-def evalBinop : Binop → Nat → Nat → Option Value
-  | .add, a, b => some (.int (a + b))
-  | .sub, a, b => some (.int (a - b))
-  | .mul, a, b => some (.int (a * b))
-  | .div, _, 0 => none  -- division by zero
-  | .div, a, b => some (.int (a / b))
-  | .mod, _, 0 => none
-  | .mod, a, b => some (.int (a % b))
-  | .eq, a, b => some (.bool (a == b))
-  | .neq, a, b => some (.bool (a != b))
-  | .lt, a, b => some (.bool (a < b))
-  | .gt, a, b => some (.bool (a > b))
-  | .le, a, b => some (.bool (a ≤ b))
-  | .ge, a, b => some (.bool (a ≥ b))
+/-- Evaluate a binary operation on two integers of width `w`. The width is
+    threaded through because the arithmetic results are themselves `w`-typed;
+    it is what will let the range guards of the next phase be expressed here. -/
+def evalBinop : Binop → Nat → Nat → IntType → Option Value
+  | .add, a, b, w => some (.int (a + b) w)
+  | .sub, a, b, w => some (.int (a - b) w)
+  | .mul, a, b, w => some (.int (a * b) w)
+  | .div, _, 0, _ => none  -- division by zero
+  | .div, a, b, w => some (.int (a / b) w)
+  | .mod, _, 0, _ => none
+  | .mod, a, b, w => some (.int (a % b) w)
+  | .eq, a, b, _ => some (.bool (a == b))
+  | .neq, a, b, _ => some (.bool (a != b))
+  | .lt, a, b, _ => some (.bool (a < b))
+  | .gt, a, b, _ => some (.bool (a > b))
+  | .le, a, b, _ => some (.bool (a ≤ b))
+  | .ge, a, b, _ => some (.bool (a ≥ b))
   -- `and`/`or` are the boolean opcodes: they have no integer instantiation
   -- (Move's integer conjunction/disjunction are the separate BitAnd/BitOr opcodes).
-  | .and, _, _ => none
-  | .or, _, _ => none
+  | .and, _, _, _ => none
+  | .or, _, _, _ => none
 
 /-- Evaluate a binary operation on booleans -/
 def evalBinopBool : Binop → Bool → Bool → Option Value
@@ -520,10 +521,10 @@ def step (state : ExecState) : ExecState :=
       match expr with
 
       -- Integer literal
-      | .intLit n =>
+      | .intLit n w =>
         .running {
           frame := { f with
-            siteStore := AssocMap.insert f.siteStore s (.int n)
+            siteStore := AssocMap.insert f.siteStore s (.int n w)
             stmt := cont
           }
           stack := m.stack
@@ -697,8 +698,8 @@ def step (state : ExecState) : ExecState :=
       -- Binary operation
       | .binop op a b =>
         match readSite m a, readSite m b with
-        | some (.int na), some (.int nb) =>
-          match evalBinop op na nb with
+        | some (.int na wa), some (.int nb _) =>
+          match evalBinop op na nb wa with
           | none => .error .divisionByZero
           | some v =>
             .running {
@@ -764,7 +765,7 @@ def step (state : ExecState) : ExecState :=
           | some (.vec _ elems) =>
             .running {
               frame := { f with
-                siteStore := AssocMap.insert f.siteStore s (.int elems.length)
+                siteStore := AssocMap.insert f.siteStore s (.int elems.length .u64)
                 stmt := cont }
               stack := m.stack
               heap := m.heap
@@ -776,7 +777,7 @@ def step (state : ExecState) : ExecState :=
 
       | .vecImmBorrow src idx =>
         match readSite m src, readSite m idx with
-        | some (.ref loc path), some (.int i) =>
+        | some (.ref loc path), some (.int i _) =>
           match m.heap.readRef loc path with
           | some (.vec _ elems) =>
             if h : i < elems.length then
@@ -796,7 +797,7 @@ def step (state : ExecState) : ExecState :=
 
       | .vecMutBorrow src idx =>
         match readSite m src, readSite m idx with
-        | some (.ref loc path), some (.int i) =>
+        | some (.ref loc path), some (.int i _) =>
           match m.heap.readRef loc path with
           | some (.vec _ elems) =>
             if h : i < elems.length then
@@ -982,7 +983,7 @@ def step (state : ExecState) : ExecState :=
 
     | .vecSwap refSite idx1Site idx2Site cont =>
       match readSite m refSite, readSite m idx1Site, readSite m idx2Site with
-      | some (.ref loc path), some (.int i), some (.int j) =>
+      | some (.ref loc path), some (.int i _), some (.int j _) =>
         match m.heap.readRef loc path with
         | some (.vec et elems) =>
           if h1 : i < elems.length then

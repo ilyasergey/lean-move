@@ -88,8 +88,7 @@ def freshRefId : TransM Aref := do
 /-- Resolve a MVIR type to BasicMoveType using the struct definitions in scope -/
 partial def resolveBasicType (structs : List ResolvedStruct)
     (enums : List ResolvedEnum) : MvirType → BasicMoveType
-  | .u64 => .u64
-  | .u8 => .u8
+  | .int w => .int w
   | .bool => .tbool
   | .unit => .tunit
   | .struct name =>
@@ -218,13 +217,13 @@ partial def flattenExpr (e : MvirExpr) : TransM FlatResult := do
   | .borrowLocal true var =>
     let s ← freshSite
     pure { bindings := [(s, .usage (.borrowMut ⟨var⟩))], result := s }
-  | .intLit n =>
+  | .intLit n w =>
     let s ← freshSite
-    pure { bindings := [(s, .intLit n)], result := s }
+    pure { bindings := [(s, .intLit n w)], result := s }
   | .boolLit _ =>
     -- MoveLight doesn't have a boolLit expression; encode as intLit 0/1
     let s ← freshSite
-    pure { bindings := [(s, .intLit (if e matches .boolLit true then 1 else 0))], result := s }
+    pure { bindings := [(s, .intLit (if e matches .boolLit true then 1 else 0) .u64)], result := s }
   | .fieldBorrow isMut inner structName fieldName =>
     -- Flatten inner expression first, then field borrow
     let innerR ← flattenExpr inner
@@ -295,7 +294,7 @@ partial def flattenExpr (e : MvirExpr) : TransM FlatResult := do
         pure { bindings := refR.bindings ++ [(s, .vecLen refR.result)], result := s }
       | _ =>
         let s ← freshSite
-        pure { bindings := [(s, .intLit 0)], result := s }
+        pure { bindings := [(s, .intLit 0 .u64)], result := s }
     | "vec_imm_borrow" =>
       -- vec_imm_borrow<T>(ref, idx) → Expr.vecImmBorrow ref idx
       match args with
@@ -307,7 +306,7 @@ partial def flattenExpr (e : MvirExpr) : TransM FlatResult := do
                [(s, .vecImmBorrow refR.result idxR.result)], result := s }
       | _ =>
         let s ← freshSite
-        pure { bindings := [(s, .intLit 0)], result := s }
+        pure { bindings := [(s, .intLit 0 .u64)], result := s }
     | "vec_mut_borrow" =>
       -- vec_mut_borrow<T>(ref, idx) → Expr.vecMutBorrow ref idx
       match args with
@@ -319,7 +318,7 @@ partial def flattenExpr (e : MvirExpr) : TransM FlatResult := do
                [(s, .vecMutBorrow refR.result idxR.result)], result := s }
       | _ =>
         let s ← freshSite
-        pure { bindings := [(s, .intLit 0)], result := s }
+        pure { bindings := [(s, .intLit 0 .u64)], result := s }
     | "vec_pop_back" =>
       -- vec_pop_back<T>(ref) → Expr.vecPopBack ref
       match args with
@@ -329,7 +328,7 @@ partial def flattenExpr (e : MvirExpr) : TransM FlatResult := do
         pure { bindings := refR.bindings ++ [(s, .vecPopBack refR.result)], result := s }
       | _ =>
         let s ← freshSite
-        pure { bindings := [(s, .intLit 0)], result := s }
+        pure { bindings := [(s, .intLit 0 .u64)], result := s }
     | _ =>
       -- vec_pack_0, vec_pack_N, vec_push_back, vec_swap, vec_unpack_N
       if opName.startsWith "vec_pack" then
@@ -345,7 +344,7 @@ partial def flattenExpr (e : MvirExpr) : TransM FlatResult := do
       else
         -- Fallback for unrecognized vec ops
         let s ← freshSite
-        pure { bindings := [(s, .intLit 0)], result := s }
+        pure { bindings := [(s, .intLit 0 .u64)], result := s }
   | .packVariant enumName variantName fields =>
     -- Flatten each field value, then packVariant with full enum type
     let mut allBindings : List (Site × Expr) := []

@@ -14,6 +14,12 @@
  limitations under the License.
 -/
 
+-- The one dependency this otherwise standalone concrete-syntax AST carries:
+-- integer widths are shared with MoveLight rather than duplicated, so that
+-- `Translate.resolveBasicType` is the identity on them and the two layers
+-- cannot drift apart as widths are added.
+import LeanMove.Lang.MoveLight
+
 /-! ## Intermediate MVIR AST
 
 This module defines an intermediate AST that mirrors the Move IR (.mvir) syntax.
@@ -23,10 +29,11 @@ A-normal form representation.
 
 namespace LeanMove.Lang.MoveIR
 
+open LeanMove.Lang.MoveLight (IntType)
+
 /-- MVIR types as they appear in source text -/
 inductive MvirType where
-  | u64
-  | u8
+  | int : IntType → MvirType                -- u8 / u16 / u32 / u64 / u128 / u256
   | bool
   | unit
   | vector : MvirType → MvirType
@@ -34,12 +41,15 @@ inductive MvirType where
   | ref : Bool → MvirType → MvirType        -- is_mutable × inner type
 deriving Repr, Inhabited, BEq
 
+@[match_pattern] abbrev MvirType.u64 : MvirType := .int .u64
+@[match_pattern] abbrev MvirType.u8 : MvirType := .int .u8
+
 /-- MVIR expressions (nested, NOT A-normal form) -/
 inductive MvirExpr where
   | copy : String → MvirExpr                                  -- copy(x)
   | move : String → MvirExpr                                  -- move(x)
   | borrowLocal : Bool → String → MvirExpr                    -- &x / &mut x
-  | intLit : Nat → MvirExpr                                   -- N
+  | intLit : Nat → IntType → MvirExpr                         -- N, with its width suffix
   | boolLit : Bool → MvirExpr                                 -- true / false
   | fieldBorrow : Bool → MvirExpr → String → String → MvirExpr
       -- is_mut × source_expr × struct_name × field_name

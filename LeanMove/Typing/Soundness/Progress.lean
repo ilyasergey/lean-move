@@ -582,10 +582,11 @@ private theorem HasType_tbool_is_bool {enumEnv : EnumEnv} {v : Value} :
     HasType enumEnv v .tbool → ∃ b, v = .bool b := by
   intro h; cases h with | bool b => exact ⟨b, rfl⟩
 
-/-- If HasType v .u64, then v is an integer. -/
-private theorem HasType_u64_is_int {enumEnv : EnumEnv} {v : Value} :
-    HasType enumEnv v .u64 → ∃ n, v = .int n := by
-  intro h; cases h with | int n => exact ⟨n, rfl⟩
+/-- If `HasType v (.int w)`, then `v` is an integer *of that same width* — the
+    width in the value is pinned by the type, not merely compatible with it. -/
+private theorem HasType_int_is_int {enumEnv : EnumEnv} {v : Value} {w : IntType} :
+    HasType enumEnv v (.int w) → ∃ n, v = .int n w := by
+  intro h; cases h with | int n _ => exact ⟨n, rfl⟩
 
 /-- If HasType v (.trecord fentries), then v is a record. -/
 private theorem HasType_trecord_is_record {enumEnv : EnumEnv} {v : Value} {fentries : AssocMap Field BasicMoveType} :
@@ -1206,8 +1207,8 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
       have ⟨vi1, hvi1, hm1⟩ := hwt.site_consistent idx1Site (.basic .u64) hidx1
       have ⟨vi2, hvi2, hm2⟩ := hwt.site_consistent idx2Site (.basic .u64) hidx2
       subst hveq
-      have ⟨n1, hn1⟩ := HasType_u64_is_int hm1
-      have ⟨n2, hn2⟩ := HasType_u64_is_int hm2
+      have ⟨n1, hn1⟩ := HasType_int_is_int hm1
+      have ⟨n2, hn2⟩ := HasType_int_is_int hm2
       subst hn1; subst hn2
       change lookup m.frame.siteStore refSite = some _ at hvr
       simp only [readSite, hvr, hvi1, hvi2] at hstep
@@ -1365,23 +1366,27 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
         change lookup m.frame.siteStore b = some vb at hvb
         simp only [readSite, hva, hvb] at hstep
         cases bt1 with
-        | u64 =>
-          have ⟨na, hna⟩ := HasType_u64_is_int hta
+        | int w1 =>
+          have ⟨na, hna⟩ := HasType_int_is_int hta
           subst hna
           cases bt2 with
-          | u64 =>
-            have ⟨nb, hnb⟩ := HasType_u64_is_int htb
+          | int w2 =>
+            have ⟨nb, hnb⟩ := HasType_int_is_int htb
             subst hnb
-            dsimp only at hstep
-            cases hev : evalBinop op na nb with
-            | none =>
-              rw [hev] at hstep
-              simp only [ExecState.error.injEq] at hstep
-              subst hstep; simp
-            | some v =>
-              rw [hev] at hstep
-              cases hstep
-          | u8 => cases op <;> simp [binop_type] at hbinop
+            -- Mixed widths are rejected statically: every integer row of
+            -- `binop_type` guards on `w1 == w2`, so `hbinop` is contradictory.
+            by_cases hw : w1 = w2
+            · subst hw
+              dsimp only at hstep
+              cases hev : evalBinop op na nb w1 with
+              | none =>
+                rw [hev] at hstep
+                simp only [ExecState.error.injEq] at hstep
+                subst hstep; simp
+              | some v =>
+                rw [hev] at hstep
+                cases hstep
+            · cases op <;> simp [binop_type, hw] at hbinop
           | tbool =>
             have ⟨nb, hnb⟩ := HasType_tbool_is_bool htb
             subst hnb
@@ -1392,8 +1397,6 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
           | trecord _ => cases op <;> simp [binop_type] at hbinop
           | tvec _ => cases op <;> simp [binop_type] at hbinop
           | tenum _ => cases op <;> simp [binop_type] at hbinop
-        | u8 =>
-          cases op <;> (cases bt2 <;> simp [binop_type] at hbinop)
         | tbool =>
           have ⟨ba, hba⟩ := HasType_tbool_is_bool hta
           subst hba
@@ -1405,11 +1408,10 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
             have ⟨v, hv⟩ := evalBinopBool_some_of_binop_type_tbool hbinop ba bb
             rw [hv] at hstep
             cases hstep
-          | u64 =>
-            have ⟨nb, hnb⟩ := HasType_u64_is_int htb
+          | int w2 =>
+            have ⟨nb, hnb⟩ := HasType_int_is_int htb
             subst hnb
             cases op <;> simp [binop_type] at hbinop
-          | u8 => cases op <;> simp [binop_type] at hbinop
           | tunit =>
             cases htb
             cases op <;> simp [binop_type] at hbinop
@@ -1446,8 +1448,7 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
           have ⟨v, hv⟩ := evalUnop_some_of_unop_type_tbool hunop ba
           rw [hv] at hstep
           cases hstep
-        | u64 => cases op <;> simp [unop_type] at hunop
-        | u8 => cases op <;> simp [unop_type] at hunop
+        | int _ => cases op <;> simp [unop_type] at hunop
         | tunit => cases op <;> simp [unop_type] at hunop
         | trecord _ => cases op <;> simp [unop_type] at hunop
         | tvec _ => cases op <;> simp [unop_type] at hunop
@@ -1490,7 +1491,7 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
         obtain ⟨loc, path, hveq, hrmap⟩ := hmatchs
         subst hveq
         have ⟨vi, hvi, hmi⟩ := hwt.site_consistent idx (.basic .u64) hidx
-        have ⟨n, hn⟩ := HasType_u64_is_int hmi
+        have ⟨n, hn⟩ := HasType_int_is_int hmi
         subst hn
         change lookup m.frame.siteStore src = some _ at hvs
         simp only [readSite, hvs, hvi] at hstep
@@ -1513,7 +1514,7 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
         obtain ⟨loc, path, hveq, hrmap⟩ := hmatchs
         subst hveq
         have ⟨vi, hvi, hmi⟩ := hwt.site_consistent idx (.basic .u64) hidx
-        have ⟨n, hn⟩ := HasType_u64_is_int hmi
+        have ⟨n, hn⟩ := HasType_int_is_int hmi
         subst hn
         change lookup m.frame.siteStore src = some _ at hvs
         simp only [readSite, hvs, hvi] at hstep

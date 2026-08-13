@@ -116,7 +116,7 @@ private lemma sizeOf_lookup_le [BEq α] [SizeOf α] [SizeOf β]
     with a `where`-clause helper for record field entries (same pattern as
     `BasicMoveType.beq`). -/
 def hasType_bool : Value → BasicMoveType → Bool
-  | .int _, .u64 => true
+  | .int _ w1, .int w2 => w1 == w2
   | .bool _, .tbool => true
   | .unit, .tunit => true
   | .record fields, .trecord fentries =>
@@ -133,35 +133,35 @@ where
 
 -- Manual simp lemmas for hasType_bool (equational theorem generation
 -- fails for where-clause mutual definitions in Lean 4.27)
-@[simp] theorem hasType_bool_int_u64 (n) : hasType_bool (.int n) .u64 = true := rfl
+@[simp] theorem hasType_bool_int_int (n w1 w2) : hasType_bool (.int n w1) (.int w2) = (w1 == w2) := rfl
 @[simp] theorem hasType_bool_bool_tbool (b) : hasType_bool (.bool b) .tbool = true := rfl
 @[simp] theorem hasType_bool_unit_tunit : hasType_bool .unit .tunit = true := rfl
 @[simp] theorem hasType_bool_record_trecord (fields fentries) :
     hasType_bool (.record fields) (.trecord fentries) =
     (hasType_bool.checkFields fields fentries.entries &&
      fields.all (fun p => (List.lookup p.1 fentries.entries).isSome)) := rfl
-@[simp] theorem hasType_bool_int_tbool (n) : hasType_bool (.int n) .tbool = false := rfl
-@[simp] theorem hasType_bool_int_tunit (n) : hasType_bool (.int n) .tunit = false := rfl
-@[simp] theorem hasType_bool_int_trecord (n m) : hasType_bool (.int n) (.trecord m) = false := rfl
-@[simp] theorem hasType_bool_bool_u64 (b) : hasType_bool (.bool b) .u64 = false := rfl
+@[simp] theorem hasType_bool_int_tbool (n w) : hasType_bool (.int n w) .tbool = false := rfl
+@[simp] theorem hasType_bool_int_tunit (n w) : hasType_bool (.int n w) .tunit = false := rfl
+@[simp] theorem hasType_bool_int_trecord (n w m) : hasType_bool (.int n w) (.trecord m) = false := rfl
+@[simp] theorem hasType_bool_bool_int (b w) : hasType_bool (.bool b) (.int w) = false := rfl
 @[simp] theorem hasType_bool_bool_tunit (b) : hasType_bool (.bool b) .tunit = false := rfl
 @[simp] theorem hasType_bool_bool_trecord (b m) : hasType_bool (.bool b) (.trecord m) = false := rfl
-@[simp] theorem hasType_bool_unit_u64 : hasType_bool .unit .u64 = false := rfl
+@[simp] theorem hasType_bool_unit_int (w) : hasType_bool .unit (.int w) = false := rfl
 @[simp] theorem hasType_bool_unit_tbool : hasType_bool .unit .tbool = false := rfl
 @[simp] theorem hasType_bool_unit_trecord (m) : hasType_bool .unit (.trecord m) = false := rfl
-@[simp] theorem hasType_bool_record_u64 (f) : hasType_bool (.record f) .u64 = false := rfl
+@[simp] theorem hasType_bool_record_int (f w) : hasType_bool (.record f) (.int w) = false := rfl
 @[simp] theorem hasType_bool_record_tbool (f) : hasType_bool (.record f) .tbool = false := rfl
 @[simp] theorem hasType_bool_record_tunit (f) : hasType_bool (.record f) .tunit = false := rfl
-@[simp] theorem hasType_bool_ref_u64 (l p) : hasType_bool (.ref l p) .u64 = false := rfl
+@[simp] theorem hasType_bool_ref_int (l p w) : hasType_bool (.ref l p) (.int w) = false := rfl
 @[simp] theorem hasType_bool_ref_tbool (l p) : hasType_bool (.ref l p) .tbool = false := rfl
 @[simp] theorem hasType_bool_ref_tunit (l p) : hasType_bool (.ref l p) .tunit = false := rfl
 @[simp] theorem hasType_bool_ref_trecord (l p m) : hasType_bool (.ref l p) (.trecord m) = false := rfl
 @[simp] theorem hasType_bool_ref_tvec (l p t) : hasType_bool (.ref l p) (.tvec t) = false := rfl
-@[simp] theorem hasType_bool_int_tvec (n t) : hasType_bool (.int n) (.tvec t) = false := rfl
+@[simp] theorem hasType_bool_int_tvec (n w t) : hasType_bool (.int n w) (.tvec t) = false := rfl
 @[simp] theorem hasType_bool_bool_tvec (b t) : hasType_bool (.bool b) (.tvec t) = false := rfl
 @[simp] theorem hasType_bool_unit_tvec (t) : hasType_bool .unit (.tvec t) = false := rfl
 @[simp] theorem hasType_bool_record_tvec (f t) : hasType_bool (.record f) (.tvec t) = false := rfl
-@[simp] theorem hasType_bool_vec_u64 (et : BasicMoveType) (vs : List Value) : hasType_bool (.vec et vs) .u64 = false := rfl
+@[simp] theorem hasType_bool_vec_int (et : BasicMoveType) (vs : List Value) (w) : hasType_bool (.vec et vs) (.int w) = false := rfl
 @[simp] theorem hasType_bool_vec_tbool (et : BasicMoveType) (vs : List Value) : hasType_bool (.vec et vs) .tbool = false := rfl
 @[simp] theorem hasType_bool_vec_tunit (et : BasicMoveType) (vs : List Value) : hasType_bool (.vec et vs) .tunit = false := rfl
 @[simp] theorem hasType_bool_vec_trecord (et : BasicMoveType) (vs : List Value) (m) : hasType_bool (.vec et vs) (.trecord m) = false := rfl
@@ -187,7 +187,11 @@ private theorem all_lookup_cover (fields : List (Field × Value)) (entries : Lis
 mutual
   theorem hasType_bool_sound : ∀ (enumEnv : EnumEnv) (v : Value) (bt : BasicMoveType),
       hasType_bool v bt = true → HasType enumEnv v bt
-    | ee, .int n, .u64, _ => HasType.int n
+    | ee, .int n w1, .int w2, h => by
+        -- The checker compares widths, so `h` is exactly `w1 = w2`.
+        simp only [hasType_bool_int_int, beq_iff_eq] at h
+        subst h
+        exact HasType.int n w1
     | ee, .bool b, .tbool, _ => HasType.bool b
     | ee, .unit, .tunit, _ => HasType.unit
     | ee, .record fields, .trecord fentries, h => by
@@ -211,34 +215,34 @@ mutual
               (lookup_some fentries f bt' hlookup)
             rw [hfield] at hv''; simp only [Option.some.injEq] at hv''; subst hv''
             exact hht)
-    | _, .int _, .tbool, h => by simp at h
-    | _, .int _, .tunit, h => by simp at h
-    | _, .int _, .trecord _, h => by simp at h
-    | _, .bool _, .u64, h => by simp at h
+    | _, .int _ _, .tbool, h => by simp at h
+    | _, .int _ _, .tunit, h => by simp at h
+    | _, .int _ _, .trecord _, h => by simp at h
+    | _, .bool _, .int _, h => by simp at h
     | _, .bool _, .tunit, h => by simp at h
     | _, .bool _, .trecord _, h => by simp at h
-    | _, .unit, .u64, h => by simp at h
+    | _, .unit, .int _, h => by simp at h
     | _, .unit, .tbool, h => by simp at h
     | _, .unit, .trecord _, h => by simp at h
-    | _, .record _, .u64, h => by simp at h
+    | _, .record _, .int _, h => by simp at h
     | _, .record _, .tbool, h => by simp at h
     | _, .record _, .tunit, h => by simp at h
-    | _, .ref _ _, .u64, h => by simp at h
+    | _, .ref _ _, .int _, h => by simp at h
     | _, .ref _ _, .tbool, h => by simp at h
     | _, .ref _ _, .tunit, h => by simp at h
     | _, .ref _ _, .trecord _, h => by simp at h
     | _, .ref _ _, .tvec _, h => by simp at h
-    | _, .int _, .tvec _, h => by simp at h
+    | _, .int _ _, .tvec _, h => by simp at h
     | _, .bool _, .tvec _, h => by simp at h
     | _, .unit, .tvec _, h => by simp at h
     | _, .record _, .tvec _, h => by simp at h
-    | _, .vec _ _, .u64, h => by simp at h
+    | _, .vec _ _, .int _, h => by simp at h
     | _, .vec _ _, .tbool, h => by simp at h
     | _, .vec _ _, .tunit, h => by simp at h
     | _, .vec _ _, .trecord _, h => by simp at h
     | _, .vec _ _, .tvec _, h => by simp at h
     -- tenum type cases
-    | _, .int _, .tenum _, h => nomatch h
+    | _, .int _ _, .tenum _, h => nomatch h
     | _, .bool _, .tenum _, h => nomatch h
     | _, .unit, .tenum _, h => nomatch h
     | _, .record _, .tenum _, h => nomatch h
@@ -246,19 +250,11 @@ mutual
     | _, .vec _ _, .tenum _, h => nomatch h
     | _, .variant _ _ _, .tenum _, h => nomatch h
     -- variant value cases
-    | _, .variant _ _ _, .u64, h => nomatch h
+    | _, .variant _ _ _, .int _, h => nomatch h
     | _, .variant _ _ _, .tbool, h => nomatch h
     | _, .variant _ _ _, .tunit, h => nomatch h
     | _, .variant _ _ _, .trecord _, h => nomatch h
     | _, .variant _ _ _, .tvec _, h => nomatch h
-    -- u8 type cases
-    | _, .bool _, .u8, h => nomatch h
-    | _, .unit, .u8, h => nomatch h
-    | _, .record _, .u8, h => nomatch h
-    | _, .ref _ _, .u8, h => nomatch h
-    | _, .vec _ _, .u8, h => nomatch h
-    | _, .variant _ _ _, .u8, h => nomatch h
-    | _, .int _, .u8, h => nomatch h
   termination_by _ v bt _ => sizeOf v + sizeOf bt
   decreasing_by all_goals (simp_wf; rcases fentries with ⟨e⟩; simp [AssocMap.mk.sizeOf_spec]; omega)
 
@@ -913,8 +909,7 @@ private theorem HasType_of_lookupEquiv {ee1 ee2 : EnumEnv} (hle : LookupEquiv ee
     ∀ v bt, HasType ee1 v bt → HasType ee2 v bt := by
   intro v bt h
   induction h with
-  | int n => exact HasType.int n
-  | int_u8 n => exact HasType.int_u8 n
+  | int n w => exact HasType.int n w
   | bool b => exact HasType.bool b
   | unit => exact HasType.unit
   | record fields fentries hcover1 hcover2 hfields ih_fields =>

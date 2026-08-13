@@ -48,8 +48,7 @@ open Regex
     Split into two hypotheses to avoid nested inductive issues with ∃.
     Now takes an EnumEnv parameter to resolve enum types. -/
 inductive HasType (enumEnv : EnumEnv) : Value → BasicMoveType → Prop where
-  | int : ∀ n, HasType enumEnv (.int n) .u64
-  | int_u8 : ∀ n, HasType enumEnv (.int n) .u8
+  | int : ∀ n w, HasType enumEnv (.int n w) (.int w)
   | bool : ∀ b, HasType enumEnv (.bool b) .tbool
   | unit : HasType enumEnv .unit .tunit
   | record : ∀ fields fentries,
@@ -75,8 +74,7 @@ theorem HasType_enumEnv_transfer {ee1 ee2 : EnumEnv} {v : Value} {bt : BasicMove
     (heq : ∀ en, ee1.lookup en = ee2.lookup en) :
     HasType ee2 v bt := by
   induction h with
-  | int n => exact .int n
-  | int_u8 n => exact .int_u8 n
+  | int n w => exact .int n w
   | bool b => exact .bool b
   | unit => exact .unit
   | record fields fentries h1 h2 h3 ih =>
@@ -98,8 +96,7 @@ theorem HasType_enumEnv_weaken {ee1 ee2 : EnumEnv} {v : Value} {bt : BasicMoveTy
     (hext : ∀ en ed, ee1.lookup en = some ed → ee2.lookup en = some ed) :
     HasType ee2 v bt := by
   induction h with
-  | int n => exact .int n
-  | int_u8 n => exact .int_u8 n
+  | int n w => exact .int n w
   | bool b => exact .bool b
   | unit => exact .unit
   | record fields fentries h1 h2 h3 ih =>
@@ -340,7 +337,7 @@ theorem readPath_append (v : Value) (p1 p2 : List Field) :
       cases h : fields.lookup f with
       | none => simp [Option.bind]
       | some v' => exact ih v'
-    | int n => simp [readPath, Option.bind]
+    | int n w => simp [readPath, Option.bind]
     | bool b => simp [readPath, Option.bind]
     | unit => simp [readPath, Option.bind]
     | ref loc path => simp [readPath, Option.bind]
@@ -384,7 +381,7 @@ theorem readPath_some_implies_writePath_some (v : Value) (path : List Field)
         obtain ⟨v', hv'⟩ := ih oldFieldVal hread
         exact ⟨.record (fields.map fun (k, fv) => if k == f then (k, v') else (k, fv)),
                by simp [writePath, hf, hv']⟩
-    | int n => simp [readPath] at hread
+    | int n w => simp [readPath] at hread
     | bool b => simp [readPath] at hread
     | unit => simp [readPath] at hread
     | ref l p => simp [readPath] at hread
@@ -1024,7 +1021,7 @@ theorem readPath_after_writePath_same (v : Value) (path : List Field) (w v' : Va
           have hlookup := writePath_map_lookup_eq fields f updatedFieldVal (by rw [hf]; simp)
           rw [hlookup]
           exact ih _ _ hwp
-    | int n => simp [writePath] at hwrite
+    | int n w => simp [writePath] at hwrite
     | bool b => simp [writePath] at hwrite
     | unit => simp [writePath] at hwrite
     | ref l p => simp [writePath] at hwrite
@@ -1064,7 +1061,7 @@ theorem writePath_preserves_readPath_ne_first
         simp [hwp] at hwrite; subst hwrite
         simp only [readPath]
         rw [writePath_map_lookup_ne fields f1 f2 updatedFieldVal (Ne.symm hne)]
-  | int n => simp [writePath] at hwrite
+  | int n w => simp [writePath] at hwrite
   | bool b => simp [writePath] at hwrite
   | unit => simp [writePath] at hwrite
   | ref l p => simp [writePath] at hwrite
@@ -1142,7 +1139,7 @@ theorem writePath_preserves_HasType {enumEnv : EnumEnv}
               · -- Different field: unchanged
                 rw [writePath_map_lookup_ne fields f f' updatedFieldVal hf'f] at hfield
                 exact htyped f' bt' v' hlookup hfield
-    | int n => simp [writePath] at hwrite
+    | int n w => simp [writePath] at hwrite
     | bool b => simp [writePath] at hwrite
     | unit => simp [writePath] at hwrite
     | ref l p => simp [writePath] at hwrite
@@ -1286,7 +1283,7 @@ theorem writePath_preserves_readPath_ne_none
               simp only [readPath]
               rw [writePath_map_lookup_ne fields f g updatedFieldVal (Ne.symm hfg)]
               exact hread
-    | int n => simp [writePath] at hwrite
+    | int n w => simp [writePath] at hwrite
     | bool b => simp [writePath] at hwrite
     | unit => simp [writePath] at hwrite
     | ref l p => simp [writePath] at hwrite
@@ -1400,9 +1397,8 @@ theorem HasType_typeAtPath {enumEnv : EnumEnv} (v : Value) (bt : BasicMoveType) 
             have hht_f := htyped f bt_f fieldVal hfe hfl
             obtain ⟨u, hread, hht_u⟩ := ih fieldVal bt_f bt_leaf hht_f htap
             exact ⟨u, by simp [readPath, hfl, hread], hht_u⟩
-    | int n => cases hht with
+    | int n w => cases hht with
       | int => simp [typeAtPath] at htap
-      | int_u8 => simp [typeAtPath] at htap
     | bool b => cases hht with | bool => simp [typeAtPath] at htap
     | unit => cases hht with | unit => simp [typeAtPath] at htap
     | ref l p => cases hht
@@ -1440,9 +1436,8 @@ theorem HasType_typeAtPathV {enumEnv : EnumEnv} (v : Value) (bt : BasicMoveType)
             have hht_f := htyped f bt_f fieldVal hfe hfl
             obtain ⟨u, hread, hht_u⟩ := ih fieldVal bt_f bt_leaf hht_f htap
             exact ⟨u, by simp [readPath, hfl, hread], hht_u⟩
-    | int n => cases hht with
+    | int n w => cases hht with
       | int => simp [typeAtPathV] at htap
-      | int_u8 => simp [typeAtPathV] at htap
     | bool b => cases hht with | bool => simp [typeAtPathV] at htap
     | unit => cases hht with | unit => simp [typeAtPathV] at htap
     | ref l p => cases hht
@@ -1487,9 +1482,8 @@ theorem typeAtPath_implies_typeAtPathV {enumEnv : EnumEnv} (v : Value) (bt : Bas
           | some fieldVal =>
             simp [typeAtPathV, hfl, hfe]
             exact ih fieldVal bt_f bt' (htyped f bt_f fieldVal hfe hfl) htap
-    | int n => cases hht with
+    | int n w => cases hht with
       | int => simp [typeAtPath] at htap
-      | int_u8 => simp [typeAtPath] at htap
     | bool b => cases hht with | bool => simp [typeAtPath] at htap
     | unit => cases hht with | unit => simp [typeAtPath] at htap
     | ref l p => cases hht
@@ -1558,7 +1552,7 @@ theorem writePath_preserves_HasType_typed {enumEnv : EnumEnv}
                     (htyped f' bt_f fieldVal hfe hfl) hwp htap hhtw
                 · rw [writePath_map_lookup_ne fields f f' updatedFieldVal hf'f] at hfield
                   exact htyped f' bt' val hlookup hfield
-    | int n => simp [writePath] at hwrite
+    | int n w => simp [writePath] at hwrite
     | bool b => simp [writePath] at hwrite
     | unit => simp [writePath] at hwrite
     | ref l p => simp [writePath] at hwrite
@@ -1601,9 +1595,8 @@ theorem readPath_ne_none_implies_typeAtPathV {enumEnv : EnumEnv}
             have hht_f := htyped f bt_f fieldVal hfe hfl
             obtain ⟨bt', htapV⟩ := ih fieldVal bt_f hht_f hread
             exact ⟨bt', by simp [typeAtPathV, hfl, hfe, htapV]⟩
-    | int n => cases hht with
+    | int n w => cases hht with
       | int => simp [readPath] at hread
-      | int_u8 => simp [readPath] at hread
     | bool b => cases hht with | bool => simp [readPath] at hread
     | unit => cases hht with | unit => simp [readPath] at hread
     | ref l p => cases hht
@@ -1683,7 +1676,6 @@ theorem readPath_HasType_transfer {enumEnv : EnumEnv}
   | cons f rest ih =>
     cases h1 with
     | int => simp [readPath] at hread
-    | int_u8 => simp [readPath] at hread
     | bool => simp [readPath] at hread
     | unit => simp [readPath] at hread
     | vec => simp [readPath] at hread
@@ -1738,7 +1730,6 @@ theorem typeAtPathV_HasType_determined {enumEnv : EnumEnv}
   | cons f rest ih =>
     cases h1 with
     | int => cases h2 with | int => simp [typeAtPathV]
-    | int_u8 => cases h2 with | int_u8 => simp [typeAtPathV]
     | bool => cases h2 with | bool => simp [typeAtPathV]
     | unit => cases h2 with | unit => simp [typeAtPathV]
     | vec _ _ _ => cases h2 with | vec => simp [typeAtPathV]
@@ -1826,7 +1817,6 @@ private theorem HasType_no_enum_not_variant {enumEnv : EnumEnv} {v : Value} {bt 
     ∀ vn en fields, v ≠ .variant vn en fields := by
   cases h with
   | int => intro _ _ _ h; cases h
-  | int_u8 => intro _ _ _ h; cases h
   | bool => intro _ _ _ h; cases h
   | unit => intro _ _ _ h; cases h
   | record => intro _ _ _ h; cases h
@@ -1845,7 +1835,6 @@ theorem readPath_HasType_transfer_no_enum {enumEnv : EnumEnv}
   | cons f rest ih =>
     cases h1 with
     | int => simp [readPath] at hread
-    | int_u8 => simp [readPath] at hread
     | bool => simp [readPath] at hread
     | unit => simp [readPath] at hread
     | vec => simp [readPath] at hread
@@ -1883,7 +1872,6 @@ theorem typeAtPathV_HasType_determined_no_enum {enumEnv : EnumEnv}
   | cons f rest ih =>
     cases h1 with
     | int => cases h2 with | int => simp [typeAtPathV]
-    | int_u8 => cases h2 with | int_u8 => simp [typeAtPathV]
     | bool => cases h2 with | bool => simp [typeAtPathV]
     | unit => cases h2 with | unit => simp [typeAtPathV]
     | vec _ _ _ => cases h2 with | vec => simp [typeAtPathV]
@@ -1927,12 +1915,11 @@ theorem typeAtPathV_HasType_determined_no_enum {enumEnv : EnumEnv}
 theorem HasType_transfer {enumEnv : EnumEnv} {v1 v2 : Value} {bt1 bt2 : BasicMoveType}
     (h1 : HasType enumEnv v1 bt1) (h2 : HasType enumEnv v1 bt2) (h3 : HasType enumEnv v2 bt2) : HasType enumEnv v2 bt1 := by
   induction h1 generalizing v2 bt2 with
+  -- With the width carried in the value, `HasType (.int n w) bt` pins `bt` to
+  -- `.int w`, so `h2` can only be the same judgement as `h1` — the old proof
+  -- additionally had to reconcile a value that was simultaneously `u64` and `u8`.
   | int => cases h2 with
     | int => exact h3
-    | int_u8 => cases h3 with | int_u8 => exact HasType.int _
-  | int_u8 => cases h2 with
-    | int => cases h3 with | int => exact HasType.int_u8 _
-    | int_u8 => exact h3
   | bool => cases h2 with | bool => exact h3
   | unit => cases h2 with | unit => exact h3
   | record fields e1 hdom1 hdom_rev1 htyped1 ih =>
@@ -2026,7 +2013,7 @@ theorem writePath_preserves_HasType_generalV {enumEnv : EnumEnv}
                   (fun bt_leaf htap => hcompat bt_leaf (by rw [hfentr]; exact htap))
               · rw [writePath_map_lookup_ne fields f f' updatedFieldVal hf'f] at hfield
                 exact htyped f' bt' val hlookup hfield
-    | int n => simp [writePath] at hwrite
+    | int n w => simp [writePath] at hwrite
     | bool b => simp [writePath] at hwrite
     | unit => simp [writePath] at hwrite
     | ref l p => simp [writePath] at hwrite
@@ -2171,7 +2158,7 @@ theorem writePath_preserves_readPath_HasType
               | some gVal =>
                 simp only [hg] at hread_r
                 exact ⟨vold, hread_r, hht_r⟩
-    | int n => simp [writePath] at hwp
+    | int n w => simp [writePath] at hwp
     | bool b => simp [writePath] at hwp
     | unit => simp [writePath] at hwp
     | ref l p => simp [writePath] at hwp
@@ -2275,7 +2262,7 @@ theorem writePath_preserves_readPath_HasType_no_ext
               | some gVal =>
                 simp only [hg] at hread_r
                 exact ⟨vold, hread_r, hht_r⟩
-    | int n => simp [writePath] at hwp
+    | int n w => simp [writePath] at hwp
     | bool b => simp [writePath] at hwp
     | unit => simp [writePath] at hwp
     | ref l p => simp [writePath] at hwp

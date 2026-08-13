@@ -28,6 +28,7 @@ namespace LeanMove.Lang.MoveIR.Parser
 open Std.Internal.Parsec.String
 open Std.Internal.Parsec
 open LeanMove.Lang.MoveIR
+open LeanMove.Lang.MoveLight (IntType)
 
 /- ====================================================== -/
 /-       Utility Combinators                               -/
@@ -165,8 +166,12 @@ where
   parseBaseType : Parser MvirType := do
     let name ← ident
     match name with
-    | "u64" => pure .u64
-    | "u8" => pure .u8
+    | "u8" => pure (.int .u8)
+    | "u16" => pure (.int .u16)
+    | "u32" => pure (.int .u32)
+    | "u64" => pure (.int .u64)
+    | "u128" => pure (.int .u128)
+    | "u256" => pure (.int .u256)
     | "bool" => pure .bool
     | "vector" =>
       symbol '<'
@@ -314,9 +319,19 @@ partial def parseUnaryExpr : Parser MvirExpr := do
   | _ =>
     if c.isDigit then
       let n ← natLit
-      -- Skip optional type suffix like u64, u8
-      let _ ← (attempt (keyword "u64")) <|> (attempt (keyword "u8")) <|> pure ()
-      pure (.intLit n)
+      -- The width suffix (`1u8`) is significant: it is what distinguishes
+      -- `LdU8` from `LdU64`. An unsuffixed literal defaults to `u64`, matching
+      -- the MVIR convention. `keyword` is a bare `skipString`, so alternation
+      -- order would matter if one suffix were a prefix of another — none is
+      -- (`u16` vs `u128` already differ at the third character).
+      let w ← (attempt (do keyword "u8"; pure IntType.u8)) <|>
+              (attempt (do keyword "u16"; pure IntType.u16)) <|>
+              (attempt (do keyword "u32"; pure IntType.u32)) <|>
+              (attempt (do keyword "u64"; pure IntType.u64)) <|>
+              (attempt (do keyword "u128"; pure IntType.u128)) <|>
+              (attempt (do keyword "u256"; pure IntType.u256)) <|>
+              pure IntType.u64
+      pure (.intLit n w)
     else
       parsePrimaryExpr
 

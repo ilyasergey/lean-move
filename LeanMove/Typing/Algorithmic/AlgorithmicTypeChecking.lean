@@ -460,9 +460,9 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
         else none
       | _ => none
 
-    | .intLit _ =>
+    | .intLit _ w =>
       if notIn env.siteEnv a then
-        let env' := {env with siteEnv := insert env.siteEnv a (.basic .u64)}
+        let env' := {env with siteEnv := insert env.siteEnv a (.basic (.int w))}
         check_stmt lenv env' cont retTypes
       else none
 

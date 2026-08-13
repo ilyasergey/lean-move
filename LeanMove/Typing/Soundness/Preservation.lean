@@ -43,9 +43,9 @@ open Regex
 -- These are separate lemmas to avoid rw/cases interaction issues.
 
 private theorem inv_intLit
-    (h : typecheck_stmt lenv env (.letBind s (.intLit n) cont) retTypes) :
-    typecheck_stmt lenv {env with siteEnv := insert env.siteEnv s (.basic .u64)} cont retTypes :=
-  match h with | .let_bind_intLit _ _ _ _ _ _ _ hc => hc
+    (h : typecheck_stmt lenv env (.letBind s (.intLit n w) cont) retTypes) :
+    typecheck_stmt lenv {env with siteEnv := insert env.siteEnv s (.basic (.int w))} cont retTypes :=
+  match h with | .let_bind_intLit _ _ _ _ _ _ _ _ hc => hc
 
 private theorem inv_release
     (h : typecheck_stmt lenv env (.release site cont) retTypes) :
@@ -632,18 +632,18 @@ private theorem preservation_intLit (m m' : Machine) (env : TypeEnv) (lenv : Lab
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
     (hss : StackSafe env.enumEnv m.stack m.frame.returnInfo m.heap retTypes)
-    (s : Site) (n : Nat) (cont : Stmt)
-    (hstmt : m.frame.stmt = .letBind s (.intLit n) cont)
+    (s : Site) (n : Nat) (w : IntType) (cont : Stmt)
+    (hstmt : m.frame.stmt = .letBind s (.intLit n w) cont)
     (hstep : step (.running m) = .running m') :
     ∃ env' lenv' retTypes' rmap',
       env'.enumEnv = env.enumEnv ∧ WellTypedState m' env' lenv' retTypes' rmap' ∧
       StackSafe env.enumEnv m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   simp only [step, hstmt, ExecState.running.injEq] at hstep; subst hstep
   have hcont := inv_intLit (by rw [← hstmt]; exact hwt.stmt_typed)
-  refine ⟨{env with siteEnv := insert env.siteEnv s (.basic .u64)},
+  refine ⟨{env with siteEnv := insert env.siteEnv s (.basic (.int w))},
           lenv, retTypes, rmap, rfl, ?_, hss⟩
   exact {
-    env_wf := TypeEnv.insert_siteEnv_wf env s (.basic .u64) hwt.env_wf trivial
+    env_wf := TypeEnv.insert_siteEnv_wf env s (.basic (.int w)) hwt.env_wf trivial
     enumEnv_consistent := hwt.enumEnv_consistent
     enum_qualified_nodup := hwt.enum_qualified_nodup
     enum_names_nodup := hwt.enum_names_nodup
@@ -652,13 +652,13 @@ private theorem preservation_intLit (m m' : Machine) (env : TypeEnv) (lenv : Lab
     defaultValues_typed := hwt.defaultValues_typed
     stmt_typed := hcont
     var_consistent := hwt.var_consistent
-    site_consistent := site_consistent_insert_basic m env rmap s (.int n)
-        (.basic .u64) hwt.site_consistent (HasType.int n)
+    site_consistent := site_consistent_insert_basic m env rmap s (.int n w)
+        (.basic (.int w)) hwt.site_consistent (HasType.int n w)
     rmap_live := hwt.rmap_live
     rmap_paths := hwt.rmap_paths
     varEnv_refs_in_pathEnv := hwt.varEnv_refs_in_pathEnv
-    siteEnv_refs_in_pathEnv := siteEnv_refs_in_pathEnv_insert_basic hwt s .u64
-    live_refs_unique := live_refs_unique_insert_basic hwt s .u64
+    siteEnv_refs_in_pathEnv := siteEnv_refs_in_pathEnv_insert_basic hwt s (.int w)
+    live_refs_unique := live_refs_unique_insert_basic hwt s (.int w)
     blocks_typed := hwt.blocks_typed
     lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
     lenv_wf := hwt.lenv_wf
@@ -2608,33 +2608,45 @@ private theorem preservation_readRef (m m' : Machine) (env : TypeEnv) (lenv : La
 
 /-- If evalBinop succeeds and binop_type determines the output type,
     the result value has the output type. -/
-private lemma evalBinop_has_type (enumEnv : EnumEnv) (op : Binop) (bt1 bt2 bt3 : BasicMoveType)
-    (na nb : Nat) (result : Value)
-    (hbt : binop_type op bt1 bt2 = some bt3)
-    (heval : evalBinop op na nb = some result) :
+private lemma evalBinop_has_type (enumEnv : EnumEnv) (op : Binop) (w1 w2 : IntType)
+    (bt3 : BasicMoveType) (na nb : Nat) (result : Value)
+    (hbt : binop_type op (.int w1) (.int w2) = some bt3)
+    (heval : evalBinop op na nb w1 = some result) :
     HasType enumEnv result bt3 := by
   -- `binop_type` pins `bt3` down from the operator, so case on the operator and
   -- then read the result type straight off `evalBinop`.
   -- Note: no alternative below may use a nested `by`, since an unsolved goal
   -- inside one is *reported* rather than failing the enclosing `first`/`try`.
-  cases op <;> simp only [binop_type] at hbt <;>
-    (try (cases bt1 <;> cases bt2 <;> simp at hbt)) <;>
-    subst hbt <;>
-    simp only [evalBinop] at heval <;>
-    first
-    -- `and`/`or` have no integer instantiation: `evalBinop` returned `none`
-    | exact Option.noConfusion heval
-    -- add/sub/mul
-    | (simp only [Option.some.injEq] at heval; subst heval; exact HasType.int _)
-    -- the comparisons eq/neq/lt/gt/le/ge, all of which yield `tbool`
-    | (simp only [Option.some.injEq] at heval; subst heval; exact HasType.bool _)
-    | (-- div/mod: heval still has a match on the divisor
-       cases nb with
-       | zero => simp at heval
-       | succ n =>
-         -- `simp` substitutes `result` and may already discharge the goal
-         simp at heval
-         all_goals (subst heval; exact HasType.int _))
+  by_cases hw : w1 = w2
+  · -- Equal widths: the operand width is `w1`, and every arithmetic row of
+    -- `binop_type` returns `.int w1`.
+    subst hw
+    cases op <;>
+      simp only [binop_type, beq_self_eq_true, if_true] at hbt <;>
+      first
+      -- `and`/`or` have no integer instantiation: `binop_type` returned `none`
+      | exact Option.noConfusion hbt
+      | (simp only [Option.some.injEq] at hbt
+         subst hbt
+         simp only [evalBinop] at heval
+         first
+         -- add/sub/mul
+         | (simp only [Option.some.injEq] at heval; subst heval; exact HasType.int _ _)
+         -- the comparisons eq/neq/lt/gt/le/ge, all of which yield `tbool`
+         | (simp only [Option.some.injEq] at heval; subst heval; exact HasType.bool _)
+         | (-- div/mod: heval still has a match on the divisor
+            cases nb with
+            | zero => simp at heval
+            | succ n =>
+              -- `simp` substitutes `result` and may already discharge the goal
+              simp at heval
+              all_goals (subst heval; exact HasType.int _ _)))
+      -- `and`/`or` at integer type: `binop_type` is `none`, so `hbt` is absurd.
+      -- `simp only [binop_type]` does not reduce the catch-all arm, hence the
+      -- full `simp` here rather than an `Option.noConfusion`.
+      | (exfalso; simp [binop_type] at hbt)
+  · -- Mixed widths never typecheck: every integer row guards on `w1 == w2`.
+    exfalso; cases op <;> simp [binop_type, hw] at hbt
 
 private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
@@ -2678,12 +2690,20 @@ private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : Labe
              stack := m.stack, heap := m.heap, enumEnv := m.enumEnv } := by
     -- Case-split on va and vb to reduce the match in hstep
     cases hva_eq : va with
-    | int na =>
+    | int na wa =>
       cases hvb_eq : vb with
-      | int nb =>
+      | int nb wb =>
         simp only [hva_eq, hvb_eq] at hstep
-        cases heval : evalBinop op na nb <;> simp [heval] at hstep
-        exact ⟨_, evalBinop_has_type env.enumEnv op bt1 bt2 bt3 na nb _ hbt heval, hstep.symm⟩
+        -- The operand widths are pinned by the values: `ValueMatchesType … (.basic bt)`
+        -- unfolds to `HasType … bt`, and `HasType (.int n w) bt` forces `bt = .int w`.
+        have hta : HasType env.enumEnv va bt1 := hma
+        have htb : HasType env.enumEnv vb bt2 := hmb
+        rw [hva_eq] at hta
+        rw [hvb_eq] at htb
+        cases hta
+        cases htb
+        cases heval : evalBinop op na nb wa <;> simp [heval] at hstep
+        exact ⟨_, evalBinop_has_type env.enumEnv op wa wb bt3 na nb _ hbt heval, hstep.symm⟩
       | bool _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
       | unit => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
       | record _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
@@ -2839,8 +2859,7 @@ private lemma evalUnop_has_type (enumEnv : EnumEnv) (uop : Unop) (bt1 bt2 : Basi
       | ref _ _ => simp [evalUnop] at heval
       | vec _ _ => simp [evalUnop] at heval
       | variant _ _ _ => simp [evalUnop] at heval
-    | u64 => simp [unop_type] at hbt
-    | u8 => simp [unop_type] at hbt
+    | int _ => simp [unop_type] at hbt
     | tunit => simp [unop_type] at hbt
     | trecord _ => simp [unop_type] at hbt
     | tvec _ => simp [unop_type] at hbt
@@ -7548,7 +7567,7 @@ private theorem preservation_vecLen (m m' : Machine) (env : TypeEnv) (lenv : Lab
       intro s' τ' hl
       by_cases heq : s' = s
       · subst heq; simp only [lookup_insert_same, Option.some.injEq] at hl; subst hl
-        exact ⟨.int elems.length, lookup_insert_same _ _ _, HasType.int _⟩
+        exact ⟨.int elems.length .u64, lookup_insert_same _ _ _, HasType.int _ _⟩
       · rw [lookup_insert_ne _ s s' _ heq] at hl
         have hne_src : s' ≠ src := by
           intro h; subst h; rw [lookup_delete_same] at hl; simp at hl
@@ -8282,12 +8301,12 @@ private theorem preservation_vecSwap (m m' : Machine) (env : TypeEnv) (lenv : La
   -- hht_heap : HasType (.vec T elems) (.tvec T)
   -- 5. Get int values for indices
   simp only [ValueMatchesType] at hmatch_idx1 hmatch_idx2
-  obtain ⟨i, rfl⟩ : ∃ i, vidx1 = .int i := by cases hmatch_idx1 with | int n => exact ⟨n, rfl⟩
-  obtain ⟨j, rfl⟩ : ∃ j, vidx2 = .int j := by cases hmatch_idx2 with | int n => exact ⟨n, rfl⟩
+  obtain ⟨i, rfl⟩ : ∃ i, vidx1 = .int i .u64 := by cases hmatch_idx1 with | int n _ => exact ⟨n, rfl⟩
+  obtain ⟨j, rfl⟩ : ∃ j, vidx2 = .int j .u64 := by cases hmatch_idx2 with | int n _ => exact ⟨n, rfl⟩
   -- 6. Simplify step
   have hrs_ref : readSite m refSite = some (.ref loc path) := by unfold readSite; exact hvref
-  have hrs_idx1 : readSite m idx1Site = some (.int i) := by unfold readSite; exact hvidx1
-  have hrs_idx2 : readSite m idx2Site = some (.int j) := by unfold readSite; exact hvidx2
+  have hrs_idx1 : readSite m idx1Site = some (.int i .u64) := by unfold readSite; exact hvidx1
+  have hrs_idx2 : readSite m idx2Site = some (.int j .u64) := by unfold readSite; exact hvidx2
   simp only [step, hstmt, hrs_ref, hrs_idx1, hrs_idx2, hread_heap] at hstep
   -- 7. Handle index bounds checks
   split at hstep
@@ -8666,14 +8685,14 @@ private theorem preservation_vecImmBorrow (m m' : Machine) (env : TypeEnv) (lenv
   subst hveq_src
   obtain ⟨vidx, hvidx, hmatch_idx⟩ := hwt.site_consistent idx _ hlookup_idx
   simp only [ValueMatchesType] at hmatch_idx
-  obtain ⟨i_val, rfl⟩ : ∃ n, vidx = .int n := by cases hmatch_idx with | int n => exact ⟨n, rfl⟩
+  obtain ⟨i_val, rfl⟩ : ∃ n, vidx = .int n .u64 := by cases hmatch_idx with | int n _ => exact ⟨n, rfl⟩
   -- Get vector from heap
   obtain ⟨heap_val, hread_heap, hht_heap⟩ := hwt.rmap_has_type s_ref (.tvec T) loc path hrmap_s
     (Or.inr ⟨src, isBor, hlookup_src⟩)
   obtain ⟨elems, rfl⟩ := HasType.vec_elems hht_heap
   -- Simplify step
   have hrs_src : readSite m src = some (.ref loc path) := by unfold readSite; exact hvsrc
-  have hrs_idx : readSite m idx = some (.int i_val) := by unfold readSite; exact hvidx
+  have hrs_idx : readSite m idx = some (.int i_val .u64) := by unfold readSite; exact hvidx
   simp only [step, hstmt, hrs_src, hrs_idx, hread_heap] at hstep
   -- Handle index bounds
   split at hstep
@@ -9069,12 +9088,12 @@ private theorem preservation_vecMutBorrow (m m' : Machine) (env : TypeEnv) (lenv
   subst hveq_src
   obtain ⟨vidx, hvidx, hmatch_idx⟩ := hwt.site_consistent idx _ hlookup_idx
   simp only [ValueMatchesType] at hmatch_idx
-  obtain ⟨i_val, rfl⟩ : ∃ n, vidx = .int n := by cases hmatch_idx with | int n => exact ⟨n, rfl⟩
+  obtain ⟨i_val, rfl⟩ : ∃ n, vidx = .int n .u64 := by cases hmatch_idx with | int n _ => exact ⟨n, rfl⟩
   obtain ⟨heap_val, hread_heap, hht_heap⟩ := hwt.rmap_has_type s_ref (.tvec T) loc path hrmap_s
     (Or.inr ⟨src, .siteBorrowMut, hlookup_src⟩)
   obtain ⟨elems, rfl⟩ := HasType.vec_elems hht_heap
   have hrs_src : readSite m src = some (.ref loc path) := by unfold readSite; exact hvsrc
-  have hrs_idx : readSite m idx = some (.int i_val) := by unfold readSite; exact hvidx
+  have hrs_idx : readSite m idx = some (.int i_val .u64) := by unfold readSite; exact hvidx
   simp only [step, hstmt, hrs_src, hrs_idx, hread_heap] at hstep
   split at hstep
   · rename_i hi
@@ -11274,7 +11293,7 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     exfalso; simp only [step, hstmt] at hstep; contradiction
   | letBind s expr cont =>
     cases expr with
-    | intLit n => exact preservation_intLit m m' env lenv retTypes rmap hwt hss s n cont hstmt hstep
+    | intLit n w => exact preservation_intLit m m' env lenv retTypes rmap hwt hss s n w cont hstmt hstep
     | usage u =>
       cases u with
       | copy x =>

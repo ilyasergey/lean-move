@@ -62,10 +62,13 @@ def ppBorrowingKind : BorrowingKind → String
 /-       Type Pretty-Printers                             -/
 /- ====================================================== -/
 
+def ppIntType : IntType → String
+  | .u8 => "u8" | .u16 => "u16" | .u32 => "u32"
+  | .u64 => "u64" | .u128 => "u128" | .u256 => "u256"
+
 mutual
   partial def ppBasicMoveType : BasicMoveType → String
-    | .u64 => ".u64"
-    | .u8 => ".u8"
+    | .int w => s!".{ppIntType w}"
     | .tbool => ".tbool"
     | .tunit => ".tunit"
     | .trecord m => s!".trecord {ppAssocMap m}"
@@ -147,7 +150,7 @@ def ppUsage : Usage → String
 
 def ppExpr : Expr → String
   | .usage u => ppUsage u
-  | .intLit n => s!"#{n}"
+  | .intLit n w => s!"#{n}{ppIntType w}"
   | .borrowField s bt f =>
     s!"borrowField({ppSite s}, {ppBasicMoveType bt}, {ppField f})"
   | .borrowMutField s bt f =>

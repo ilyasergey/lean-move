@@ -53,14 +53,40 @@ def qualifyField (variantName : Id) (f : Field) : Field :=
 def qualifyFieldMap {α : Type} (variantName : Id) (m : AssocMap Field α) : AssocMap Field α :=
   ⟨m.entries.map fun (f, v) => (qualifyField variantName f, v)⟩
 
+/-- The width of a Move unsigned integer type. Factored out of `BasicMoveType`
+    deliberately: `BasicMoveType` is a *nested* inductive (`trecord` recurses
+    through `AssocMap`), so it cannot derive `DecidableEq` and needs a
+    hand-written `beq` with a full off-diagonal lemma table. Keeping the six
+    widths in a separate flat enum means that table has a single `int`
+    row/column regardless of how many widths Move grows. -/
+inductive IntType where
+  | u8 | u16 | u32 | u64 | u128 | u256
+deriving Repr, DecidableEq, Inhabited, Hashable
+
+/-- Bit width. `IntType.max w` is the exclusive upper bound of the type. -/
+def IntType.bits : IntType → Nat
+  | .u8 => 8 | .u16 => 16 | .u32 => 32
+  | .u64 => 64 | .u128 => 128 | .u256 => 256
+
+/-- One past the largest value of the type: `n : w` iff `n < IntType.max w`. -/
+abbrev IntType.max (w : IntType) : Nat := 2 ^ w.bits
+
+theorem IntType.max_pos (w : IntType) : 0 < w.max := Nat.two_pow_pos w.bits
+
 inductive BasicMoveType where
-  | u64   -- Unsigned 64-bit integer
-  | u8    -- Unsigned 8-bit integer
+  | int : IntType → BasicMoveType  -- Unsigned integer of the given width
   | tbool
   | tunit
   | trecord : AssocMap Field BasicMoveType → BasicMoveType
   | tvec : BasicMoveType → BasicMoveType
   | tenum : Id → BasicMoveType  -- Reference to enum name in EnumEnv
+
+/-- `.u64` and `.u8` remain spellable, in both term *and* pattern position.
+    `@[match_pattern]` is what makes the second half work: without it every
+    `| .u64 => …` arm across the development would have to be rewritten to
+    `| .int .u64 => …`. -/
+@[match_pattern] abbrev BasicMoveType.u64 : BasicMoveType := .int .u64
+@[match_pattern] abbrev BasicMoveType.u8 : BasicMoveType := .int .u8
 
 /- ---------------------------------------------------- -/
 /-       BasicMoveType Equality                          -/
@@ -69,8 +95,7 @@ inductive BasicMoveType where
 -- Records are equal iff they have exactly the same entries list (same order)
 mutual
   def BasicMoveType.beq : BasicMoveType → BasicMoveType → Bool
-    | .u64, .u64 => true
-    | .u8, .u8 => true
+    | .int w1, .int w2 => w1 == w2
     | .tbool, .tbool => true
     | .tunit, .tunit => true
     | .trecord m1, .trecord m2 => BasicMoveType.beqEntries m1.entries m2.entries
@@ -94,54 +119,42 @@ instance : BEq BasicMoveType := ⟨BasicMoveType.beq⟩
 
 -- Manual simp lemmas for BasicMoveType.beq (equational theorem generation
 -- fails for mutual definitions over nested inductives in Lean 4.27)
-@[simp] theorem BasicMoveType.beq_u64_u64 : BasicMoveType.beq .u64 .u64 = true := rfl
-@[simp] theorem BasicMoveType.beq_u8_u8 : BasicMoveType.beq .u8 .u8 = true := rfl
+@[simp] theorem BasicMoveType.beq_int_int (w1 w2 : IntType) :
+    BasicMoveType.beq (.int w1) (.int w2) = (w1 == w2) := rfl
 @[simp] theorem BasicMoveType.beq_tbool_tbool : BasicMoveType.beq .tbool .tbool = true := rfl
 @[simp] theorem BasicMoveType.beq_tunit_tunit : BasicMoveType.beq .tunit .tunit = true := rfl
 @[simp] theorem BasicMoveType.beq_trecord (m1 m2 : AssocMap Field BasicMoveType) :
     BasicMoveType.beq (.trecord m1) (.trecord m2) = BasicMoveType.beqEntries m1.entries m2.entries := rfl
-@[simp] theorem BasicMoveType.beq_u64_u8 : BasicMoveType.beq .u64 .u8 = false := rfl
-@[simp] theorem BasicMoveType.beq_u64_tbool : BasicMoveType.beq .u64 .tbool = false := rfl
-@[simp] theorem BasicMoveType.beq_u64_tunit : BasicMoveType.beq .u64 .tunit = false := rfl
-@[simp] theorem BasicMoveType.beq_u64_trecord (m) : BasicMoveType.beq .u64 (.trecord m) = false := rfl
-@[simp] theorem BasicMoveType.beq_u64_tvec (t) : BasicMoveType.beq .u64 (.tvec t) = false := rfl
-@[simp] theorem BasicMoveType.beq_u64_tenum (n) : BasicMoveType.beq .u64 (.tenum n) = false := rfl
-@[simp] theorem BasicMoveType.beq_u8_u64 : BasicMoveType.beq .u8 .u64 = false := rfl
-@[simp] theorem BasicMoveType.beq_u8_tbool : BasicMoveType.beq .u8 .tbool = false := rfl
-@[simp] theorem BasicMoveType.beq_u8_tunit : BasicMoveType.beq .u8 .tunit = false := rfl
-@[simp] theorem BasicMoveType.beq_u8_trecord (m) : BasicMoveType.beq .u8 (.trecord m) = false := rfl
-@[simp] theorem BasicMoveType.beq_u8_tvec (t) : BasicMoveType.beq .u8 (.tvec t) = false := rfl
-@[simp] theorem BasicMoveType.beq_u8_tenum (n) : BasicMoveType.beq .u8 (.tenum n) = false := rfl
-@[simp] theorem BasicMoveType.beq_tbool_u64 : BasicMoveType.beq .tbool .u64 = false := rfl
-@[simp] theorem BasicMoveType.beq_tbool_u8 : BasicMoveType.beq .tbool .u8 = false := rfl
+@[simp] theorem BasicMoveType.beq_int_tbool (w) : BasicMoveType.beq (.int w) .tbool = false := rfl
+@[simp] theorem BasicMoveType.beq_int_tunit (w) : BasicMoveType.beq (.int w) .tunit = false := rfl
+@[simp] theorem BasicMoveType.beq_int_trecord (w m) : BasicMoveType.beq (.int w) (.trecord m) = false := rfl
+@[simp] theorem BasicMoveType.beq_int_tvec (w t) : BasicMoveType.beq (.int w) (.tvec t) = false := rfl
+@[simp] theorem BasicMoveType.beq_int_tenum (w n) : BasicMoveType.beq (.int w) (.tenum n) = false := rfl
+@[simp] theorem BasicMoveType.beq_tbool_int (w) : BasicMoveType.beq .tbool (.int w) = false := rfl
 @[simp] theorem BasicMoveType.beq_tbool_tunit : BasicMoveType.beq .tbool .tunit = false := rfl
 @[simp] theorem BasicMoveType.beq_tbool_trecord (m) : BasicMoveType.beq .tbool (.trecord m) = false := rfl
 @[simp] theorem BasicMoveType.beq_tbool_tvec (t) : BasicMoveType.beq .tbool (.tvec t) = false := rfl
 @[simp] theorem BasicMoveType.beq_tbool_tenum (n) : BasicMoveType.beq .tbool (.tenum n) = false := rfl
-@[simp] theorem BasicMoveType.beq_tunit_u64 : BasicMoveType.beq .tunit .u64 = false := rfl
-@[simp] theorem BasicMoveType.beq_tunit_u8 : BasicMoveType.beq .tunit .u8 = false := rfl
+@[simp] theorem BasicMoveType.beq_tunit_int (w) : BasicMoveType.beq .tunit (.int w) = false := rfl
 @[simp] theorem BasicMoveType.beq_tunit_tbool : BasicMoveType.beq .tunit .tbool = false := rfl
 @[simp] theorem BasicMoveType.beq_tunit_trecord (m) : BasicMoveType.beq .tunit (.trecord m) = false := rfl
 @[simp] theorem BasicMoveType.beq_tunit_tvec (t) : BasicMoveType.beq .tunit (.tvec t) = false := rfl
 @[simp] theorem BasicMoveType.beq_tunit_tenum (n) : BasicMoveType.beq .tunit (.tenum n) = false := rfl
-@[simp] theorem BasicMoveType.beq_trecord_u64 (m) : BasicMoveType.beq (.trecord m) .u64 = false := rfl
-@[simp] theorem BasicMoveType.beq_trecord_u8 (m) : BasicMoveType.beq (.trecord m) .u8 = false := rfl
+@[simp] theorem BasicMoveType.beq_trecord_int (m w) : BasicMoveType.beq (.trecord m) (.int w) = false := rfl
 @[simp] theorem BasicMoveType.beq_trecord_tbool (m) : BasicMoveType.beq (.trecord m) .tbool = false := rfl
 @[simp] theorem BasicMoveType.beq_trecord_tunit (m) : BasicMoveType.beq (.trecord m) .tunit = false := rfl
 @[simp] theorem BasicMoveType.beq_trecord_tvec (m t) : BasicMoveType.beq (.trecord m) (.tvec t) = false := rfl
 @[simp] theorem BasicMoveType.beq_trecord_tenum (m n) : BasicMoveType.beq (.trecord m) (.tenum n) = false := rfl
 @[simp] theorem BasicMoveType.beq_tvec (t1 t2 : BasicMoveType) :
     BasicMoveType.beq (.tvec t1) (.tvec t2) = t1.beq t2 := rfl
-@[simp] theorem BasicMoveType.beq_tvec_u64 (t) : BasicMoveType.beq (.tvec t) .u64 = false := rfl
-@[simp] theorem BasicMoveType.beq_tvec_u8 (t) : BasicMoveType.beq (.tvec t) .u8 = false := rfl
+@[simp] theorem BasicMoveType.beq_tvec_int (t w) : BasicMoveType.beq (.tvec t) (.int w) = false := rfl
 @[simp] theorem BasicMoveType.beq_tvec_tbool (t) : BasicMoveType.beq (.tvec t) .tbool = false := rfl
 @[simp] theorem BasicMoveType.beq_tvec_tunit (t) : BasicMoveType.beq (.tvec t) .tunit = false := rfl
 @[simp] theorem BasicMoveType.beq_tvec_trecord (t m) : BasicMoveType.beq (.tvec t) (.trecord m) = false := rfl
 @[simp] theorem BasicMoveType.beq_tvec_tenum (t n) : BasicMoveType.beq (.tvec t) (.tenum n) = false := rfl
 @[simp] theorem BasicMoveType.beq_tenum (n1 n2) :
     BasicMoveType.beq (.tenum n1) (.tenum n2) = (n1 == n2) := rfl
-@[simp] theorem BasicMoveType.beq_tenum_u64 (n) : BasicMoveType.beq (.tenum n) .u64 = false := rfl
-@[simp] theorem BasicMoveType.beq_tenum_u8 (n) : BasicMoveType.beq (.tenum n) .u8 = false := rfl
+@[simp] theorem BasicMoveType.beq_tenum_int (n w) : BasicMoveType.beq (.tenum n) (.int w) = false := rfl
 @[simp] theorem BasicMoveType.beq_tenum_tbool (n) : BasicMoveType.beq (.tenum n) .tbool = false := rfl
 @[simp] theorem BasicMoveType.beq_tenum_tunit (n) : BasicMoveType.beq (.tenum n) .tunit = false := rfl
 @[simp] theorem BasicMoveType.beq_tenum_trecord (n m) : BasicMoveType.beq (.tenum n) (.trecord m) = false := rfl
@@ -166,8 +179,7 @@ mutual
       exact And.intro (BasicMoveType.beq_refl t) (BasicMoveType.beqEntries_refl rest)
 
   theorem BasicMoveType.beq_refl : ∀ (t : BasicMoveType), t.beq t = true
-    | .u64 => rfl
-    | .u8 => rfl
+    | .int w => by simp only [BasicMoveType.beq_int_int, beq_self_eq_true]
     | .tbool => rfl
     | .tunit => rfl
     | .trecord m => BasicMoveType.beqEntries_refl m.entries
@@ -189,8 +201,9 @@ mutual
         rw [hf, ht', hrest']
 
   theorem BasicMoveType.eq_of_beq : ∀ (t1 t2 : BasicMoveType), t1.beq t2 = true → t1 = t2
-    | .u64, .u64, _ => rfl
-    | .u8, .u8, _ => rfl
+    | .int w1, .int w2, h => by
+      simp only [BasicMoveType.beq_int_int, beq_iff_eq] at h
+      rw [h]
     | .tbool, .tbool, _ => rfl
     | .tunit, .tunit, _ => rfl
     | .trecord m1, .trecord m2, h => by
@@ -205,13 +218,12 @@ mutual
     | .tenum n1, .tenum n2, h => by
       simp only [BasicMoveType.beq_tenum, beq_iff_eq] at h
       rw [h]
-    | .u64, .u8, h | .u64, .tbool, h | .u64, .tunit, h | .u64, .trecord _, h | .u64, .tvec _, h | .u64, .tenum _, h => by simp at h
-    | .u8, .u64, h | .u8, .tbool, h | .u8, .tunit, h | .u8, .trecord _, h | .u8, .tvec _, h | .u8, .tenum _, h => by simp at h
-    | .tbool, .u64, h | .tbool, .u8, h | .tbool, .tunit, h | .tbool, .trecord _, h | .tbool, .tvec _, h | .tbool, .tenum _, h => by simp at h
-    | .tunit, .u64, h | .tunit, .u8, h | .tunit, .tbool, h | .tunit, .trecord _, h | .tunit, .tvec _, h | .tunit, .tenum _, h => by simp at h
-    | .trecord _, .u64, h | .trecord _, .u8, h | .trecord _, .tbool, h | .trecord _, .tunit, h | .trecord _, .tvec _, h | .trecord _, .tenum _, h => by simp at h
-    | .tvec _, .u64, h | .tvec _, .u8, h | .tvec _, .tbool, h | .tvec _, .tunit, h | .tvec _, .trecord _, h | .tvec _, .tenum _, h => by simp at h
-    | .tenum _, .u64, h | .tenum _, .u8, h | .tenum _, .tbool, h | .tenum _, .tunit, h | .tenum _, .trecord _, h | .tenum _, .tvec _, h => by simp at h
+    | .int _, .tbool, h | .int _, .tunit, h | .int _, .trecord _, h | .int _, .tvec _, h | .int _, .tenum _, h => by simp at h
+    | .tbool, .int _, h | .tbool, .tunit, h | .tbool, .trecord _, h | .tbool, .tvec _, h | .tbool, .tenum _, h => by simp at h
+    | .tunit, .int _, h | .tunit, .tbool, h | .tunit, .trecord _, h | .tunit, .tvec _, h | .tunit, .tenum _, h => by simp at h
+    | .trecord _, .int _, h | .trecord _, .tbool, h | .trecord _, .tunit, h | .trecord _, .tvec _, h | .trecord _, .tenum _, h => by simp at h
+    | .tvec _, .int _, h | .tvec _, .tbool, h | .tvec _, .tunit, h | .tvec _, .trecord _, h | .tvec _, .tenum _, h => by simp at h
+    | .tenum _, .int _, h | .tenum _, .tbool, h | .tenum _, .tunit, h | .tenum _, .trecord _, h | .tenum _, .tvec _, h => by simp at h
 end
 
 theorem BasicMoveType.beq_of_eq (t1 t2 : BasicMoveType) : t1 = t2 → t1.beq t2 = true := by
@@ -241,8 +253,8 @@ mutual
     | (_, bt) :: rest => BasicMoveType.containsEnum bt || BasicMoveType.containsEnumEntries rest
 end
 
-@[simp] theorem BasicMoveType.containsEnum_u64 : BasicMoveType.containsEnum .u64 = false := rfl
-@[simp] theorem BasicMoveType.containsEnum_u8 : BasicMoveType.containsEnum .u8 = false := rfl
+@[simp] theorem BasicMoveType.containsEnum_int (w : IntType) :
+    BasicMoveType.containsEnum (.int w) = false := rfl
 @[simp] theorem BasicMoveType.containsEnum_tbool : BasicMoveType.containsEnum .tbool = false := rfl
 @[simp] theorem BasicMoveType.containsEnum_tunit : BasicMoveType.containsEnum .tunit = false := rfl
 @[simp] theorem BasicMoveType.containsEnum_trecord (m : AssocMap Field BasicMoveType) :
@@ -416,7 +428,7 @@ deriving Repr, DecidableEq, Inhabited, Hashable
 -- Expressions
 inductive Expr where
   | usage : Usage → Expr
-  | intLit : Nat → Expr  -- Integer literal (u64 value)
+  | intLit : Nat → IntType → Expr  -- Integer literal; the Move `LdU8`…`LdU256` opcodes
   | borrowField : Site → BasicMoveType → Field → Expr  -- &a.T::f
   | borrowMutField : Site → BasicMoveType → Field → Expr  -- &mut a.T::f
   | binop : Binop → Site → Site → Expr  -- a + b

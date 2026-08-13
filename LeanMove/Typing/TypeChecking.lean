@@ -62,19 +62,22 @@ def all_fresh_sites (env: TypeEnv) (as: List Site) : Prop :=
 -- function to take a binop and types of its arguments and return the type of the result
 def binop_type (bop : Binop) (τ1 τ2 : BasicMoveType) : Option BasicMoveType :=
   match (bop, τ1, τ2) with
-  | (.add, .u64, .u64) => some .u64
-  | (.sub, .u64, .u64) => some .u64
-  | (.mul, .u64, .u64) => some .u64
-  | (.div, .u64, .u64) => some .u64
-  | (.mod, .u64, .u64) => some .u64
-  | (.lt,  .u64, .u64) => some .tbool
-  | (.gt,  .u64, .u64) => some .tbool
-  | (.le,  .u64, .u64) => some .tbool
-  | (.ge,  .u64, .u64) => some .tbool
-  | (.eq, .u64, .u64) =>  some .tbool
+  -- Arithmetic and comparison are defined at every integer width, but both
+  -- operands must have the *same* width — Move has no implicit coercion, so
+  -- `1u8 + 1u64` is a type error rather than a widening.
+  | (.add, .int w1, .int w2) => if w1 == w2 then some (.int w1) else none
+  | (.sub, .int w1, .int w2) => if w1 == w2 then some (.int w1) else none
+  | (.mul, .int w1, .int w2) => if w1 == w2 then some (.int w1) else none
+  | (.div, .int w1, .int w2) => if w1 == w2 then some (.int w1) else none
+  | (.mod, .int w1, .int w2) => if w1 == w2 then some (.int w1) else none
+  | (.lt,  .int w1, .int w2) => if w1 == w2 then some .tbool else none
+  | (.gt,  .int w1, .int w2) => if w1 == w2 then some .tbool else none
+  | (.le,  .int w1, .int w2) => if w1 == w2 then some .tbool else none
+  | (.ge,  .int w1, .int w2) => if w1 == w2 then some .tbool else none
+  | (.eq, .int w1, .int w2) => if w1 == w2 then some .tbool else none
   | (.eq, .tbool, .tbool) => some .tbool
   -- `neq` is defined wherever `eq` is: the bytecode `Neq` accepts any droppable type.
-  | (.neq, .u64, .u64) => some .tbool
+  | (.neq, .int w1, .int w2) => if w1 == w2 then some .tbool else none
   | (.neq, .tbool, .tbool) => some .tbool
   | (.and, .tbool, .tbool) => some .tbool
   | (.or, .tbool, .tbool) => some .tbool
@@ -445,12 +448,12 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
       typecheck_stmt lenv env (.letBind a (.usage (.borrowMut x)) cont) retTypes
 
   -- let a = n; cont (integer literal)
-  | let_bind_intLit : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) (n : Nat) cont retTypes,
+  | let_bind_intLit : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) (n : Nat) (w : IntType) cont retTypes,
       notIn env.siteEnv a →
       typecheck_stmt lenv
-        {env with siteEnv := insert env.siteEnv a (.basic .u64)}
+        {env with siteEnv := insert env.siteEnv a (.basic (.int w))}
         cont retTypes →
-      typecheck_stmt lenv env (.letBind a (.intLit n) cont) retTypes
+      typecheck_stmt lenv env (.letBind a (.intLit n w) cont) retTypes
 
   -- let af = &a.T::f; cont (field borrow)
   | let_bind_borrowField : ∀ (lenv : LabelEnv) (env : TypeEnv) (a af : Site) f bt bt' isBor fentries s (rf : Aref) cont retTypes,
