@@ -299,6 +299,18 @@ partial def parseUnaryExpr : Parser MvirExpr := do
     symbol '*'
     let inner ← parseUnaryExpr
     pure (.deref inner)
+  | '!' =>
+    -- Boolean negation. `!=` is a binary operator, so only treat a bare `!`
+    -- (not followed by `=`) as the unary `Not`.
+    let neg ← attempt (do
+      symbol '!'
+      if ← isEof then pure true
+      else pure ((← peek!) != '='))
+    if neg then
+      let inner ← parseUnaryExpr
+      pure (.unop "!" inner)
+    else
+      parsePrimaryExpr
   | _ =>
     if c.isDigit then
       let n ← natLit
@@ -312,6 +324,8 @@ partial def parseUnaryExpr : Parser MvirExpr := do
 partial def parseBinOp : Parser (Option String) :=
   (attempt (do keyword "=="; pure (some "=="))) <|>
   (attempt (do keyword "!="; pure (some "!="))) <|>
+  (attempt (do keyword "&&"; pure (some "&&"))) <|>
+  (attempt (do keyword "||"; pure (some "||"))) <|>
   (attempt (do keyword ">="; pure (some ">="))) <|>
   (attempt (do keyword "<="; pure (some "<="))) <|>
   (attempt (do keyword ">"; pure (some ">"))) <|>

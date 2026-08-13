@@ -92,7 +92,11 @@ def ppBinop : Binop → String
   | .mod => "%"
   | .eq => "=="
   | .lt => "<"
-  | .nand => "nand"
+  | .and => "&&"
+  | .or => "||"
+
+def ppUnop : Unop → String
+  | .not => "!"
 
 def ppSiteList (sites : List Site) : String :=
   let ss := sites.map ppSite
@@ -109,6 +113,7 @@ def ppExprMacro : Expr → String
   | .borrowMutField src bt f =>
     s!"borrowMutField({ppSite src}, {ppBasicMoveType bt}, {ppField f})"
   | .binop op a b => s!"binop {ppBinop op} {ppSite a} {ppSite b}"
+  | .unop op a => s!"unop {ppUnop op} {ppSite a}"
   | .readRef s => s!"*{ppSite s}"
   | .pack id fields =>
     let fs := fields.map fun (f, s) => s!"({ppField f}, {ppSite s})"

@@ -70,7 +70,14 @@ def binop_type (bop : Binop) (τ1 τ2 : BasicMoveType) : Option BasicMoveType :=
   | (.lt,  .u64, .u64) => some .tbool
   | (.eq, .u64, .u64) =>  some .tbool
   | (.eq, .tbool, .tbool) => some .tbool
-  | (.nand, .tbool, .tbool) => some .tbool
+  | (.and, .tbool, .tbool) => some .tbool
+  | (.or, .tbool, .tbool) => some .tbool
+  | _ => none
+
+-- function to take a unop and the type of its argument and return the type of the result
+def unop_type (uop : Unop) (τ : BasicMoveType) : Option BasicMoveType :=
+  match (uop, τ) with
+  | (.not, .tbool) => some .tbool
   | _ => none
 
 -- Check that a list of sites conforms to a list of parameter types
@@ -475,6 +482,16 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
         {env with siteEnv := insert (delete (delete env.siteEnv a) b) c (.basic bt3)}
         cont retTypes →
       typecheck_stmt lenv env (.letBind c (.binop bop a b) cont) retTypes
+
+  -- let c = ⊖ a; cont (unary operation)
+  | let_bind_unop : ∀ (lenv : LabelEnv) (env : TypeEnv) uop bt1 bt2 (a c : Site) cont retTypes,
+      lookup env.siteEnv a = some (.basic bt1) →
+      unop_type uop bt1 = some bt2 →
+      notIn env.siteEnv c →
+      typecheck_stmt lenv
+        {env with siteEnv := insert (delete env.siteEnv a) c (.basic bt2)}
+        cont retTypes →
+      typecheck_stmt lenv env (.letBind c (.unop uop a) cont) retTypes
 
   -- let c = *a; cont (dereference)
   | let_bind_readRef : ∀ (lenv : LabelEnv) (env : TypeEnv) (a c : Site) r (τ : BasicMoveType) isBor cont retTypes,

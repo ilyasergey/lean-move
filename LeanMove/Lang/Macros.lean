@@ -140,6 +140,10 @@ macro "vecSwap" "(" ref:term "," idx1:term "," idx2:term ")" : term =>
 macro "letsite" a:term " ← " "binop" "(" op:term "," b:term "," c:term ")" : term =>
   `((fun cont => Stmt.letBind $a (Expr.binop $op $b $c) cont : StmtBuilder))
 
+-- Unop: letsite a ← unop(op, b) (produces StmtBuilder)
+macro "letsite" a:term " ← " "unop" "(" op:term "," b:term ")" : term =>
+  `((fun cont => Stmt.letBind $a (Expr.unop $op $b) cont : StmtBuilder))
+
 -- Enum operations
 
 -- Let binding with packVariant: letsite a ← packVariant(ename, vname, fields) (produces StmtBuilder)

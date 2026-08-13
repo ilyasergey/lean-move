@@ -2699,6 +2699,51 @@ private theorem weaken_let_bind_binop
     · exact hself_loop_only_empty
     · exact hroot
 
+private theorem weaken_let_bind_unop
+    (lenv : LabelEnv) (envL env : TypeEnv)
+    (uop : Unop) (bt1 bt2 : BasicMoveType) (sa sc : Site)
+    (cont : Stmt) (retTypes : List ParamType)
+    (hlook_a : lookup envL.siteEnv sa = some (.basic bt1))
+    (hunop : unop_type uop bt1 = some bt2)
+    (hnotIn : notIn envL.siteEnv sc)
+    (hsub : TypeEnv.subsumes envL env)
+    (hfuneq : envL.funEnv = env.funEnv)
+    (hwfL : TypeEnv.WellFormed envL) (hwfE : TypeEnv.WellFormed env)
+    (hsite_tracked : ∀ s bt r bk, lookup envL.siteEnv s = some (.ref bt r bk) → r ∈ envL.pathEnv.refs)
+    (hvar_tracked : ∀ x bt r bk ms, lookup envL.varEnv x = some (.validVar, .ref bt r bk, ms) → r ∈ envL.pathEnv.refs)
+    (huniq : RefsUnique envL.varEnv envL.siteEnv)
+    (hpaths_to_nm : ∀ u v p, v ∉ env.pathEnv.refs → v ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hpaths_from_nm : ∀ u v p, u ∉ env.pathEnv.refs → u ≠ .root → u ≠ v →
+      ¬interpret_regex (env.pathEnv.paths (u, v)) p)
+    (hself_loop_only_empty : ∀ u p, interpret_regex (env.pathEnv.paths (u, u)) p → p = [])
+    (hroot : Aref.root ∈ envL.pathEnv.refs)
+    (ih : WeakenIH lenv
+        {envL with siteEnv := insert (delete envL.siteEnv sa) sc (.basic bt2)}
+        cont retTypes) :
+    typecheck_stmt lenv env (.letBind sc (.unop uop sa) cont) retTypes := by
+  obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths, henum_equiv⟩ := hsub
+  have hlook_a_env := SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook_a
+  simp only [applySubstMoveType] at hlook_a_env
+  apply typecheck_stmt.let_bind_unop lenv env _ _ _ _ _ _ _
+    hlook_a_env hunop
+  · exact SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn
+  · apply ih
+    · exact ⟨σ, hid, hve,
+        SiteEnvSubstEquiv_insert σ _ _ _ _ _ (SiteEnvSubstEquiv_delete σ _ _ sa hse)
+          (applySubstMoveType_basic σ _),
+        hrefs, hinj, hnonroot, hpaths, henum_equiv⟩
+    · exact hfuneq
+    · exact TypeEnv.delete_insert_wf _ _ _ _ hwfL trivial
+    · exact TypeEnv.delete_insert_wf _ _ _ _ hwfE trivial
+    · exact site_tracked_insert_basic _ _ _ _ (site_tracked_delete _ _ sa hsite_tracked)
+    · exact hvar_tracked
+    · exact RefsUnique_insert_basic _ _ _ _ (RefsUnique_delete_site _ _ _ huniq)
+    · exact hpaths_to_nm
+    · exact hpaths_from_nm
+    · exact hself_loop_only_empty
+    · exact hroot
+
 private theorem weaken_var_assign_invalid
     (lenv : LabelEnv) (envL env : TypeEnv)
     (x : Var) (a : Site) (τ τ' : MoveType)
@@ -7854,6 +7899,11 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
   | let_bind_binop _ _ _ _ _ sa sb sc _ _ hlook_a hlook_b hbinop hnotIn _ ih =>
     exact weaken_let_bind_binop lenv _ env _ _ _ _ sa sb sc _ _
       hlook_a hlook_b hbinop hnotIn
+      hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
+      hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
+  | let_bind_unop _ _ _ _ sa sc _ _ hlook_a hunop hnotIn _ ih =>
+    exact weaken_let_bind_unop lenv _ env _ _ _ sa sc _ _
+      hlook_a hunop hnotIn
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   | var_assign_invalid _ _ _ _ _ _ _ hlook_x hlook_a hcompat _ ih =>

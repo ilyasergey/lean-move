@@ -355,15 +355,22 @@ def evalBinop : Binop → Nat → Nat → Option Value
   | .mod, a, b => some (.int (a % b))
   | .eq, a, b => some (.bool (a == b))
   | .lt, a, b => some (.bool (a < b))
-  | .nand, a, b =>
-    -- Bitwise NAND on naturals (treating 0 as false, nonzero as true)
-    some (.bool (!(a != 0 && b != 0)))
+  -- `and`/`or` are the boolean opcodes: they have no integer instantiation
+  -- (Move's integer conjunction/disjunction are the separate BitAnd/BitOr opcodes).
+  | .and, _, _ => none
+  | .or, _, _ => none
 
 /-- Evaluate a binary operation on booleans -/
 def evalBinopBool : Binop → Bool → Bool → Option Value
   | .eq, a, b => some (.bool (a == b))
-  | .nand, a, b => some (.bool (!(a && b)))
+  | .and, a, b => some (.bool (a && b))
+  | .or, a, b => some (.bool (a || b))
   | _, _, _ => none
+
+/-- Evaluate a unary operation -/
+def evalUnop : Unop → Value → Option Value
+  | .not, .bool b => some (.bool (!b))
+  | .not, _ => none
 
 -- ============================================================
 -- Helper: Allocate arguments for function call
@@ -713,6 +720,24 @@ def step (state : ExecState) : ExecState :=
           | none => .error (.typeMismatch "invalid bool binop")
         | some _, some _ => .error (.typeMismatch "binop type mismatch")
         | _, _ => .error (.uninitializedSite (.site 0))
+
+      -- Unary operation
+      | .unop op a =>
+        match readSite m a with
+        | some v =>
+          match evalUnop op v with
+          | some v' =>
+            .running {
+              frame := { f with
+                siteStore := AssocMap.insert f.siteStore s v'
+                stmt := cont
+              }
+              stack := m.stack
+              heap := m.heap
+              enumEnv := m.enumEnv
+            }
+          | none => .error (.typeMismatch "invalid unop")
+        | none => .error (.uninitializedSite (.site 0))
 
       -- Vector operations
       | .vecPack T elems =>

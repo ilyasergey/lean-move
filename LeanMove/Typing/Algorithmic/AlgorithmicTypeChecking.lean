@@ -516,6 +516,18 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
         | none => none
       | _, _ => none
 
+    | .unop uop src =>
+      match lookup env.siteEnv src with
+      | some (.basic bt1) =>
+        match unop_type uop bt1 with
+        | some bt2 =>
+          if notIn env.siteEnv a then
+            let env' := {env with siteEnv := insert (delete env.siteEnv src) a (.basic bt2)}
+            check_stmt lenv env' cont retTypes
+          else none
+        | none => none
+      | _ => none
+
     | .readRef src =>
       match lookup env.siteEnv src with
       | some (.ref τ r _) =>

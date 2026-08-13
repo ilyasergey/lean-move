@@ -196,6 +196,9 @@ partial def alphaExpr (l r : Expr) : AlphaM Bool :=
     if op1 != op2 then return false
     if !(← matchSite a1 a2) then return false
     matchSite b1 b2
+  | .unop op1 a1, .unop op2 a2 => do
+    if op1 != op2 then return false
+    matchSite a1 a2
   | .readRef s1, .readRef s2 => matchSite s1 s2
   | .pack id1 fs1, .pack id2 fs2 => do
     if id1 != id2 then return false

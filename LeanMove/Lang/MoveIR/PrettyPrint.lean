@@ -117,7 +117,11 @@ def ppBinop : Binop → String
   | .mod => ".mod"
   | .eq => ".eq"
   | .lt => ".lt"
-  | .nand => ".nand"
+  | .and => ".and"
+  | .or => ".or"
+
+def ppUnop : Unop → String
+  | .not => ".not"
 
 def ppFieldSitePairs : List (Field × Site) → String
   | [] => "[]"
@@ -145,6 +149,7 @@ def ppExpr : Expr → String
   | .borrowMutField s bt f =>
     s!"borrowMutField({ppSite s}, {ppBasicMoveType bt}, {ppField f})"
   | .binop op a b => s!"Expr.binop {ppBinop op} {ppSite a} {ppSite b}"
+  | .unop op a => s!"Expr.unop {ppUnop op} {ppSite a}"
   | .readRef s => s!"*{ppSite s}"
   | .pack id fields => s!"pack(\"{id}\", {ppFieldSitePairs fields})"
   | .freeze s => s!"freeze {ppSite s}"

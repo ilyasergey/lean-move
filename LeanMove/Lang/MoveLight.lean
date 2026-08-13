@@ -399,7 +399,14 @@ inductive Binop where
   | mod
   | eq
   | lt
-  | nand
+  | and   -- Move bytecode `And` (boolean conjunction, not `BitAnd`)
+  | or    -- Move bytecode `Or` (boolean disjunction, not `BitOr`)
+deriving Repr, DecidableEq, Inhabited, Hashable
+
+/-- Unary operators. Currently only boolean negation, matching the Move
+    bytecode `Not` instruction; the `Cast*` opcodes would slot in here. -/
+inductive Unop where
+  | not   -- Move bytecode `Not` (boolean negation)
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 -- Expressions
@@ -409,6 +416,7 @@ inductive Expr where
   | borrowField : Site → BasicMoveType → Field → Expr  -- &a.T::f
   | borrowMutField : Site → BasicMoveType → Field → Expr  -- &mut a.T::f
   | binop : Binop → Site → Site → Expr  -- a + b
+  | unop : Unop → Site → Expr  -- !a
   | readRef : Site → Expr  -- *a
   | pack : Id → List (Field × Site) → Expr  -- T { f: a1, ..., f: an }
   | freeze : Site → Expr

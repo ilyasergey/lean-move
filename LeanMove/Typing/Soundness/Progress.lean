@@ -188,6 +188,10 @@ theorem step_danglingRef_source (m : Machine) (loc : Loc) :
       exfalso; simp only [step, hs] at hstep
       revert hstep; split <;> try split <;> try split
       all_goals (intro h; cases h)
+    | unop op a =>
+      exfalso; simp only [step, hs] at hstep
+      revert hstep; split <;> try split
+      all_goals (intro h; cases h)
     | vecPack _ _ =>
       exfalso; simp only [step, hs] at hstep
       revert hstep; split <;> (intro h; simp at h)
@@ -615,8 +619,18 @@ private theorem evalBinopBool_some_of_binop_type_tbool {bop : Binop} {bt3 : Basi
   cases bop <;> simp [binop_type] at hbt <;> intro ba bb
   · -- eq
     exact ⟨.bool (ba == bb), rfl⟩
-  · -- nand
-    exact ⟨.bool (!(ba && bb)), rfl⟩
+  · -- and
+    exact ⟨.bool (ba && bb), rfl⟩
+  · -- or
+    exact ⟨.bool (ba || bb), rfl⟩
+
+/-- If unop_type returns tbool for a bool input, evalUnop always succeeds. -/
+private theorem evalUnop_some_of_unop_type_tbool {uop : Unop} {bt2 : BasicMoveType} :
+    unop_type uop .tbool = some bt2 →
+    ∀ b, ∃ v, evalUnop uop (.bool b) = some v := by
+  intro hbt
+  cases uop <;> simp [unop_type] at hbt <;> intro b
+  exact ⟨.bool (!b), rfl⟩
 
 /-- collectSiteValues succeeds when every site in the list has a value in the store. -/
 private theorem collectSiteValues_some (siteStore : SiteStore) (sites : List Site) :
@@ -1420,6 +1434,28 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
           cases op <;> (cases bt2 <;> simp [binop_type] at hbinop)
         | tenum _ =>
           cases op <;> (cases bt2 <;> simp [binop_type] at hbinop)
+
+    | unop op a =>
+      simp only [step, hs] at hstep
+      cases hst with
+      | let_bind_unop _ _ bt1 bt2 _ _ _ _ ha hunop _ _ =>
+        have ⟨va, hva, hma⟩ := hwt.site_consistent a (.basic bt1) ha
+        have hta : HasType env.enumEnv va bt1 := ValueMatchesType_basic_is_hasType hma
+        change lookup m.frame.siteStore a = some va at hva
+        simp only [readSite, hva] at hstep
+        cases bt1 with
+        | tbool =>
+          have ⟨ba, hba⟩ := HasType_tbool_is_bool hta
+          subst hba
+          have ⟨v, hv⟩ := evalUnop_some_of_unop_type_tbool hunop ba
+          rw [hv] at hstep
+          cases hstep
+        | u64 => cases op <;> simp [unop_type] at hunop
+        | u8 => cases op <;> simp [unop_type] at hunop
+        | tunit => cases op <;> simp [unop_type] at hunop
+        | trecord _ => cases op <;> simp [unop_type] at hunop
+        | tvec _ => cases op <;> simp [unop_type] at hunop
+        | tenum _ => cases op <;> simp [unop_type] at hunop
 
     -- ---- vecPack T elems ----
     | vecPack T elems =>

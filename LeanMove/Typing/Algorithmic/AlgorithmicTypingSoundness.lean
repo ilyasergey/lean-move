@@ -686,6 +686,30 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
           | ref _ _ _ => simp at h
         | ref _ _ _ => simp at h
 
+  -- Unary operation
+  | unop uop src =>
+    simp only [check_stmt] at h
+    cases hlookup : lookup env.siteEnv src with
+    | none => simp [hlookup] at h
+    | some τ =>
+      simp only [hlookup] at h
+      cases τ with
+      | basic bt1 =>
+        cases hunop : unop_type uop bt1 with
+        | none => simp [hunop] at h
+        | some bt2 =>
+          simp only [hunop] at h
+          split at h
+          · rename_i hfresh
+            apply typecheck_stmt.let_bind_unop
+            · exact hlookup
+            · exact hunop
+            · exact hfresh
+            · have hwf' := TypeEnv.delete_insert_wf env src a (.basic bt2) hwf trivial
+              exact ih_cont _ hwf' h
+          · simp at h
+      | ref _ _ _ => simp at h
+
   -- Read reference (dereference)
   | readRef src =>
     simp only [check_stmt] at h

@@ -77,6 +77,18 @@ private theorem inv_binop
   | .let_bind_binop _ _ _ bt1 bt2 bt3 _ _ _ _ _ ha hb hbt _ hcont =>
     ⟨bt1, bt2, bt3, ha, hb, hbt, hcont⟩
 
+private theorem inv_unop
+    (h : typecheck_stmt lenv env (.letBind c (.unop uop a) cont) retTypes) :
+    ∃ bt1 bt2,
+      lookup env.siteEnv a = some (.basic bt1) ∧
+      unop_type uop bt1 = some bt2 ∧
+      typecheck_stmt lenv
+        {env with siteEnv := insert (delete env.siteEnv a) c (.basic bt2)}
+        cont retTypes :=
+  match h with
+  | .let_bind_unop _ _ _ bt1 bt2 _ _ _ _ ha huop _ hcont =>
+    ⟨bt1, bt2, ha, huop, hcont⟩
+
 private theorem inv_copy
     (h : typecheck_stmt lenv env (.letBind a (.usage (.copy x)) cont) retTypes) :
     (∃ bt ms,
@@ -2605,6 +2617,8 @@ private lemma evalBinop_has_type (enumEnv : EnumEnv) (op : Binop) (bt1 bt2 bt3 :
     (try (cases bt1 <;> cases bt2 <;> simp at hbt)) <;>
     subst hbt <;>
     simp only [evalBinop, Option.some.injEq] at heval <;>
+    -- `and`/`or` have no integer instantiation: evalBinop returns none, contradicting heval
+    (try (exact absurd heval (by simp [evalBinop]))) <;>
     (try subst heval) <;>
     first
     | exact HasType.int _
@@ -2785,6 +2799,161 @@ private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : Labe
           have hne_b : s' ≠ sB := by
             intro h; rw [h, lookup_delete_same] at hsite; simp at hsite
           rw [lookup_delete_ne _ sB s' hne_b] at hsite
+          have hne_a : s' ≠ sA := by
+            intro h; rw [h, lookup_delete_same] at hsite; simp at hsite
+          rw [lookup_delete_ne _ sA s' hne_a] at hsite
+          exact Or.inr ⟨s', bk, hsite⟩
+    funEnv_sig_consistent := hwt.funEnv_sig_consistent
+    refs_tracked_mapped := hwt.refs_tracked_mapped
+    lenv_labels_in_blocks := hwt.lenv_labels_in_blocks
+    has_return_info := hwt.has_return_info
+    varStore_locs_bound := hwt.varStore_locs_bound
+  }
+
+/-- If evalUnop succeeds and unop_type determines the output type,
+    the result value has the output type. -/
+private lemma evalUnop_has_type (enumEnv : EnumEnv) (uop : Unop) (bt1 bt2 : BasicMoveType)
+    (va result : Value)
+    (hbt : unop_type uop bt1 = some bt2)
+    (heval : evalUnop uop va = some result) :
+    HasType enumEnv result bt2 := by
+  cases uop with
+  | not =>
+    cases bt1 with
+    | tbool =>
+      simp only [unop_type, Option.some.injEq] at hbt
+      subst hbt
+      cases va with
+      | bool b =>
+        simp only [evalUnop, Option.some.injEq] at heval
+        subst heval; exact HasType.bool _
+      | int _ => simp [evalUnop] at heval
+      | unit => simp [evalUnop] at heval
+      | record _ => simp [evalUnop] at heval
+      | ref _ _ => simp [evalUnop] at heval
+      | vec _ _ => simp [evalUnop] at heval
+      | variant _ _ _ => simp [evalUnop] at heval
+    | u64 => simp [unop_type] at hbt
+    | u8 => simp [unop_type] at hbt
+    | tunit => simp [unop_type] at hbt
+    | trecord _ => simp [unop_type] at hbt
+    | tvec _ => simp [unop_type] at hbt
+    | tenum _ => simp [unop_type] at hbt
+
+private theorem preservation_unop (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
+    (retTypes : List ParamType) (rmap : RefMap)
+    (hwt : WellTypedState m env lenv retTypes rmap)
+    (hss : StackSafe env.enumEnv m.stack m.frame.returnInfo m.heap retTypes)
+    (s : Site) (op : Unop) (sA : Site) (cont : Stmt)
+    (hstmt : m.frame.stmt = .letBind s (.unop op sA) cont)
+    (hstep : step (.running m) = .running m') :
+    ∃ env' lenv' retTypes' rmap',
+      env'.enumEnv = env.enumEnv ∧ WellTypedState m' env' lenv' retTypes' rmap' ∧
+      StackSafe env.enumEnv m'.stack m'.frame.returnInfo m'.heap retTypes' := by
+  obtain ⟨bt1, bt2, ha, hbt, hcont⟩ := inv_unop (by rw [← hstmt]; exact hwt.stmt_typed)
+  obtain ⟨va, hva, hma⟩ := hwt.site_consistent sA (.basic bt1) ha
+  have hrsa : readSite m sA = some va := hva
+  -- Prove site_consistent before destructive case analysis (sA goes out of scope)
+  have hsc : ∀ result, HasType env.enumEnv result bt2 → ∀ s' τ',
+      lookup (insert (delete env.siteEnv sA) s (.basic bt2)) s' = some τ' →
+      ∃ v', lookup (insert m.frame.siteStore s result) s' = some v' ∧
+            ValueMatchesType env.enumEnv v' τ' rmap := by
+    intro result hht_result s' τ' hl
+    by_cases heq : s' = s
+    · subst heq; simp only [lookup_insert_same, Option.some.injEq] at hl; subst hl
+      exact ⟨result, lookup_insert_same _ _ _, hht_result⟩
+    · rw [lookup_insert_ne _ s s' _ heq] at hl
+      have hne_a : s' ≠ sA := by
+        intro h; rw [h, lookup_delete_same] at hl; simp at hl
+      rw [lookup_delete_ne _ sA s' hne_a] at hl
+      obtain ⟨v, hvs, hm⟩ := hwt.site_consistent s' τ' hl
+      exact ⟨v, by rw [lookup_insert_ne _ s s' _ heq]; exact hvs, hm⟩
+  simp only [step, hstmt, hrsa] at hstep
+  have ⟨result, hht_result, hm'_eq⟩ : ∃ result, HasType env.enumEnv result bt2 ∧
+      m' = { frame := { m.frame with
+                siteStore := AssocMap.insert m.frame.siteStore s result
+                stmt := cont },
+             stack := m.stack, heap := m.heap, enumEnv := m.enumEnv } := by
+    cases heval : evalUnop op va with
+    | none => rw [heval] at hstep; nomatch hstep
+    | some v =>
+      rw [heval] at hstep
+      simp only [ExecState.running.injEq] at hstep
+      exact ⟨v, evalUnop_has_type env.enumEnv op bt1 bt2 va v hbt heval, hstep.symm⟩
+  subst hm'_eq
+  refine ⟨{env with siteEnv := insert (delete env.siteEnv sA) s (.basic bt2)},
+          lenv, retTypes, rmap, rfl, ?_, hss⟩
+  exact {
+    env_wf := TypeEnv.delete_insert_wf env sA s (.basic bt2) hwt.env_wf trivial
+    enumEnv_consistent := hwt.enumEnv_consistent
+    enum_qualified_nodup := hwt.enum_qualified_nodup
+    enum_names_nodup := hwt.enum_names_nodup
+    enum_variant_nodup := hwt.enum_variant_nodup
+    enum_fields_nodup := hwt.enum_fields_nodup
+    defaultValues_typed := hwt.defaultValues_typed
+    stmt_typed := hcont
+    var_consistent := hwt.var_consistent
+    site_consistent := hsc result hht_result
+    rmap_live := hwt.rmap_live
+    rmap_paths := hwt.rmap_paths
+    varEnv_refs_in_pathEnv := hwt.varEnv_refs_in_pathEnv
+    siteEnv_refs_in_pathEnv := by
+      intro s' bt r bk hl
+      by_cases heq : s' = s
+      · subst heq; simp [lookup_insert_same] at hl
+      · rw [lookup_insert_ne _ s s' _ heq] at hl
+        have hne_a : s' ≠ sA := by
+          intro h; rw [h, lookup_delete_same] at hl; simp at hl
+        rw [lookup_delete_ne _ sA s' hne_a] at hl
+        exact hwt.siteEnv_refs_in_pathEnv s' bt r bk hl
+    live_refs_unique := by
+      intro r'
+      refine ⟨fun x bt bk ms s' bt' bk' hv hs => ?_,
+              fun s1 s2 bt1' bt2' bk1 bk2 hne hs1 hs2 => ?_,
+              fun x y bt1' bt2' bk1 bk2 ms1 ms2 hne hx hy =>
+                (hwt.live_refs_unique r').2.2 x y bt1' bt2' bk1 bk2 ms1 ms2 hne hx hy⟩
+      · by_cases heq : s' = s
+        · subst heq; simp [lookup_insert_same] at hs
+        · rw [lookup_insert_ne _ s s' _ heq] at hs
+          have hne_a : s' ≠ sA := by
+            intro h; rw [h, lookup_delete_same] at hs; simp at hs
+          rw [lookup_delete_ne _ sA s' hne_a] at hs
+          exact (hwt.live_refs_unique r').1 x bt bk ms s' bt' bk' hv hs
+      · by_cases heq1 : s1 = s
+        · subst heq1; simp [lookup_insert_same] at hs1
+        · by_cases heq2 : s2 = s
+          · subst heq2; simp [lookup_insert_same] at hs2
+          · rw [lookup_insert_ne _ s s1 _ heq1] at hs1
+            rw [lookup_insert_ne _ s s2 _ heq2] at hs2
+            have hne1_a : s1 ≠ sA := by
+              intro h; rw [h, lookup_delete_same] at hs1; simp at hs1
+            have hne2_a : s2 ≠ sA := by
+              intro h; rw [h, lookup_delete_same] at hs2; simp at hs2
+            rw [lookup_delete_ne _ sA s1 hne1_a] at hs1
+            rw [lookup_delete_ne _ sA s2 hne2_a] at hs2
+            exact (hwt.live_refs_unique r').2.1 s1 s2 bt1' bt2' bk1 bk2 hne hs1 hs2
+    blocks_typed := hwt.blocks_typed
+    lenv_empty_siteEnv := hwt.lenv_empty_siteEnv
+    lenv_wf := hwt.lenv_wf
+    lenv_var_tracked := hwt.lenv_var_tracked
+    lenv_var_unique := hwt.lenv_var_unique
+    lenv_funEnv_eq := hwt.lenv_funEnv_eq
+    funEnv_typed := hwt.funEnv_typed
+    heap_loc_bound := hwt.heap_loc_bound
+    rmap_root_none := hwt.rmap_root_none
+    no_paths_to_root := hwt.no_paths_to_root
+    root_path_coherence := hwt.root_path_coherence
+    paths_from_non_member_empty := hwt.paths_from_non_member_empty
+    paths_to_non_member_empty := hwt.paths_to_non_member_empty
+    self_loop_only_empty := hwt.self_loop_only_empty
+    rmap_has_type := by
+      intro r bt loc path hrmap hcond
+      apply hwt.rmap_has_type r bt loc path hrmap
+      rcases hcond with ⟨x, bk, ms, hvar⟩ | ⟨s', bk, hsite⟩
+      · exact Or.inl ⟨x, bk, ms, hvar⟩
+      · by_cases heq : s' = s
+        · subst heq; simp [lookup_insert_same] at hsite
+        · rw [lookup_insert_ne _ s s' _ heq] at hsite
           have hne_a : s' ≠ sA := by
             intro h; rw [h, lookup_delete_same] at hsite; simp at hsite
           rw [lookup_delete_ne _ sA s' hne_a] at hsite
@@ -11117,6 +11286,7 @@ theorem preservation (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     | freeze src => exact preservation_freeze m m' env lenv retTypes rmap hwt hss s src cont hstmt hstep
     | pack name fieldSites => exact preservation_pack m m' env lenv retTypes rmap hwt hss s name fieldSites cont hstmt hstep
     | binop op a b => exact preservation_binop m m' env lenv retTypes rmap hwt hss s op a b cont hstmt hstep
+    | unop op a => exact preservation_unop m m' env lenv retTypes rmap hwt hss s op a cont hstmt hstep
     -- Vector Expr operations
     | vecPack T elems => exact preservation_vecPack m m' env lenv retTypes rmap hwt hss s T elems cont hstmt hstep
     | vecLen src => exact preservation_vecLen m m' env lenv retTypes rmap hwt hss s src cont hstmt hstep

@@ -45,6 +45,7 @@ inductive MvirExpr where
       -- is_mut × source_expr × struct_name × field_name
   | deref : MvirExpr → MvirExpr                               -- *e
   | binop : String → MvirExpr → MvirExpr → MvirExpr           -- e1 op e2
+  | unop : String → MvirExpr → MvirExpr                       -- op e
   | pack : String → List (String × MvirExpr) → MvirExpr       -- T { f: e, ... }
   | packVariant : String → String → List (String × MvirExpr) → MvirExpr
       -- enum_name × variant_name × [(field, expr)]            -- Enum.Variant { f: e, ... }

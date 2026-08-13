@@ -250,9 +250,22 @@ partial def flattenExpr (e : MvirExpr) : TransM FlatResult := do
       | "%" => Binop.mod
       | "==" => Binop.eq
       | "<" => Binop.lt
+      | "&&" => Binop.and
+      | "||" => Binop.or
+      -- FIXME: `!=`, `>=`, `<=` and `>` parse but have no MoveLight Binop, so they
+      -- fall through to `add` here and are silently mistranslated. Adding the
+      -- Neq/Ge/Le/Gt opcodes would remove this fallback.
       | _ => Binop.add -- fallback
     pure { bindings := lhsR.bindings ++ rhsR.bindings ++
            [(s, .binop binopKind lhsR.result rhsR.result)], result := s }
+  | .unop op operand =>
+    let operandR ← flattenExpr operand
+    let s ← freshSite
+    let unopKind := match op with
+      | "!" => Unop.not
+      | _ => Unop.not -- only `!` is produced by the parser
+    pure { bindings := operandR.bindings ++ [(s, .unop unopKind operandR.result)],
+           result := s }
   | .vecOp opName ty args =>
     let elemTy := resolveBasicType structs enums ty
     match opName with
