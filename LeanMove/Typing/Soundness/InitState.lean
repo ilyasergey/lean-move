@@ -116,7 +116,9 @@ private lemma sizeOf_lookup_le [BEq α] [SizeOf α] [SizeOf β]
     with a `where`-clause helper for record field entries (same pattern as
     `BasicMoveType.beq`). -/
 def hasType_bool : Value → BasicMoveType → Bool
-  | .int _ w1, .int w2 => w1 == w2
+  -- Both halves of `HasType.int`: the width has to agree *and* the value has to
+  -- fit. Dropping the range check here would make `hasType_bool` unsound.
+  | .int n w1, .int w2 => w1 == w2 && decide (n < w2.max)
   | .bool _, .tbool => true
   | .unit, .tunit => true
   | .record fields, .trecord fentries =>
@@ -133,7 +135,8 @@ where
 
 -- Manual simp lemmas for hasType_bool (equational theorem generation
 -- fails for where-clause mutual definitions in Lean 4.27)
-@[simp] theorem hasType_bool_int_int (n w1 w2) : hasType_bool (.int n w1) (.int w2) = (w1 == w2) := rfl
+@[simp] theorem hasType_bool_int_int (n w1 w2) :
+    hasType_bool (.int n w1) (.int w2) = (w1 == w2 && decide (n < w2.max)) := rfl
 @[simp] theorem hasType_bool_bool_tbool (b) : hasType_bool (.bool b) .tbool = true := rfl
 @[simp] theorem hasType_bool_unit_tunit : hasType_bool .unit .tunit = true := rfl
 @[simp] theorem hasType_bool_record_trecord (fields fentries) :
@@ -188,10 +191,13 @@ mutual
   theorem hasType_bool_sound : ∀ (enumEnv : EnumEnv) (v : Value) (bt : BasicMoveType),
       hasType_bool v bt = true → HasType enumEnv v bt
     | ee, .int n w1, .int w2, h => by
-        -- The checker compares widths, so `h` is exactly `w1 = w2`.
-        simp only [hasType_bool_int_int, beq_iff_eq] at h
-        subst h
-        exact HasType.int n w1
+        -- The checker tests both halves, so `h` splits into the width equality
+        -- and the range bound.
+        simp only [hasType_bool_int_int, Bool.and_eq_true, beq_iff_eq,
+                   decide_eq_true_eq] at h
+        obtain ⟨hw, hlt⟩ := h
+        subst hw
+        exact HasType.int n w1 hlt
     | ee, .bool b, .tbool, _ => HasType.bool b
     | ee, .unit, .tunit, _ => HasType.unit
     | ee, .record fields, .trecord fentries, h => by
@@ -909,7 +915,7 @@ private theorem HasType_of_lookupEquiv {ee1 ee2 : EnumEnv} (hle : LookupEquiv ee
     ∀ v bt, HasType ee1 v bt → HasType ee2 v bt := by
   intro v bt h
   induction h with
-  | int n w => exact HasType.int n w
+  | int n w hlt => exact HasType.int n w hlt
   | bool b => exact HasType.bool b
   | unit => exact HasType.unit
   | record fields fentries hcover1 hcover2 hfields ih_fields =>

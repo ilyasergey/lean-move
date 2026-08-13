@@ -48,7 +48,10 @@ open Regex
     Split into two hypotheses to avoid nested inductive issues with ∃.
     Now takes an EnumEnv parameter to resolve enum types. -/
 inductive HasType (enumEnv : EnumEnv) : Value → BasicMoveType → Prop where
-  | int : ∀ n w, HasType enumEnv (.int n w) (.int w)
+  -- The range side condition is what makes the width meaningful: a `u8` value
+  -- is a `Nat` *below 2^8*, so every step producing an integer has to
+  -- re-establish the bound (see `evalBinop`'s guards).
+  | int : ∀ n w, n < w.max → HasType enumEnv (.int n w) (.int w)
   | bool : ∀ b, HasType enumEnv (.bool b) .tbool
   | unit : HasType enumEnv .unit .tunit
   | record : ∀ fields fentries,
@@ -74,7 +77,7 @@ theorem HasType_enumEnv_transfer {ee1 ee2 : EnumEnv} {v : Value} {bt : BasicMove
     (heq : ∀ en, ee1.lookup en = ee2.lookup en) :
     HasType ee2 v bt := by
   induction h with
-  | int n w => exact .int n w
+  | int n w hlt => exact .int n w hlt
   | bool b => exact .bool b
   | unit => exact .unit
   | record fields fentries h1 h2 h3 ih =>
@@ -96,7 +99,7 @@ theorem HasType_enumEnv_weaken {ee1 ee2 : EnumEnv} {v : Value} {bt : BasicMoveTy
     (hext : ∀ en ed, ee1.lookup en = some ed → ee2.lookup en = some ed) :
     HasType ee2 v bt := by
   induction h with
-  | int n w => exact .int n w
+  | int n w hlt => exact .int n w hlt
   | bool b => exact .bool b
   | unit => exact .unit
   | record fields fentries h1 h2 h3 ih =>

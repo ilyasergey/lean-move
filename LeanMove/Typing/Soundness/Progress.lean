@@ -300,7 +300,8 @@ private theorem no_danglingRef_vecLen (m : Machine) (env : TypeEnv) (lenv : Labe
     simp only [step, hstmt, readSite, hv] at hstep
     cases hr : m.heap.readRef loc' path' with
     | none => exact absurd hr hheap
-    | some val => revert hstep; split <;> simp_all
+    -- the inner `try split` handles `vecLen`'s length-fits-in-`u64` guard
+    | some val => revert hstep; split <;> (try split) <;> simp_all
 
 /-- A well-typed vecPopBack never produces a danglingRef error. -/
 private theorem no_danglingRef_vecPopBack (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
@@ -1380,9 +1381,19 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
               dsimp only at hstep
               cases hev : evalBinop op na nb w1 with
               | none =>
+                -- The failure is now reported as `divisionByZero` *or*
+                -- `arithmeticError`; both are acceptable.
                 rw [hev] at hstep
-                simp only [ExecState.error.injEq] at hstep
-                subst hstep; simp
+                dsimp only at hstep
+                by_cases hdz : ((op == Binop.div || op == Binop.mod) && nb == 0) = true
+                · rw [if_pos hdz] at hstep
+                  injection hstep with he
+                  subst he
+                  simp
+                · rw [if_neg hdz] at hstep
+                  injection hstep with he
+                  subst he
+                  simp
               | some v =>
                 rw [hev] at hstep
                 cases hstep
@@ -1480,7 +1491,16 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
           (Or.inr ⟨src, isBor, hsrc⟩)
         have ⟨elems, hval_eq⟩ := HasType.vec_elems hht
         subst hval_eq
-        rw [hread] at hstep; simp only [] at hstep; cases hstep
+        -- `vecLen` now guards on the length fitting in `u64`; the `else` branch
+        -- is `vectorError`, which is acceptable.
+        rw [hread] at hstep
+        dsimp only at hstep
+        by_cases helen : elems.length < IntType.u64.max
+        · rw [if_pos helen] at hstep; cases hstep
+        · rw [if_neg helen] at hstep
+          injection hstep with he
+          subst he
+          simp
 
     -- ---- vecImmBorrow src idx ----
     | vecImmBorrow src idx =>

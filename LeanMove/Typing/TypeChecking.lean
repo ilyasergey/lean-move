@@ -449,6 +449,10 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
 
   -- let a = n; cont (integer literal)
   | let_bind_intLit : ∀ (lenv : LabelEnv) (env : TypeEnv) (a : Site) (n : Nat) (w : IntType) cont retTypes,
+      -- A literal too large for its width is rejected statically. In Move this
+      -- is unrepresentable (`LdU8` carries a `u8`); in our AST it is not, so the
+      -- rule has to rule it out.
+      n < w.max →
       notIn env.siteEnv a →
       typecheck_stmt lenv
         {env with siteEnv := insert env.siteEnv a (.basic (.int w))}

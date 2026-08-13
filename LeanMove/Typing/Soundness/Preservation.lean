@@ -45,7 +45,12 @@ open Regex
 private theorem inv_intLit
     (h : typecheck_stmt lenv env (.letBind s (.intLit n w) cont) retTypes) :
     typecheck_stmt lenv {env with siteEnv := insert env.siteEnv s (.basic (.int w))} cont retTypes :=
-  match h with | .let_bind_intLit _ _ _ _ _ _ _ _ hc => hc
+  match h with | .let_bind_intLit _ _ _ _ _ _ _ _ _ hc => hc
+
+/-- The literal's range premise, needed to build `HasType` for the stored value. -/
+private theorem inv_intLit_lt
+    (h : typecheck_stmt lenv env (.letBind s (.intLit n w) cont) retTypes) : n < w.max :=
+  match h with | .let_bind_intLit _ _ _ _ _ _ _ hlt _ _ => hlt
 
 private theorem inv_release
     (h : typecheck_stmt lenv env (.release site cont) retTypes) :
@@ -640,6 +645,7 @@ private theorem preservation_intLit (m m' : Machine) (env : TypeEnv) (lenv : Lab
       StackSafe env.enumEnv m'.stack m'.frame.returnInfo m'.heap retTypes' := by
   simp only [step, hstmt, ExecState.running.injEq] at hstep; subst hstep
   have hcont := inv_intLit (by rw [← hstmt]; exact hwt.stmt_typed)
+  have hlt := inv_intLit_lt (by rw [← hstmt]; exact hwt.stmt_typed)
   refine ⟨{env with siteEnv := insert env.siteEnv s (.basic (.int w))},
           lenv, retTypes, rmap, rfl, ?_, hss⟩
   exact {
@@ -653,7 +659,7 @@ private theorem preservation_intLit (m m' : Machine) (env : TypeEnv) (lenv : Lab
     stmt_typed := hcont
     var_consistent := hwt.var_consistent
     site_consistent := site_consistent_insert_basic m env rmap s (.int n w)
-        (.basic (.int w)) hwt.site_consistent (HasType.int n w)
+        (.basic (.int w)) hwt.site_consistent (HasType.int n w hlt)
     rmap_live := hwt.rmap_live
     rmap_paths := hwt.rmap_paths
     varEnv_refs_in_pathEnv := hwt.varEnv_refs_in_pathEnv
@@ -2610,41 +2616,76 @@ private theorem preservation_readRef (m m' : Machine) (env : TypeEnv) (lenv : La
     the result value has the output type. -/
 private lemma evalBinop_has_type (enumEnv : EnumEnv) (op : Binop) (w1 w2 : IntType)
     (bt3 : BasicMoveType) (na nb : Nat) (result : Value)
+    (hna : na < w1.max)
     (hbt : binop_type op (.int w1) (.int w2) = some bt3)
     (heval : evalBinop op na nb w1 = some result) :
     HasType enumEnv result bt3 := by
-  -- `binop_type` pins `bt3` down from the operator, so case on the operator and
-  -- then read the result type straight off `evalBinop`.
-  -- Note: no alternative below may use a nested `by`, since an unsolved goal
-  -- inside one is *reported* rather than failing the enclosing `first`/`try`.
+  -- Written out per operator rather than as one `cases op <;> …` sweep: the
+  -- five arithmetic operators each discharge the range obligation differently.
+  -- `add`/`mul` get it straight from their own overflow guard; `sub` gets
+  -- `b ≤ a` from its guard and the bound from `hna`; `div`/`mod` are unguarded
+  -- and rely on their results being bounded by the dividend.
   by_cases hw : w1 = w2
-  · -- Equal widths: the operand width is `w1`, and every arithmetic row of
-    -- `binop_type` returns `.int w1`.
-    subst hw
-    cases op <;>
-      simp only [binop_type, beq_self_eq_true, if_true] at hbt <;>
-      first
-      -- `and`/`or` have no integer instantiation: `binop_type` returned `none`
-      | exact Option.noConfusion hbt
-      | (simp only [Option.some.injEq] at hbt
-         subst hbt
-         simp only [evalBinop] at heval
-         first
-         -- add/sub/mul
-         | (simp only [Option.some.injEq] at heval; subst heval; exact HasType.int _ _)
-         -- the comparisons eq/neq/lt/gt/le/ge, all of which yield `tbool`
-         | (simp only [Option.some.injEq] at heval; subst heval; exact HasType.bool _)
-         | (-- div/mod: heval still has a match on the divisor
-            cases nb with
-            | zero => simp at heval
-            | succ n =>
-              -- `simp` substitutes `result` and may already discharge the goal
-              simp at heval
-              all_goals (subst heval; exact HasType.int _ _)))
-      -- `and`/`or` at integer type: `binop_type` is `none`, so `hbt` is absurd.
-      -- `simp only [binop_type]` does not reduce the catch-all arm, hence the
-      -- full `simp` here rather than an `Option.noConfusion`.
-      | (exfalso; simp [binop_type] at hbt)
+  · subst hw
+    cases op with
+    | add =>
+      simp only [binop_type, beq_self_eq_true, if_true, Option.some.injEq] at hbt
+      subst hbt
+      simp only [evalBinop] at heval
+      split at heval
+      · rename_i hlt
+        simp only [Option.some.injEq] at heval
+        subst heval
+        exact HasType.int _ _ hlt
+      · nomatch heval
+    | mul =>
+      simp only [binop_type, beq_self_eq_true, if_true, Option.some.injEq] at hbt
+      subst hbt
+      simp only [evalBinop] at heval
+      split at heval
+      · rename_i hlt
+        simp only [Option.some.injEq] at heval
+        subst heval
+        exact HasType.int _ _ hlt
+      · nomatch heval
+    | sub =>
+      simp only [binop_type, beq_self_eq_true, if_true, Option.some.injEq] at hbt
+      subst hbt
+      simp only [evalBinop] at heval
+      split at heval
+      · simp only [Option.some.injEq] at heval
+        subst heval
+        -- `na - nb ≤ na < w.max`; the guard only rules out underflow.
+        exact HasType.int _ _ (Nat.lt_of_le_of_lt (Nat.sub_le _ _) hna)
+      · nomatch heval
+    | div =>
+      simp only [binop_type, beq_self_eq_true, if_true, Option.some.injEq] at hbt
+      subst hbt
+      cases nb with
+      | zero => simp [evalBinop] at heval
+      | succ k =>
+        simp only [evalBinop, Option.some.injEq] at heval
+        subst heval
+        exact HasType.int _ _ (Nat.lt_of_le_of_lt (Nat.div_le_self _ _) hna)
+    | mod =>
+      simp only [binop_type, beq_self_eq_true, if_true, Option.some.injEq] at hbt
+      subst hbt
+      cases nb with
+      | zero => simp [evalBinop] at heval
+      | succ k =>
+        simp only [evalBinop, Option.some.injEq] at heval
+        subst heval
+        exact HasType.int _ _ (Nat.lt_of_le_of_lt (Nat.mod_le _ _) hna)
+    -- The comparisons all yield `tbool`.
+    | eq | neq | lt | gt | le | ge =>
+      simp only [binop_type, beq_self_eq_true, if_true, Option.some.injEq] at hbt
+      subst hbt
+      simp only [evalBinop, Option.some.injEq] at heval
+      subst heval
+      exact HasType.bool _
+    -- `and`/`or` are the boolean opcodes: no integer instantiation, so
+    -- `binop_type` is `none` and `hbt` is absurd.
+    | and | or => exfalso; simp [binop_type] at hbt
   · -- Mixed widths never typecheck: every integer row guards on `w1 == w2`.
     exfalso; cases op <;> simp [binop_type, hw] at hbt
 
@@ -2700,10 +2741,23 @@ private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : Labe
         have htb : HasType env.enumEnv vb bt2 := hmb
         rw [hva_eq] at hta
         rw [hvb_eq] at htb
+        -- The same judgement also carries the operand's range bound, which is
+        -- what `evalBinop_has_type` needs for the unguarded `div`/`mod` rows.
+        have hna : na < wa.max := by
+          cases hta
+          assumption
         cases hta
         cases htb
-        cases heval : evalBinop op na nb wa <;> simp [heval] at hstep
-        exact ⟨_, evalBinop_has_type env.enumEnv op wa wb bt3 na nb _ hbt heval, hstep.symm⟩
+        cases heval : evalBinop op na nb wa with
+        | none =>
+          -- an arithmetic abort, so this is not a `.running` step at all
+          rw [heval] at hstep
+          dsimp only at hstep
+          split at hstep <;> nomatch hstep
+        | some v =>
+          simp [heval] at hstep
+          exact ⟨v, evalBinop_has_type env.enumEnv op wa wb bt3 na nb v hna hbt heval,
+                 hstep.symm⟩
       | bool _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
       | unit => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
       | record _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
@@ -7542,7 +7596,15 @@ private theorem preservation_vecLen (m m' : Machine) (env : TypeEnv) (lenv : Lab
   -- Simplify step
   have hrs : readSite m src = some (.ref loc path) := by unfold readSite; exact hvsrc
   have hread : m.heap.readRef loc path = some (.vec T elems) := hread_heap
-  simp only [step, hstmt, hrs, hread, ExecState.running.injEq] at hstep
+  simp only [step, hstmt, hrs, hread] at hstep
+  -- The step produced a `.running` state, so `vecLen`'s length guard was taken;
+  -- recovering it here keeps the rest of the proof linear.
+  have helen : elems.length < IntType.u64.max := by
+    by_contra hc
+    rw [if_neg hc] at hstep
+    nomatch hstep
+  rw [if_pos helen] at hstep
+  simp only [ExecState.running.injEq] at hstep
   subst hstep
   -- r is not root
   have hr_not_root : r ≠ .root := hwt.env_wf.siteEnv_wf src _ hlookup_src
@@ -7567,7 +7629,7 @@ private theorem preservation_vecLen (m m' : Machine) (env : TypeEnv) (lenv : Lab
       intro s' τ' hl
       by_cases heq : s' = s
       · subst heq; simp only [lookup_insert_same, Option.some.injEq] at hl; subst hl
-        exact ⟨.int elems.length .u64, lookup_insert_same _ _ _, HasType.int _ _⟩
+        exact ⟨.int elems.length .u64, lookup_insert_same _ _ _, HasType.int _ _ helen⟩
       · rw [lookup_insert_ne _ s s' _ heq] at hl
         have hne_src : s' ≠ src := by
           intro h; subst h; rw [lookup_delete_same] at hl; simp at hl

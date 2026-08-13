@@ -269,6 +269,7 @@ inductive RuntimeError where
   | danglingRef        : Loc → RuntimeError
   | invalidFieldAccess : Field → RuntimeError
   | divisionByZero     : RuntimeError
+  | arithmeticError    : RuntimeError  -- overflow / underflow / out-of-range cast
   | outOfFuel          : RuntimeError
   | aborted            : RuntimeError
   | arityMismatch      : String → RuntimeError
@@ -279,6 +280,9 @@ deriving Repr
 /-- An error is "acceptable" if the type system does not prevent it. -/
 @[simp] def RuntimeError.isAcceptable : RuntimeError → Prop
   | .divisionByZero => True
+  -- Move aborts with ARITHMETIC_ERROR on overflow; the borrow checker does not
+  -- and cannot prevent it, so it joins division-by-zero as an accepted outcome.
+  | .arithmeticError => True
   | .outOfFuel => True
   | .aborted => True
   | .vectorError => True
@@ -343,13 +347,20 @@ def findBlock (blocks : List Block) (label : Label) : Option Block :=
 -- Helper: Binary operations
 -- ============================================================
 
-/-- Evaluate a binary operation on two integers of width `w`. The width is
-    threaded through because the arithmetic results are themselves `w`-typed;
-    it is what will let the range guards of the next phase be expressed here. -/
+/-- Evaluate a binary operation on two integers of width `w`.
+
+    Arithmetic is range-checked against `w`: Move aborts with an arithmetic
+    error on overflow rather than wrapping, so the out-of-range cases return
+    `none` here and become `RuntimeError.arithmeticError` in `step`. Note that
+    `sub` must test `a < b` explicitly — Lean's `Nat` subtraction truncates at
+    zero, which would silently turn an underflow into `0`.
+
+    `div`/`mod` cannot overflow (both results are bounded by `a`), so their only
+    failure is a zero divisor. -/
 def evalBinop : Binop → Nat → Nat → IntType → Option Value
-  | .add, a, b, w => some (.int (a + b) w)
-  | .sub, a, b, w => some (.int (a - b) w)
-  | .mul, a, b, w => some (.int (a * b) w)
+  | .add, a, b, w => if a + b < w.max then some (.int (a + b) w) else none
+  | .sub, a, b, w => if b ≤ a then some (.int (a - b) w) else none
+  | .mul, a, b, w => if a * b < w.max then some (.int (a * b) w) else none
   | .div, _, 0, _ => none  -- division by zero
   | .div, a, b, w => some (.int (a / b) w)
   | .mod, _, 0, _ => none
@@ -700,7 +711,11 @@ def step (state : ExecState) : ExecState :=
         match readSite m a, readSite m b with
         | some (.int na wa), some (.int nb _) =>
           match evalBinop op na nb wa with
-          | none => .error .divisionByZero
+          -- `evalBinop` collapses both arithmetic failures into `none`; recover
+          -- which one it was, since Move reports them as distinct aborts.
+          | none =>
+            if (op == .div || op == .mod) && nb == 0 then .error .divisionByZero
+            else .error .arithmeticError
           | some v =>
             .running {
               frame := { f with
@@ -763,13 +778,18 @@ def step (state : ExecState) : ExecState :=
         | some (.ref loc path) =>
           match m.heap.readRef loc path with
           | some (.vec _ elems) =>
-            .running {
-              frame := { f with
-                siteStore := AssocMap.insert f.siteStore s (.int elems.length .u64)
-                stmt := cont }
-              stack := m.stack
-              heap := m.heap
-              enumEnv := m.enumEnv }
+            -- A `u64` result has to be in range. A Lean `List` has no length
+            -- bound, so guard rather than assume; `vectorError` is already an
+            -- accepted error, which keeps this off the `WellTypedState` invariant.
+            if elems.length < IntType.u64.max then
+              .running {
+                frame := { f with
+                  siteStore := AssocMap.insert f.siteStore s (.int elems.length .u64)
+                  stmt := cont }
+                stack := m.stack
+                heap := m.heap
+                enumEnv := m.enumEnv }
+            else .error .vectorError
           | some _ => .error (.typeMismatch "vecLen on non-vector")
           | none => .error (.danglingRef loc)
         | some _ => .error (.typeMismatch "vecLen on non-ref")

@@ -526,9 +526,11 @@ lemma check_letBind_sound (lenv : LabelEnv) (env : TypeEnv) (a : Site) (e : Expr
   | intLit n w =>
     simp only [check_stmt] at h
     split at h
-    · rename_i hfresh
+    · -- the guard is now `n < w.max ∧ notIn …`
+      rename_i hcond
       apply typecheck_stmt.let_bind_intLit
-      · exact hfresh
+      · exact hcond.1
+      · exact hcond.2
       · have hwf' := TypeEnv.insert_siteEnv_wf env a (.basic (.int w)) hwf trivial
         exact ih_cont _ hwf' h
     · simp at h

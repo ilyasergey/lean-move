@@ -1,0 +1,158 @@
+/-
+ Copyright Ilya Sergey
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+      https://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-/
+
+
+import LeanMove.Lang.MoveLight
+import LeanMove.Typing.TypeChecking
+import LeanMove.Typing.Algorithmic.AlgorithmicTypeChecking
+import LeanMove.Typing.Algorithmic.DecidableTypeEnv
+import LeanMove.Lang.Macros
+
+/-!
+# Mixed-Width Arithmetic and Out-of-Range Literals — Rejected
+
+Move has no implicit integer coercion: every arithmetic and comparison opcode
+requires both operands to have the *same* width, and a widening must be written
+as an explicit `CastU*`. Each integer row of `binop_type` therefore guards on
+`w1 == w2`:
+
+- `binop_type .add (.int .u8) (.int .u64) = none`
+- `binop_type .lt  (.int .u8) (.int .u64) = none`
+
+A literal too large for its declared width is likewise rejected, by the
+`n < w.max` premise of `let_bind_intLit`. In Move this case is unrepresentable
+(the `LdU8` opcode carries a `u8`), but our AST admits `Expr.intLit 256 .u8`,
+so the typing rule has to rule it out.
+
+```
+fn_add_mixed(a: u8, b: u64): u64 {
+label b0:
+    s0 = copy(a); s1 = copy(b);
+    s2 = s0 + s1;          // REJECTED: binop_type .add u8 u64 = none
+    return s2;
+}
+
+fn_u8_literal_too_big(): u8 {
+label b0:
+    s0 = 256u8;            // REJECTED: 256 is not < 2^8
+    return s0;
+}
+```
+-/
+
+open LeanMove.Lang
+open LeanMove.Lang.MoveLight
+open LeanMove.Typing
+open AssocMap
+
+namespace LeanMove.Tests.Litmus.MixedWidthArith
+
+-- Variables
+def var_a : Var := ⟨"a"⟩
+def var_b : Var := ⟨"b"⟩
+
+-- Sites
+def s0 : Site := .site 0
+def s1 : Site := .site 1
+def s2 : Site := .site 2
+
+/-
+  `Add` on a u8 and a u64 — should be rejected.
+-/
+def fn_add_mixed : FunDef := {
+  params := [(var_a, .basic .u8), (var_b, .basic .u64)]
+  returnType := [⟨.u64, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite s0 ← copy var_a) ;;
+        (letsite s1 ← copy var_b) ;;
+        (letsite s2 ← binop(.add, s0, s1)) ;;   -- REJECTED
+        ret [s2]
+    }
+  ]
+}
+
+def fn_add_mixed_lenv := mkLabelEnv fn_add_mixed
+
+#guard !check_fun fn_add_mixed fn_add_mixed_lenv AssocMap.empty
+
+/-
+  Comparison across widths is rejected for the same reason: `Lt` is only
+  defined at equal operand widths, even though its result is `bool` either way.
+-/
+def fn_lt_mixed : FunDef := {
+  params := [(var_a, .basic .u8), (var_b, .basic .u64)]
+  returnType := [⟨.tbool, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite s0 ← copy var_a) ;;
+        (letsite s1 ← copy var_b) ;;
+        (letsite s2 ← binop(.lt, s0, s1)) ;;    -- REJECTED
+        ret [s2]
+    }
+  ]
+}
+
+def fn_lt_mixed_lenv := mkLabelEnv fn_lt_mixed
+
+#guard !check_fun fn_lt_mixed fn_lt_mixed_lenv AssocMap.empty
+
+/-
+  A `u8` literal of 256 — one past the largest `u8`.
+-/
+def fn_u8_literal_too_big : FunDef := {
+  params := []
+  returnType := [⟨.u8, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite s0 ← #256 IntType.u8) ;;       -- REJECTED
+        ret [s0]
+    }
+  ]
+}
+
+def fn_u8_literal_too_big_lenv := mkLabelEnv fn_u8_literal_too_big
+
+#guard !check_fun fn_u8_literal_too_big fn_u8_literal_too_big_lenv AssocMap.empty
+
+/-
+  The boundary case: 255 *is* a `u8`, so the same shape is accepted. This pins
+  the bound as exclusive rather than off by one.
+-/
+def fn_u8_literal_max : FunDef := {
+  params := []
+  returnType := [⟨.u8, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite s0 ← #255 IntType.u8) ;;
+        ret [s0]
+    }
+  ]
+}
+
+def fn_u8_literal_max_lenv := mkLabelEnv fn_u8_literal_max
+
+#guard check_fun fn_u8_literal_max fn_u8_literal_max_lenv AssocMap.empty
+
+end LeanMove.Tests.Litmus.MixedWidthArith

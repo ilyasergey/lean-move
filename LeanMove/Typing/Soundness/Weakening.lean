@@ -2519,6 +2519,7 @@ private theorem weaken_let_bind_intLit
     (lenv : LabelEnv) (envL env : TypeEnv)
     (a : Site) (n : Nat) (w : IntType)
     (cont : Stmt) (retTypes : List ParamType)
+    (hlt : n < w.max)
     (hnotIn : notIn envL.siteEnv a)
     (hsub : TypeEnv.subsumes envL env)
     (hfuneq : envL.funEnv = env.funEnv)
@@ -2538,6 +2539,7 @@ private theorem weaken_let_bind_intLit
     typecheck_stmt lenv env (.letBind a (.intLit n w) cont) retTypes := by
   obtain ⟨σ, hid, hve, hse, hrefs, hinj, hnonroot, hpaths, henum_equiv⟩ := hsub
   apply typecheck_stmt.let_bind_intLit
+  · exact hlt
   · exact SiteEnvSubstEquiv_notIn σ _ _ _ hse hnotIn
   · apply ih
     · exact ⟨σ, hid, hve,
@@ -7884,8 +7886,8 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
     exact typecheck_stmt.abort lenv env _ _ _
       (SiteEnvSubstEquiv_lookup_some σ _ _ _ _ hse hlook)
   -- ==================== Non-terminal, no pathEnv change ====================
-  | let_bind_intLit _ _ _ _ _ _ hnotIn _ ih =>
-    exact weaken_let_bind_intLit lenv _ env _ _ _ _ _ hnotIn
+  | let_bind_intLit _ _ _ _ _ _ hlt hnotIn _ ih =>
+    exact weaken_let_bind_intLit lenv _ env _ _ _ _ _ hlt hnotIn
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   | let_bind_copy_val _ _ _ _ _ _ _ hlookup hnotIn _ ih =>

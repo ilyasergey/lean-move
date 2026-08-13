@@ -23,6 +23,7 @@ import LeanMove.Tests.Typechecking.litmus.accepted.borrow_in_loop_fixed_ok
 import LeanMove.Tests.Typechecking.litmus.accepted.deref_borrow_field_ok
 import LeanMove.Tests.Typechecking.litmus.accepted.call_rule_ok
 import LeanMove.Tests.Typechecking.litmus.accepted.return_param_ref_ok
+import LeanMove.Tests.Typechecking.litmus.accepted.sized_int_arith_ok
 import LeanMove.Tests.Typechecking.expressivity.accepted.alias_writes
 import LeanMove.Tests.Typechecking.expressivity.accepted.alias_write_after_join
 import LeanMove.Tests.Typechecking.expressivity.accepted.extension_after_call
@@ -848,5 +849,57 @@ private theorem ge_branch_no_danglingRef :
     ∀ n loc, run n (initState fn_ge_branch empty [.int 5 .u64, .int 3 .u64]) ≠ .error (.danglingRef loc) :=
   type_soundness_dec_no_danglingRef fn_ge_branch fn_ge_branch_lenvDec empty empty empty
     [.int 5 .u64, .int 3 .u64] Heap.empty (by native_decide)
+
+end
+
+-- ============================================================
+-- 16. sized_int_arith_ok — width-checked arithmetic at run time
+-- ============================================================
+section
+open LeanMove.Tests.Litmus.SizedIntArithOk
+
+-- Ordinary subtraction halts with the difference.
+#guard (run 100 (initState fn_sub empty [.int 5 .u64, .int 3 .u64])).getHaltedValues ==
+  some [.int 2 .u64]
+
+-- Underflow aborts. Before widths were tracked this silently produced `.int 0`,
+-- because Lean's `Nat` subtraction truncates at zero.
+#guard (run 100 (initState fn_sub empty [.int 0 .u64, .int 1 .u64])) matches
+  .error .arithmeticError
+
+-- The largest `u8` sum that still fits, and the first one that does not.
+#guard (run 100 (initState fn_add_u8 empty [.int 254 .u8, .int 1 .u8])).getHaltedValues ==
+  some [.int 255 .u8]
+#guard (run 100 (initState fn_add_u8 empty [.int 255 .u8, .int 1 .u8])) matches
+  .error .arithmeticError
+
+-- 16 * 16 = 256 overflows a `u8` but is unremarkable at `u64`, so the width
+-- really is what decides the abort.
+#guard (run 100 (initState fn_mul_u8 empty [.int 16 .u8, .int 16 .u8])) matches
+  .error .arithmeticError
+#guard (run 100 (initState fn_mul_u8 empty [.int 15 .u8, .int 17 .u8])).getHaltedValues ==
+  some [.int 255 .u8]
+
+-- `u256` arithmetic runs on the same code path.
+#guard (run 100 (initState fn_add_u256 empty [.int 1 .u256, .int 2 .u256])).getHaltedValues ==
+  some [.int 3 .u256]
+
+-- Per-execution soundness certificates. The first two matter most: they are
+-- executions that *reach* an arithmetic abort, so they witness that the new
+-- error is genuinely accepted rather than vacuously excluded.
+private theorem sub_underflow_no_danglingRef :
+    ∀ n loc, run n (initState fn_sub empty [.int 0 .u64, .int 1 .u64]) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_sub fn_sub_lenvDec empty empty empty
+    [.int 0 .u64, .int 1 .u64] Heap.empty (by native_decide)
+
+private theorem add_u8_overflow_no_danglingRef :
+    ∀ n loc, run n (initState fn_add_u8 empty [.int 255 .u8, .int 1 .u8]) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_add_u8 fn_add_u8_lenvDec empty empty empty
+    [.int 255 .u8, .int 1 .u8] Heap.empty (by native_decide)
+
+private theorem mul_u8_no_danglingRef :
+    ∀ n loc, run n (initState fn_mul_u8 empty [.int 15 .u8, .int 17 .u8]) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_mul_u8 fn_mul_u8_lenvDec empty empty empty
+    [.int 15 .u8, .int 17 .u8] Heap.empty (by native_decide)
 
 end

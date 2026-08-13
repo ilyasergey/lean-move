@@ -460,8 +460,10 @@ def check_stmt (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes : List Par
         else none
       | _ => none
 
-    | .intLit _ w =>
-      if notIn env.siteEnv a then
+    | .intLit n w =>
+      -- The literal must fit its width. Cheap even at `u256`: `Nat` comparison
+      -- is GMP-backed, so this is a bignum compare, not a unary unfolding.
+      if n < w.max ∧ notIn env.siteEnv a then
         let env' := {env with siteEnv := insert env.siteEnv a (.basic (.int w))}
         check_stmt lenv env' cont retTypes
       else none

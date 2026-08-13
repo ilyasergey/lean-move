@@ -72,13 +72,19 @@ macro "letsite" a:term " ← " "freeze" b:term : term =>
 
 -- Let binding with integer literal: letsite a ← #n (produces StmtBuilder).
 -- An unannotated literal is `u64`, matching the MVIR convention for an
--- unsuffixed literal; use `letsite a ← #n w` to pick another width.
-macro "letsite" a:term " ← " "#" n:term : term =>
-  `((fun cont => Stmt.letBind $a (Expr.intLit $n .u64) cont : StmtBuilder))
+-- unsuffixed literal; `letsite a ← #n w` picks another width.
+--
+-- One syntax with an *optional* width rather than two overlapping macros: two
+-- would both match `#256 IntType.u8` and the term would be ambiguous. `n` and
+-- `w` are parsed at `max` precedence so `n` does not swallow `w` as an
+-- application argument.
+syntax "letsite" term " ← " "#" term:max (term:max)? : term
 
--- Let binding with a width-annotated integer literal: letsite a ← #n w
-macro "letsite" a:term " ← " "#" n:term w:term : term =>
-  `((fun cont => Stmt.letBind $a (Expr.intLit $n $w) cont : StmtBuilder))
+macro_rules
+  | `(letsite $a ← # $n) =>
+    `((fun cont => Stmt.letBind $a (Expr.intLit $n .u64) cont : StmtBuilder))
+  | `(letsite $a ← # $n $w) =>
+    `((fun cont => Stmt.letBind $a (Expr.intLit $n $w) cont : StmtBuilder))
 
 -- Write reference builder: *a ::= b (produces StmtBuilder)
 macro "*" a:term:max " ::= " b:term:21 : term =>
