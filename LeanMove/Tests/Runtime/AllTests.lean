@@ -78,12 +78,12 @@ open AssocMap
 section
 open LeanMove.Tests.BorrowInLoopFixed
 
-#guard (run 100 (initState foo AssocMap.empty [.int 0])).isError
+#guard (run 100 (initState foo AssocMap.empty [.int 0 .u64])).isError
 
 -- Type soundness: foo never produces a danglingRef error
 private theorem borrow_loop_foo_no_danglingRef :
-    ∀ n loc, run n (initState foo empty [.int 0]) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec_no_danglingRef foo foo_lenvDec AssocMap.empty empty empty [.int 0] Heap.empty (by native_decide)
+    ∀ n loc, run n (initState foo empty [.int 0 .u64]) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef foo foo_lenvDec AssocMap.empty empty empty [.int 0 .u64] Heap.empty (by native_decide)
 
 end
 
@@ -100,16 +100,16 @@ private def module_fte : FunTypingEnv :=
   insert (insert empty "M.new" M_new_lenvDec) "M.t" M_t_lenvDec
 
 -- M.new(2) returns record {f: 2}
-#guard (run 100 (initState M_new moduleFunEnv [.int 2])).getHaltedValues ==
-  some [.record [(⟨"f"⟩, .int 2)]]
+#guard (run 100 (initState M_new moduleFunEnv [.int 2 .u64])).getHaltedValues ==
+  some [.record [(⟨"f"⟩, .int 2 .u64)]]
 
 -- foo() halts (calls M.t inter-procedurally)
 #guard (run 100 (initState foo moduleFunEnv [])).isHalted
 
 -- Type soundness: M_new never produces a danglingRef error
 private theorem deref_borrow_M_new_no_danglingRef :
-    ∀ n loc, run n (initState M_new moduleFunEnv [.int 2]) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec_no_danglingRef M_new M_new_lenvDec AssocMap.empty moduleFunEnv module_fte [.int 2] Heap.empty (by native_decide)
+    ∀ n loc, run n (initState M_new moduleFunEnv [.int 2 .u64]) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef M_new M_new_lenvDec AssocMap.empty moduleFunEnv module_fte [.int 2 .u64] Heap.empty (by native_decide)
 
 -- Type soundness: foo never produces a danglingRef error
 private theorem deref_borrow_foo_no_danglingRef :
@@ -118,7 +118,7 @@ private theorem deref_borrow_foo_no_danglingRef :
 
 -- M.t(this: &M.T) — reads field f from immutable ref, halts
 private def mtHeap : Heap × Loc :=
-  Heap.empty.alloc (.record [(⟨"f"⟩, .int 42)])
+  Heap.empty.alloc (.record [(⟨"f"⟩, .int 42 .u64)])
 
 #guard (run 100 (initState M_t moduleFunEnv [.ref mtHeap.2 []] mtHeap.1)).isHalted
 
@@ -226,8 +226,8 @@ open LeanMove.Tests.Expressivity.ExtensionAfterCall
 
 private def boxHeap : Heap × Loc :=
   Heap.empty.alloc (.record [
-    (⟨"tl"⟩, .record [(⟨"x"⟩, .int 1), (⟨"y"⟩, .int 2)]),
-    (⟨"br"⟩, .record [(⟨"x"⟩, .int 3), (⟨"y"⟩, .int 4)])])
+    (⟨"tl"⟩, .record [(⟨"x"⟩, .int 1 .u64), (⟨"y"⟩, .int 2 .u64)]),
+    (⟨"br"⟩, .record [(⟨"x"⟩, .int 3 .u64), (⟨"y"⟩, .int 4 .u64)])])
 
 -- Runtime funEnv: fn_write calls "Tester.borrow", so we need it at runtime
 private def borrowFunEnvRT : AssocMap Id FunDef :=
@@ -261,7 +261,7 @@ section
 open LeanMove.Tests.Expressivity.ExtensionWritesAfterJoin
 
 private def twoStructsHeap : Heap × Loc × Loc :=
-  let s := Value.record [(⟨"f"⟩, .int 42)]
+  let s := Value.record [(⟨"f"⟩, .int 42 .u64)]
   let (h1, l1) := Heap.empty.alloc s
   let (h2, l2) := h1.alloc s
   (h2, l1, l2)
@@ -306,7 +306,7 @@ section
 open LeanMove.Tests.Expressivity.MultipleMutableReturnValues
 
 private def pointHeap : Heap × Loc :=
-  Heap.empty.alloc (.record [(⟨"x"⟩, .int 10), (⟨"y"⟩, .int 20)])
+  Heap.empty.alloc (.record [(⟨"x"⟩, .int 10 .u64), (⟨"y"⟩, .int 20 .u64)])
 
 -- Runtime function environment: write calls Tester.borrow at runtime
 private def rtFunEnv : AssocMap Id FunDef :=
@@ -341,8 +341,8 @@ open LeanMove.Tests.Expressivity.MutableBorrowsNotUnique
 
 private def pairHeap : Heap × Loc :=
   Heap.empty.alloc (.record [
-    (⟨"s1"⟩, .record [(⟨"f"⟩, .int 1)]),
-    (⟨"s2"⟩, .record [(⟨"f"⟩, .int 2)])])
+    (⟨"s1"⟩, .record [(⟨"f"⟩, .int 1 .u64)]),
+    (⟨"s2"⟩, .record [(⟨"f"⟩, .int 2 .u64)])])
 
 #guard (run 300 (initState parsed_fields AssocMap.empty [.ref pairHeap.2 []] pairHeap.1)).isHalted
 #guard (run 500 (initState parsed_fields_write AssocMap.empty [.ref pairHeap.2 []] pairHeap.1)).isHalted
@@ -368,7 +368,7 @@ section
 open LeanMove.Tests.Expressivity.SubtreeWritesRelease
 
 private def treeHeap : Heap × Loc :=
-  let s2 (a b : Nat) := Value.record [(⟨"l"⟩, .int a), (⟨"r"⟩, .int b)]
+  let s2 (a b : Nat) := Value.record [(⟨"l"⟩, .int a .u64), (⟨"r"⟩, .int b .u64)]
   let s1 (a b c d : Nat) := Value.record [(⟨"l"⟩, s2 a b), (⟨"r"⟩, s2 c d)]
   Heap.empty.alloc (.record [(⟨"l"⟩, s1 1 2 3 4), (⟨"r"⟩, s1 5 6 7 8)])
 
@@ -395,15 +395,15 @@ section
 open LeanMove.Tests.Litmus.ReturnParamRefOk
 
 -- fn_return_basic(a: u64): u64 — returns basic value, halts
-#guard (run 100 (initState fn_return_basic AssocMap.empty [.int 42])).isHalted
+#guard (run 100 (initState fn_return_basic AssocMap.empty [.int 42 .u64])).isHalted
 
 -- Type soundness: fn_return_basic never produces a danglingRef error
 private theorem fn_return_basic_no_danglingRef :
-    ∀ n loc, run n (initState fn_return_basic AssocMap.empty [.int 42]) ≠ .error (.danglingRef loc) :=
-  type_soundness_dec_no_danglingRef fn_return_basic fn_return_basic_lenvDec AssocMap.empty empty empty [.int 42] Heap.empty (by native_decide)
+    ∀ n loc, run n (initState fn_return_basic AssocMap.empty [.int 42 .u64]) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_return_basic fn_return_basic_lenvDec AssocMap.empty empty empty [.int 42 .u64] Heap.empty (by native_decide)
 
 -- fn_return_param_ref(r: &mut u64): &mut u64 — returns moved param ref
-private def u64Heap : Heap × Loc := Heap.empty.alloc (.int 99)
+private def u64Heap : Heap × Loc := Heap.empty.alloc (.int 99 .u64)
 
 #guard (run 100 (initState fn_return_param_ref AssocMap.empty [.ref u64Heap.2 []] u64Heap.1)).isHalted
 
@@ -414,8 +414,8 @@ private theorem fn_return_param_ref_no_danglingRef :
 
 -- fn_return_two(r1: &mut u64, r2: &mut u64): (&mut u64, &mut u64)
 private def twoU64Heap : Heap × Loc × Loc :=
-  let (h1, l1) := Heap.empty.alloc (.int 1)
-  let (h2, l2) := h1.alloc (.int 2)
+  let (h1, l1) := Heap.empty.alloc (.int 1 .u64)
+  let (h2, l2) := h1.alloc (.int 2 .u64)
   (h2, l1, l2)
 
 #guard (run 100 (initState fn_return_two AssocMap.empty [.ref twoU64Heap.2.1 [], .ref twoU64Heap.2.2 []] twoU64Heap.1)).isHalted
@@ -451,13 +451,13 @@ open LeanMove.Tests.Expressivity.SimpleDangling
 
 -- field_dangling(s: &mut S), S = {f: u64}
 private def sHeap : Heap × Loc :=
-  Heap.empty.alloc (.record [(⟨"f"⟩, .int 42)])
+  Heap.empty.alloc (.record [(⟨"f"⟩, .int 42 .u64)])
 
 #eval run 200 (initState parsed_field_t AssocMap.empty [.ref sHeap.2 []] sHeap.1)
 
 -- nested_field_dangling(p: &mut P), P = {s: S} = {s: {f: u64}}
 private def pHeap : Heap × Loc :=
-  Heap.empty.alloc (.record [(⟨"s"⟩, .record [(⟨"f"⟩, .int 42)])])
+  Heap.empty.alloc (.record [(⟨"s"⟩, .record [(⟨"f"⟩, .int 42 .u64)])])
 
 #eval run 200 (initState parsed_nested_field_t AssocMap.empty [.ref pHeap.2 []] pHeap.1)
 
@@ -485,7 +485,7 @@ end
 section
 open LeanMove.Tests.Expressivity.ImmBorrowAfterMutFieldsInvalid
 
-#eval run 200 (initState parsed_invalid_write AssocMap.empty [.record [(⟨"f"⟩, .int 42)]])
+#eval run 200 (initState parsed_invalid_write AssocMap.empty [.record [(⟨"f"⟩, .int 42 .u64)]])
 
 end
 
@@ -496,7 +496,7 @@ section
 open LeanMove.Tests.Expressivity.MutableBorrowsNotUniqueCallsInvalid
 
 private def sHeap2 : Heap × Loc :=
-  Heap.empty.alloc (.record [(⟨"f"⟩, .int 42)])
+  Heap.empty.alloc (.record [(⟨"f"⟩, .int 42 .u64)])
 
 -- Runtime function environment: call_and_write_invalid calls borrow_f
 private def rtFunEnv2 : AssocMap Id FunDef :=
@@ -617,7 +617,7 @@ open LeanMove.Tests.Expressivity.VecBasicOps
 #eval run 200 (initState parsed_vec_pack_elems AssocMap.empty [])
 
 #guard (run 200 (initState parsed_vec_pack_elems AssocMap.empty [])).getHaltedValues ==
-  some [.vec .u64 [.int 0, .int 1]]
+  some [.vec .u64 [.int 0 .u64, .int 1 .u64]]
 
 end
 
@@ -628,12 +628,12 @@ section
 open LeanMove.Tests.Expressivity.VecBasicOps
 
 private def vecLenHeap : Heap × Loc :=
-  Heap.empty.alloc (.vec .u64 [.int 10, .int 20, .int 30])
+  Heap.empty.alloc (.vec .u64 [.int 10 .u64, .int 20 .u64, .int 30 .u64])
 
 #eval run 200 (initState parsed_vec_len AssocMap.empty [.ref vecLenHeap.2 []] vecLenHeap.1)
 
 #guard (run 200 (initState parsed_vec_len AssocMap.empty [.ref vecLenHeap.2 []] vecLenHeap.1)).getHaltedValues ==
-  some [.int 3]
+  some [.int 3 .u64]
 
 end
 
@@ -644,7 +644,7 @@ section
 open LeanMove.Tests.Expressivity.VecBasicOps
 
 private def vecPushHeap : Heap × Loc :=
-  Heap.empty.alloc (.vec .u64 [.int 10])
+  Heap.empty.alloc (.vec .u64 [.int 10 .u64])
 
 #eval run 200 (initState parsed_vec_push AssocMap.empty [.ref vecPushHeap.2 []] vecPushHeap.1)
 
@@ -659,12 +659,12 @@ section
 open LeanMove.Tests.Expressivity.VecBasicOps
 
 private def vecPopHeap : Heap × Loc :=
-  Heap.empty.alloc (.vec .u64 [.int 10, .int 20, .int 30])
+  Heap.empty.alloc (.vec .u64 [.int 10 .u64, .int 20 .u64, .int 30 .u64])
 
 #eval run 200 (initState parsed_vec_pop AssocMap.empty [.ref vecPopHeap.2 []] vecPopHeap.1)
 
 #guard (run 200 (initState parsed_vec_pop AssocMap.empty [.ref vecPopHeap.2 []] vecPopHeap.1)).getHaltedValues ==
-  some [.int 30]
+  some [.int 30 .u64]
 
 end
 
@@ -675,12 +675,12 @@ section
 open LeanMove.Tests.Expressivity.VecBorrowSequential
 
 private def vecBorrowHeap : Heap × Loc :=
-  Heap.empty.alloc (.vec .u64 [.int 42, .int 99])
+  Heap.empty.alloc (.vec .u64 [.int 42 .u64, .int 99 .u64])
 
 #eval run 200 (initState parsed_vec_imm_borrow_read AssocMap.empty [.ref vecBorrowHeap.2 []] vecBorrowHeap.1)
 
 #guard (run 200 (initState parsed_vec_imm_borrow_read AssocMap.empty [.ref vecBorrowHeap.2 []] vecBorrowHeap.1)).getHaltedValues ==
-  some [.int 42]
+  some [.int 42 .u64]
 
 end
 
@@ -691,7 +691,7 @@ section
 open LeanMove.Tests.Expressivity.VecBorrowSequential
 
 private def vecMutBorrowHeap : Heap × Loc :=
-  Heap.empty.alloc (.vec .u64 [.int 0, .int 0])
+  Heap.empty.alloc (.vec .u64 [.int 0 .u64, .int 0 .u64])
 
 #eval run 200 (initState parsed_vec_mut_borrow_write AssocMap.empty [.ref vecMutBorrowHeap.2 []] vecMutBorrowHeap.1)
 
@@ -732,7 +732,7 @@ open LeanMove.Tests.Expressivity.EnumBorrowFieldMutable
 
 -- Heap with a u64 value
 private def bazHeap : Heap × Loc :=
-  Heap.empty.alloc (.int 42)
+  Heap.empty.alloc (.int 42 .u64)
 
 #eval run 200 (initState parsed_M2_baz AssocMap.empty [.ref bazHeap.2 []] bazHeap.1)
 
@@ -756,7 +756,7 @@ open LeanMove.Tests.Expressivity.EnumMatch
 #eval run 200 (initState parsed_t0 AssocMap.empty [] (enumEnv := enumEnv))
 
 #guard (run 200 (initState parsed_t0 AssocMap.empty [] (enumEnv := enumEnv))).getHaltedValues ==
-  some [.int 0]
+  some [.int 0 .u64]
 
 -- Decidable type soundness for a multi-variant enum (3 variants: One, Two, Three)
 set_option maxRecDepth 4096 in
@@ -775,7 +775,7 @@ open LeanMove.Tests.Expressivity.EnumTwoMutableUnpacks
 
 -- Heap with a Foo.V { a: 10, b: 20 } variant
 private def fooHeap : Heap × Loc :=
-  Heap.empty.alloc (.variant "V" "M.Foo" [(⟨"a"⟩, .int 10), (⟨"b"⟩, .int 20)])
+  Heap.empty.alloc (.variant "V" "M.Foo" [(⟨"a"⟩, .int 10 .u64), (⟨"b"⟩, .int 20 .u64)])
 
 #eval run 200 (initState parsed_fn AssocMap.empty [.ref fooHeap.2 []] fooHeap.1)
 
@@ -793,21 +793,21 @@ open LeanMove.Tests.Litmus.BooleanOpsOk
 
 -- !((a == b) && (a < b)) || (a == b): the conjunction is unsatisfiable, so the
 -- negation — and hence the disjunction — holds for every a, b.
-#guard (run 100 (initState fn_and_or_not AssocMap.empty [.int 2, .int 7])).getHaltedValues ==
+#guard (run 100 (initState fn_and_or_not AssocMap.empty [.int 2 .u64, .int 7 .u64])).getHaltedValues ==
   some [.bool true]
-#guard (run 100 (initState fn_and_or_not AssocMap.empty [.int 3, .int 3])).getHaltedValues ==
+#guard (run 100 (initState fn_and_or_not AssocMap.empty [.int 3 .u64, .int 3 .u64])).getHaltedValues ==
   some [.bool true]
 
 -- !!(a == b)
-#guard (run 100 (initState fn_double_negation AssocMap.empty [.int 2, .int 7])).getHaltedValues ==
+#guard (run 100 (initState fn_double_negation AssocMap.empty [.int 2 .u64, .int 7 .u64])).getHaltedValues ==
   some [.bool false]
-#guard (run 100 (initState fn_double_negation AssocMap.empty [.int 3, .int 3])).getHaltedValues ==
+#guard (run 100 (initState fn_double_negation AssocMap.empty [.int 3 .u64, .int 3 .u64])).getHaltedValues ==
   some [.bool true]
 
 private theorem boolean_ops_no_danglingRef :
-    ∀ n loc, run n (initState fn_and_or_not empty [.int 2, .int 7]) ≠ .error (.danglingRef loc) :=
+    ∀ n loc, run n (initState fn_and_or_not empty [.int 2 .u64, .int 7 .u64]) ≠ .error (.danglingRef loc) :=
   type_soundness_dec_no_danglingRef fn_and_or_not fn_and_or_not_lenvDec empty empty empty
-    [.int 2, .int 7] Heap.empty (by native_decide)
+    [.int 2 .u64, .int 7 .u64] Heap.empty (by native_decide)
 
 end
 
@@ -820,10 +820,10 @@ open LeanMove.Tests.Litmus.ComparisonOpsOk
 
 -- (a != b && a > b) || (a <= b) && (a >= b)
 -- a = 2, b = 7: (T && F) || T = T, then T && F = false
-#guard (run 100 (initState fn_comparisons AssocMap.empty [.int 2, .int 7])).getHaltedValues ==
+#guard (run 100 (initState fn_comparisons AssocMap.empty [.int 2 .u64, .int 7 .u64])).getHaltedValues ==
   some [.bool false]
 -- a = 7, b = 2: (T && T) || F = T, then T && T = true
-#guard (run 100 (initState fn_comparisons AssocMap.empty [.int 7, .int 2])).getHaltedValues ==
+#guard (run 100 (initState fn_comparisons AssocMap.empty [.int 7 .u64, .int 2 .u64])).getHaltedValues ==
   some [.bool true]
 
 -- Neq at bool
@@ -833,20 +833,20 @@ open LeanMove.Tests.Litmus.ComparisonOpsOk
   some [.bool false]
 
 -- Ge in branch position: takes b2 (returns a) when a >= b, b1 (returns b) otherwise
-#guard (run 100 (initState fn_ge_branch AssocMap.empty [.int 5, .int 3])).getHaltedValues ==
-  some [.int 5]
-#guard (run 100 (initState fn_ge_branch AssocMap.empty [.int 2, .int 7])).getHaltedValues ==
-  some [.int 7]
+#guard (run 100 (initState fn_ge_branch AssocMap.empty [.int 5 .u64, .int 3 .u64])).getHaltedValues ==
+  some [.int 5 .u64]
+#guard (run 100 (initState fn_ge_branch AssocMap.empty [.int 2 .u64, .int 7 .u64])).getHaltedValues ==
+  some [.int 7 .u64]
 
 private theorem comparison_ops_no_danglingRef :
-    ∀ n loc, run n (initState fn_comparisons empty [.int 2, .int 7]) ≠ .error (.danglingRef loc) :=
+    ∀ n loc, run n (initState fn_comparisons empty [.int 2 .u64, .int 7 .u64]) ≠ .error (.danglingRef loc) :=
   type_soundness_dec_no_danglingRef fn_comparisons fn_comparisons_lenvDec empty empty empty
-    [.int 2, .int 7] Heap.empty (by native_decide)
+    [.int 2 .u64, .int 7 .u64] Heap.empty (by native_decide)
 
 set_option maxRecDepth 4096 in
 private theorem ge_branch_no_danglingRef :
-    ∀ n loc, run n (initState fn_ge_branch empty [.int 5, .int 3]) ≠ .error (.danglingRef loc) :=
+    ∀ n loc, run n (initState fn_ge_branch empty [.int 5 .u64, .int 3 .u64]) ≠ .error (.danglingRef loc) :=
   type_soundness_dec_no_danglingRef fn_ge_branch fn_ge_branch_lenvDec empty empty empty
-    [.int 5, .int 3] Heap.empty (by native_decide)
+    [.int 5 .u64, .int 3 .u64] Heap.empty (by native_decide)
 
 end

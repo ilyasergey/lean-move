@@ -70,9 +70,15 @@ macro "letsite" a:term " ← " "*" b:term : term =>
 macro "letsite" a:term " ← " "freeze" b:term : term =>
   `((fun cont => Stmt.letBind $a (Expr.freeze $b) cont : StmtBuilder))
 
--- Let binding with integer literal: letsite a ← #n (produces StmtBuilder)
+-- Let binding with integer literal: letsite a ← #n (produces StmtBuilder).
+-- An unannotated literal is `u64`, matching the MVIR convention for an
+-- unsuffixed literal; use `letsite a ← #n w` to pick another width.
 macro "letsite" a:term " ← " "#" n:term : term =>
-  `((fun cont => Stmt.letBind $a (Expr.intLit $n) cont : StmtBuilder))
+  `((fun cont => Stmt.letBind $a (Expr.intLit $n .u64) cont : StmtBuilder))
+
+-- Let binding with a width-annotated integer literal: letsite a ← #n w
+macro "letsite" a:term " ← " "#" n:term w:term : term =>
+  `((fun cont => Stmt.letBind $a (Expr.intLit $n $w) cont : StmtBuilder))
 
 -- Write reference builder: *a ::= b (produces StmtBuilder)
 macro "*" a:term:max " ::= " b:term:21 : term =>

@@ -123,8 +123,7 @@ mutual
 /-- Check alpha-equivalence of BasicMoveType -/
 partial def alphaBasicType (l r : BasicMoveType) : AlphaM Bool :=
   match l, r with
-  | .u64, .u64 => pure true
-  | .u8, .u8 => pure true
+  | .int w1, .int w2 => pure (w1 == w2)
   | .tbool, .tbool => pure true
   | .tunit, .tunit => pure true
   | .trecord m1, .trecord m2 => alphaEntries m1.entries m2.entries
@@ -183,7 +182,7 @@ partial def alphaExpr (l r : Expr) : AlphaM Bool :=
     | .borrowImm v1, .borrowImm v2 | .borrowMut v1, .borrowMut v2 =>
       pure (v1 == v2)
     | _, _ => pure false
-  | .intLit n1, .intLit n2 => pure (n1 == n2)
+  | .intLit n1 w1, .intLit n2 w2 => pure (n1 == n2 && w1 == w2)
   | .borrowField s1 bt1 f1, .borrowField s2 bt2 f2 => do
     if !(← matchSite s1 s2) then return false
     if !(← alphaBasicType bt1 bt2) then return false
