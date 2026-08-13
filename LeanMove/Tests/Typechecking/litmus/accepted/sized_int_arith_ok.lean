@@ -218,4 +218,31 @@ def fn_widen_lenvDec := mkLabelEnvDec fn_widen
 
 theorem fn_widen_checks : check_fun_dec fn_widen fn_widen_lenvDec = true := by rfl
 
+/-
+  Bitwise `Xor` at u8. Unlike the arithmetic operators this can never overflow:
+  a bitwise combination of two values below `2^8` is itself below `2^8`, which
+  is why `evalBinop`'s bitwise rows carry no range guard.
+-/
+def fn_xor_u8 : FunDef := {
+  params := [(var_a, .basic .u8), (var_b, .basic .u8)]
+  returnType := [⟨.u8, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite s0 ← copy var_a) ;;
+        (letsite s1 ← copy var_b) ;;
+        (letsite s2 ← binop(.bitxor, s0, s1)) ;;
+        ret [s2]
+    }
+  ]
+}
+
+def fn_xor_u8_lenv := mkLabelEnv fn_xor_u8
+def fn_xor_u8_lenvDec := mkLabelEnvDec fn_xor_u8
+
+#guard check_fun fn_xor_u8 fn_xor_u8_lenv AssocMap.empty
+
+theorem fn_xor_u8_checks : check_fun_dec fn_xor_u8 fn_xor_u8_lenvDec = true := by rfl
+
 end LeanMove.Tests.Litmus.SizedIntArithOk

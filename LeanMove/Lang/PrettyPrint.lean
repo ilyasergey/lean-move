@@ -101,6 +101,9 @@ def ppBinop : Binop → String
   | .ge => ">="
   | .and => "&&"
   | .or => "||"
+  | .bitand => "&"
+  | .bitor => "|"
+  | .bitxor => "^"
 
 def ppUnop : Unop → String
   | .not => "!"

@@ -73,9 +73,21 @@ deriving Repr, Inhabited
     `Translate.translateBinop` is checked total over this list, so an operator
     cannot be added to the concrete syntax without also being given a MoveLight
     `Binop`. Note `*` is deliberately absent — in MVIR it is the prefix
-    dereference operator. -/
+    dereference operator.
+
+    Order is significant. `parseBinOp` folds this list right-to-left into a
+    chain of alternatives, so an earlier entry is tried first, and `keyword` is
+    a bare `skipString` with no word-boundary check. Any operator that is a
+    proper prefix of another must therefore come *after* it: `&&` before `&`,
+    `||` before `|`, and `>=`/`<=` before `>`/`<`.
+
+    Infix `&` is unambiguous despite `&` also introducing a borrow, for the
+    same positional reason as prefix vs. infix `*`: `parseUnaryExpr` consumes a
+    *prefix* `&` before `parseExpr` ever consults this table, so a `&` that
+    reaches `parseBinOp` necessarily follows a complete operand. -/
 def binaryOperators : List String :=
-  ["==", "!=", "&&", "||", ">=", "<=", ">", "<", "+", "-", "/", "%"]
+  ["==", "!=", "&&", "||", ">=", "<=", ">", "<", "+", "-", "/", "%",
+   "&", "|", "^"]
 
 /-- The unary operator spellings the concrete syntax admits. -/
 def unaryOperators : List String := ["!"]

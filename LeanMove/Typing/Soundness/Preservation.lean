@@ -2616,7 +2616,7 @@ private theorem preservation_readRef (m m' : Machine) (env : TypeEnv) (lenv : La
     the result value has the output type. -/
 private lemma evalBinop_has_type (enumEnv : EnumEnv) (op : Binop) (w1 w2 : IntType)
     (bt3 : BasicMoveType) (na nb : Nat) (result : Value)
-    (hna : na < w1.max)
+    (hna : na < w1.max) (hnb : nb < w2.max)
     (hbt : binop_type op (.int w1) (.int w2) = some bt3)
     (heval : evalBinop op na nb w1 = some result) :
     HasType enumEnv result bt3 := by
@@ -2683,6 +2683,26 @@ private lemma evalBinop_has_type (enumEnv : EnumEnv) (op : Binop) (w1 w2 : IntTy
       simp only [evalBinop, Option.some.injEq] at heval
       subst heval
       exact HasType.bool _
+    -- The bitwise operators need no overflow guard: a bitwise combination of
+    -- two values below `2 ^ bits` is itself below `2 ^ bits`.
+    | bitand =>
+      simp only [binop_type, beq_self_eq_true, if_true, Option.some.injEq] at hbt
+      subst hbt
+      simp only [evalBinop, Option.some.injEq] at heval
+      subst heval
+      exact HasType.int _ _ (Nat.and_lt_two_pow _ hnb)
+    | bitor =>
+      simp only [binop_type, beq_self_eq_true, if_true, Option.some.injEq] at hbt
+      subst hbt
+      simp only [evalBinop, Option.some.injEq] at heval
+      subst heval
+      exact HasType.int _ _ (Nat.or_lt_two_pow hna hnb)
+    | bitxor =>
+      simp only [binop_type, beq_self_eq_true, if_true, Option.some.injEq] at hbt
+      subst hbt
+      simp only [evalBinop, Option.some.injEq] at heval
+      subst heval
+      exact HasType.int _ _ (Nat.xor_lt_two_pow hna hnb)
     -- `and`/`or` are the boolean opcodes: no integer instantiation, so
     -- `binop_type` is `none` and `hbt` is absurd.
     | and | or => exfalso; simp [binop_type] at hbt
@@ -2746,6 +2766,9 @@ private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : Labe
         have hna : na < wa.max := by
           cases hta
           assumption
+        have hnb : nb < wb.max := by
+          cases htb
+          assumption
         cases hta
         cases htb
         cases heval : evalBinop op na nb wa with
@@ -2756,7 +2779,7 @@ private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : Labe
           split at hstep <;> nomatch hstep
         | some v =>
           simp [heval] at hstep
-          exact ⟨v, evalBinop_has_type env.enumEnv op wa wb bt3 na nb v hna hbt heval,
+          exact ⟨v, evalBinop_has_type env.enumEnv op wa wb bt3 na nb v hna hnb hbt heval,
                  hstep.symm⟩
       | bool _ => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep
       | unit => simp only [hva_eq, hvb_eq] at hstep; nomatch hstep

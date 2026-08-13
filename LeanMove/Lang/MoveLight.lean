@@ -417,10 +417,14 @@ inductive Binop where
   | ge
   | and   -- Move bytecode `And` (boolean conjunction, not `BitAnd`)
   | or    -- Move bytecode `Or` (boolean disjunction, not `BitOr`)
+  -- The integer bitwise opcodes. `bitand`/`bitor` are the counterparts of
+  -- `and`/`or` at integer type; Move keeps them as separate instructions.
+  | bitand  -- Move bytecode `BitAnd`
+  | bitor   -- Move bytecode `BitOr`
+  | bitxor  -- Move bytecode `Xor`
 deriving Repr, DecidableEq, Inhabited, Hashable
 
-/-- Unary operators. Currently only boolean negation, matching the Move
-    bytecode `Not` instruction; the `Cast*` opcodes would slot in here. -/
+/-- Unary operators: boolean negation and the integer casts. -/
 inductive Unop where
   | not   -- Move bytecode `Not` (boolean negation)
   | cast : IntType → Unop  -- Move bytecode `CastU8`…`CastU256`

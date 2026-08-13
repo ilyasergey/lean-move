@@ -186,6 +186,9 @@ def translateBinop : String → Option Binop
   | ">=" => some .ge
   | "&&" => some .and
   | "||" => some .or
+  | "&"  => some .bitand
+  | "|"  => some .bitor
+  | "^"  => some .bitxor
   | _    => none
 
 /-- Map a concrete-syntax unary operator onto its MoveLight `Unop`. -/

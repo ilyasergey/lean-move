@@ -942,3 +942,27 @@ private theorem widen_no_danglingRef :
     [.int 255 .u8] Heap.empty (by native_decide)
 
 end
+
+-- ============================================================
+-- 18. bitwise — BitAnd / BitOr / Xor
+-- ============================================================
+section
+open LeanMove.Tests.Litmus.SizedIntArithOk
+
+-- 0b1100 ^ 0b1010 = 0b0110
+#guard (run 100 (initState fn_xor_u8 empty [.int 12 .u8, .int 10 .u8])).getHaltedValues ==
+  some [.int 6 .u8]
+
+-- Bitwise operations never overflow: the widest possible u8 operands still
+-- produce a u8, so unlike `fn_add_u8` this cannot abort.
+#guard (run 100 (initState fn_xor_u8 empty [.int 255 .u8, .int 0 .u8])).getHaltedValues ==
+  some [.int 255 .u8]
+#guard (run 100 (initState fn_xor_u8 empty [.int 255 .u8, .int 255 .u8])).getHaltedValues ==
+  some [.int 0 .u8]
+
+private theorem xor_u8_no_danglingRef :
+    ∀ n loc, run n (initState fn_xor_u8 empty [.int 255 .u8, .int 255 .u8]) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_xor_u8 fn_xor_u8_lenvDec empty empty empty
+    [.int 255 .u8, .int 255 .u8] Heap.empty (by native_decide)
+
+end

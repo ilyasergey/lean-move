@@ -1,0 +1,50 @@
+// The integer bitwise opcodes `BitAnd`, `BitOr` and `Xor`.
+//
+// The spellings `&` and `|` are the interesting ones. `&&` and `||` are the
+// *boolean* opcodes and must keep winning the longest-match, and a prefix `&`
+// is a borrow — so these functions pin down all three readings of the
+// character.
+
+//# publish
+module 0x53.Bitwise {
+
+    band(a: u64, b: u64): u64 {
+    label b0:
+        return copy(a) & copy(b);
+    }
+
+    bor(a: u64, b: u64): u64 {
+    label b0:
+        return copy(a) | copy(b);
+    }
+
+    bxor(a: u64, b: u64): u64 {
+    label b0:
+        return copy(a) ^ copy(b);
+    }
+
+    // Bitwise ops are defined at every width, not just u64.
+    band_u8(a: u8, b: u8): u8 {
+    label b0:
+        return copy(a) & copy(b);
+    }
+
+    // Infix `&` where both operands are *dereferences* of borrows: the `&`
+    // that reaches the operator table follows a complete operand, so it cannot
+    // be mistaken for a borrow.
+    band_derefs(a: &u64, b: &u64): u64 {
+    label b0:
+        return *copy(a) & *copy(b);
+    }
+
+    // The boolean operators still parse as themselves, not as two bitwise ops.
+    conj(a: bool, b: bool): bool {
+    label b0:
+        return copy(a) && copy(b);
+    }
+
+    disj(a: bool, b: bool): bool {
+    label b0:
+        return copy(a) || copy(b);
+    }
+}

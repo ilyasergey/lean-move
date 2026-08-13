@@ -81,6 +81,10 @@ def binop_type (bop : Binop) (τ1 τ2 : BasicMoveType) : Option BasicMoveType :=
   | (.neq, .tbool, .tbool) => some .tbool
   | (.and, .tbool, .tbool) => some .tbool
   | (.or, .tbool, .tbool) => some .tbool
+  -- Bitwise operators are integer-only and, like arithmetic, same-width.
+  | (.bitand, .int w1, .int w2) => if w1 == w2 then some (.int w1) else none
+  | (.bitor,  .int w1, .int w2) => if w1 == w2 then some (.int w1) else none
+  | (.bitxor, .int w1, .int w2) => if w1 == w2 then some (.int w1) else none
   | _ => none
 
 -- function to take a unop and the type of its argument and return the type of the result

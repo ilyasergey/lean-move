@@ -375,6 +375,11 @@ def evalBinop : Binop → Nat → Nat → IntType → Option Value
   -- (Move's integer conjunction/disjunction are the separate BitAnd/BitOr opcodes).
   | .and, _, _, _ => none
   | .or, _, _, _ => none
+  -- Bitwise operations on in-range operands are automatically in range, so
+  -- unlike the arithmetic rows these need no guard (see `evalBinop_has_type`).
+  | .bitand, a, b, w => some (.int (a &&& b) w)
+  | .bitor, a, b, w => some (.int (a ||| b) w)
+  | .bitxor, a, b, w => some (.int (a ^^^ b) w)
 
 /-- Evaluate a binary operation on booleans -/
 def evalBinopBool : Binop → Bool → Bool → Option Value

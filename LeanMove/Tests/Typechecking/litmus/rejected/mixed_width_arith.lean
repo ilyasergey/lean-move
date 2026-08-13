@@ -202,4 +202,51 @@ def fn_add_after_cast_lenv := mkLabelEnv fn_add_after_cast
 
 #guard check_fun fn_add_after_cast fn_add_after_cast_lenv AssocMap.empty
 
+/-
+  The bitwise operators are the integer counterparts of `And`/`Or`, so they are
+  *not* defined at `tbool`: `binop_type .bitand .tbool .tbool = none`. Together
+  with `boolean_ops_on_int.lean`, which rejects `And` on integers, this pins the
+  two families apart in both directions.
+-/
+def fn_bitand_on_bool : FunDef := {
+  params := [(var_a, .basic .tbool), (var_b, .basic .tbool)]
+  returnType := [⟨.tbool, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite s0 ← copy var_a) ;;
+        (letsite s1 ← copy var_b) ;;
+        (letsite s2 ← binop(.bitand, s0, s1)) ;;   -- REJECTED
+        ret [s2]
+    }
+  ]
+}
+
+def fn_bitand_on_bool_lenv := mkLabelEnv fn_bitand_on_bool
+
+#guard !check_fun fn_bitand_on_bool fn_bitand_on_bool_lenv AssocMap.empty
+
+/-
+  And, like arithmetic, they require equal widths.
+-/
+def fn_bitor_mixed : FunDef := {
+  params := [(var_a, .basic .u8), (var_b, .basic .u64)]
+  returnType := [⟨.u64, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite s0 ← copy var_a) ;;
+        (letsite s1 ← copy var_b) ;;
+        (letsite s2 ← binop(.bitor, s0, s1)) ;;    -- REJECTED
+        ret [s2]
+    }
+  ]
+}
+
+def fn_bitor_mixed_lenv := mkLabelEnv fn_bitor_mixed
+
+#guard !check_fun fn_bitor_mixed fn_bitor_mixed_lenv AssocMap.empty
+
 end LeanMove.Tests.Litmus.MixedWidthArith
