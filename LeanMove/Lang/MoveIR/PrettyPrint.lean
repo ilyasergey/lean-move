@@ -129,6 +129,7 @@ def ppBinop : Binop → String
 
 def ppUnop : Unop → String
   | .not => ".not"
+  | .cast w => s!"(.cast .{ppIntType w})"
 
 def ppFieldSitePairs : List (Field × Site) → String
   | [] => "[]"

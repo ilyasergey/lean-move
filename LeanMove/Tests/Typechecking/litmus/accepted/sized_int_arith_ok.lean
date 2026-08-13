@@ -169,4 +169,53 @@ def fn_add_u256_lenvDec := mkLabelEnvDec fn_add_u256
 
 theorem fn_add_u256_checks : check_fun_dec fn_add_u256 fn_add_u256_lenvDec = true := by rfl
 
+/-
+  A narrowing cast. Well typed at any pair of widths; aborts at run time when
+  the value does not fit, since Move's `CastU*` checks rather than truncates.
+-/
+def fn_narrow : FunDef := {
+  params := [(var_a, .basic .u64)]
+  returnType := [⟨.u8, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite s0 ← copy var_a) ;;
+        (letsite s1 ← unop(.cast .u8, s0)) ;;
+        ret [s1]
+    }
+  ]
+}
+
+def fn_narrow_lenv := mkLabelEnv fn_narrow
+def fn_narrow_lenvDec := mkLabelEnvDec fn_narrow
+
+#guard check_fun fn_narrow fn_narrow_lenv AssocMap.empty
+
+theorem fn_narrow_checks : check_fun_dec fn_narrow fn_narrow_lenvDec = true := by rfl
+
+/-
+  A widening cast, which can never fail.
+-/
+def fn_widen : FunDef := {
+  params := [(var_a, .basic .u8)]
+  returnType := [⟨.u64, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite s0 ← copy var_a) ;;
+        (letsite s1 ← unop(.cast .u64, s0)) ;;
+        ret [s1]
+    }
+  ]
+}
+
+def fn_widen_lenv := mkLabelEnv fn_widen
+def fn_widen_lenvDec := mkLabelEnvDec fn_widen
+
+#guard check_fun fn_widen fn_widen_lenv AssocMap.empty
+
+theorem fn_widen_checks : check_fun_dec fn_widen fn_widen_lenvDec = true := by rfl
+
 end LeanMove.Tests.Litmus.SizedIntArithOk

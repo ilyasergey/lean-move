@@ -282,6 +282,12 @@ partial def flattenExpr (e : MvirExpr) : TransM FlatResult := do
     let unopKind := (translateUnop op).getD .not
     pure { bindings := operandR.bindings ++ [(s, .unop unopKind operandR.result)],
            result := s }
+  | .cast w operand =>
+    -- `CastU*` is a unary operator in MoveLight, so it reuses the `unop` path
+    let operandR ← flattenExpr operand
+    let s ← freshSite
+    pure { bindings := operandR.bindings ++ [(s, .unop (.cast w) operandR.result)],
+           result := s }
   | .vecOp opName ty args =>
     let elemTy := resolveBasicType structs enums ty
     match opName with

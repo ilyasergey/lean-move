@@ -903,3 +903,42 @@ private theorem mul_u8_no_danglingRef :
     [.int 15 .u8, .int 17 .u8] Heap.empty (by native_decide)
 
 end
+
+-- ============================================================
+-- 17. casts — CastU* checks rather than truncates
+-- ============================================================
+section
+open LeanMove.Tests.Litmus.SizedIntArithOk
+
+-- A value that fits the target width passes through unchanged, but comes out
+-- at the *new* width — `.int 200 .u8`, not `.int 200 .u64`.
+#guard (run 100 (initState fn_narrow empty [.int 200 .u64])).getHaltedValues ==
+  some [.int 200 .u8]
+
+-- The boundary: 255 fits a u8, 256 does not.
+#guard (run 100 (initState fn_narrow empty [.int 255 .u64])).getHaltedValues ==
+  some [.int 255 .u8]
+#guard (run 100 (initState fn_narrow empty [.int 256 .u64])) matches
+  .error .arithmeticError
+
+-- Widening always succeeds.
+#guard (run 100 (initState fn_widen empty [.int 255 .u8])).getHaltedValues ==
+  some [.int 255 .u64]
+
+-- Certificates for both the succeeding and the aborting cast.
+private theorem narrow_ok_no_danglingRef :
+    ∀ n loc, run n (initState fn_narrow empty [.int 200 .u64]) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_narrow fn_narrow_lenvDec empty empty empty
+    [.int 200 .u64] Heap.empty (by native_decide)
+
+private theorem narrow_abort_no_danglingRef :
+    ∀ n loc, run n (initState fn_narrow empty [.int 256 .u64]) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_narrow fn_narrow_lenvDec empty empty empty
+    [.int 256 .u64] Heap.empty (by native_decide)
+
+private theorem widen_no_danglingRef :
+    ∀ n loc, run n (initState fn_widen empty [.int 255 .u8]) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_widen fn_widen_lenvDec empty empty empty
+    [.int 255 .u8] Heap.empty (by native_decide)
+
+end

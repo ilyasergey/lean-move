@@ -190,7 +190,8 @@ theorem step_danglingRef_source (m : Machine) (loc : Loc) :
       all_goals (intro h; cases h)
     | unop op a =>
       exfalso; simp only [step, hs] at hstep
-      revert hstep; split <;> try split
+      -- the extra `split` is the `cast`/`not` discrimination on the abort path
+      revert hstep; split <;> try split <;> try split
       all_goals (intro h; cases h)
     | vecPack _ _ =>
       exfalso; simp only [step, hs] at hstep
@@ -1459,7 +1460,23 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
           have ⟨v, hv⟩ := evalUnop_some_of_unop_type_tbool hunop ba
           rw [hv] at hstep
           cases hstep
-        | int _ => cases op <;> simp [unop_type] at hunop
+        | int w1 =>
+          -- `not` is not defined at integer type, but `cast` is: it either
+          -- succeeds (no error) or aborts with `arithmeticError`.
+          cases op with
+          | not => simp [unop_type] at hunop
+          | cast w =>
+            have ⟨na, hna⟩ := HasType_int_is_int hta
+            subst hna
+            dsimp only [evalUnop] at hstep
+            by_cases hfit : na < w.max
+            · rw [if_pos hfit] at hstep
+              cases hstep
+            · rw [if_neg hfit] at hstep
+              dsimp only at hstep
+              injection hstep with he
+              subst he
+              simp
         | tunit => cases op <;> simp [unop_type] at hunop
         | trecord _ => cases op <;> simp [unop_type] at hunop
         | tvec _ => cases op <;> simp [unop_type] at hunop

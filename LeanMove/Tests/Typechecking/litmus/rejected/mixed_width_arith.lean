@@ -155,4 +155,51 @@ def fn_u8_literal_max_lenv := mkLabelEnv fn_u8_literal_max
 
 #guard check_fun fn_u8_literal_max fn_u8_literal_max_lenv AssocMap.empty
 
+/-
+  A cast accepts any *integer* width, but is not defined on `bool`:
+  `unop_type (.cast .u64) .tbool = none`. Move has no bool-to-integer cast.
+-/
+def fn_cast_bool : FunDef := {
+  params := [(var_a, .basic .tbool)]
+  returnType := [⟨.u64, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite s0 ← copy var_a) ;;
+        (letsite s1 ← unop(.cast .u64, s0)) ;;   -- REJECTED
+        ret [s1]
+    }
+  ]
+}
+
+def fn_cast_bool_lenv := mkLabelEnv fn_cast_bool
+
+#guard !check_fun fn_cast_bool fn_cast_bool_lenv AssocMap.empty
+
+/-
+  Conversely, a cast is what *makes* mixed-width arithmetic legal: the same
+  `a + b` that `fn_add_mixed` was rejected for is accepted once `a` is widened.
+  This is the positive control for the rejection above.
+-/
+def fn_add_after_cast : FunDef := {
+  params := [(var_a, .basic .u8), (var_b, .basic .u64)]
+  returnType := [⟨.u64, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite s0 ← copy var_a) ;;
+        (letsite s1 ← unop(.cast .u64, s0)) ;;
+        (letsite s2 ← copy var_b) ;;
+        (letsite (Site.site 3) ← binop(.add, s1, s2)) ;;
+        ret [Site.site 3]
+    }
+  ]
+}
+
+def fn_add_after_cast_lenv := mkLabelEnv fn_add_after_cast
+
+#guard check_fun fn_add_after_cast fn_add_after_cast_lenv AssocMap.empty
+
 end LeanMove.Tests.Litmus.MixedWidthArith

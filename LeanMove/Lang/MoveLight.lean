@@ -423,6 +423,7 @@ deriving Repr, DecidableEq, Inhabited, Hashable
     bytecode `Not` instruction; the `Cast*` opcodes would slot in here. -/
 inductive Unop where
   | not   -- Move bytecode `Not` (boolean negation)
+  | cast : IntType → Unop  -- Move bytecode `CastU8`…`CastU256`
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 -- Expressions

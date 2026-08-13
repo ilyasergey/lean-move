@@ -50,6 +50,7 @@ inductive MvirExpr where
   | move : String → MvirExpr                                  -- move(x)
   | borrowLocal : Bool → String → MvirExpr                    -- &x / &mut x
   | intLit : Nat → IntType → MvirExpr                         -- N, with its width suffix
+  | cast : IntType → MvirExpr → MvirExpr                      -- (e as u8)
   | boolLit : Bool → MvirExpr                                 -- true / false
   | fieldBorrow : Bool → MvirExpr → String → String → MvirExpr
       -- is_mut × source_expr × struct_name × field_name

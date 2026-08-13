@@ -87,6 +87,10 @@ def binop_type (bop : Binop) (τ1 τ2 : BasicMoveType) : Option BasicMoveType :=
 def unop_type (uop : Unop) (τ : BasicMoveType) : Option BasicMoveType :=
   match (uop, τ) with
   | (.not, .tbool) => some .tbool
+  -- A cast accepts *any* integer width and yields the target width. Narrowing
+  -- is allowed statically and checked at run time, exactly as in Move: whether
+  -- the value fits is not knowable from the type.
+  | (.cast w, .int _) => some (.int w)
   | _ => none
 
 -- Check that a list of sites conforms to a list of parameter types

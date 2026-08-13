@@ -2907,13 +2907,40 @@ private lemma evalUnop_has_type (enumEnv : EnumEnv) (uop : Unop) (bt1 bt2 : Basi
       | bool b =>
         simp only [evalUnop, Option.some.injEq] at heval
         subst heval; exact HasType.bool _
-      | int _ => simp [evalUnop] at heval
+      | int _ _ => simp [evalUnop] at heval
       | unit => simp [evalUnop] at heval
       | record _ => simp [evalUnop] at heval
       | ref _ _ => simp [evalUnop] at heval
       | vec _ _ => simp [evalUnop] at heval
       | variant _ _ _ => simp [evalUnop] at heval
     | int _ => simp [unop_type] at hbt
+    | tunit => simp [unop_type] at hbt
+    | trecord _ => simp [unop_type] at hbt
+    | tvec _ => simp [unop_type] at hbt
+    | tenum _ => simp [unop_type] at hbt
+  | cast w =>
+    -- A cast is only typed at integer argument, and `evalUnop` only returns
+    -- `some` when the value fits — which is exactly the range obligation.
+    cases bt1 with
+    | int w1 =>
+      simp only [unop_type, Option.some.injEq] at hbt
+      subst hbt
+      cases va with
+      | int n w2 =>
+        simp only [evalUnop] at heval
+        split at heval
+        · rename_i hfit
+          simp only [Option.some.injEq] at heval
+          subst heval
+          exact HasType.int _ _ hfit
+        · nomatch heval
+      | bool _ => simp [evalUnop] at heval
+      | unit => simp [evalUnop] at heval
+      | record _ => simp [evalUnop] at heval
+      | ref _ _ => simp [evalUnop] at heval
+      | vec _ _ => simp [evalUnop] at heval
+      | variant _ _ _ => simp [evalUnop] at heval
+    | tbool => simp [unop_type] at hbt
     | tunit => simp [unop_type] at hbt
     | trecord _ => simp [unop_type] at hbt
     | tvec _ => simp [unop_type] at hbt
@@ -2954,7 +2981,9 @@ private theorem preservation_unop (m m' : Machine) (env : TypeEnv) (lenv : Label
                 stmt := cont },
              stack := m.stack, heap := m.heap, enumEnv := m.enumEnv } := by
     cases heval : evalUnop op va with
-    | none => rw [heval] at hstep; nomatch hstep
+    -- the abort path now branches on `op` to pick the error, so reduce that
+    -- match before discharging the impossible `.error = .running` equation
+    | none => rw [heval] at hstep; cases op <;> nomatch hstep
     | some v =>
       rw [heval] at hstep
       simp only [ExecState.running.injEq] at hstep

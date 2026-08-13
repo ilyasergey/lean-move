@@ -104,6 +104,7 @@ def ppBinop : Binop → String
 
 def ppUnop : Unop → String
   | .not => "!"
+  | .cast w => s!"as {ppIntType w}"
 
 def ppSiteList (sites : List Site) : String :=
   let ss := sites.map ppSite

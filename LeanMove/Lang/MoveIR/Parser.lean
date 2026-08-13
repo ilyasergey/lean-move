@@ -205,8 +205,14 @@ partial def parsePrimaryExpr : Parser MvirExpr := do
   | '(' =>
     symbol '('
     let e ← parseExpr
+    -- MVIR writes a cast as `(expr as u8)`, so it is recognised here rather
+    -- than as an operator: the `as` can only appear inside the parentheses.
+    let cast? ← (attempt (do keyword "as"; let t ← parseType; pure (some t))) <|> pure none
     symbol ')'
-    pure e
+    match cast? with
+    | some (.int w) => pure (.cast w e)
+    | some _ => fail "cast target must be an integer type"
+    | none => pure e
   | _ =>
     let name ← attempt ident <|> fail "expected expression"
     match name with

@@ -388,6 +388,10 @@ def evalBinopBool : Binop → Bool → Bool → Option Value
 def evalUnop : Unop → Value → Option Value
   | .not, .bool b => some (.bool (!b))
   | .not, _ => none
+  -- Move's `CastU*` aborts when the value does not fit the target width; it
+  -- does not truncate. Widening casts always succeed.
+  | .cast w, .int n _ => if n < w.max then some (.int n w) else none
+  | .cast _, _ => none
 
 -- ============================================================
 -- Helper: Allocate arguments for function call
@@ -757,7 +761,12 @@ def step (state : ExecState) : ExecState :=
               heap := m.heap
               enumEnv := m.enumEnv
             }
-          | none => .error (.typeMismatch "invalid unop")
+          -- A failing cast is an arithmetic abort (the value did not fit the
+          -- target width), not a type error.
+          | none =>
+            match op with
+            | .cast _ => .error .arithmeticError
+            | _ => .error (.typeMismatch "invalid unop")
         | none => .error (.uninitializedSite (.site 0))
 
       -- Vector operations

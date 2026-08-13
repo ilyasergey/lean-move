@@ -1,0 +1,48 @@
+// Integer widths and the `CastU*` opcodes.
+//
+// Two things are pinned down here. First, the width suffix on a literal is
+// significant: `1u8` is `LdU8`, a bare `1` is `LdU64`. Second, `(e as T)` is a
+// cast, and the `as` is recognised inside the parentheses rather than as an
+// operator — so an ordinary parenthesised expression is unaffected.
+
+//# publish
+module 0x52.Casts {
+
+    // Widening. Always succeeds at run time.
+    widen(a: u8): u64 {
+    label b0:
+        return (copy(a) as u64);
+    }
+
+    // Narrowing. Typechecks, but aborts at run time when the value does not
+    // fit — Move's cast checks rather than truncates.
+    narrow(a: u64): u8 {
+    label b0:
+        return (copy(a) as u8);
+    }
+
+    // The width suffix on a literal drives the type of the whole function.
+    lit_u8(): u8 {
+    label b0:
+        return 7u8;
+    }
+
+    // An unsuffixed literal is u64.
+    lit_default(): u64 {
+    label b0:
+        return 7;
+    }
+
+    // The widths beyond u64 parse and typecheck like any other.
+    lit_u256(): u256 {
+    label b0:
+        return 7u256;
+    }
+
+    // A cast feeding arithmetic: the operands agree in width only *after* the
+    // cast, which is the whole point of having an explicit cast opcode.
+    add_after_cast(a: u8, b: u64): u64 {
+    label b0:
+        return (copy(a) as u64) + copy(b);
+    }
+}
