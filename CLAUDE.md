@@ -240,6 +240,16 @@ These practices are what kept the assistant productive; follow them.
   separate `private def`.
 - **Scoping**: outer variables are not visible inside `by` blocks nested in an
   `exact { … }` structure literal.
+- **Never put a nested `by` inside a `first`/`try` alternative** (e.g.
+  `try (exact absurd h (by simp))`). If the inner `by` leaves goals, Lean
+  *reports* "unsolved goals" instead of failing the enclosing combinator, so the
+  branch neither succeeds nor backtracks. Use a tactic that fails cleanly —
+  `exact Option.noConfusion h`, `simp at h` — instead. This bites when a new
+  constructor is added to an inductive and an existing `cases … <;> first | …`
+  sweep suddenly reaches an alternative it never used to.
+- **`mkLabelEnvDec` only registers the *entry* block.** Multi-block functions
+  (anything with a `branch`) need `mkLabelEnvDecAll`, or `check_fun_dec` returns
+  `false` and the `by rfl` certificate fails with no useful message.
 
 ---
 
