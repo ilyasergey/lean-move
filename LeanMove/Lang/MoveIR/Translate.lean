@@ -277,7 +277,8 @@ partial def flattenExpr (e : MvirExpr) : TransM FlatResult := do
     let s ← freshSite
     -- `TransM` has no failure channel, so an unrecognised operator has to yield
     -- *some* `Binop`. `translateBinop` is total over every operator string the
-    -- parser can produce (see `translateBinop_total`), so the `getD` never fires.
+    -- parser can produce — that is what the `#guard` above pins down — so this
+    -- fallback is unreachable.
     let binopKind := (translateBinop op).getD .add
     pure { bindings := lhsR.bindings ++ rhsR.bindings ++
            [(s, .binop binopKind lhsR.result rhsR.result)], result := s }

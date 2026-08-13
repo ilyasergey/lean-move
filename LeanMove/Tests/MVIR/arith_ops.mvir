@@ -1,0 +1,42 @@
+// Multiplication (`Mul`), plus the arithmetic operators it sits alongside.
+//
+// `*` is the one operator whose concrete syntax is overloaded: prefix it is
+// dereference, infix it is multiplication. These functions pin down the
+// disambiguation — see the `binaryOperators` docstring in Syntax.lean.
+
+//# publish
+module 0x51.Arith {
+
+    mul(a: u64, b: u64): u64 {
+    label b0:
+        return copy(a) * copy(b);
+    }
+
+    // Prefix `*` on *both* operands of an infix `*`. This is the shape that
+    // forced the question: `*copy(a) * *copy(b)` has to read as
+    // `mul (deref a) (deref b)`, not as a deref of anything else.
+    mul_derefs(a: &u64, b: &u64): u64 {
+    label b0:
+        return *copy(a) * *copy(b);
+    }
+
+    // Infix `*` in the value of a `*`-prefixed write target.
+    scale(r: &mut u64, k: u64) {
+    label b0:
+        *copy(r) = copy(k) * copy(k);
+        return;
+    }
+
+    // MVIR expressions take at most one infix operator, so nesting is explicit.
+    mul_add(a: u64, b: u64, c: u64): u64 {
+    label b0:
+        return (copy(a) * copy(b)) + copy(c);
+    }
+
+    // A `*`-separated *return type* list. This `*` is a type separator parsed by
+    // `starSep1 parseType` and must not be mistaken for multiplication.
+    mul_pair(a: u64, b: u64): u64 * u64 {
+    label b0:
+        return copy(a) * copy(b), copy(a) + copy(b);
+    }
+}

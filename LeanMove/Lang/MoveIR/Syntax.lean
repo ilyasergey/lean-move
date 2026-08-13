@@ -72,8 +72,7 @@ deriving Repr, Inhabited
     This is the single source of truth shared by the parser and the translator:
     `Translate.translateBinop` is checked total over this list, so an operator
     cannot be added to the concrete syntax without also being given a MoveLight
-    `Binop`. Note `*` is deliberately absent — in MVIR it is the prefix
-    dereference operator.
+    `Binop`.
 
     Order is significant. `parseBinOp` folds this list right-to-left into a
     chain of alternatives, so an earlier entry is tried first, and `keyword` is
@@ -81,12 +80,20 @@ deriving Repr, Inhabited
     proper prefix of another must therefore come *after* it: `&&` before `&`,
     `||` before `|`, and `>=`/`<=` before `>`/`<`.
 
+    `*` is overloaded in MVIR: prefix it is dereference, infix it is `Mul`. The
+    two are disambiguated positionally rather than by lookahead — `parseUnaryExpr`
+    consumes a *prefix* `*` before `parseExpr` ever consults this table, so a `*`
+    that reaches `parseBinOp` necessarily follows a complete operand and can only
+    be multiplication. This is why `*copy(a) * *copy(b)` parses correctly.
+    (Return types such as `&mut u64 * &mut u64` use a separate `*` separator,
+    parsed by `starSep1 parseType`, and never reach the expression grammar.)
+
     Infix `&` is unambiguous despite `&` also introducing a borrow, for the
     same positional reason as prefix vs. infix `*`: `parseUnaryExpr` consumes a
     *prefix* `&` before `parseExpr` ever consults this table, so a `&` that
     reaches `parseBinOp` necessarily follows a complete operand. -/
 def binaryOperators : List String :=
-  ["==", "!=", "&&", "||", "<<", ">>", ">=", "<=", ">", "<", "+", "-", "/", "%",
+  ["==", "!=", "&&", "||", "<<", ">>", ">=", "<=", ">", "<", "+", "-", "*", "/", "%",
    "&", "|", "^"]
 
 /-- The unary operator spellings the concrete syntax admits. -/

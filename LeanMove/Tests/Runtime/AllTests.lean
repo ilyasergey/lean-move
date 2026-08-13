@@ -57,6 +57,7 @@ import LeanMove.Tests.Typechecking.expressivity.accepted.enum_borrow_field_mutab
 import LeanMove.Tests.Typechecking.expressivity.accepted.enum_match
 import LeanMove.Tests.Typechecking.litmus.accepted.boolean_ops_ok
 import LeanMove.Tests.Typechecking.litmus.accepted.comparison_ops_ok
+import LeanMove.Tests.Typechecking.litmus.accepted.arith_ops_ok
 
 /-!
 # Runtime Tests for MoveLight Interpreter
@@ -1012,5 +1013,74 @@ private theorem shr_no_danglingRef :
     ∀ n loc, run n (initState fn_shr_u64 empty [.int 240 .u64, .int 4 .u8]) ≠ .error (.danglingRef loc) :=
   type_soundness_dec_no_danglingRef fn_shr_u64 fn_shr_u64_lenvDec empty empty empty
     [.int 240 .u64, .int 4 .u8] Heap.empty (by native_decide)
+
+end
+
+-- ============================================================
+-- B3. arith_ops_ok — runtime (Mul)
+--     `Binop.mul` had an `evalBinop` row and a `binop_type` row long
+--     before `*` was admitted as infix concrete syntax, so nothing
+--     had ever executed it.
+-- ============================================================
+section
+open LeanMove.Tests.Litmus.ArithOpsOk
+
+-- a * b
+#guard (run 100 (initState fn_mul AssocMap.empty [.int 6 .u64, .int 7 .u64])).getHaltedValues ==
+  some [.int 42 .u64]
+-- 0 is absorbing, and 1 is a unit — cheap guards against a `+` mix-up, which
+-- would give 7 and 8 here rather than 0 and 7.
+#guard (run 100 (initState fn_mul AssocMap.empty [.int 0 .u64, .int 7 .u64])).getHaltedValues ==
+  some [.int 0 .u64]
+#guard (run 100 (initState fn_mul AssocMap.empty [.int 1 .u64, .int 7 .u64])).getHaltedValues ==
+  some [.int 7 .u64]
+
+-- (a * b) + c
+#guard (run 100 (initState fn_mul_add AssocMap.empty
+  [.int 3 .u64, .int 4 .u64, .int 5 .u64])).getHaltedValues ==
+  some [.int 17 .u64]
+
+-- *a * *b, reading both operands through immutable references
+private def mulRefsHeap : Heap × Loc × Loc :=
+  let (h1, l1) := Heap.empty.alloc (.int 6 .u64)
+  let (h2, l2) := h1.alloc (.int 7 .u64)
+  (h2, l1, l2)
+
+#guard (run 100 (initState fn_mul_derefs AssocMap.empty
+  [.ref mulRefsHeap.2.1 [], .ref mulRefsHeap.2.2 []] mulRefsHeap.1)).getHaltedValues ==
+  some [.int 42 .u64]
+
+-- *r = k * k
+private def scaleHeap : Heap × Loc := Heap.empty.alloc (.int 0 .u64)
+
+#guard (run 100 (initState fn_scale AssocMap.empty
+  [.ref scaleHeap.2 [], .int 9 .u64] scaleHeap.1)).getHaltedValues == some []
+
+private theorem mul_no_danglingRef :
+    ∀ n loc, run n (initState fn_mul empty [.int 6 .u64, .int 7 .u64]) ≠
+      .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_mul fn_mul_lenvDec empty empty empty
+    [.int 6 .u64, .int 7 .u64] Heap.empty (by native_decide)
+
+private theorem mul_add_no_danglingRef :
+    ∀ n loc, run n (initState fn_mul_add empty [.int 3 .u64, .int 4 .u64, .int 5 .u64]) ≠
+      .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_mul_add fn_mul_add_lenvDec empty empty empty
+    [.int 3 .u64, .int 4 .u64, .int 5 .u64] Heap.empty (by native_decide)
+
+-- The reference-typed cases carry certificates too: these are the executions
+-- where a `Mul` sits between a `readRef` and a `writeRef`.
+private theorem mul_derefs_no_danglingRef :
+    ∀ n loc, run n (initState fn_mul_derefs empty
+      [.ref mulRefsHeap.2.1 [], .ref mulRefsHeap.2.2 []] mulRefsHeap.1) ≠
+      .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_mul_derefs fn_mul_derefs_lenvDec empty empty empty
+    [.ref mulRefsHeap.2.1 [], .ref mulRefsHeap.2.2 []] mulRefsHeap.1 (by native_decide)
+
+private theorem scale_no_danglingRef :
+    ∀ n loc, run n (initState fn_scale empty [.ref scaleHeap.2 [], .int 9 .u64] scaleHeap.1) ≠
+      .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_scale fn_scale_lenvDec empty empty empty
+    [.ref scaleHeap.2 [], .int 9 .u64] scaleHeap.1 (by native_decide)
 
 end
