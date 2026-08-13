@@ -245,4 +245,56 @@ def fn_xor_u8_lenvDec := mkLabelEnvDec fn_xor_u8
 
 theorem fn_xor_u8_checks : check_fun_dec fn_xor_u8 fn_xor_u8_lenvDec = true := by rfl
 
+/-
+  `Shl` at u8, shifted by a u8. Aborts at run time when the amount reaches the
+  operand width; overflowing bits are discarded rather than aborting.
+-/
+def fn_shl_u8 : FunDef := {
+  params := [(var_a, .basic .u8), (var_b, .basic .u8)]
+  returnType := [⟨.u8, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite s0 ← copy var_a) ;;
+        (letsite s1 ← copy var_b) ;;
+        (letsite s2 ← binop(.shl, s0, s1)) ;;
+        ret [s2]
+    }
+  ]
+}
+
+def fn_shl_u8_lenv := mkLabelEnv fn_shl_u8
+def fn_shl_u8_lenvDec := mkLabelEnvDec fn_shl_u8
+
+#guard check_fun fn_shl_u8 fn_shl_u8_lenv AssocMap.empty
+
+theorem fn_shl_u8_checks : check_fun_dec fn_shl_u8 fn_shl_u8_lenvDec = true := by rfl
+
+/-
+  `Shr` on a u64 by a u8 — the asymmetric shape, where the two operand types
+  genuinely differ.
+-/
+def fn_shr_u64 : FunDef := {
+  params := [(var_a, .basic .u64), (var_b, .basic .u8)]
+  returnType := [⟨.u64, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite s0 ← copy var_a) ;;
+        (letsite s1 ← copy var_b) ;;
+        (letsite s2 ← binop(.shr, s0, s1)) ;;
+        ret [s2]
+    }
+  ]
+}
+
+def fn_shr_u64_lenv := mkLabelEnv fn_shr_u64
+def fn_shr_u64_lenvDec := mkLabelEnvDec fn_shr_u64
+
+#guard check_fun fn_shr_u64 fn_shr_u64_lenv AssocMap.empty
+
+theorem fn_shr_u64_checks : check_fun_dec fn_shr_u64 fn_shr_u64_lenvDec = true := by rfl
+
 end LeanMove.Tests.Litmus.SizedIntArithOk

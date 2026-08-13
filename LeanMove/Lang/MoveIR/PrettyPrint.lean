@@ -129,6 +129,8 @@ def ppBinop : Binop → String
   | .bitand => ".bitand"
   | .bitor => ".bitor"
   | .bitxor => ".bitxor"
+  | .shl => ".shl"
+  | .shr => ".shr"
 
 def ppUnop : Unop → String
   | .not => ".not"

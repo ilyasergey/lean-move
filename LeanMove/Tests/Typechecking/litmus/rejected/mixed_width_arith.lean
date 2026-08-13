@@ -249,4 +249,52 @@ def fn_bitor_mixed_lenv := mkLabelEnv fn_bitor_mixed
 
 #guard !check_fun fn_bitor_mixed fn_bitor_mixed_lenv AssocMap.empty
 
+/-
+  The shifts are the exception to the same-width rule, but only in one
+  direction: the *amount* must be a `u8`. A `u64` shift amount is rejected even
+  though both operands agree in width — `binop_type .shl` guards on
+  `w2 == .u8`, not on `w1 == w2`.
+-/
+def fn_shl_u64_amount : FunDef := {
+  params := [(var_a, .basic .u64), (var_b, .basic .u64)]
+  returnType := [⟨.u64, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite s0 ← copy var_a) ;;
+        (letsite s1 ← copy var_b) ;;
+        (letsite s2 ← binop(.shl, s0, s1)) ;;      -- REJECTED
+        ret [s2]
+    }
+  ]
+}
+
+def fn_shl_u64_amount_lenv := mkLabelEnv fn_shl_u64_amount
+
+#guard !check_fun fn_shl_u64_amount fn_shl_u64_amount_lenv AssocMap.empty
+
+/-
+  The positive control: the same shift with a `u8` amount is accepted, and the
+  result keeps the *left* operand's width rather than the amount's.
+-/
+def fn_shl_ok : FunDef := {
+  params := [(var_a, .basic .u64), (var_b, .basic .u8)]
+  returnType := [⟨.u64, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite s0 ← copy var_a) ;;
+        (letsite s1 ← copy var_b) ;;
+        (letsite s2 ← binop(.shl, s0, s1)) ;;
+        ret [s2]
+    }
+  ]
+}
+
+def fn_shl_ok_lenv := mkLabelEnv fn_shl_ok
+
+#guard check_fun fn_shl_ok fn_shl_ok_lenv AssocMap.empty
+
 end LeanMove.Tests.Litmus.MixedWidthArith

@@ -380,6 +380,12 @@ def evalBinop : Binop → Nat → Nat → IntType → Option Value
   | .bitand, a, b, w => some (.int (a &&& b) w)
   | .bitor, a, b, w => some (.int (a ||| b) w)
   | .bitxor, a, b, w => some (.int (a ^^^ b) w)
+  -- Shifts abort only when the amount is at least the operand width. `shl`
+  -- itself does *not* abort on overflow — the Move reference lists "result is
+  -- too large" as an abort condition for `+` and `*` but not for `<<`, so the
+  -- bits shifted off the top are discarded, hence the `% w.max`.
+  | .shl, a, b, w => if b < w.bits then some (.int ((a <<< b) % w.max) w) else none
+  | .shr, a, b, w => if b < w.bits then some (.int (a >>> b) w) else none
 
 /-- Evaluate a binary operation on booleans -/
 def evalBinopBool : Binop → Bool → Bool → Option Value

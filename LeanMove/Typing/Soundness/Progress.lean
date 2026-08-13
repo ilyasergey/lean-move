@@ -814,7 +814,9 @@ private theorem filterMap_readSite_length (m : Machine) (l : List Site)
 
 /-- A well-typed running state steps only to acceptable errors.
     This is the generalized progress theorem: any error produced by `step`
-    from a well-typed state must be `divisionByZero`, `outOfFuel`, or `aborted`. -/
+    from a well-typed state must be one of the accepted errors:
+    `divisionByZero`, `arithmeticError`, `outOfFuel`, `aborted`,
+    `vectorError` or `variantMismatch`. -/
 theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)
     (hwt : WellTypedState m env lenv retTypes rmap)
@@ -1375,30 +1377,29 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
           | int w2 =>
             have ⟨nb, hnb⟩ := HasType_int_is_int htb
             subst hnb
-            -- Mixed widths are rejected statically: every integer row of
-            -- `binop_type` guards on `w1 == w2`, so `hbinop` is contradictory.
-            by_cases hw : w1 = w2
-            · subst hw
+            -- No case split on the widths is needed here. `step` evaluates at
+            -- the *left* operand's width whatever the right one is, so this
+            -- covers the shifts (whose amount is a `u8`) along with the
+            -- same-width operators.
+            dsimp only at hstep
+            cases hev : evalBinop op na nb w1 with
+            | none =>
+              -- The failure is reported as `divisionByZero` *or*
+              -- `arithmeticError`; both are acceptable.
+              rw [hev] at hstep
               dsimp only at hstep
-              cases hev : evalBinop op na nb w1 with
-              | none =>
-                -- The failure is now reported as `divisionByZero` *or*
-                -- `arithmeticError`; both are acceptable.
-                rw [hev] at hstep
-                dsimp only at hstep
-                by_cases hdz : ((op == Binop.div || op == Binop.mod) && nb == 0) = true
-                · rw [if_pos hdz] at hstep
-                  injection hstep with he
-                  subst he
-                  simp
-                · rw [if_neg hdz] at hstep
-                  injection hstep with he
-                  subst he
-                  simp
-              | some v =>
-                rw [hev] at hstep
-                cases hstep
-            · cases op <;> simp [binop_type, hw] at hbinop
+              by_cases hdz : ((op == Binop.div || op == Binop.mod) && nb == 0) = true
+              · rw [if_pos hdz] at hstep
+                injection hstep with he
+                subst he
+                simp
+              · rw [if_neg hdz] at hstep
+                injection hstep with he
+                subst he
+                simp
+            | some v =>
+              rw [hev] at hstep
+              cases hstep
           | tbool =>
             have ⟨nb, hnb⟩ := HasType_tbool_is_bool htb
             subst hnb

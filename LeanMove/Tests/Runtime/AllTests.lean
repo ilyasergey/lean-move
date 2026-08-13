@@ -966,3 +966,51 @@ private theorem xor_u8_no_danglingRef :
     [.int 255 .u8, .int 255 .u8] Heap.empty (by native_decide)
 
 end
+
+-- ============================================================
+-- 19. shifts — Shl / Shr
+-- ============================================================
+section
+open LeanMove.Tests.Litmus.SizedIntArithOk
+
+-- An ordinary shift, and one whose result exactly fills the width.
+#guard (run 100 (initState fn_shl_u8 empty [.int 1 .u8, .int 3 .u8])).getHaltedValues ==
+  some [.int 8 .u8]
+#guard (run 100 (initState fn_shl_u8 empty [.int 1 .u8, .int 7 .u8])).getHaltedValues ==
+  some [.int 128 .u8]
+
+-- `Shl` discards the bits shifted off the top rather than aborting: the Move
+-- reference lists "result is too large" as an abort condition for `+` and `*`
+-- but not for `<<`. 31 << 4 = 496, truncated to 8 bits = 240.
+#guard (run 100 (initState fn_shl_u8 empty [.int 31 .u8, .int 4 .u8])).getHaltedValues ==
+  some [.int 240 .u8]
+
+-- What *does* abort is a shift amount at or beyond the operand width.
+#guard (run 100 (initState fn_shl_u8 empty [.int 1 .u8, .int 8 .u8])) matches
+  .error .arithmeticError
+
+-- Right shift on a u64 by a u8 — the asymmetric shape.
+#guard (run 100 (initState fn_shr_u64 empty [.int 240 .u64, .int 4 .u8])).getHaltedValues ==
+  some [.int 15 .u64]
+-- 63 is the largest legal amount for a u64; 64 aborts.
+#guard (run 100 (initState fn_shr_u64 empty [.int 1 .u64, .int 63 .u8])).getHaltedValues ==
+  some [.int 0 .u64]
+#guard (run 100 (initState fn_shr_u64 empty [.int 1 .u64, .int 64 .u8])) matches
+  .error .arithmeticError
+
+private theorem shl_truncating_no_danglingRef :
+    ∀ n loc, run n (initState fn_shl_u8 empty [.int 31 .u8, .int 4 .u8]) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_shl_u8 fn_shl_u8_lenvDec empty empty empty
+    [.int 31 .u8, .int 4 .u8] Heap.empty (by native_decide)
+
+private theorem shl_overlong_no_danglingRef :
+    ∀ n loc, run n (initState fn_shl_u8 empty [.int 1 .u8, .int 8 .u8]) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_shl_u8 fn_shl_u8_lenvDec empty empty empty
+    [.int 1 .u8, .int 8 .u8] Heap.empty (by native_decide)
+
+private theorem shr_no_danglingRef :
+    ∀ n loc, run n (initState fn_shr_u64 empty [.int 240 .u64, .int 4 .u8]) ≠ .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_shr_u64 fn_shr_u64_lenvDec empty empty empty
+    [.int 240 .u64, .int 4 .u8] Heap.empty (by native_decide)
+
+end

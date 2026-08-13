@@ -30,10 +30,11 @@ private def src :=
 
 #guard (parseMvir src).isOk
 #guard (parseAndTranslate src).isOk
-#guard (parseAndTranslate src).toOption.get!.length == 7
+#guard (parseAndTranslate src).toOption.get!.length == 12
 
 private def var_a : Var := ⟨"a"⟩
 private def var_b : Var := ⟨"b"⟩
+private def var_n : Var := ⟨"n"⟩
 private def s (n : Nat) : Site := .site n
 
 private def parsedAt (i : Nat) : FunDef :=
@@ -89,3 +90,33 @@ private def hw_band_derefs : FunDef := {
 -- …and are genuinely distinct from the bitwise opcodes.
 #guard !alphaEquivFunDef (parsedAt 5) (hw_bin .bitand .tbool .tbool)
 #guard !alphaEquivFunDef (parsedAt 6) (hw_bin .bitor .tbool .tbool)
+
+/-- `f(a: t, n: u8): t { return copy(a) op copy(n); }` — the shift shape, whose
+    two operands have *different* types. -/
+private def hw_shift (op : Binop) (t : IntType) : FunDef := {
+  params := [(var_a, .basic (.int t)), (var_n, .basic .u8)]
+  returnType := [⟨.int t, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite (s 0) ← copy var_a) ;;
+        (letsite (s 1) ← copy var_n) ;;
+        (letsite (s 2) ← binop(op, (s 0), (s 1))) ;;
+        ret [(s 2)]
+    }
+  ]
+}
+
+#guard alphaEquivFunDef (parsedAt 7) (hw_shift .shl .u64)
+#guard alphaEquivFunDef (parsedAt 8) (hw_shift .shr .u64)
+#guard alphaEquivFunDef (parsedAt 9) (hw_shift .shl .u8)
+
+-- `<<` and `>>` must be matched before `<` and `>`: had the table been ordered
+-- the other way, `a << b` would parse as `a < (< b)` and fail. These two pin
+-- the comparisons down at the same time.
+#guard alphaEquivFunDef (parsedAt 10) (hw_bin .lt .u64 .tbool)
+#guard alphaEquivFunDef (parsedAt 11) (hw_bin .ge .u64 .tbool)
+
+-- a shift is not its corresponding comparison
+#guard !alphaEquivFunDef (parsedAt 7) (hw_shift .lt .u64)

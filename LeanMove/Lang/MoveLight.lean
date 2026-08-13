@@ -422,6 +422,10 @@ inductive Binop where
   | bitand  -- Move bytecode `BitAnd`
   | bitor   -- Move bytecode `BitOr`
   | bitxor  -- Move bytecode `Xor`
+  -- The shifts are the only binary operators whose operands have *different*
+  -- types: the shift amount is always a `u8`, whatever the value's width.
+  | shl     -- Move bytecode `Shl`
+  | shr     -- Move bytecode `Shr`
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 /-- Unary operators: boolean negation and the integer casts. -/

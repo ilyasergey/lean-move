@@ -189,6 +189,8 @@ def translateBinop : String → Option Binop
   | "&"  => some .bitand
   | "|"  => some .bitor
   | "^"  => some .bitxor
+  | "<<" => some .shl
+  | ">>" => some .shr
   | _    => none
 
 /-- Map a concrete-syntax unary operator onto its MoveLight `Unop`. -/

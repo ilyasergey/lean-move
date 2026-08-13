@@ -26,9 +26,11 @@ The type system rules out 8 of 11 runtime error constructors:
 `danglingRef`, `uninitializedVar`, `uninitializedSite`, `unknownLabel`,
 `unknownFunction`, `arityMismatch`, `invalidFieldAccess`, `typeMismatch`.
 
-Only 3 error constructors are acceptable (not preventable by the type system):
-`divisionByZero` (runtime arithmetic), `outOfFuel` (bounded interpreter),
-and `aborted` (well-typed `abort` statement or `skip` in callee).
+Only 6 error constructors are acceptable (not preventable by the type system):
+`divisionByZero` (runtime arithmetic), `arithmeticError` (integer
+overflow/underflow, out-of-range cast, overlong shift), `outOfFuel` (bounded
+interpreter), `aborted` (well-typed `abort` statement or `skip` in callee),
+`vectorError` and `variantMismatch`.
 
 Four versions are provided:
 - `type_soundness`: general version ruling out all non-acceptable errors
@@ -51,7 +53,8 @@ open AssocMap
 
 /-- The main type soundness theorem: a well-typed function never produces
     a non-acceptable error at runtime, regardless of fuel.
-    Acceptable errors: `divisionByZero`, `outOfFuel`, `aborted`. -/
+    Acceptable errors: `divisionByZero`, `arithmeticError`, `outOfFuel`,
+    `aborted`, `vectorError`, `variantMismatch`. -/
 theorem type_soundness (f : FunDef) (lenv : LabelEnv) (enumEnv : EnumEnv)
     (funEnv : AssocMap Id FunDef)
     (args : List Value) (heap : Heap)

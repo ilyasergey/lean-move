@@ -17,11 +17,12 @@ core calculus of the Move intermediate representation — and proved it
   non-acceptable errors** at runtime. The type system rules out **8 of 13**
   runtime error constructors — including dangling references,
   uninitialized variables, type mismatches, unknown labels/functions,
-  arity mismatches, and invalid field accesses. Only 5 *acceptable*
-  errors remain: `divisionByZero` (runtime arithmetic), `outOfFuel`
-  (bounded interpreter), `aborted` (well-typed `abort` statement),
-  `vectorError` (out-of-bounds access, empty pop, length mismatch),
-  and `variantMismatch` (unpacking with wrong variant name).
+  arity mismatches, and invalid field accesses. Only 6 *acceptable*
+  errors remain: `divisionByZero` (runtime arithmetic), `arithmeticError`
+  (integer overflow/underflow, out-of-range cast, overlong shift),
+  `outOfFuel` (bounded interpreter), `aborted` (well-typed `abort`
+  statement), `vectorError` (out-of-bounds access, empty pop, length
+  mismatch), and `variantMismatch` (unpacking with wrong variant name).
 - The language supports **vectors** (Part III) and **enums** (Part IV) as
   extensions to the core calculus, each fully integrated into the type
   system and soundness proof.
@@ -39,7 +40,8 @@ MoveLight is a deliberately simplified model of the Move borrow checker.
 The formalisation does **not** cover:
 
 - **Generics and type parameters.** MoveLight has no polymorphism;
-  all types are monomorphic (`u64`, `bool`, records with fixed fields).
+  all types are monomorphic (sized integers, `bool`, records with fixed
+  fields).
 - **Abilities beyond copy/drop.** Move's `store` and `key` abilities
   are parsed but not enforced. Resource linearity (must-use semantics)
   is not modelled.
@@ -113,7 +115,8 @@ within the same block. Terminal statements include `variantSwitch` (enum
 pattern matching) in addition to `skip`, `jump`, `branch`, `ret`, and
 `abort`.
 
-Types are either *basic* (`u64`, `bool`, `unit`, records, vectors, enums) or
+Types are either *basic* (`int w` for `w` one of `u8`, `u16`, `u32`, `u64`,
+`u128`, `u256`; `bool`, `unit`, records, vectors, enums) or
 *references* `ref τ r bk`, carrying a basic content type `τ`, an abstract
 reference `r : Aref`, and a borrowing kind `bk` (immutable or mutable).
 Vector types have the form `tvec T` where `T` is the element type (itself a
@@ -148,6 +151,7 @@ system) and **acceptable** (not preventable):
 | `invalidFieldAccess` | Yes | Not produced by current step (0 sites) |
 | `typeMismatch` | Yes | All production sites preventable |
 | `divisionByZero` | No | Runtime arithmetic |
+| `arithmeticError` | No | Overflow/underflow, out-of-range cast, overlong shift |
 | `outOfFuel` | No | Bounded interpreter limitation |
 | `aborted` | No | Well-typed `abort` statement or `skip` in callee |
 | `vectorError` | No | Index out of bounds, empty pop, length mismatch |

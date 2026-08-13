@@ -104,6 +104,8 @@ def ppBinop : Binop → String
   | .bitand => "&"
   | .bitor => "|"
   | .bitxor => "^"
+  | .shl => "<<"
+  | .shr => ">>"
 
 def ppUnop : Unop → String
   | .not => "!"

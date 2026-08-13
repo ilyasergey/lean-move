@@ -2612,6 +2612,44 @@ private theorem preservation_readRef (m m' : Machine) (env : TypeEnv) (lenv : La
       varStore_locs_bound := hwt.varStore_locs_bound
     }
 
+/-- The shift cases of `evalBinop_has_type`, factored out because they are the
+    only operators for which the two operand widths may legitimately *differ*
+    (the amount is a `u8`), so they arise in both branches of that lemma's
+    case split on `w1 = w2`. -/
+private lemma evalBinop_shift_has_type (enumEnv : EnumEnv) (op : Binop) (w1 w2 : IntType)
+    (bt3 : BasicMoveType) (na nb : Nat) (result : Value)
+    (hna : na < w1.max)
+    (hop : op = .shl ∨ op = .shr)
+    (hbt : binop_type op (.int w1) (.int w2) = some bt3)
+    (heval : evalBinop op na nb w1 = some result) :
+    HasType enumEnv result bt3 := by
+  rcases hop with rfl | rfl
+  · simp only [binop_type] at hbt
+    split at hbt
+    · simp only [Option.some.injEq] at hbt
+      subst hbt
+      simp only [evalBinop] at heval
+      split at heval
+      · simp only [Option.some.injEq] at heval
+        subst heval
+        -- `shl` discards the overflowing bits, so the `% w.max` is what puts
+        -- the result back in range — no guard needed for the bound itself.
+        exact HasType.int _ _ (Nat.mod_lt _ (IntType.max_pos _))
+      · nomatch heval
+    · nomatch hbt
+  · simp only [binop_type] at hbt
+    split at hbt
+    · simp only [Option.some.injEq] at hbt
+      subst hbt
+      simp only [evalBinop] at heval
+      split at heval
+      · simp only [Option.some.injEq] at heval
+        subst heval
+        -- a right shift only ever shrinks the value
+        exact HasType.int _ _ (Nat.lt_of_le_of_lt (Nat.shiftRight_le _ _) hna)
+      · nomatch heval
+    · nomatch hbt
+
 /-- If evalBinop succeeds and binop_type determines the output type,
     the result value has the output type. -/
 private lemma evalBinop_has_type (enumEnv : EnumEnv) (op : Binop) (w1 w2 : IntType)
@@ -2706,8 +2744,17 @@ private lemma evalBinop_has_type (enumEnv : EnumEnv) (op : Binop) (w1 w2 : IntTy
     -- `and`/`or` are the boolean opcodes: no integer instantiation, so
     -- `binop_type` is `none` and `hbt` is absurd.
     | and | or => exfalso; simp [binop_type] at hbt
-  · -- Mixed widths never typecheck: every integer row guards on `w1 == w2`.
-    exfalso; cases op <;> simp [binop_type, hw] at hbt
+    | shl => exact evalBinop_shift_has_type enumEnv _ _ _ _ _ _ _ hna (Or.inl rfl) hbt heval
+    | shr => exact evalBinop_shift_has_type enumEnv _ _ _ _ _ _ _ hna (Or.inr rfl) hbt heval
+  · -- Mixed widths typecheck *only* for the shifts, whose right operand is a
+    -- `u8` regardless of the left operand's width. Every other integer row
+    -- guards on `w1 == w2`, so for those `hbt` is absurd.
+    cases op with
+    | shl => exact evalBinop_shift_has_type enumEnv _ _ _ _ _ _ _ hna (Or.inl rfl) hbt heval
+    | shr => exact evalBinop_shift_has_type enumEnv _ _ _ _ _ _ _ hna (Or.inr rfl) hbt heval
+    | add | sub | mul | div | mod | eq | neq | lt | gt | le | ge
+    | and | or | bitand | bitor | bitxor =>
+      exfalso; simp [binop_type, hw] at hbt
 
 private theorem preservation_binop (m m' : Machine) (env : TypeEnv) (lenv : LabelEnv)
     (retTypes : List ParamType) (rmap : RefMap)

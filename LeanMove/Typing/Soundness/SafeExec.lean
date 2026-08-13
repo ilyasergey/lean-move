@@ -40,7 +40,8 @@ open Regex
 
 /-- An exec state is "safe" if running states are well-typed (with stack safety)
     and error states are acceptable (not preventable by the type system).
-    Acceptable errors: divisionByZero, outOfFuel, aborted.
+    Acceptable errors: divisionByZero, arithmeticError, outOfFuel, aborted,
+    vectorError, variantMismatch.
     All other errors (danglingRef, uninitializedVar, uninitializedSite,
     unknownLabel, unknownFunction, arityMismatch, invalidFieldAccess,
     typeMismatch) are ruled out by well-typedness. -/

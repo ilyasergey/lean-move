@@ -47,4 +47,34 @@ module 0x53.Bitwise {
     label b0:
         return copy(a) || copy(b);
     }
+
+    // Shifts. The amount is a u8 whatever the value's width, so these two have
+    // operands of *different* types — the only binary operators that do.
+    shift_left(a: u64, n: u8): u64 {
+    label b0:
+        return copy(a) << copy(n);
+    }
+
+    shift_right(a: u64, n: u8): u64 {
+    label b0:
+        return copy(a) >> copy(n);
+    }
+
+    // Shifting a u8 by a u8: here the widths coincide, but only by accident.
+    shift_left_u8(a: u8, n: u8): u8 {
+    label b0:
+        return copy(a) << copy(n);
+    }
+
+    // `<<`/`>>` must beat `<`/`>` in the operator table; these keep the
+    // comparisons honest alongside them.
+    less(a: u64, b: u64): bool {
+    label b0:
+        return copy(a) < copy(b);
+    }
+
+    geq(a: u64, b: u64): bool {
+    label b0:
+        return copy(a) >= copy(b);
+    }
 }

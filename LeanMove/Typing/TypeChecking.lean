@@ -85,6 +85,10 @@ def binop_type (bop : Binop) (τ1 τ2 : BasicMoveType) : Option BasicMoveType :=
   | (.bitand, .int w1, .int w2) => if w1 == w2 then some (.int w1) else none
   | (.bitor,  .int w1, .int w2) => if w1 == w2 then some (.int w1) else none
   | (.bitxor, .int w1, .int w2) => if w1 == w2 then some (.int w1) else none
+  -- Shifts are asymmetric: the amount is a `u8` and "need not match the left
+  -- side operand", and the result takes the left operand's width.
+  | (.shl, .int w1, .int w2) => if w2 == .u8 then some (.int w1) else none
+  | (.shr, .int w1, .int w2) => if w2 == .u8 then some (.int w1) else none
   | _ => none
 
 -- function to take a unop and the type of its argument and return the type of the result

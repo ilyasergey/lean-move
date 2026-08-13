@@ -86,7 +86,7 @@ deriving Repr, Inhabited
     *prefix* `&` before `parseExpr` ever consults this table, so a `&` that
     reaches `parseBinOp` necessarily follows a complete operand. -/
 def binaryOperators : List String :=
-  ["==", "!=", "&&", "||", ">=", "<=", ">", "<", "+", "-", "/", "%",
+  ["==", "!=", "&&", "||", "<<", ">>", ">=", "<=", ">", "<", "+", "-", "/", "%",
    "&", "|", "^"]
 
 /-- The unary operator spellings the concrete syntax admits. -/
