@@ -22,7 +22,7 @@ import LeanMove.Typing.Algorithmic.DecidableTypeEnv
 # Type Soundness: Main Theorems
 
 A well-typed MoveLight function never produces a non-acceptable error at runtime.
-The type system rules out 8 of 11 runtime error constructors:
+The type system rules out 8 of 14 runtime error constructors:
 `danglingRef`, `uninitializedVar`, `uninitializedSite`, `unknownLabel`,
 `unknownFunction`, `arityMismatch`, `invalidFieldAccess`, `typeMismatch`.
 

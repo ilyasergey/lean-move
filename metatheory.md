@@ -14,7 +14,7 @@ core calculus of the Move intermediate representation — and proved it
 - The type checker is **executable**: it runs as a boolean function inside
   Lean and can verify programs by kernel reduction (`by rfl`).
 - The soundness theorem guarantees that well-typed programs **never produce
-  non-acceptable errors** at runtime. The type system rules out **8 of 13**
+  non-acceptable errors** at runtime. The type system rules out **8 of 14**
   runtime error constructors — including dangling references,
   uninitialized variables, type mismatches, unknown labels/functions,
   arity mismatches, and invalid field accesses. Only 6 *acceptable*
@@ -157,7 +157,7 @@ system) and **acceptable** (not preventable):
 | `vectorError` | No | Index out of bounds, empty pop, length mismatch |
 | `variantMismatch` | No | Unpacking enum with wrong variant name |
 
-The predicate `RuntimeError.isAcceptable` marks the last five as acceptable.
+The predicate `RuntimeError.isAcceptable` marks the last six as acceptable.
 Type soundness rules out all non-acceptable errors.
 
 ### Relational typing (`Typing/TypeChecking.lean`)
@@ -531,8 +531,8 @@ type_soundness
 
 **`SafeExecState`** defines safety: running states have a `WellTypedState`
 and `StackSafe` witness; halted states are safe; error states must satisfy
-`e.isAcceptable` (only `divisionByZero`, `outOfFuel`, `aborted`,
-`vectorError`, `variantMismatch`). Any
+`e.isAcceptable` (only `divisionByZero`, `arithmeticError`, `outOfFuel`,
+`aborted`, `vectorError`, `variantMismatch`). Any
 non-acceptable error contradicts safety.
 
 **Progress** (`Progress.lean`) proves `step_error_is_acceptable`: if a
