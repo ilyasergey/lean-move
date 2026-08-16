@@ -1,0 +1,61 @@
+// The three boolean instructions: And, Or, Not.
+//
+// Prefix `!` is the reason this file exists. It is the only unary operator the
+// concrete syntax admits, and until this test nothing in the repository parsed
+// one — so neither the `'!'` branch of `parseUnaryExpr` nor `translateUnop` was
+// ever executed. `!` also has to be told apart from the binary `!=`, which
+// shares its first character.
+//
+// Booleans are introduced by the comparison operators; MoveLight has no boolean
+// literal expression.
+
+//# publish
+module 0x51.Booleans {
+
+    // The bare prefix operator, on its own.
+    not(a: u64, b: u64): bool {
+    label b0:
+        return !(copy(a) == copy(b));
+    }
+
+    // `!` composed with itself: `!!(a == b)`.
+    double_negation(a: u64, b: u64): bool {
+    label b0:
+        return !!(copy(a) == copy(b));
+    }
+
+    // `!` applied to a variable rather than to a parenthesised comparison.
+    not_var(p: bool): bool {
+    label b0:
+        return !copy(p);
+    }
+
+    // `!` under `&&`, and `!` under `||`. The expression grammar admits a
+    // single infix operator, so the operands are parenthesised.
+    and_not(a: u64, b: u64): bool {
+    label b0:
+        return (copy(a) == copy(b)) && !(copy(a) < copy(b));
+    }
+
+    or_not(a: u64, b: u64): bool {
+    label b0:
+        return !(copy(a) == copy(b)) || (copy(a) < copy(b));
+    }
+
+    // `!` in branch position.
+    not_branch(a: u64, b: u64): u64 {
+    label b0:
+        jump_if (!(copy(a) == copy(b))) b2;
+    label b1:
+        return copy(a);
+    label b2:
+        return copy(b);
+    }
+
+    // The neighbouring binary operator, so that the `!` / `!=` split is pinned
+    // from both sides in a single file.
+    neq(a: u64, b: u64): bool {
+    label b0:
+        return copy(a) != copy(b);
+    }
+}

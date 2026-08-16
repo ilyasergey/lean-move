@@ -311,16 +311,33 @@ partial def parseUnaryExpr : Parser MvirExpr := do
     let inner ← parseUnaryExpr
     pure (.deref inner)
   | '!' =>
-    -- Boolean negation. `!=` is a binary operator, so only treat a bare `!`
-    -- (not followed by `=`) as the unary `Not`.
-    let neg ← attempt (do
-      symbol '!'
-      if ← isEof then pure true
-      else pure ((← peek!) != '='))
+    -- Boolean negation. `!=` is a binary operator, so only a `!` that is *not*
+    -- immediately followed by `=` is the unary `Not`.
+    --
+    -- The lookahead `fail`s rather than reporting `false`: `attempt` rolls the
+    -- position back on *error* only, so a lookahead that consumed the `!` and
+    -- then returned `false` would drop into the fallback with the `!` already
+    -- eaten. `skipChar`, not `symbol`, so that no whitespace is skipped before
+    -- the `=` test — `! =` is a negation, `!=` is not.
+    --
+    -- The fallback is currently unreachable: `parseExpr` consumes a binary `!=`
+    -- via `parseBinOp` after a complete left operand, so a `!` reaching here
+    -- always starts a unary operator. Both spellings are therefore rejected the
+    -- same way today; the point of restoring the position is that the branch
+    -- stays correct if the grammar ever does reach it.
+    let neg ← (attempt (do
+      skipChar '!'
+      let eof ← isEof
+      if !eof then
+        let next ← peek!
+        if next == '=' then fail "`!=` is a binary operator, not a unary `!`"
+      skipWsAndComments
+      pure true)) <|> pure false
     if neg then
       let inner ← parseUnaryExpr
       pure (.unop "!" inner)
     else
+      -- A `!=` in operand position is a syntax error; the `!` is still unconsumed.
       parsePrimaryExpr
   | _ =>
     if c.isDigit then
