@@ -120,7 +120,10 @@ def ppExprMacro : Expr → String
   | .usage (.move v) => s!"move {ppVar v}"
   | .usage (.borrowImm v) => s!"&{ppVar v}"
   | .usage (.borrowMut v) => s!"&mut {ppVar v}"
-  | .intLit n w => s!"#{n}{ppIntType w}"
+  -- The width is printed as a separate dot-ident argument, not as an MVIR-style
+  -- suffix: `#42u64` lexes as `#42` applied to an unknown identifier `u64`, so
+  -- the suffixed form cannot be pasted back into the `letsite … ← #n w` macro.
+  | .intLit n w => s!"#{n} .{ppIntType w}"
   | .borrowField src bt f =>
     s!"borrowField({ppSite src}, {ppBasicMoveType bt}, {ppField f})"
   | .borrowMutField src bt f =>

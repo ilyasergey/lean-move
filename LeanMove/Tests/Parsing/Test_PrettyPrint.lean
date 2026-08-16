@@ -5,6 +5,8 @@
 
 import LeanMove.Tests.Parsing.TestUtils
 import LeanMove.Lang.MoveIR.PrettyPrint
+import LeanMove.Lang.PrettyPrint
+import LeanMove.Lang.Macros
 
 /-! ## Pretty-Printer Tests
 
@@ -153,14 +155,52 @@ def ppTestOutput : String :=
 -- Macro syntax: assign
 #guard hasSubstr ppTestOutput "::="
 
--- Macro syntax: integer literal
-#guard hasSubstr ppTestOutput "#0"
+-- Macro syntax: integer literal, printed with its width as a separate argument
+#guard hasSubstr ppTestOutput "#0 .u64"
 
 -- Macro syntax: ret
 #guard hasSubstr ppTestOutput "ret ["
 
 -- Local variable declarations
 #guard hasSubstr ppTestOutput ".ref .u64"
+
+/- ====================================================== -/
+/-       Integer literals round-trip                      -/
+/- ====================================================== -/
+
+-- Both pretty-printers used to emit the MVIR-style suffixed form `#42u64`,
+-- which the `letsite … ← #n w` macro cannot parse: `u64` is not an identifier
+-- in scope, so the printed text could not be pasted back into a test. The
+-- width is now printed as a separate dot-ident argument.
+--
+-- Each width is pinned as a string, and the `example`s below are written in
+-- exactly that syntax — so if the printed form ever stops being valid macro
+-- syntax, one of the two halves fails to compile.
+
+#guard LeanMove.Lang.MoveLight.PP.ppExprMacro (.intLit 42 .u8) == "#42 .u8"
+#guard LeanMove.Lang.MoveLight.PP.ppExprMacro (.intLit 7 .u64) == "#7 .u64"
+#guard LeanMove.Lang.MoveLight.PP.ppExprMacro (.intLit 0 .u256) == "#0 .u256"
+
+#guard ppExpr (.intLit 42 .u8) == "#42 .u8"
+#guard ppExpr (.intLit 7 .u64) == "#7 .u64"
+#guard ppExpr (.intLit 0 .u256) == "#0 .u256"
+
+-- No printed width may contain the unparseable suffixed form.
+#guard !hasSubstr ppTestOutput "#0u64"
+
+-- The printed text is valid macro syntax denoting the value it was printed from.
+example : (letsite (.site 0) ← #42 .u8) (ret [])
+        = Stmt.letBind (.site 0) (Expr.intLit 42 .u8) (Stmt.ret []) := rfl
+
+example : (letsite (.site 0) ← #7 .u64) (ret [])
+        = Stmt.letBind (.site 0) (Expr.intLit 7 .u64) (Stmt.ret []) := rfl
+
+example : (letsite (.site 0) ← #0 .u256) (ret [])
+        = Stmt.letBind (.site 0) (Expr.intLit 0 .u256) (Stmt.ret []) := rfl
+
+-- An unsuffixed literal still defaults to `u64`, as the MVIR convention requires.
+example : (letsite (.site 0) ← #7) (ret [])
+        = Stmt.letBind (.site 0) (Expr.intLit 7 .u64) (Stmt.ret []) := rfl
 
 /- ====================================================== -/
 /-       Pretty-Print Individual Functions                -/

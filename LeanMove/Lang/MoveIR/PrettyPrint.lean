@@ -156,7 +156,9 @@ def ppUsage : Usage → String
 
 def ppExpr : Expr → String
   | .usage u => ppUsage u
-  | .intLit n w => s!"#{n}{ppIntType w}"
+  -- `#42 .u64`, not `#42u64`: the suffixed form lexes as an application of `#42`
+  -- to an unknown identifier and so cannot be pasted back into the macro syntax.
+  | .intLit n w => s!"#{n} .{ppIntType w}"
   | .borrowField s bt f =>
     s!"borrowField({ppSite s}, {ppBasicMoveType bt}, {ppField f})"
   | .borrowMutField s bt f =>
