@@ -67,6 +67,7 @@ def var_b : Var := ⟨"b"⟩
 def s0 : Site := .site 0
 def s1 : Site := .site 1
 def s2 : Site := .site 2
+def s (n : Nat) : Site := .site n
 
 /-
   `Sub` at u64. Well typed; underflows at run time when `b > a`.
@@ -296,5 +297,94 @@ def fn_shr_u64_lenvDec := mkLabelEnvDec fn_shr_u64
 #guard check_fun fn_shr_u64 fn_shr_u64_lenv AssocMap.empty
 
 theorem fn_shr_u64_checks : check_fun_dec fn_shr_u64 fn_shr_u64_lenvDec = true := by rfl
+
+/-
+  All three bitwise operators on the same pair of operands, returned together.
+
+  `fn_xor_u8` alone pins only one of the three `evalBinop` rows: swapping the
+  `bitand` and `bitor` rows leaves every existing guard green. Returning
+  `[a & b, a | b, a ^ b]` from a single execution distinguishes all three, since
+  no two of them agree on operands that share some but not all bits.
+-/
+def fn_bit_table : FunDef := {
+  params := [(var_a, .basic .u8), (var_b, .basic .u8)]
+  returnType := [⟨.u8, none⟩, ⟨.u8, none⟩, ⟨.u8, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite (s 0) ← copy var_a) ;;
+        (letsite (s 1) ← copy var_b) ;;
+        (letsite (s 2) ← binop(.bitand, (s 0), (s 1))) ;;
+        (letsite (s 3) ← copy var_a) ;;
+        (letsite (s 4) ← copy var_b) ;;
+        (letsite (s 5) ← binop(.bitor, (s 3), (s 4))) ;;
+        (letsite (s 6) ← copy var_a) ;;
+        (letsite (s 7) ← copy var_b) ;;
+        (letsite (s 8) ← binop(.bitxor, (s 6), (s 7))) ;;
+        ret [(s 2), (s 5), (s 8)]
+    }
+  ]
+}
+
+def fn_bit_table_lenv := mkLabelEnv fn_bit_table
+def fn_bit_table_lenvDec := mkLabelEnvDec fn_bit_table
+
+#guard check_fun fn_bit_table fn_bit_table_lenv AssocMap.empty
+
+theorem fn_bit_table_checks : check_fun_dec fn_bit_table fn_bit_table_lenvDec = true := by rfl
+
+/-
+  `Div` at u64. Well typed; aborts with `divisionByZero` at run time when the
+  divisor is zero. Nothing else in the tree reaches that error constructor, so
+  without this function the `divisionByZero` arm of `isAcceptable` is only ever
+  discharged vacuously.
+-/
+def fn_div_u64 : FunDef := {
+  params := [(var_a, .basic .u64), (var_b, .basic .u64)]
+  returnType := [⟨.u64, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite s0 ← copy var_a) ;;
+        (letsite s1 ← copy var_b) ;;
+        (letsite s2 ← binop(.div, s0, s1)) ;;
+        ret [s2]
+    }
+  ]
+}
+
+def fn_div_u64_lenv := mkLabelEnv fn_div_u64
+def fn_div_u64_lenvDec := mkLabelEnvDec fn_div_u64
+
+#guard check_fun fn_div_u64 fn_div_u64_lenv AssocMap.empty
+
+theorem fn_div_u64_checks : check_fun_dec fn_div_u64 fn_div_u64_lenvDec = true := by rfl
+
+/-
+  `Mod` at u64 — the other operator with a zero divisor.
+-/
+def fn_mod_u64 : FunDef := {
+  params := [(var_a, .basic .u64), (var_b, .basic .u64)]
+  returnType := [⟨.u64, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite s0 ← copy var_a) ;;
+        (letsite s1 ← copy var_b) ;;
+        (letsite s2 ← binop(.mod, s0, s1)) ;;
+        ret [s2]
+    }
+  ]
+}
+
+def fn_mod_u64_lenv := mkLabelEnv fn_mod_u64
+def fn_mod_u64_lenvDec := mkLabelEnvDec fn_mod_u64
+
+#guard check_fun fn_mod_u64 fn_mod_u64_lenv AssocMap.empty
+
+theorem fn_mod_u64_checks : check_fun_dec fn_mod_u64 fn_mod_u64_lenvDec = true := by rfl
 
 end LeanMove.Tests.Litmus.SizedIntArithOk

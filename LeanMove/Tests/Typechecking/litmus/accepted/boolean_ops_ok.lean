@@ -143,4 +143,49 @@ theorem fn_double_negation_welltyped :
     ∃ lenv, typecheck_fun fn_double_negation lenv AssocMap.empty :=
   ⟨_, check_fun_dec_sound _ _ _ fn_double_negation_check⟩
 
+-- ═══════════════════════════════════════════════════════
+-- Test 3: fn_bool_table — the full truth table for And, Or and Not
+-- ═══════════════════════════════════════════════════════
+
+/-
+`fn_and_or_not` cannot pin `And` down: its conjunction is `(a == b) && (a < b)`,
+which is unsatisfiable, so `And` is only ever evaluated with a `false` operand
+and an implementation that ignored its second argument would pass. Taking the
+two booleans as *parameters* instead of deriving them from comparisons makes all
+four combinations reachable, and returning `[p && q, p || q, !p]` from a single
+execution exercises the three operators independently.
+-/
+
+def var_p : Var := ⟨"p"⟩
+def var_q : Var := ⟨"q"⟩
+
+def fn_bool_table : FunDef := {
+  params := [(var_p, .basic .tbool), (var_q, .basic .tbool)]
+  returnType := [⟨.tbool, none⟩, ⟨.tbool, none⟩, ⟨.tbool, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite s0 ← copy var_p) ;;
+        (letsite s1 ← copy var_q) ;;
+        (letsite s2 ← binop(.and, s0, s1)) ;;      -- And
+        (letsite s3 ← copy var_p) ;;
+        (letsite s4 ← copy var_q) ;;
+        (letsite s5 ← binop(.or, s3, s4)) ;;       -- Or
+        (letsite s6 ← copy var_p) ;;
+        (letsite s7 ← unop(.not, s6)) ;;           -- Not
+        ret [s2, s5, s7]
+    }
+  ]
+}
+
+def fn_bool_table_lenvDec := mkLabelEnvDec fn_bool_table
+
+theorem fn_bool_table_check :
+    check_fun_dec fn_bool_table fn_bool_table_lenvDec = true := by rfl
+
+theorem fn_bool_table_welltyped :
+    ∃ lenv, typecheck_fun fn_bool_table lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ fn_bool_table_check⟩
+
 end LeanMove.Tests.Litmus.BooleanOpsOk

@@ -180,4 +180,57 @@ theorem fn_ge_branch_welltyped :
     ∃ lenv, typecheck_fun fn_ge_branch lenv AssocMap.empty :=
   ⟨_, check_fun_dec_sound _ _ _ fn_ge_branch_check⟩
 
+-- ═══════════════════════════════════════════════════════
+-- Test 4: fn_cmp_table — all six comparisons on one pair of operands
+-- ═══════════════════════════════════════════════════════
+
+/-
+`fn_comparisons` folds its six results into a single boolean, which hides
+individual rows: on the arguments it is run at, flipping the direction of `Le`
+does not change the answer. Returning
+`[a == b, a != b, a < b, a > b, a <= b, a >= b]` from one execution pins every
+row separately, and running it at `a = b` as well as at `a < b` and `a > b`
+covers the boundary that the strict and non-strict operators disagree on — a
+case no runtime test reached before.
+-/
+def fn_cmp_table : FunDef := {
+  params := [(var_a, .basic .u64), (var_b, .basic .u64)]
+  returnType := [⟨.tbool, none⟩, ⟨.tbool, none⟩, ⟨.tbool, none⟩,
+                 ⟨.tbool, none⟩, ⟨.tbool, none⟩, ⟨.tbool, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite (s 0) ← copy var_a) ;;
+        (letsite (s 1) ← copy var_b) ;;
+        (letsite (s 2) ← binop(.eq, (s 0), (s 1))) ;;
+        (letsite (s 3) ← copy var_a) ;;
+        (letsite (s 4) ← copy var_b) ;;
+        (letsite (s 5) ← binop(.neq, (s 3), (s 4))) ;;
+        (letsite (s 6) ← copy var_a) ;;
+        (letsite (s 7) ← copy var_b) ;;
+        (letsite (s 8) ← binop(.lt, (s 6), (s 7))) ;;
+        (letsite (s 9) ← copy var_a) ;;
+        (letsite (s 10) ← copy var_b) ;;
+        (letsite (s 11) ← binop(.gt, (s 9), (s 10))) ;;
+        (letsite (s 12) ← copy var_a) ;;
+        (letsite (s 13) ← copy var_b) ;;
+        (letsite (s 14) ← binop(.le, (s 12), (s 13))) ;;
+        (letsite (s 15) ← copy var_a) ;;
+        (letsite (s 16) ← copy var_b) ;;
+        (letsite (s 17) ← binop(.ge, (s 15), (s 16))) ;;
+        ret [(s 2), (s 5), (s 8), (s 11), (s 14), (s 17)]
+    }
+  ]
+}
+
+def fn_cmp_table_lenvDec := mkLabelEnvDec fn_cmp_table
+
+theorem fn_cmp_table_check :
+    check_fun_dec fn_cmp_table fn_cmp_table_lenvDec = true := by rfl
+
+theorem fn_cmp_table_welltyped :
+    ∃ lenv, typecheck_fun fn_cmp_table lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ fn_cmp_table_check⟩
+
 end LeanMove.Tests.Litmus.ComparisonOpsOk

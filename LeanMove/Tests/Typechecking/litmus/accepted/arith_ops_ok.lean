@@ -189,4 +189,43 @@ theorem fn_scale_welltyped :
     ∃ lenv, typecheck_fun fn_scale lenv AssocMap.empty :=
   ⟨_, check_fun_dec_sound _ _ _ fn_scale_check⟩
 
+-- ═══════════════════════════════════════════════════════
+-- Test 5: fn_scale_read — *r = k * k; return *r
+-- ═══════════════════════════════════════════════════════
+
+/-
+`fn_scale` returns nothing, so the only thing a runtime test can observe about
+it is that it halts — which says nothing about the product it wrote. Reading the
+reference back makes the written value part of the result, so `k * k` can be
+told apart from `k + k`.
+-/
+def fn_scale_read : FunDef := {
+  params := [(var_r, .ref .u64 (.paramRef var_r) .siteBorrowMut),
+             (var_k, .basic .u64)]
+  returnType := [⟨.u64, none⟩]
+  locals := []
+  blocks := [
+    { label := "b0"
+      body :=
+        (letsite (s 0) ← copy var_r) ;;
+        (letsite (s 1) ← copy var_k) ;;
+        (letsite (s 2) ← copy var_k) ;;
+        (letsite (s 3) ← binop(.mul, (s 1), (s 2))) ;;
+        (*(s 0) ::= (s 3)) ;;
+        (letsite (s 4) ← copy var_r) ;;
+        (letsite (s 5) ← *(s 4)) ;;
+        ret [(s 5)]
+    }
+  ]
+}
+
+def fn_scale_read_lenvDec := mkLabelEnvDec fn_scale_read
+
+theorem fn_scale_read_check :
+    check_fun_dec fn_scale_read fn_scale_read_lenvDec = true := by rfl
+
+theorem fn_scale_read_welltyped :
+    ∃ lenv, typecheck_fun fn_scale_read lenv AssocMap.empty :=
+  ⟨_, check_fun_dec_sound _ _ _ fn_scale_read_check⟩
+
 end LeanMove.Tests.Litmus.ArithOpsOk

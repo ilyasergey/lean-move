@@ -806,10 +806,31 @@ open LeanMove.Tests.Litmus.BooleanOpsOk
 #guard (run 100 (initState fn_double_negation AssocMap.empty [.int 3 .u64, .int 3 .u64])).getHaltedValues ==
   some [.bool true]
 
+-- The full truth table. `fn_and_or_not` above cannot pin `And` down — its
+-- conjunction is unsatisfiable, so `And` is only ever evaluated at `false` and
+-- an implementation that ignored its second operand would pass. Taking the
+-- booleans as parameters makes all four combinations reachable.
+-- Results are [p && q, p || q, !p].
+#guard (run 100 (initState fn_bool_table AssocMap.empty [.bool true, .bool true])).getHaltedValues ==
+  some [.bool true, .bool true, .bool false]
+#guard (run 100 (initState fn_bool_table AssocMap.empty [.bool true, .bool false])).getHaltedValues ==
+  some [.bool false, .bool true, .bool false]
+#guard (run 100 (initState fn_bool_table AssocMap.empty [.bool false, .bool true])).getHaltedValues ==
+  some [.bool false, .bool true, .bool true]
+#guard (run 100 (initState fn_bool_table AssocMap.empty [.bool false, .bool false])).getHaltedValues ==
+  some [.bool false, .bool false, .bool true]
+
 private theorem boolean_ops_no_danglingRef :
     ∀ n loc, run n (initState fn_and_or_not empty [.int 2 .u64, .int 7 .u64]) ≠ .error (.danglingRef loc) :=
   type_soundness_dec_no_danglingRef fn_and_or_not fn_and_or_not_lenvDec empty empty empty
     [.int 2 .u64, .int 7 .u64] Heap.empty (by native_decide)
+
+-- The certificate is taken at `p = true`, the case `fn_and_or_not` never reaches.
+private theorem bool_table_no_danglingRef :
+    ∀ n loc, run n (initState fn_bool_table empty [.bool true, .bool true]) ≠
+      .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_bool_table fn_bool_table_lenvDec empty empty empty
+    [.bool true, .bool true] Heap.empty (by native_decide)
 
 end
 
@@ -839,6 +860,19 @@ open LeanMove.Tests.Litmus.ComparisonOpsOk
   some [.int 5 .u64]
 #guard (run 100 (initState fn_ge_branch AssocMap.empty [.int 2 .u64, .int 7 .u64])).getHaltedValues ==
   some [.int 7 .u64]
+
+-- All six comparisons on one pair of operands: [a==b, a!=b, a<b, a>b, a<=b, a>=b].
+-- `fn_comparisons` folds its results into a single boolean, which hides the
+-- individual rows — flipping the direction of `Le` does not change its answer
+-- on the arguments above. These do not fold, and the `a = b` row covers the
+-- boundary the strict and non-strict operators disagree on, which no runtime
+-- test reached before.
+#guard (run 100 (initState fn_cmp_table AssocMap.empty [.int 2 .u64, .int 7 .u64])).getHaltedValues ==
+  some [.bool false, .bool true, .bool true, .bool false, .bool true, .bool false]
+#guard (run 100 (initState fn_cmp_table AssocMap.empty [.int 7 .u64, .int 2 .u64])).getHaltedValues ==
+  some [.bool false, .bool true, .bool false, .bool true, .bool false, .bool true]
+#guard (run 100 (initState fn_cmp_table AssocMap.empty [.int 3 .u64, .int 3 .u64])).getHaltedValues ==
+  some [.bool true, .bool false, .bool false, .bool false, .bool true, .bool true]
 
 private theorem comparison_ops_no_danglingRef :
     ∀ n loc, run n (initState fn_comparisons empty [.int 2 .u64, .int 7 .u64]) ≠ .error (.danglingRef loc) :=
@@ -961,10 +995,30 @@ open LeanMove.Tests.Litmus.SizedIntArithOk
 #guard (run 100 (initState fn_xor_u8 empty [.int 255 .u8, .int 255 .u8])).getHaltedValues ==
   some [.int 0 .u8]
 
+-- All three operators on the same operands: [a & b, a | b, a ^ b]. `fn_xor_u8`
+-- alone pins only one `evalBinop` row — swapping the `bitand` and `bitor` rows
+-- leaves every guard above green. 0b1100 and 0b1010 share some but not all
+-- bits, so the three results are pairwise distinct.
+#guard (run 100 (initState fn_bit_table empty [.int 12 .u8, .int 10 .u8])).getHaltedValues ==
+  some [.int 8 .u8, .int 14 .u8, .int 6 .u8]
+-- `and` is absorbing at 0 and `or` is absorbing at all-ones, in opposite
+-- directions: a swap of the two rows turns [0, 255, 255] into [255, 0, 255].
+#guard (run 100 (initState fn_bit_table empty [.int 255 .u8, .int 0 .u8])).getHaltedValues ==
+  some [.int 0 .u8, .int 255 .u8, .int 255 .u8]
+-- `x & x = x | x = x`, but `x ^ x = 0`.
+#guard (run 100 (initState fn_bit_table empty [.int 170 .u8, .int 170 .u8])).getHaltedValues ==
+  some [.int 170 .u8, .int 170 .u8, .int 0 .u8]
+
 private theorem xor_u8_no_danglingRef :
     ∀ n loc, run n (initState fn_xor_u8 empty [.int 255 .u8, .int 255 .u8]) ≠ .error (.danglingRef loc) :=
   type_soundness_dec_no_danglingRef fn_xor_u8 fn_xor_u8_lenvDec empty empty empty
     [.int 255 .u8, .int 255 .u8] Heap.empty (by native_decide)
+
+private theorem bit_table_no_danglingRef :
+    ∀ n loc, run n (initState fn_bit_table empty [.int 12 .u8, .int 10 .u8]) ≠
+      .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_bit_table fn_bit_table_lenvDec empty empty empty
+    [.int 12 .u8, .int 10 .u8] Heap.empty (by native_decide)
 
 end
 
@@ -985,6 +1039,14 @@ open LeanMove.Tests.Litmus.SizedIntArithOk
 -- but not for `<<`. 31 << 4 = 496, truncated to 8 bits = 240.
 #guard (run 100 (initState fn_shl_u8 empty [.int 31 .u8, .int 4 .u8])).getHaltedValues ==
   some [.int 240 .u8]
+
+-- Shifting by zero is the identity on both operators. This is the boundary of
+-- the `b < w.bits` guard at the other end, and it is what tells a shift apart
+-- from an off-by-one that shifted by `b + 1`.
+#guard (run 100 (initState fn_shl_u8 empty [.int 5 .u8, .int 0 .u8])).getHaltedValues ==
+  some [.int 5 .u8]
+#guard (run 100 (initState fn_shr_u64 empty [.int 240 .u64, .int 0 .u8])).getHaltedValues ==
+  some [.int 240 .u64]
 
 -- What *does* abort is a shift amount at or beyond the operand width.
 #guard (run 100 (initState fn_shl_u8 empty [.int 1 .u8, .int 8 .u8])) matches
@@ -1056,6 +1118,15 @@ private def scaleHeap : Heap × Loc := Heap.empty.alloc (.int 0 .u64)
 #guard (run 100 (initState fn_scale AssocMap.empty
   [.ref scaleHeap.2 [], .int 9 .u64] scaleHeap.1)).getHaltedValues == some []
 
+-- `fn_scale` returns nothing, so halting is all the guard above can observe —
+-- it cannot tell `k * k` from `k + k`. `fn_scale_read` reads the reference back
+-- after writing it, which puts the product in the result: 9 * 9 = 81, whereas
+-- 9 + 9 = 18.
+#guard (run 100 (initState fn_scale_read AssocMap.empty
+  [.ref scaleHeap.2 [], .int 9 .u64] scaleHeap.1)).getHaltedValues == some [.int 81 .u64]
+#guard (run 100 (initState fn_scale_read AssocMap.empty
+  [.ref scaleHeap.2 [], .int 0 .u64] scaleHeap.1)).getHaltedValues == some [.int 0 .u64]
+
 private theorem mul_no_danglingRef :
     ∀ n loc, run n (initState fn_mul empty [.int 6 .u64, .int 7 .u64]) ≠
       .error (.danglingRef loc) :=
@@ -1082,5 +1153,53 @@ private theorem scale_no_danglingRef :
       .error (.danglingRef loc) :=
   type_soundness_dec_no_danglingRef fn_scale fn_scale_lenvDec empty empty empty
     [.ref scaleHeap.2 [], .int 9 .u64] scaleHeap.1 (by native_decide)
+
+set_option maxRecDepth 4096 in
+private theorem scale_read_no_danglingRef :
+    ∀ n loc, run n (initState fn_scale_read empty [.ref scaleHeap.2 [], .int 9 .u64] scaleHeap.1) ≠
+      .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_scale_read fn_scale_read_lenvDec empty empty empty
+    [.ref scaleHeap.2 [], .int 9 .u64] scaleHeap.1 (by native_decide)
+
+end
+
+-- ============================================================
+-- 20. divisionByZero — the acceptable error nothing reached
+-- ============================================================
+section
+open LeanMove.Tests.Litmus.SizedIntArithOk
+
+-- `divisionByZero` is one of the six errors `isAcceptable` admits, but until
+-- these tests no program in the tree produced one, so that arm of
+-- `step_error_is_acceptable` was only ever discharged vacuously. Both operators
+-- that can raise it are exercised here.
+#guard (run 100 (initState fn_div_u64 empty [.int 6 .u64, .int 3 .u64])).getHaltedValues ==
+  some [.int 2 .u64]
+#guard (run 100 (initState fn_div_u64 empty [.int 6 .u64, .int 0 .u64])) matches
+  .error .divisionByZero
+
+#guard (run 100 (initState fn_mod_u64 empty [.int 7 .u64, .int 3 .u64])).getHaltedValues ==
+  some [.int 1 .u64]
+#guard (run 100 (initState fn_mod_u64 empty [.int 7 .u64, .int 0 .u64])) matches
+  .error .divisionByZero
+
+-- Truncating division, so that `div` cannot be confused with `sub`: 7 / 2 = 3.
+#guard (run 100 (initState fn_div_u64 empty [.int 7 .u64, .int 2 .u64])).getHaltedValues ==
+  some [.int 3 .u64]
+
+-- The certificates that matter are the aborting ones: they are executions that
+-- *reach* `divisionByZero`, so they witness that a well-typed program may end
+-- there and that the error is genuinely accepted rather than excluded.
+private theorem div_by_zero_no_danglingRef :
+    ∀ n loc, run n (initState fn_div_u64 empty [.int 6 .u64, .int 0 .u64]) ≠
+      .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_div_u64 fn_div_u64_lenvDec empty empty empty
+    [.int 6 .u64, .int 0 .u64] Heap.empty (by native_decide)
+
+private theorem mod_by_zero_no_danglingRef :
+    ∀ n loc, run n (initState fn_mod_u64 empty [.int 7 .u64, .int 0 .u64]) ≠
+      .error (.danglingRef loc) :=
+  type_soundness_dec_no_danglingRef fn_mod_u64 fn_mod_u64_lenvDec empty empty empty
+    [.int 7 .u64, .int 0 .u64] Heap.empty (by native_decide)
 
 end
