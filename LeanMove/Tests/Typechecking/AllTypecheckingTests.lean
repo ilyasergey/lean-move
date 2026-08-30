@@ -39,6 +39,7 @@ import LeanMove.Tests.Typechecking.expressivity.accepted.enum_imm_borrow_on_mut_
 import LeanMove.Tests.Typechecking.expressivity.accepted.enum_imm_borrow_on_mut_trivial_invalid
 
 -- Expressivity tests (rejected)
+import LeanMove.Tests.Typechecking.expressivity.rejected.call_borrowed_mutable_ref
 import LeanMove.Tests.Typechecking.expressivity.rejected.simple_dangling
 import LeanMove.Tests.Typechecking.expressivity.rejected.imm_borrow_after_mut_call_invalid
 import LeanMove.Tests.Typechecking.expressivity.rejected.imm_borrow_after_mut_fields_invalid

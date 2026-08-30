@@ -28,7 +28,7 @@ core calculus of the Move intermediate representation — and proved it
 - We demonstrate this end-to-end on programs drawn from the **Move bytecode
   verifier's own test suite**: each program is type-checked, executed on a
   concrete heap, and certified free of all preventable errors — all within
-  a single `lake build`. The test suite includes **86 test files** across
+  a single `lake build`. The test suite includes **87 test files** across
   four categories: parsing, type checking (litmus + expressivity),
   rejected-program checks, and runtime soundness certificates (see
   [Test suite overview](#test-suite-overview) for details).
@@ -304,7 +304,7 @@ suite.
 
 ### Test suite overview
 
-The test suite contains **86 test files** organised across four directories,
+The test suite contains **87 test files** organised across four directories,
 covering parsing, type checking, rejection, and runtime soundness. Each
 test category serves a different role in establishing confidence in the
 formalisation.
@@ -409,6 +409,7 @@ soundness certificates):
 | `enum_invalid_ref_unpack` | Reference unpack with borrow violation |
 | `enum_invalid_ref_unpack_loop` | Invalid unpack in loop |
 | `enum_borrow_owned` | Attempt to borrow owned enum variant |
+| `call_borrowed_mutable_ref` | Call taking a `&mut` that still has a live extension — struct, vector and enum, each with an accepted control |
 
 #### Runtime soundness certificates (`Tests/Runtime/AllTests.lean`)
 

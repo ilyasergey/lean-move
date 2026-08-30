@@ -994,7 +994,7 @@ theorem step_error_is_acceptable (m : Machine) (env : TypeEnv) (lenv : LabelEnv)
     simp only [step, hs] at hstep
     cases hst
     -- call: a1=params, a2=rets, a3=outRefs, a4=env', a10=hfun_sig, a11=hconf_in
-    next params rets _ _ _ _ _ _ _ hfun_sig hconf_in _ _ =>
+    next params rets _ _ _ _ _ _ _ hfun_sig hconf_in _ _ _ =>
       -- lookup funEnv fname succeeds
       have ⟨fdef, hfdef, hparams_eq, _⟩ := hwt.funEnv_sig_consistent fname ⟨params, rets⟩ hfun_sig
       change lookup m.frame.funEnv fname = some fdef at hfdef

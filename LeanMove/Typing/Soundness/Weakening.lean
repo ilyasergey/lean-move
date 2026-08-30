@@ -4267,6 +4267,36 @@ private lemma check_mutable_inputs_isolated_subsumes
           intro p hp
           exact hiso_L p (hpaths r_L r_L2 (hsite_tracked _ _ _ _ hlL_mi) (hsite_tracked _ _ _ _ hlL_other) p hp)
 
+/-- Semantic check_mutable_inputs_no_extensions transfers through subsumption:
+    if envL's mutable inputs have no outstanding extensions and env has fewer paths,
+    then env's mutable inputs have none either. Delegates to `check_outbound_weaken`,
+    the same helper the `write_ref` case uses. -/
+private lemma check_mutable_inputs_no_extensions_subsumes
+    (σ : Aref → Aref) (envL env : TypeEnv) (bs : List Site)
+    (hse : SiteEnvSubstEquiv σ envL.siteEnv env.siteEnv)
+    (hrefs : (envL.pathEnv.refs.map σ).Perm env.pathEnv.refs)
+    (hpaths : ∀ u v, u ∈ envL.pathEnv.refs → v ∈ envL.pathEnv.refs →
+      ∀ path, interpret_regex (env.pathEnv.paths (σ u, σ v)) path →
+              interpret_regex (envL.pathEnv.paths (u, v)) path)
+    (hsite_tracked : ∀ s bt r bk, lookup envL.siteEnv s = some (.ref bt r bk) → r ∈ envL.pathEnv.refs)
+    (hnoext : check_mutable_inputs_no_extensions envL bs) :
+    check_mutable_inputs_no_extensions env bs := by
+  intro b hb bt r hlookup
+  have hse_b := hse b
+  cases hlL : AssocMap.lookup envL.siteEnv b with
+  | none => simp [hlL, hlookup] at hse_b
+  | some τL =>
+    simp [hlL, hlookup] at hse_b
+    cases τL with
+    | basic _ =>
+      simp [applySubstMoveType] at hse_b
+    | ref bt_L r_L bk_L =>
+      simp only [applySubstMoveType, MoveType.ref.injEq] at hse_b
+      obtain ⟨_, hr_eq, hbk_eq⟩ := hse_b
+      subst hbk_eq; subst hr_eq
+      exact check_outbound_weaken σ envL.pathEnv env.pathEnv r_L hrefs hpaths
+        (hsite_tracked _ _ _ _ hlL) (hnoext b hb bt_L r_L hlL)
+
 /-- populate_call_outputs preserves varEnv -/
 lemma populate_call_outputs_varEnv (env env' : TypeEnv) (as : List Site) (rets : List ParamType)
     (outRefs : List Aref)
@@ -7026,6 +7056,7 @@ private theorem weaken_call
     (hnodupL : List.Nodup outRefsL)
     (hpopL : populate_call_outputs envL as rets outRefsL = some envL')
     (hisoL : check_mutable_inputs_isolated envL bs)
+    (hnoextL : check_mutable_inputs_no_extensions envL bs)
     (hsub : TypeEnv.subsumes envL env)
     (hfuneq : envL.funEnv = env.funEnv)
     (hwfL : TypeEnv.WellFormed envL) (hwfE : TypeEnv.WellFormed env)
@@ -7049,6 +7080,8 @@ private theorem weaken_call
   have htcE := types_conform_SiteEnvSubstEquiv σ envL.siteEnv env.siteEnv bs params hse htcL
   have hfreshSitesE := all_fresh_sites_subsumes σ envL env as hse hfreshSitesL
   have hisoE := check_mutable_inputs_isolated_subsumes σ envL env bs hse hpaths_incl hsite_tracked hisoL
+  have hnoextE := check_mutable_inputs_no_extensions_subsumes σ envL env bs hse hrefs hpaths_incl
+    hsite_tracked hnoextL
   -- Generate fresh refs for env
   let outRefsE := makeFreshRefs env outRefsL.length
   have hlenE : outRefsE.length = outRefsL.length := makeFreshRefs_length env outRefsL.length
@@ -7119,7 +7152,7 @@ private theorem weaken_call
     rw [call_connect_varEnv, call_connect_siteEnv]; exact huniq_L'
   -- Apply call rule
   exact typecheck_stmt.call lenv env fnName as bs params rets outRefsE envE' cont retTypes
-    hfunE htcE hfreshSitesE hnodup_sites hfreshRefsE hnodupE hpopE hisoE
+    hfunE htcE hfreshSitesE hnodup_sites hfreshRefsE hnodupE hpopE hisoE hnoextE
     (ih (let env'' := call_connect_inputs_outputs envE' as bs
          {env'' with siteEnv := AssocMap.deleteAll env''.siteEnv bs})
       -- subsumption: {cc(envL') with deleteAll} subsumes {cc(envE') with deleteAll}
@@ -7954,9 +7987,9 @@ theorem typecheck_stmt_weaken (lenv : LabelEnv) (envL env : TypeEnv) (s : Stmt) 
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   | call envL fnName as bs params rets outRefsL envL' cont retTypes
-      hfunL htcL hfreshSitesL hnodup_sites hfreshRefsL hnodupL hpopL hisoL _ ih =>
+      hfunL htcL hfreshSitesL hnodup_sites hfreshRefsL hnodupL hpopL hisoL hnoextL _ ih =>
     exact weaken_call lenv envL env fnName as bs params rets outRefsL envL' cont retTypes
-      hfunL htcL hfreshSitesL hnodup_sites hfreshRefsL hnodupL hpopL hisoL
+      hfunL htcL hfreshSitesL hnodup_sites hfreshRefsL hnodupL hpopL hisoL hnoextL
       hsub hfuneq hwfL hwfE hsite_tracked hvar_tracked huniq
       hpaths_to_nm hpaths_from_nm hself_loop_only_empty hroot ih
   -- ==================== Complex non-pathEnv cases ====================
