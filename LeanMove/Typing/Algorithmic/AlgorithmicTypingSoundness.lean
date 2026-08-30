@@ -350,6 +350,19 @@ lemma check_mutable_inputs_isolated_bool_sound (env : TypeEnv) (bs : List Site) 
   simp only [hlookup_other] at h2
   exact only_matches_empty_sound _ h2
 
+/-- Soundness: Boolean no-extensions check implies the relational version -/
+lemma check_mutable_inputs_no_extensions_bool_sound (env : TypeEnv) (bs : List Site) :
+    check_mutable_inputs_no_extensions_bool env bs = true →
+    check_mutable_inputs_no_extensions env bs := by
+  intro h
+  simp only [check_mutable_inputs_no_extensions_bool, List.all_eq_true] at h
+  intro b hb bt r hlookup
+  have h1 := h b hb
+  simp only [hlookup] at h1
+  intro s' hs'
+  simp only [check_outbound_bool, List.all_eq_true] at h1
+  exact h1 s' hs'
+
 /-- Soundness: Boolean outbound check implies relational outbound -/
 lemma check_mutable_inputs_have_outbound_bool_sound (env : TypeEnv) (bs : List Site) :
     check_mutable_inputs_have_outbound_bool env bs = true →
@@ -2297,7 +2310,7 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
         split at h
         · rename_i hcond
           simp only [Bool.and_eq_true] at hcond
-          obtain ⟨htc_bs, hiso⟩ := hcond
+          obtain ⟨⟨htc_bs, hiso⟩, hnoext⟩ := hcond
           -- Handle match on populate_call_outputs inside the hypothesis
           split at h
           · rename_i env' hpop
@@ -2306,6 +2319,7 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
               (beq_iff_eq.mp hnodup_as_bool).symm
             have htc_bs' := types_conform_bool_sound env.siteEnv bs params htc_bs
             have hiso' := check_mutable_inputs_isolated_bool_sound env bs hiso
+            have hnoext' := check_mutable_inputs_no_extensions_bool_sound env bs hnoext
             have hfresh_refs := generateFreshRefs_fresh env rets
             have hnodup := generateFreshRefs_nodup env rets
             have hwf_env' := populate_call_outputs_wf env env' as rets (generateFreshRefs env rets)
@@ -2314,7 +2328,7 @@ theorem check_stmt_sound (lenv : LabelEnv) (env : TypeEnv) (s : Stmt) (retTypes 
             apply typecheck_stmt.call lenv env fnName as bs params rets
               (generateFreshRefs env rets) env' cont retTypes
               hlookup_fn htc_bs' hfresh' hnodup_as hfresh_refs hnodup
-              hpop hiso'
+              hpop hiso' hnoext'
             let env'' := call_connect_inputs_outputs env' as bs
             have hwf_del : ({env'' with siteEnv := AssocMap.deleteAll env''.siteEnv bs}).WellFormed :=
               ⟨hwf'.pathEnv_wf, SiteEnv.deleteAll_refs_not_root _ _ hwf'.siteEnv_wf, hwf'.varEnv_wf⟩

@@ -267,6 +267,25 @@ def check_mutable_inputs_isolated (env: TypeEnv) (bs: List Site) : Prop :=
           mi_site ≠ other_site →
             ∀ p, interpret_regex (env.pathEnv.paths (mi_ref, other_ref)) p → p = []
 
+/-- Check that no mutable input has an outstanding extension at the point of the call.
+
+    `check_mutable_inputs_isolated` ranges both of its site variables over `bs`, so it
+    only rules out arguments that reach *each other*. It says nothing about a reference
+    borrowed out of an argument earlier in the block and still live across the call, and
+    a callee receiving such an argument can perform any write its caller could not.
+
+    This is the other half of the rule the Move bytecode verifier applies (see
+    `Tests/MVIR/mutable_borrows_are_not_unique_calls.mvir`): a mutable argument must have
+    no extensions at the time of the call. It is the same obligation `write_ref`
+    discharges for a direct write, so it reuses `check_outbound`. Passing a reference
+    that is itself a borrowed field stays legal: such a path is inbound to the argument,
+    not outbound from it, and the self-path ε is admitted by `only_matches_empty`. -/
+def check_mutable_inputs_no_extensions (env: TypeEnv) (bs: List Site) : Prop :=
+  ∀ (b : Site), b ∈ bs →
+    ∀ (bt : BasicMoveType) (r : Aref),
+      AssocMap.lookup env.siteEnv b = some (.ref bt r .siteBorrowMut) →
+      check_outbound env.pathEnv r (fun re ↦ only_matches_empty (simplify re))
+
 /-- Check that all mutable inputs have non-trivial outbound edges.
 
     For each mutable input site mi_site with abstract reference mi_ref,
@@ -639,6 +658,8 @@ inductive typecheck_stmt : LabelEnv → TypeEnv → Stmt → List ParamType → 
       populate_call_outputs env as rets outRefs = some env' →
       -- Mutable inputs isolated
       check_mutable_inputs_isolated env bs →
+      -- Mutable inputs have no outstanding extensions at the point of the call
+      check_mutable_inputs_no_extensions env bs →
       -- Continuation typed in env after output population + path connections + input consumption
       typecheck_stmt lenv
         (let env'' := call_connect_inputs_outputs env' as bs

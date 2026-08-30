@@ -1,0 +1,151 @@
+// A mutable reference passed to a function must have no outstanding extensions at the
+// point of the call. Upstream error: CALL_BORROWED_MUTABLE_REFERENCE_ERROR.
+//
+// Each module below covers one kind of clobber — struct, vector, enum — and pairs the
+// rejected program with an accepted control that performs the same operations in an
+// order that leaves no live borrow across the call. The controls matter: without them a
+// blanket rejection of every call taking a `&mut` would pass just as well.
+//
+// The helpers return a dummy u64 because a bare `Self.f(args);` statement is
+// mistranslated into a call with one phantom output site; see KnownGaps.lean.
+
+// ------------------------------------------------------------------
+// Struct. `clobberS` overwrites the whole struct while `e` borrows one of its fields.
+// Also carries the case that mutable_borrows_are_not_unique_calls.mvir:21 predicts
+// "will error" — the same two statements as its accepted `create`, swapped.
+// ------------------------------------------------------------------
+//# publish
+module 0x9.struct_clobber {
+    struct S has copy, drop { f: u64 }
+
+    clobberS(s: &mut Self.S): u64 {
+    label b0:
+        *move(s) = S { f: 0 };
+        return 0;
+    }
+
+    borrow_f(s: &mut Self.S): &mut u64 {
+    label b0:
+        return &mut move(s).S::f;
+    }
+
+    // REJECTED: `e` is a live extension of `s` across the call.
+    clobber_via_call(s: &mut Self.S): u64 {
+        let e: &mut u64;
+        let d: u64;
+    label b0:
+        e = &mut copy(s).S::f;
+        d = Self.clobberS(copy(s));
+        return *move(e);
+    }
+
+    // REJECTED: the swap of `create` below.
+    create_swapped(s: &mut Self.S) {
+        let call: &mut u64;
+        let f: &mut u64;
+    label b0:
+        f = &mut copy(s).S::f;
+        call = Self.borrow_f(copy(s));
+        return;
+    }
+
+    // ACCEPTED control, verbatim from mutable_borrows_are_not_unique_calls.mvir:
+    // `s` has no extensions when the call happens.
+    create(s: &mut Self.S) {
+        let call: &mut u64;
+        let f: &mut u64;
+    label b0:
+        call = Self.borrow_f(copy(s));
+        f = &mut copy(s).S::f;
+        return;
+    }
+
+    // ACCEPTED control: the borrow is consumed before the call.
+    clobber_after_read(s: &mut Self.S): u64 {
+        let e: &mut u64;
+        let x: u64;
+        let d: u64;
+    label b0:
+        e = &mut copy(s).S::f;
+        x = *move(e);
+        d = Self.clobberS(copy(s));
+        return move(x);
+    }
+}
+
+// ------------------------------------------------------------------
+// Vector. The inline form of this is module 0x22 of vec_dangling_borrow.mvir.
+// ------------------------------------------------------------------
+//# publish
+module 0xa.vector_clear {
+    clearV(v: &mut vector<u64>): u64 {
+    label b0:
+        *move(v) = vec_pack_0<u64>();
+        return 0;
+    }
+
+    // REJECTED: `r` is a live element borrow across the call.
+    clear_via_call(v: &mut vector<u64>): u64 {
+        let r: &mut u64;
+        let d: u64;
+    label b0:
+        r = vec_mut_borrow<u64>(copy(v), 0);
+        d = Self.clearV(copy(v));
+        return *move(r);
+    }
+
+    // ACCEPTED control: the element borrow is consumed before the call.
+    clear_after_read(v: &mut vector<u64>): u64 {
+        let r: &mut u64;
+        let x: u64;
+        let d: u64;
+    label b0:
+        r = vec_mut_borrow<u64>(copy(v), 0);
+        x = *move(r);
+        d = Self.clearV(copy(v));
+        return move(x);
+    }
+}
+
+// ------------------------------------------------------------------
+// Enum. This is module 2 of enum_invalid_ref_unpack.mvir, which that test rejects only
+// because its funEnv is empty; here the callee's signature is supplied.
+// ------------------------------------------------------------------
+//# publish
+module 0xb.enum_overwrite {
+    enum X has drop {
+        One { x: u64 },
+        Two { x: u64, y: u64 },
+    }
+
+    overwrite(e: &mut Self.X): u64 {
+    label b0:
+        *move(e) = X.One { x: 0 };
+        return 0;
+    }
+
+    // REJECTED: `y` borrows a field that the callee's variant change removes.
+    overwrite_via_call(e: &mut Self.X): u64 {
+        let x: &mut u64;
+        let y: &mut u64;
+        let d: u64;
+    label b0:
+        &mut X.Two { x: x, y: y } = copy(e);
+        d = Self.overwrite(copy(e));
+        return *move(y);
+    }
+
+    // ACCEPTED control: the unpacked field borrows are consumed before the call.
+    overwrite_after_read(e: &mut Self.X): u64 {
+        let x: &mut u64;
+        let y: &mut u64;
+        let t: u64;
+        let d: u64;
+    label b0:
+        &mut X.Two { x: x, y: y } = copy(e);
+        _ = move(x);
+        t = *move(y);
+        d = Self.overwrite(copy(e));
+        return move(t);
+    }
+}
