@@ -52,6 +52,10 @@ import LeanMove.Tests.Typechecking.expressivity.rejected.enum_invalid_ref_unpack
 import LeanMove.Tests.Typechecking.expressivity.rejected.enum_invalid_ref_unpack_loop
 import LeanMove.Tests.Typechecking.expressivity.rejected.enum_borrow_owned
 
+-- Divergences from the Move bytecode verifier that the suite above does not catch.
+-- The `#guard`s in this file pin down *wrong* behaviour on purpose; see its header.
+import LeanMove.Tests.Typechecking.KnownGaps
+
 /-! ## All Typechecking Tests
 
 Imports all litmus and expressivity typechecking test files.

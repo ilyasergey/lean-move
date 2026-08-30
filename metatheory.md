@@ -29,9 +29,9 @@ core calculus of the Move intermediate representation — and proved it
 - We demonstrate this end-to-end on programs drawn from the **Move bytecode
   verifier's own test suite**: each program is type-checked, executed on a
   concrete heap, and certified free of all preventable errors — all within
-  a single `lake build`. The test suite includes **86 test files** across
-  four categories: parsing, type checking (litmus + expressivity),
-  rejected-program checks, and runtime soundness certificates (see
+  a single `lake build`. The test suite includes **87 test files** across
+  five categories: parsing, type checking (litmus + expressivity),
+  rejected-program checks, runtime soundness certificates, and known gaps (see
   [Test suite overview](#test-suite-overview) for details).
 
 ### Limitations and scope
@@ -58,6 +58,46 @@ Move's reference-safety discipline — aliased mutable borrows, field
 borrows, freeze, release, cross-function borrow propagation,
 control-flow joins, vector operations (see Part III), and enum variant
 packing/unpacking with pattern matching (see Part IV).
+
+### Known gaps
+
+Unlike the scope restrictions above, these are defects rather than deliberate
+simplifications. They are pinned down by `#guard`s in
+`LeanMove/Tests/Typechecking/KnownGaps.lean`, which asserts the current, wrong
+behaviour so that fixing a gap breaks the build.
+
+- **The call rule ignores outstanding extensions of its mutable arguments.**
+  `check_mutable_inputs_isolated` quantifies both its site variables over `bs`,
+  the call's own argument list, so it rules out arguments that reach *each
+  other* but says nothing about a reference borrowed out of an argument earlier
+  in the block and still live across the call. Consequently every write the
+  checker rejects inline is accepted when a callee performs it. The rule the
+  imported corpus states
+  (`Tests/MVIR/mutable_borrows_are_not_unique_calls.mvir:18`) is "as long as the
+  argument to the call does not have any extensions at the time of the call (and
+  as long as it does not overlap with any other arguments)"; only the
+  parenthetical half is implemented. The relational specification and the
+  algorithmic checker agree here, so `check_stmt_sound` does not expose it.
+  `rejected/enum_invalid_ref_unpack.lean` nominally covers three call cases, but
+  checks them against an empty `funEnv`, so they are rejected before the borrow
+  rules are reached.
+
+- **A bare `Self.f(args);` statement can never be checked.** The parser desugars
+  a call used as a statement into `.assign ["_"] (.call …)` and the translator
+  allocates one result site per named variable, so a function with no return
+  values acquires a phantom output site and `populate_call_outputs` fails
+  regardless of what the call does. No other test in the suite calls a void
+  function.
+
+Neither gap threatens type soundness, because a clobber cannot produce a
+`danglingRef` in this heap model: struct shapes are fixed by their type, a
+vector element borrow is a detached copy of the element rather than an alias
+(`vecMutBorrow` allocates a fresh location), and the flat enum encoding gives
+every variant value the fields of all variants, so changing the variant resets
+an inactive field to its default instead of removing it. The accepted programs
+read a stale or defaulted value. What the gaps cost is conformance with the
+production verifier, and they place this class of bug beyond the reach of the
+per-execution runtime certificates.
 
 ---
 
@@ -308,8 +348,8 @@ suite.
 
 ### Test suite overview
 
-The test suite contains **86 test files** organised across four directories,
-covering parsing, type checking, rejection, and runtime soundness. Each
+The test suite contains **87 test files** organised across five directories,
+covering parsing, type checking, rejection, runtime soundness, and known gaps. Each
 test category serves a different role in establishing confidence in the
 formalisation.
 
@@ -413,6 +453,15 @@ soundness certificates):
 | `enum_invalid_ref_unpack` | Reference unpack with borrow violation |
 | `enum_invalid_ref_unpack_loop` | Invalid unpack in loop |
 | `enum_borrow_owned` | Attempt to borrow owned enum variant |
+
+#### Known gaps (`Tests/Typechecking/KnownGaps.lean`, 1 file)
+
+The one file whose `#guard`s assert **wrong** behaviour on purpose, recording
+divergences from the Move bytecode verifier that the categories above do not
+detect (see [Known gaps](#known-gaps) for the analysis). It also runs each
+wrongly accepted program and pins the value it returns, documenting why none of
+them dangles. Fixing a gap breaks these guards, which is the intent: the
+expectation is then flipped and the case moved into `expressivity/rejected/`.
 
 #### Runtime soundness certificates (`Tests/Runtime/AllTests.lean`)
 
