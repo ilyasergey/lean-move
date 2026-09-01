@@ -266,7 +266,7 @@ private theorem inv_call
          {env'' with siteEnv := AssocMap.deleteAll env''.siteEnv args})
         cont retTypes :=
   match h with
-  | .call _ _ _ _ _ params rets outRefs env' _ _ hfun htc hfs hnd_sites hfr hnd hpop hiso hcont =>
+  | .call _ _ _ _ _ params rets outRefs env' _ _ hfun htc hfs hnd_sites hfr hnd hpop hiso _ hcont =>
     ⟨params, rets, outRefs, env', hfun, htc, hfs, hnd_sites, hfr, hnd, hpop, hiso, hcont⟩
 
 private theorem inv_unpack
